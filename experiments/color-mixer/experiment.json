@@ -1,0 +1,6 @@
+{
+  "title": "Color mixer",
+  "description": "Plain DOM sliders that blend two colors in OKLCH.",
+  "created": "2026-11-06",
+  "tags": ["dom", "color"]
+}

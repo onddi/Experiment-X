@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Experiment-X</title>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar" id="sidebar">
+        <header class="sidebar__header">
+          <h1 class="brand">Experiment&#8209;X</h1>
+          <button class="icon-btn sidebar__close" id="sidebar-close" aria-label="Hide list" title="Hide list">&#x2715;</button>
+        </header>
+        <input class="search" id="search" type="search" placeholder="Filter experiments…" aria-label="Filter experiments" />
+        <nav aria-label="Experiments">
+          <ul class="exp-list" id="exp-list"></ul>
+        </nav>
+        <footer class="sidebar__footer">
+          <kbd>[</kbd> <kbd>]</kbd> previous / next &middot; <kbd>\</kbd> toggle list
+        </footer>
+      </aside>
+
+      <main class="stage">
+        <div class="toolbar">
+          <button class="icon-btn" id="sidebar-open" aria-label="Show list" title="Show list">&#9776;</button>
+          <div class="toolbar__title" id="current-title">—</div>
+          <button class="icon-btn" id="reload" aria-label="Reload experiment" title="Reload experiment">&#8635;</button>
+          <a class="icon-btn" id="open-tab" target="_blank" rel="noopener" aria-label="Open in new tab" title="Open in new tab">&#8599;</a>
+        </div>
+        <iframe class="frame" id="frame" title="Experiment"></iframe>
+        <div class="empty" id="empty" hidden>
+          <p>No experiments yet.</p>
+          <p>Run <code>npm run new my-idea</code> to create one.</p>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/shell/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Color mixer</title>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Color mixer</h1>
+      <div class="swatch" id="swatch"></div>
+      <label>A hue <input type="range" id="a" min="0" max="360" value="20" /></label>
+      <label>B hue <input type="range" id="b" min="0" max="360" value="250" /></label>
+      <label>Mix <input type="range" id="mix" min="0" max="100" value="50" /></label>
+      <output id="out"></output>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
