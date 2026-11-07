@@ -9,6 +9,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body { height: 100%; }
 
@@ -61,15 +62,15 @@ body {
 
 /* Cube: faces turn out past the cell edges, so don't clip, and lift the
    cell that's turning above its neighbours. */
-.grid[data-effect='cube'] .carousel {
+.carousel[data-effect='cube'] {
   overflow: visible;
   background: none;
   transform: none;
   perspective: calc(var(--persp-base, var(--cell)) * var(--perspective, 3));
 }
-.grid[data-effect='cube'] .carousel.moving,
-.grid[data-effect='cube'] .carousel.dragging { z-index: 1; }
-.grid[data-effect='cube'] .item { backface-visibility: hidden; }
+.carousel[data-effect='cube'].moving,
+.carousel[data-effect='cube'].dragging { z-index: 1; }
+.carousel[data-effect='cube'] .item { backface-visibility: hidden; }
 .carousel:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
 
 .item {

@@ -51,6 +51,7 @@ export class Carousel {
     this.el.className = 'carousel';
     this.el.tabIndex = 0;
     this.el.dataset.axis = axis;
+    this.el.dataset.effect = effect;
 
     for (let i = 0; i < items.length; i++) {
       const el = document.createElement('div');
@@ -105,6 +106,7 @@ export class Carousel {
 
   setEffect(effect: Effect) {
     this.effect = effect;
+    this.el.dataset.effect = effect;
     this.render();
   }
 

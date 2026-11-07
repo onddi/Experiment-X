@@ -14,6 +14,14 @@ interface Settings {
   aspect: number;
   fill: boolean;
   hero: boolean;
+  heroRows: number;
+  heroCustom: boolean;
+  heroDirection: Axis;
+  heroEffect: Effect;
+  heroLoop: boolean;
+  heroItems: number;
+  heroTension: number;
+  heroFlick: number;
   gap: number;
   radius: number;
   padding: number;
@@ -47,6 +55,14 @@ const DEFAULTS: Settings = {
   aspect: 1,
   fill: false,
   hero: false,
+  heroRows: 1,
+  heroCustom: false,
+  heroDirection: 'x',
+  heroEffect: 'slide',
+  heroLoop: true,
+  heroItems: 8,
+  heroTension: 120,
+  heroFlick: 0.25,
   gap: 12,
   radius: 14,
   padding: 24,
@@ -94,7 +110,10 @@ function save() {
 }
 
 // Settings that change the DOM structure need a rebuild; the rest apply live.
-const STRUCTURAL = new Set<keyof Settings>(['rows', 'cols', 'items', 'direction', 'loop', 'hero']);
+const STRUCTURAL = new Set<keyof Settings>([
+  'rows', 'cols', 'items', 'direction', 'loop',
+  'hero', 'heroCustom', 'heroDirection', 'heroLoop', 'heroItems',
+]);
 
 // The optional main carousel sits above the grid as row -1 and spans every column.
 const HERO = -1;
@@ -129,12 +148,26 @@ function hueFor(k: string, globalIndex: number) {
   return (h + settings.hueShift) % 360;
 }
 
+/** Settings for one carousel: the main carousel can override the grid's. */
+function carouselOpts(r: number) {
+  const own = r === HERO && settings.heroCustom;
+  return {
+    items: own ? settings.heroItems : settings.items,
+    effect: own ? settings.heroEffect : settings.effect,
+    loop: own ? settings.heroLoop : settings.loop,
+    physics: own
+      ? { tension: settings.heroTension, flick: settings.heroFlick }
+      : { tension: settings.tension, flick: settings.flick },
+  };
+}
+
 function imageItemsFor(r: number, c: number): CarouselItem[] {
   const theme = THEMES[settings.surface];
   const groups = theme.groups;
   const out: CarouselItem[] = [];
   const cellIndex = r === HERO ? 0 : r * settings.cols + c;
-  for (let i = 0; i < settings.items; i++) {
+  const count = carouselOpts(r).items;
+  for (let i = 0; i < count; i++) {
     let g: number;
     let n: number;
     if (r === HERO) {
@@ -167,7 +200,8 @@ function itemsFor(r: number, c: number): CarouselItem[] {
   const out: CarouselItem[] = [];
   // The main carousel takes the color slots after the last grid cell.
   const cellIndex = r === HERO ? settings.rows * settings.cols : r * settings.cols + c;
-  for (let i = 0; i < settings.items; i++) {
+  const count = carouselOpts(r).items;
+  for (let i = 0; i < count; i++) {
     const k = key(r, c, i);
     const hue = hueFor(k, cellIndex * settings.items + i);
     const L = settings.lightness;
@@ -217,9 +251,11 @@ function build() {
   grid.replaceChildren();
   cells = [];
   if (settings.hero) {
-    const carousel = new Carousel(itemsFor(HERO, HERO), axisFor(0, 0), settings.loop, settings.effect, physics());
+    const o = carouselOpts(HERO);
+    const axis = settings.heroCustom ? settings.heroDirection : axisFor(0, 0);
+    const carousel = new Carousel(itemsFor(HERO, HERO), axis, o.loop, o.effect, o.physics);
     carousel.el.classList.add('hero');
-    carousel.jumpTo(Math.min(prev.get(`${HERO},${HERO}`) ?? 0, settings.items - 1));
+    carousel.jumpTo(Math.min(prev.get(`${HERO},${HERO}`) ?? 0, o.items - 1));
     carousel.linked = () => linkedTo(HERO, HERO);
     grid.append(carousel.el);
     cells.push({ r: HERO, c: HERO, carousel });
@@ -272,12 +308,14 @@ function applyStyle() {
   s.setProperty('--grade', `oklch(62% 0.13 ${settings.gradeHue})`);
   s.setProperty('--vignette', String(settings.vignette));
   grid.classList.toggle('show-dots', settings.dots);
-  grid.dataset.effect = settings.effect;
   grid.dataset.surface = settings.surface;
   for (const x of cells) {
-    x.carousel.setPhysics(physics());
-    x.carousel.setEffect(settings.effect);
+    const o = carouselOpts(x.r);
+    x.carousel.setPhysics(o.physics);
+    x.carousel.setEffect(o.effect);
   }
+  const hero = cells.find((x) => x.r === HERO);
+  hero?.carousel.el.style.setProperty('grid-row', `span ${settings.heroRows}`);
 }
 
 function recolor() {
@@ -288,7 +326,7 @@ function recolor() {
 function layout() {
   const { cols, gap, aspect, padding } = settings;
   // The main carousel is laid out as one extra row of the same height.
-  const rows = settings.rows + (settings.hero ? 1 : 0);
+  const rows = settings.rows + (settings.hero ? settings.heroRows : 0);
   const availW = Math.max(0, stage.clientWidth - padding * 2 - gap * (cols - 1));
   const availH = Math.max(0, stage.clientHeight - padding * 2 - gap * (rows - 1));
   let w = availW / cols;
@@ -305,15 +343,18 @@ function layout() {
   // The main carousel is a wide box, so its cube turns around its own centre.
   const hero = cells.find((x) => x.r === HERO);
   const heroW = w * cols + gap * (cols - 1);
+  const heroH = h * settings.heroRows + gap * (settings.heroRows - 1);
   hero?.carousel.el.style.setProperty('--half-w', `${heroW / 2}px`);
-  hero?.carousel.el.style.setProperty('--persp-base', `${heroW}px`);
+  hero?.carousel.el.style.setProperty('--half-h', `${heroH / 2}px`);
+  hero?.carousel.el.style.setProperty('--persp-base', `${Math.max(heroW, heroH)}px`);
 }
 
 new ResizeObserver(layout).observe(stage);
 
 // --- controls ----------------------------------------------------------------
 
-type Control =
+type Control = ControlBody & { show?: () => boolean };
+type ControlBody =
   | { kind: 'section'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
@@ -337,7 +378,6 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'radius', label: 'Corner radius', min: 0, max: 80, step: 1, format: (v) => `${v}px` },
 
   { kind: 'section', label: 'Carousels' },
-  { kind: 'toggle', key: 'hero', label: 'Main carousel row on top' },
   { kind: 'range', key: 'items', label: 'Items each', min: 2, max: 24, step: 1 },
   {
     kind: 'select', key: 'direction', label: 'Drag direction',
@@ -353,6 +393,20 @@ const CONTROLS: Control[] = [
   },
   { kind: 'toggle', key: 'loop', label: 'Loop around' },
   { kind: 'toggle', key: 'dots', label: 'Show dots' },
+
+  { kind: 'section', label: 'Main carousel' },
+  { kind: 'toggle', key: 'hero', label: 'Main carousel row on top' },
+  { kind: 'range', key: 'heroRows', label: 'Height in rows', min: 1, max: 4, step: 1, show: () => settings.hero },
+  { kind: 'toggle', key: 'heroCustom', label: 'Own carousel settings', show: () => settings.hero },
+  { kind: 'select', key: 'heroDirection', label: 'Drag direction', options: [['x', 'Horizontal'], ['y', 'Vertical']], show: () => settings.hero && settings.heroCustom },
+  {
+    kind: 'select', key: 'heroEffect', label: 'Transition',
+    options: [['slide', 'Slide'], ['depth', 'Depth'], ['fade', 'Fade'], ['cube', '3D cube']], show: () => settings.hero && settings.heroCustom,
+  },
+  { kind: 'range', key: 'heroItems', label: 'Items', min: 2, max: 24, step: 1, show: () => settings.hero && settings.heroCustom },
+  { kind: 'toggle', key: 'heroLoop', label: 'Loop around', show: () => settings.hero && settings.heroCustom },
+  { kind: 'range', key: 'heroTension', label: 'Snap tension', min: 20, max: 600, step: 5, show: () => settings.hero && settings.heroCustom },
+  { kind: 'range', key: 'heroFlick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2), show: () => settings.hero && settings.heroCustom },
 
   { kind: 'section', label: 'Feel' },
   { kind: 'range', key: 'tension', label: 'Snap tension', min: 20, max: 600, step: 5 },
@@ -408,8 +462,11 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   refresh();
 }
 
+const conditional: [HTMLElement, () => boolean][] = [];
+
 function refresh() {
   for (const r of refreshers) r();
+  for (const [el, show] of conditional) el.hidden = !show();
   for (const el of controls.querySelectorAll<HTMLElement>('[data-key="aspect"]')) {
     el.classList.toggle('disabled', settings.fill);
   }
@@ -421,6 +478,7 @@ function renderControls() {
       const h = document.createElement('h2');
       h.textContent = ctl.label;
       controls.append(h);
+      if (ctl.show) conditional.push([h, ctl.show]);
       continue;
     }
 
@@ -487,6 +545,7 @@ function renderControls() {
       row.append(wrap);
     }
     controls.append(row);
+    if (ctl.show) conditional.push([row, ctl.show]);
   }
 
   const stats = document.createElement('p');
