@@ -12,6 +12,7 @@ interface Settings {
   cols: number;
   aspect: number;
   fill: boolean;
+  hero: boolean;
   gap: number;
   radius: number;
   padding: number;
@@ -38,6 +39,7 @@ const DEFAULTS: Settings = {
   cols: 4,
   aspect: 1,
   fill: false,
+  hero: false,
   gap: 12,
   radius: 14,
   padding: 24,
@@ -79,7 +81,10 @@ function save() {
 }
 
 // Settings that change the DOM structure need a rebuild; the rest apply live.
-const STRUCTURAL = new Set<keyof Settings>(['rows', 'cols', 'items', 'direction', 'loop']);
+const STRUCTURAL = new Set<keyof Settings>(['rows', 'cols', 'items', 'direction', 'loop', 'hero']);
+
+// The optional main carousel sits above the grid as row -1 and spans every column.
+const HERO = -1;
 const COLOR = new Set<keyof Settings>(['hueShift', 'chroma', 'lightness', 'colorMode']);
 
 // --- content -----------------------------------------------------------------
@@ -111,7 +116,8 @@ function hueFor(k: string, globalIndex: number) {
 
 function itemsFor(r: number, c: number): CarouselItem[] {
   const out: CarouselItem[] = [];
-  const cellIndex = r * settings.cols + c;
+  // The main carousel takes the color slots after the last grid cell.
+  const cellIndex = r === HERO ? settings.rows * settings.cols : r * settings.cols + c;
   for (let i = 0; i < settings.items; i++) {
     const k = key(r, c, i);
     const hue = hueFor(k, cellIndex * settings.items + i);
@@ -161,6 +167,14 @@ function build() {
   for (const x of cells) x.carousel.stop();
   grid.replaceChildren();
   cells = [];
+  if (settings.hero) {
+    const carousel = new Carousel(itemsFor(HERO, HERO), axisFor(0, 0), settings.loop, settings.effect, physics());
+    carousel.el.classList.add('hero');
+    carousel.jumpTo(Math.min(prev.get(`${HERO},${HERO}`) ?? 0, settings.items - 1));
+    carousel.linked = () => linkedTo(HERO, HERO);
+    grid.append(carousel.el);
+    cells.push({ r: HERO, c: HERO, carousel });
+  }
   for (let r = 0; r < settings.rows; r++) {
     for (let c = 0; c < settings.cols; c++) {
       const carousel = new Carousel(itemsFor(r, c), axisFor(r, c), settings.loop, settings.effect, physics());
@@ -180,6 +194,8 @@ function linkedTo(r: number, c: number) {
   return cells
     .filter((x) => {
       if (x.r === r && x.c === c) return false;
+      // The main carousel stays independent of linked drags for now.
+      if (r === HERO || x.r === HERO) return false;
       switch (settings.link) {
         case 'none': return false;
         case 'row': return x.r === r;
@@ -217,7 +233,9 @@ function recolor() {
 
 /** Fit rows × cols cells of the chosen aspect ratio inside the stage. */
 function layout() {
-  const { rows, cols, gap, aspect, padding } = settings;
+  const { cols, gap, aspect, padding } = settings;
+  // The main carousel is laid out as one extra row of the same height.
+  const rows = settings.rows + (settings.hero ? 1 : 0);
   const availW = Math.max(0, stage.clientWidth - padding * 2 - gap * (cols - 1));
   const availH = Math.max(0, stage.clientHeight - padding * 2 - gap * (rows - 1));
   let w = availW / cols;
@@ -231,6 +249,11 @@ function layout() {
   grid.style.setProperty('--cell', `${Math.min(w, h)}px`);
   grid.style.setProperty('--half-w', `${w / 2}px`);
   grid.style.setProperty('--half-h', `${h / 2}px`);
+  // The main carousel is a wide box, so its cube turns around its own centre.
+  const hero = cells.find((x) => x.r === HERO);
+  const heroW = w * cols + gap * (cols - 1);
+  hero?.carousel.el.style.setProperty('--half-w', `${heroW / 2}px`);
+  hero?.carousel.el.style.setProperty('--persp-base', `${heroW}px`);
 }
 
 new ResizeObserver(layout).observe(stage);
@@ -261,6 +284,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'radius', label: 'Corner radius', min: 0, max: 80, step: 1, format: (v) => `${v}px` },
 
   { kind: 'section', label: 'Carousels' },
+  { kind: 'toggle', key: 'hero', label: 'Main carousel row on top' },
   { kind: 'range', key: 'items', label: 'Items each', min: 2, max: 24, step: 1 },
   {
     kind: 'select', key: 'direction', label: 'Drag direction',
@@ -412,7 +436,7 @@ function renderControls() {
 function updateStats() {
   const el = document.getElementById('stats');
   if (!el) return;
-  const n = settings.rows * settings.cols;
+  const n = settings.rows * settings.cols + (settings.hero ? 1 : 0);
   el.textContent = `${n} carousel${n === 1 ? '' : 's'} · ${n * settings.items} items. Drag a cell, or focus it and use the arrow keys.`;
 }
 

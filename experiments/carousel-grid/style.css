@@ -57,6 +57,7 @@ body {
   transform: translateZ(0);
 }
 .carousel.dragging { cursor: grabbing; }
+.carousel.hero { grid-column: 1 / -1; }
 
 /* Cube: faces turn out past the cell edges, so don't clip, and lift the
    cell that's turning above its neighbours. */
@@ -64,7 +65,7 @@ body {
   overflow: visible;
   background: none;
   transform: none;
-  perspective: calc(var(--cell) * var(--perspective, 3));
+  perspective: calc(var(--persp-base, var(--cell)) * var(--perspective, 3));
 }
 .grid[data-effect='cube'] .carousel.moving,
 .grid[data-effect='cube'] .carousel.dragging { z-index: 1; }
