@@ -4,7 +4,7 @@
 // which makes looping a matter of wrapping that offset.
 
 export type Axis = 'x' | 'y';
-export type Effect = 'slide' | 'depth' | 'fade';
+export type Effect = 'slide' | 'depth' | 'fade' | 'cube';
 
 export interface Physics {
   /** Spring stiffness used when snapping to an item. */
@@ -143,6 +143,25 @@ export class Carousel {
         continue;
       }
       el.style.visibility = '';
+      if (this.effect === 'cube') {
+        // Each item is a face of a box that turns around the cell's centre.
+        // Only the two faces touching the current turn are ever visible.
+        if (a >= 1) {
+          el.style.visibility = 'hidden';
+          continue;
+        }
+        const half = this.axis === 'x' ? 'var(--half-w)' : 'var(--half-h)';
+        const rot = this.axis === 'x' ? `rotateY(${off * 90}deg)` : `rotateX(${-off * 90}deg)`;
+        // Optionally sink the whole box back mid-turn so it bulges less over neighbours.
+        const sink = Math.sin(Math.PI * (pos - Math.floor(pos))).toFixed(4);
+        el.style.transform =
+          `translateZ(calc(${half} * -1 - ${sink} * var(--pullback, 0) * ${half} * 2)) ${rot} translateZ(${half})`;
+        el.style.opacity = '';
+        el.style.zIndex = '';
+        el.style.filter = `brightness(calc(1 - ${a.toFixed(4)} * var(--shade, 0.35)))`;
+        continue;
+      }
+      el.style.filter = '';
       if (this.effect === 'fade') {
         el.style.transform = '';
         el.style.opacity = String(clamp(1 - a, 0, 1));
@@ -158,6 +177,7 @@ export class Carousel {
         el.style.zIndex = '';
       }
     }
+    this.el.classList.toggle('moving', Math.abs(pos - Math.round(pos)) > 0.001);
     const active = this.index;
     this.dotEls.forEach((d, i) => d.classList.toggle('on', i === active));
     this.onMove?.(this);

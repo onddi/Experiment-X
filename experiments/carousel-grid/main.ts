@@ -23,6 +23,9 @@ interface Settings {
   flick: number;
   fontSize: number;
   dots: boolean;
+  perspective: number;
+  shade: number;
+  pullback: number;
   hueShift: number;
   chroma: number;
   lightness: number;
@@ -45,6 +48,9 @@ const DEFAULTS: Settings = {
   flick: 0.18,
   fontSize: 100,
   dots: true,
+  perspective: 3,
+  shade: 0.35,
+  pullback: 0.3,
   hueShift: 20,
   chroma: 0.14,
   lightness: 72,
@@ -192,7 +198,11 @@ function applyStyle() {
   s.setProperty('--radius', `${settings.radius}px`);
   s.setProperty('--font-scale', String(settings.fontSize / 100));
   stage.style.setProperty('--pad', `${settings.padding}px`);
+  s.setProperty('--perspective', String(settings.perspective));
+  s.setProperty('--shade', String(settings.shade));
+  s.setProperty('--pullback', String(settings.pullback));
   grid.classList.toggle('show-dots', settings.dots);
+  grid.dataset.effect = settings.effect;
   for (const x of cells) {
     x.carousel.setPhysics(physics());
     x.carousel.setEffect(settings.effect);
@@ -217,6 +227,8 @@ function layout() {
   grid.style.gridTemplateColumns = `repeat(${cols}, ${w}px)`;
   grid.style.gridTemplateRows = `repeat(${rows}, ${h}px)`;
   grid.style.setProperty('--cell', `${Math.min(w, h)}px`);
+  grid.style.setProperty('--half-w', `${w / 2}px`);
+  grid.style.setProperty('--half-h', `${h / 2}px`);
 }
 
 new ResizeObserver(layout).observe(stage);
@@ -251,7 +263,10 @@ const CONTROLS: Control[] = [
     kind: 'select', key: 'direction', label: 'Drag direction',
     options: [['x', 'Horizontal'], ['y', 'Vertical'], ['alternate', 'Checkerboard'], ['random', 'Random']],
   },
-  { kind: 'select', key: 'effect', label: 'Transition', options: [['slide', 'Slide'], ['depth', 'Depth'], ['fade', 'Fade']] },
+  { kind: 'select', key: 'effect', label: 'Transition', options: [['slide', 'Slide'], ['depth', 'Depth'], ['fade', 'Fade'], ['cube', '3D cube']] },
+  { kind: 'range', key: 'perspective', label: 'Cube perspective', min: 1, max: 12, step: 0.1, format: (v) => `${v.toFixed(1)}× cell` },
+  { kind: 'range', key: 'pullback', label: 'Cube pull-back', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'shade', label: 'Cube shading', min: 0, max: 0.9, step: 0.01, format: (v) => v.toFixed(2) },
   {
     kind: 'select', key: 'link', label: 'Linked drag',
     options: [['none', 'Off'], ['row', 'Same row'], ['column', 'Same column'], ['all', 'Whole grid']],
