@@ -1,0 +1,6 @@
+{
+  "title": "Carousel grid",
+  "description": "A grid of draggable carousels with Latin words, plus live controls for size, aspect ratio and feel.",
+  "created": "2026-11-07",
+  "tags": ["dom", "drag", "carousel", "grid"]
+}
