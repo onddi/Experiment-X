@@ -17,6 +17,10 @@ export interface CarouselItem {
   word: string;
   color: string;
   ink: string;
+  /** Optional photo shown instead of the flat color. */
+  image?: string;
+  /** Brightness correction for the photo (1 = as shot). */
+  exposure?: number;
 }
 
 export class Carousel {
@@ -85,8 +89,11 @@ export class Carousel {
     this.items = items;
     items.forEach((item, i) => {
       const el = this.itemEls[i];
-      el.style.background = item.color;
+      el.style.backgroundColor = item.color;
       el.style.color = item.ink;
+      el.style.backgroundImage = item.image ? `url("${item.image}")` : '';
+      el.classList.toggle('img', Boolean(item.image));
+      el.style.setProperty('--exposure', String(item.exposure ?? 1));
       el.firstElementChild!.textContent = item.word;
     });
     this.render();
@@ -158,10 +165,10 @@ export class Carousel {
           `translateZ(calc(${half} * -1 - ${sink} * var(--pullback, 0) * ${half} * 2)) ${rot} translateZ(${half})`;
         el.style.opacity = '';
         el.style.zIndex = '';
-        el.style.filter = `brightness(calc(1 - ${a.toFixed(4)} * var(--shade, 0.35)))`;
+        el.style.setProperty('--turn', `calc(1 - ${a.toFixed(4)} * var(--shade, 0.35))`);
         continue;
       }
-      el.style.filter = '';
+      el.style.removeProperty('--turn');
       if (this.effect === 'fade') {
         el.style.transform = '';
         el.style.opacity = String(clamp(1 - a, 0, 1));

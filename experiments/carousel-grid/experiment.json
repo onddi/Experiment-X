@@ -1,6 +1,6 @@
 {
   "title": "Carousel grid",
-  "description": "A grid of draggable carousels with Latin words, plus live controls for size, aspect ratio and feel.",
+  "description": "A grid of draggable carousels (Latin words or Four Elements photos) with live controls for layout, transitions and feel.",
   "created": "2026-11-07",
-  "tags": ["dom", "drag", "carousel", "grid"]
+  "tags": ["dom", "drag", "carousel", "grid", "3d", "images"]
 }

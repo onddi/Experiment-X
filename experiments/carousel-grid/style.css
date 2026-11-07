@@ -80,6 +80,47 @@ body {
   border-radius: inherit;
   will-change: transform;
 }
+.item { filter: brightness(var(--turn, 1)); }
+
+/* Photo surfaces. The grade is shared by every photo: a soft-light wash of
+   one tint pulls the palettes together, a little desaturation and contrast
+   tame the outliers, and a vignette gives every cell the same frame. */
+.item.img {
+  background-size: cover;
+  background-position: center;
+  filter:
+    brightness(calc(var(--exposure, 1) * var(--turn, 1)))
+    saturate(calc(1 - var(--harmony, 0) * 0.3))
+    contrast(calc(1 + var(--harmony, 0) * 0.12));
+}
+.item.img::before,
+.item.img::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.item.img::before {
+  background: var(--grade);
+  mix-blend-mode: soft-light;
+  opacity: var(--harmony, 0);
+}
+.item.img::after {
+  background: radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 0.85) 130%);
+  opacity: var(--vignette, 0);
+}
+.item.img span {
+  position: relative;
+  z-index: 1;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  font-size: calc(var(--cell, 120px) * 0.09 * var(--font-scale, 1));
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.6);
+}
+
 .item span {
   font-family: Georgia, 'Times New Roman', serif;
   font-style: italic;
@@ -110,6 +151,8 @@ body {
   transition: background 0.15s, transform 0.15s;
 }
 .dots i.on { background: rgb(0 0 0 / 0.6); transform: scale(1.3); }
+.grid:not([data-surface='colors']) .dots i { background: rgb(255 255 255 / 0.35); }
+.grid:not([data-surface='colors']) .dots i.on { background: rgb(255 255 255 / 0.9); }
 
 /* --- control panel ---------------------------------------------------------- */
 

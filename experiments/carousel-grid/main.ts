@@ -1,6 +1,7 @@
 import './style.css';
 import { Carousel, type Axis, type CarouselItem, type Effect } from './carousel.ts';
 import { randomWord } from './words.ts';
+import { THEMES } from './themes.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -32,6 +33,12 @@ interface Settings {
   chroma: number;
   lightness: number;
   colorMode: 'golden' | 'random';
+  surface: 'colors' | 'four-elements';
+  harmony: number;
+  evenExposure: number;
+  gradeHue: number;
+  vignette: number;
+  labels: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -59,6 +66,12 @@ const DEFAULTS: Settings = {
   chroma: 0.14,
   lightness: 72,
   colorMode: 'golden',
+  surface: 'colors',
+  harmony: 0.35,
+  evenExposure: 0.5,
+  gradeHue: 45,
+  vignette: 0.35,
+  labels: false,
 };
 
 const STORAGE_KEY = 'carousel-grid:settings';
@@ -85,7 +98,9 @@ const STRUCTURAL = new Set<keyof Settings>(['rows', 'cols', 'items', 'direction'
 
 // The optional main carousel sits above the grid as row -1 and spans every column.
 const HERO = -1;
-const COLOR = new Set<keyof Settings>(['hueShift', 'chroma', 'lightness', 'colorMode']);
+const COLOR = new Set<keyof Settings>([
+  'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels',
+]);
 
 // --- content -----------------------------------------------------------------
 
@@ -114,7 +129,41 @@ function hueFor(k: string, globalIndex: number) {
   return (h + settings.hueShift) % 360;
 }
 
+function imageItemsFor(r: number, c: number): CarouselItem[] {
+  const theme = THEMES[settings.surface];
+  const groups = theme.groups;
+  const out: CarouselItem[] = [];
+  const cellIndex = r === HERO ? 0 : r * settings.cols + c;
+  for (let i = 0; i < settings.items; i++) {
+    let g: number;
+    let n: number;
+    if (r === HERO) {
+      // The main carousel steps through the groups: one item per element.
+      g = i % groups.length;
+      n = Math.floor(i / groups.length);
+    } else {
+      // Neighbours (left/right and up/down) always get different groups, and
+      // cells of the same group start at different photos.
+      g = (c + 2 * r) % groups.length;
+      n = Math.floor(cellIndex / groups.length) * 3 + i;
+    }
+    const group = groups[g];
+    const img = group.images[n % group.images.length];
+    // Pull every photo part of the way towards the same mean brightness.
+    const exposure = Math.pow(105 / Math.max(img.lum, 15), settings.evenExposure * 0.45);
+    out.push({
+      word: settings.labels ? group.name : '',
+      color: '#111',
+      ink: '#fff',
+      image: img.url,
+      exposure: Math.min(1.6, Math.max(0.7, exposure)),
+    });
+  }
+  return out;
+}
+
 function itemsFor(r: number, c: number): CarouselItem[] {
+  if (settings.surface !== 'colors') return imageItemsFor(r, c);
   const out: CarouselItem[] = [];
   // The main carousel takes the color slots after the last grid cell.
   const cellIndex = r === HERO ? settings.rows * settings.cols : r * settings.cols + c;
@@ -219,8 +268,12 @@ function applyStyle() {
   s.setProperty('--perspective', String(settings.perspective));
   s.setProperty('--shade', String(settings.shade));
   s.setProperty('--pullback', String(settings.pullback));
+  s.setProperty('--harmony', String(settings.harmony));
+  s.setProperty('--grade', `oklch(62% 0.13 ${settings.gradeHue})`);
+  s.setProperty('--vignette', String(settings.vignette));
   grid.classList.toggle('show-dots', settings.dots);
   grid.dataset.effect = settings.effect;
+  grid.dataset.surface = settings.surface;
   for (const x of cells) {
     x.carousel.setPhysics(physics());
     x.carousel.setEffect(settings.effect);
@@ -307,6 +360,15 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', label: 'Look' },
   { kind: 'range', key: 'fontSize', label: 'Text size', min: 40, max: 220, step: 5, format: (v) => `${v}%` },
+  {
+    kind: 'select', key: 'surface', label: 'Surface',
+    options: [['colors', 'Colors & Latin words'], ['four-elements', 'Images: Four Elements']],
+  },
+  { kind: 'range', key: 'harmony', label: 'Image harmony', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'gradeHue', label: 'Harmony tint', min: 0, max: 360, step: 1, format: (v) => `${v}°` },
+  { kind: 'range', key: 'evenExposure', label: 'Even out exposure', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'toggle', key: 'labels', label: 'Element labels' },
   { kind: 'select', key: 'colorMode', label: 'Colors', options: [['golden', 'Golden-angle spread'], ['random', 'Random hues']] },
   { kind: 'range', key: 'hueShift', label: 'Hue shift', min: 0, max: 360, step: 1, format: (v) => `${v}°` },
   { kind: 'range', key: 'chroma', label: 'Saturation', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3) },
