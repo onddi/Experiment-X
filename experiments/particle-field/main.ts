@@ -4,7 +4,7 @@ import './style.css';
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type Render = 'dots' | 'streaks' | 'links';
-type ColorBy = 'palette' | 'speed' | 'direction';
+type ColorBy = 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES;
 
 interface Settings {
@@ -27,15 +27,34 @@ interface Settings {
   colorBy: ColorBy;
 }
 
-// Each palette is a list of [hue, saturation, lightness] stops plus a background.
+// Each palette is a list of [hue, saturation, lightness] stops from the
+// "calm" end to the "hot" end, plus a background. Stops run dark/cool to
+// bright/warm so speed and pointer modes read as energy. Cyclic palettes
+// start and end on the same colour, so direction can use them without a seam.
+interface PaletteDef {
+  label: string;
+  bg: readonly [number, number, number];
+  stops: readonly (readonly [number, number, number])[];
+  cyclic?: boolean;
+}
+
 const PALETTES = {
-  aurora: { bg: [7, 7, 12], stops: [[200, 90, 65], [260, 85, 68], [320, 90, 66]] },
-  ember: { bg: [12, 6, 4], stops: [[5, 90, 55], [25, 95, 58], [45, 100, 62]] },
-  ocean: { bg: [3, 9, 14], stops: [[170, 80, 50], [195, 90, 58], [215, 85, 66]] },
-  neon: { bg: [6, 4, 10], stops: [[300, 100, 62], [180, 100, 55], [90, 100, 55]] },
-  mono: { bg: [8, 8, 8], stops: [[0, 0, 55], [0, 0, 75], [0, 0, 95]] },
-  rainbow: { bg: [6, 6, 8], stops: [[0, 90, 62], [120, 90, 58], [240, 90, 66], [360, 90, 62]] },
-} as const;
+  aurora: { label: 'Aurora', bg: [7, 7, 12], stops: [[200, 90, 65], [260, 85, 68], [320, 90, 66]] },
+  ember: { label: 'Ember', bg: [12, 6, 4], stops: [[355, 85, 40], [10, 90, 52], [30, 95, 58], [48, 100, 70]] },
+  ocean: { label: 'Ocean', bg: [3, 9, 14], stops: [[225, 80, 45], [200, 90, 55], [180, 80, 60], [165, 70, 78]] },
+  sunset: { label: 'Sunset', bg: [14, 6, 14], stops: [[265, 60, 45], [320, 75, 55], [350, 85, 62], [25, 95, 62], [45, 100, 72]] },
+  forest: { label: 'Forest', bg: [5, 10, 7], stops: [[160, 50, 30], [140, 55, 42], [100, 55, 52], [70, 70, 65]] },
+  ice: { label: 'Ice', bg: [5, 8, 14], stops: [[220, 50, 45], [205, 70, 65], [195, 80, 82], [190, 60, 96]] },
+  gold: { label: 'Gold', bg: [10, 8, 4], stops: [[30, 70, 30], [38, 80, 48], [45, 90, 62], [50, 100, 85]] },
+  vapor: { label: 'Vaporwave', bg: [10, 5, 18], stops: [[280, 80, 55], [310, 90, 65], [190, 95, 62], [175, 90, 75]] },
+  candy: { label: 'Candy', bg: [14, 10, 16], stops: [[330, 85, 72], [280, 70, 76], [200, 80, 74], [160, 65, 72]] },
+  toxic: { label: 'Toxic', bg: [4, 8, 4], stops: [[150, 80, 30], [120, 90, 45], [90, 100, 55], [65, 100, 70]] },
+  infra: { label: 'Infrared', bg: [3, 3, 8], stops: [[240, 70, 30], [280, 80, 45], [330, 90, 52], [15, 100, 55], [50, 100, 65], [60, 100, 92]] },
+  neon: { label: 'Neon', bg: [6, 4, 10], stops: [[300, 100, 62], [240, 100, 66], [180, 100, 55], [300, 100, 62]], cyclic: true },
+  mono: { label: 'Mono', bg: [8, 8, 8], stops: [[0, 0, 35], [0, 0, 65], [0, 0, 95]] },
+  rainbow: { label: 'Rainbow', bg: [6, 6, 8], stops: [[0, 90, 62], [120, 90, 58], [240, 90, 66], [360, 90, 62]], cyclic: true },
+} satisfies Record<string, PaletteDef>;
+
 
 const DEFAULTS: Settings = {
   count: 1200,
@@ -301,16 +320,55 @@ function buildShades() {
   }
 }
 
+// Folds a cyclic 0..1 value so non-cyclic palettes go calm → hot → calm
+// instead of jumping from one end to the other.
+function loop(u: number) {
+  return (PALETTES[settings.palette] as PaletteDef).cyclic ? u : 1 - Math.abs(u * 2 - 1);
+}
+
+// Speed is normalised by the field's own average, so "fast" means fast
+// relative to the current settings rather than an absolute number.
+let meanSpeed = 1;
+
 function shadeIndex(i: number) {
   let u: number;
-  if (settings.colorBy === 'speed') {
-    u = Math.min(1, Math.hypot(vx[i], vy[i]) / 3);
-  } else if (settings.colorBy === 'direction') {
-    u = (Math.atan2(vy[i], vx[i]) / (Math.PI * 2) + 0.5) % 1;
-  } else {
-    u = tone[i];
+  switch (settings.colorBy) {
+    case 'speed': {
+      const v = Math.hypot(vx[i], vy[i]) / (meanSpeed * 2.5 + 1e-3);
+      u = Math.sqrt(Math.min(1, v));
+      break;
+    }
+    case 'direction':
+      u = loop(Math.atan2(vy[i], vx[i]) / (Math.PI * 2) + 0.5);
+      break;
+    case 'pointer': {
+      // Hot near the pointer, fading out over three radii.
+      if (!pointer.active) { u = 0; break; }
+      const d = Math.hypot(px[i] - pointer.x, py[i] - pointer.y);
+      u = Math.max(0, 1 - d / (settings.radius * 3)) ** 2;
+      break;
+    }
+    case 'horizontal':
+      u = px[i] / w;
+      break;
+    case 'vertical':
+      u = 1 - py[i] / h;
+      break;
+    case 'radial': {
+      const dx = px[i] - w / 2;
+      const dy = py[i] - h / 2;
+      u = 1 - Math.min(1, Math.hypot(dx, dy) / (Math.hypot(w, h) / 2));
+      break;
+    }
+    case 'cycle':
+      // Diagonal bands of colour sweep across the field; particles pick up
+      // the colour of wherever they are, so the flow shows through the bands.
+      u = loop((px[i] / w * 0.9 + py[i] / h * 0.4 + tone[i] * 0.08 + t * 0.06) % 1);
+      break;
+    default:
+      u = tone[i];
   }
-  return Math.min(SHADES - 1, (u * SHADES) | 0);
+  return Math.max(0, Math.min(SHADES - 1, (u * SHADES) | 0));
 }
 
 // Buckets let us draw every particle of one colour in a single path.
@@ -323,6 +381,11 @@ function draw() {
   ctx.fillRect(0, 0, w, h);
   ctx.globalCompositeOperation = settings.glow ? 'lighter' : 'source-over';
 
+  if (settings.colorBy === 'speed') {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += Math.hypot(vx[i], vy[i]);
+    meanSpeed = meanSpeed * 0.9 + (sum / Math.max(1, n)) * 0.1;
+  }
   for (const bk of buckets) bk.length = 0;
   for (let i = 0; i < n; i++) buckets[shadeIndex(i)].push(i);
 
@@ -441,7 +504,8 @@ type Control =
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
-  | { kind: 'buttons'; buttons: [string, () => void][] };
+  | { kind: 'buttons'; buttons: [string, () => void][] }
+  | { kind: 'swatch' };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
@@ -466,8 +530,9 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'render', label: 'Style', options: [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']] },
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px` },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
-  { kind: 'select', key: 'palette', label: 'Palette', options: Object.keys(PALETTES).map((k) => [k, k[0].toUpperCase() + k.slice(1)]) },
-  { kind: 'select', key: 'colorBy', label: 'Colour by', options: [['palette', 'Particle'], ['speed', 'Speed'], ['direction', 'Direction']] },
+  { kind: 'select', key: 'palette', label: 'Palette', options: Object.entries(PALETTES).map(([k, p]) => [k, p.label]) },
+  { kind: 'swatch' },
+  { kind: 'select', key: 'colorBy', label: 'Colour by', options: [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow']] },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
   { kind: 'section', label: 'Actions' },
   {
@@ -488,6 +553,8 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Embers', { count: 1500, size: 2.2, render: 'dots', flow: 0.5, flowScale: 0.008, flowSpeed: 0.6, trail: 0.85, friction: 0.03, jitter: 0.15, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 150, force: 1 }],
   ['Constellation', { count: 500, size: 2, render: 'links', linkDist: 90, flow: 0.1, flowSpeed: 0.1, trail: 0, friction: 0.02, jitter: 0.04, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'attract', radius: 200, force: 0.3 }],
   ['Neon storm', { count: 4000, size: 1.2, render: 'streaks', flow: 1.6, flowScale: 0.012, flowSpeed: 1, trail: 0.7, friction: 0.05, jitter: 0.05, speed: 1.6, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.2 }],
+  ['Dusk', { count: 2200, size: 1.3, render: 'streaks', flow: 0.7, flowScale: 0.004, flowSpeed: 0.25, trail: 0.92, friction: 0.05, jitter: 0.02, palette: 'sunset', colorBy: 'vertical', glow: true, pointerMode: 'vortex', radius: 160, force: 0.7 }],
+  ['Heat', { count: 3000, size: 1.6, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5 }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
@@ -539,6 +606,19 @@ function renderControls() {
       const h2 = document.createElement('h2');
       h2.textContent = ctl.label;
       controls.append(h2);
+      continue;
+    }
+
+    if (ctl.kind === 'swatch') {
+      const sw = document.createElement('div');
+      sw.className = 'swatch';
+      controls.append(sw);
+      refreshers.push(() => {
+        const p = PALETTES[settings.palette] as PaletteDef;
+        const cols = p.stops.map(([hh, ss, ll]) => `hsl(${hh} ${ss}% ${ll}%)`).join(', ');
+        sw.style.background = `linear-gradient(90deg, ${cols})`;
+        sw.style.outlineColor = `rgb(${p.bg.join(' ')})`;
+      });
       continue;
     }
 
@@ -644,7 +724,7 @@ function shuffle() {
     trail: rand(0.5, 0.95, 0.01),
     glow: Math.random() < 0.6,
     palette: pick(Object.keys(PALETTES) as Palette[]),
-    colorBy: pick(['palette', 'speed', 'direction'] as const),
+    colorBy: pick(['palette', 'speed', 'direction', 'pointer', 'cycle', 'horizontal', 'radial'] as const),
   });
 }
 

@@ -127,3 +127,11 @@ button:hover, select:hover { border-color: #3c3f46; }
   }
   .panel.collapsed { box-shadow: none; }
 }
+
+.swatch {
+  height: 10px;
+  margin: -2px 0 10px;
+  border-radius: 5px;
+  outline: 3px solid transparent;
+  box-shadow: 0 0 0 1px var(--line);
+}
