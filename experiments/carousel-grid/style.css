@@ -119,11 +119,21 @@ body {
   flex-direction: column;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  transition: margin-right 0.25s ease;
 }
-.panel.collapsed { margin-right: -244px; }
-.panel.collapsed .panel-body { visibility: hidden; }
-.panel.collapsed h1 { opacity: 0; }
+/* Collapsed: only the toggle button floats over the corner, so the grid
+   gets the whole viewport. */
+.panel.collapsed {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+  width: auto;
+  background: none;
+  border: none;
+}
+.panel.collapsed .panel-body,
+.panel.collapsed h1 { display: none; }
+.panel.collapsed header { border: none; }
 
 .panel header {
   display: flex;
@@ -132,8 +142,6 @@ body {
   padding: 10px 10px 10px 16px;
   border-bottom: 1px solid var(--line);
 }
-.panel.collapsed header { padding-left: 4px; }
-.panel.collapsed header .icon { order: -1; }
 .panel h1 {
   flex: 1;
   margin: 0;
@@ -167,6 +175,7 @@ body {
 .row.range input { grid-column: 1 / -1; }
 .row.select select { grid-column: 2; }
 .row.toggle { grid-template-columns: auto 1fr; cursor: pointer; }
+.row.disabled { opacity: 0.4; pointer-events: none; }
 .row.bare { grid-template-columns: 1fr; margin-top: -2px; }
 .row.bare .name { display: none; }
 
@@ -227,6 +236,5 @@ button:hover, select:hover { border-color: #3c3f46; }
     z-index: 10;
     box-shadow: -8px 0 24px rgb(0 0 0 / 0.4);
   }
-  .panel.collapsed { box-shadow: none; background: transparent; border: none; }
-  .panel.collapsed header { border: none; }
+  .panel.collapsed { box-shadow: none; }
 }

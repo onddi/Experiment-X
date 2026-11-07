@@ -11,6 +11,7 @@ interface Settings {
   rows: number;
   cols: number;
   aspect: number;
+  fill: boolean;
   gap: number;
   radius: number;
   padding: number;
@@ -36,6 +37,7 @@ const DEFAULTS: Settings = {
   rows: 3,
   cols: 4,
   aspect: 1,
+  fill: false,
   gap: 12,
   radius: 14,
   padding: 24,
@@ -219,8 +221,8 @@ function layout() {
   const availW = Math.max(0, stage.clientWidth - padding * 2 - gap * (cols - 1));
   const availH = Math.max(0, stage.clientHeight - padding * 2 - gap * (rows - 1));
   let w = availW / cols;
-  let h = w / aspect;
-  if (h * rows > availH) {
+  let h = settings.fill ? availH / rows : w / aspect;
+  if (!settings.fill && h * rows > availH) {
     h = availH / rows;
     w = h * aspect;
   }
@@ -251,6 +253,7 @@ const CONTROLS: Control[] = [
   { kind: 'section', label: 'Grid' },
   { kind: 'range', key: 'rows', label: 'Rows', min: 1, max: 12, step: 1 },
   { kind: 'range', key: 'cols', label: 'Columns', min: 1, max: 12, step: 1 },
+  { kind: 'toggle', key: 'fill', label: 'Stretch to fill (no fixed aspect)' },
   { kind: 'range', key: 'aspect', label: 'Cell aspect', min: 0.33, max: 3, step: 0.01, format: aspectLabel },
   { kind: 'chips', key: 'aspect', label: '', options: ASPECTS },
   { kind: 'range', key: 'gap', label: 'Gap', min: 0, max: 60, step: 1, format: (v) => `${v}px` },
@@ -321,6 +324,9 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
 
 function refresh() {
   for (const r of refreshers) r();
+  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="aspect"]')) {
+    el.classList.toggle('disabled', settings.fill);
+  }
 }
 
 function renderControls() {
@@ -347,6 +353,7 @@ function renderControls() {
 
     const row = document.createElement(ctl.kind === 'chips' ? 'div' : 'label');
     row.className = `row ${ctl.kind}`;
+    row.dataset.key = ctl.key;
     const name = document.createElement('span');
     name.className = 'name';
     name.textContent = ctl.label;
