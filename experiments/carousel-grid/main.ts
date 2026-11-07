@@ -355,38 +355,45 @@ new ResizeObserver(layout).observe(stage);
 
 type Control = ControlBody & { show?: () => boolean };
 type ControlBody =
-  | { kind: 'section'; label: string }
+  | { kind: 'section'; id: string; label: string; open?: boolean; summary?: () => string }
+  | { kind: 'sub'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
   | { kind: 'chips'; key: keyof Settings; label: string; options: [number, string][] }
-  | { kind: 'buttons'; buttons: [string, () => void][] };
+  | { kind: 'buttons'; buttons: [string, () => void, (() => boolean)?][] };
 
 const ASPECTS: [number, string][] = [
   [1, '1:1'], [4 / 3, '4:3'], [3 / 4, '3:4'], [16 / 9, '16:9'], [9 / 16, '9:16'], [21 / 9, '21:9'],
 ];
 
+const isCube = () => settings.effect === 'cube' || (settings.hero && settings.heroCustom && settings.heroEffect === 'cube');
+const ownHero = () => settings.hero && settings.heroCustom;
+const isImages = () => settings.surface !== 'colors';
+const isColors = () => settings.surface === 'colors';
+const EFFECTS: [string, string][] = [['slide', 'Slide'], ['depth', 'Depth'], ['fade', 'Fade'], ['cube', '3D cube']];
+const label = (options: [string, string][], v: unknown) => options.find(([k]) => k === v)?.[1] ?? '';
+
 const CONTROLS: Control[] = [
-  { kind: 'section', label: 'Grid' },
+  { kind: 'section', id: 'layout', label: 'Layout', open: true,
+    summary: () => `${settings.rows} × ${settings.cols}${settings.fill ? ', fill' : `, ${aspectLabel(settings.aspect)}`}` },
   { kind: 'range', key: 'rows', label: 'Rows', min: 1, max: 12, step: 1 },
   { kind: 'range', key: 'cols', label: 'Columns', min: 1, max: 12, step: 1 },
-  { kind: 'toggle', key: 'fill', label: 'Stretch to fill (no fixed aspect)' },
-  { kind: 'range', key: 'aspect', label: 'Cell aspect', min: 0.33, max: 3, step: 0.01, format: aspectLabel },
-  { kind: 'chips', key: 'aspect', label: '', options: ASPECTS },
+  { kind: 'toggle', key: 'fill', label: 'Stretch to fill the screen' },
+  { kind: 'range', key: 'aspect', label: 'Cell aspect', min: 0.33, max: 3, step: 0.01, format: aspectLabel, show: () => !settings.fill },
+  { kind: 'chips', key: 'aspect', label: '', options: ASPECTS, show: () => !settings.fill },
   { kind: 'range', key: 'gap', label: 'Gap', min: 0, max: 60, step: 1, format: (v) => `${v}px` },
   { kind: 'range', key: 'padding', label: 'Padding', min: 0, max: 120, step: 1, format: (v) => `${v}px` },
   { kind: 'range', key: 'radius', label: 'Corner radius', min: 0, max: 80, step: 1, format: (v) => `${v}px` },
 
-  { kind: 'section', label: 'Carousels' },
+  { kind: 'section', id: 'carousels', label: 'Carousels', open: true,
+    summary: () => `${settings.items} items, ${label(EFFECTS, settings.effect)}` },
   { kind: 'range', key: 'items', label: 'Items each', min: 2, max: 24, step: 1 },
   {
     kind: 'select', key: 'direction', label: 'Drag direction',
     options: [['x', 'Horizontal'], ['y', 'Vertical'], ['alternate', 'Checkerboard'], ['random', 'Random']],
   },
-  { kind: 'select', key: 'effect', label: 'Transition', options: [['slide', 'Slide'], ['depth', 'Depth'], ['fade', 'Fade'], ['cube', '3D cube']] },
-  { kind: 'range', key: 'perspective', label: 'Cube perspective', min: 1, max: 12, step: 0.1, format: (v) => `${v.toFixed(1)}× cell` },
-  { kind: 'range', key: 'pullback', label: 'Cube pull-back', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
-  { kind: 'range', key: 'shade', label: 'Cube shading', min: 0, max: 0.9, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'select', key: 'effect', label: 'Transition', options: EFFECTS },
   {
     kind: 'select', key: 'link', label: 'Linked drag',
     options: [['none', 'Off'], ['row', 'Same row'], ['column', 'Same column'], ['all', 'Whole grid']],
@@ -394,46 +401,54 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'loop', label: 'Loop around' },
   { kind: 'toggle', key: 'dots', label: 'Show dots' },
 
-  { kind: 'section', label: 'Main carousel' },
-  { kind: 'toggle', key: 'hero', label: 'Main carousel row on top' },
-  { kind: 'range', key: 'heroRows', label: 'Height in rows', min: 1, max: 4, step: 1, show: () => settings.hero },
-  { kind: 'toggle', key: 'heroCustom', label: 'Own carousel settings', show: () => settings.hero },
-  { kind: 'select', key: 'heroDirection', label: 'Drag direction', options: [['x', 'Horizontal'], ['y', 'Vertical']], show: () => settings.hero && settings.heroCustom },
-  {
-    kind: 'select', key: 'heroEffect', label: 'Transition',
-    options: [['slide', 'Slide'], ['depth', 'Depth'], ['fade', 'Fade'], ['cube', '3D cube']], show: () => settings.hero && settings.heroCustom,
-  },
-  { kind: 'range', key: 'heroItems', label: 'Items', min: 2, max: 24, step: 1, show: () => settings.hero && settings.heroCustom },
-  { kind: 'toggle', key: 'heroLoop', label: 'Loop around', show: () => settings.hero && settings.heroCustom },
-  { kind: 'range', key: 'heroTension', label: 'Snap tension', min: 20, max: 600, step: 5, show: () => settings.hero && settings.heroCustom },
-  { kind: 'range', key: 'heroFlick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2), show: () => settings.hero && settings.heroCustom },
+  { kind: 'section', id: 'cube', label: '3D cube', show: isCube, summary: () => `perspective ${settings.perspective.toFixed(1)}` },
+  { kind: 'range', key: 'perspective', label: 'Perspective', min: 1, max: 12, step: 0.1, format: (v) => `${v.toFixed(1)}× cell` },
+  { kind: 'range', key: 'pullback', label: 'Pull back while turning', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'shade', label: 'Shading', min: 0, max: 0.9, step: 0.01, format: (v) => v.toFixed(2) },
 
-  { kind: 'section', label: 'Feel' },
+  { kind: 'section', id: 'hero', label: 'Main carousel',
+    summary: () => (!settings.hero ? 'off' : settings.heroCustom ? `on, own settings` : 'on') },
+  { kind: 'toggle', key: 'hero', label: 'Show main carousel row on top' },
+  { kind: 'range', key: 'heroRows', label: 'Height in rows', min: 1, max: 4, step: 1, show: () => settings.hero },
+  { kind: 'toggle', key: 'heroCustom', label: 'Use its own carousel settings', show: () => settings.hero },
+  { kind: 'sub', label: 'Main carousel settings', show: ownHero },
+  { kind: 'select', key: 'heroDirection', label: 'Drag direction', options: [['x', 'Horizontal'], ['y', 'Vertical']], show: ownHero },
+  { kind: 'select', key: 'heroEffect', label: 'Transition', options: EFFECTS, show: ownHero },
+  { kind: 'range', key: 'heroItems', label: 'Items', min: 2, max: 24, step: 1, show: ownHero },
+  { kind: 'toggle', key: 'heroLoop', label: 'Loop around', show: ownHero },
+  { kind: 'range', key: 'heroTension', label: 'Snap tension', min: 20, max: 600, step: 5, show: ownHero },
+  { kind: 'range', key: 'heroFlick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2), show: ownHero },
+
+  { kind: 'section', id: 'feel', label: 'Feel', summary: () => `tension ${settings.tension}` },
   { kind: 'range', key: 'tension', label: 'Snap tension', min: 20, max: 600, step: 5 },
   { kind: 'range', key: 'flick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },
 
-  { kind: 'section', label: 'Look' },
-  { kind: 'range', key: 'fontSize', label: 'Text size', min: 40, max: 220, step: 5, format: (v) => `${v}%` },
+  { kind: 'section', id: 'surface', label: 'Surface', open: true,
+    summary: () => (isImages() ? THEMES[settings.surface].title : 'Colors & words') },
   {
-    kind: 'select', key: 'surface', label: 'Surface',
+    kind: 'select', key: 'surface', label: 'Show',
     options: [['colors', 'Colors & Latin words'], ['four-elements', 'Images: Four Elements']],
   },
-  { kind: 'range', key: 'harmony', label: 'Image harmony', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
-  { kind: 'range', key: 'gradeHue', label: 'Harmony tint', min: 0, max: 360, step: 1, format: (v) => `${v}°` },
-  { kind: 'range', key: 'evenExposure', label: 'Even out exposure', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
-  { kind: 'range', key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
-  { kind: 'toggle', key: 'labels', label: 'Element labels' },
-  { kind: 'select', key: 'colorMode', label: 'Colors', options: [['golden', 'Golden-angle spread'], ['random', 'Random hues']] },
-  { kind: 'range', key: 'hueShift', label: 'Hue shift', min: 0, max: 360, step: 1, format: (v) => `${v}°` },
-  { kind: 'range', key: 'chroma', label: 'Saturation', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3) },
-  { kind: 'range', key: 'lightness', label: 'Lightness', min: 20, max: 95, step: 1, format: (v) => `${v}%` },
+  { kind: 'range', key: 'fontSize', label: 'Text size', min: 40, max: 220, step: 5, format: (v) => `${v}%`,
+    show: () => isColors() || settings.labels },
+  { kind: 'sub', label: 'Image grading', show: isImages },
+  { kind: 'range', key: 'harmony', label: 'Harmony', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
+  { kind: 'range', key: 'gradeHue', label: 'Harmony tint', min: 0, max: 360, step: 1, format: (v) => `${v}°`, show: isImages },
+  { kind: 'range', key: 'evenExposure', label: 'Even out exposure', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
+  { kind: 'range', key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
+  { kind: 'toggle', key: 'labels', label: 'Element labels', show: isImages },
+  { kind: 'sub', label: 'Colors', show: isColors },
+  { kind: 'select', key: 'colorMode', label: 'Palette', options: [['golden', 'Golden-angle spread'], ['random', 'Random hues']], show: isColors },
+  { kind: 'range', key: 'hueShift', label: 'Hue shift', min: 0, max: 360, step: 1, format: (v) => `${v}°`, show: isColors },
+  { kind: 'range', key: 'chroma', label: 'Saturation', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3), show: isColors },
+  { kind: 'range', key: 'lightness', label: 'Lightness', min: 20, max: 95, step: 1, format: (v) => `${v}%`, show: isColors },
 
-  { kind: 'section', label: 'Actions' },
+  { kind: 'section', id: 'actions', label: 'Actions', open: true },
   {
     kind: 'buttons',
     buttons: [
-      ['New words', () => { words.clear(); recolor(); }],
-      ['New colors', () => { randomHues.clear(); set('colorMode', 'random'); }],
+      ['New words', () => { words.clear(); recolor(); }, isColors],
+      ['New colors', () => { randomHues.clear(); set('colorMode', 'random'); }, isColors],
       ['Scramble', scramble],
       ['Reset', reset],
     ],
@@ -467,17 +482,64 @@ const conditional: [HTMLElement, () => boolean][] = [];
 function refresh() {
   for (const r of refreshers) r();
   for (const [el, show] of conditional) el.hidden = !show();
-  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="aspect"]')) {
-    el.classList.toggle('disabled', settings.fill);
+}
+
+const COLLAPSE_KEY = 'carousel-grid:collapsed';
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '{}');
+  } catch {
+    return {};
   }
 }
 
 function renderControls() {
+  const collapsed = loadCollapsed();
+  let body: HTMLElement = controls;
+
   for (const ctl of CONTROLS) {
     if (ctl.kind === 'section') {
-      const h = document.createElement('h2');
+      // Each section is a card with a clickable header that folds it away.
+      const section = document.createElement('section');
+      section.className = 'group';
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'group-head';
+      head.innerHTML = `<span class="chev" aria-hidden="true"></span><span class="group-title"></span><span class="group-summary"></span>`;
+      head.querySelector('.group-title')!.textContent = ctl.label;
+      const summary = head.querySelector<HTMLElement>('.group-summary')!;
+      body = document.createElement('div');
+      body.className = 'group-body';
+      body.id = `group-${ctl.id}`;
+      head.setAttribute('aria-controls', body.id);
+      section.append(head, body);
+      controls.append(section);
+
+      const setOpen = (open: boolean) => {
+        section.classList.toggle('closed', !open);
+        head.setAttribute('aria-expanded', String(open));
+      };
+      setOpen(!(collapsed[ctl.id] ?? !ctl.open));
+      head.addEventListener('click', () => {
+        const open = section.classList.contains('closed');
+        setOpen(open);
+        collapsed[ctl.id] = !open;
+        try {
+          localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed));
+        } catch {
+          /* not persisted */
+        }
+      });
+      if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
+      if (ctl.show) conditional.push([section, ctl.show]);
+      continue;
+    }
+
+    if (ctl.kind === 'sub') {
+      const h = document.createElement('h3');
       h.textContent = ctl.label;
-      controls.append(h);
+      body.append(h);
       if (ctl.show) conditional.push([h, ctl.show]);
       continue;
     }
@@ -485,13 +547,15 @@ function renderControls() {
     if (ctl.kind === 'buttons') {
       const row = document.createElement('div');
       row.className = 'buttons';
-      for (const [label, fn] of ctl.buttons) {
+      for (const [text, fn, show] of ctl.buttons) {
         const b = document.createElement('button');
-        b.textContent = label;
+        b.type = 'button';
+        b.textContent = text;
         b.addEventListener('click', fn);
         row.append(b);
+        if (show) conditional.push([b, show]);
       }
-      controls.append(row);
+      body.append(row);
       continue;
     }
 
@@ -544,7 +608,7 @@ function renderControls() {
       }
       row.append(wrap);
     }
-    controls.append(row);
+    body.append(row);
     if (ctl.show) conditional.push([row, ctl.show]);
   }
 
