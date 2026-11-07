@@ -22,6 +22,12 @@ function experimentEntries(): Record<string, string> {
 export default defineConfig({
   // Relative base so the built site works from any sub-path (e.g. GitHub Pages).
   base: './',
+  define: {
+    // Changes on every build. The shell appends it to experiment URLs so the
+    // iframe never reuses an experiment page cached from an older deploy
+    // (GitHub Pages caches HTML for 10 minutes, and old hashed assets are gone).
+    __BUILD_ID__: JSON.stringify(Date.now().toString(36)),
+  },
   build: {
     rollupOptions: {
       input: {

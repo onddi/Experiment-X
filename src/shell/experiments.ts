@@ -37,7 +37,7 @@ const modules = import.meta.glob<ExperimentMeta>('/experiments/*/experiment.json
 export const experiments: Experiment[] = Object.entries(modules)
   .map(([path, meta]) => {
     const slug = path.split('/')[2];
-    return { ...meta, slug, url: `./experiments/${slug}/` };
+    return { ...meta, slug, url: `./experiments/${slug}/?v=${__BUILD_ID__}` };
   })
   .filter((exp) => !exp.slug.startsWith('_') && !exp.hidden)
   .sort((a, b) => (b.created ?? '').localeCompare(a.created ?? '') || a.title.localeCompare(b.title));
