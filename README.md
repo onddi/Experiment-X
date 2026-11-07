@@ -13,6 +13,10 @@ npm run build      # static site in dist/
 npm run preview    # serve the build
 ```
 
+Every push to `main` is deployed to GitHub Pages at
+https://onddi.github.io/Experiment-X/ by `.github/workflows/deploy.yml`.
+The build uses relative paths (`base: './'`), so it works under that sub-path as is.
+
 Deep-link to an experiment with `#/<slug>`, e.g. `http://localhost:5173/#/color-mixer`.
 Keyboard shortcuts in the shell: `[` / `]` previous / next, `\` toggle the list
 (click outside the experiment first, since keys typed inside the iframe go to the experiment).
