@@ -1,6 +1,10 @@
 {
   "title": "Particle field",
-  "description": "Canvas particles that drift and flee from the pointer.",
+  "description": "Flow-field particles with pointer modes, shockwaves, presets and a full settings panel.",
   "created": "2026-11-07",
-  "tags": ["canvas", "motion"]
+  "tags": [
+    "canvas",
+    "motion",
+    "generative"
+  ]
 }

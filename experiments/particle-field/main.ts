@@ -1,58 +1,687 @@
 import './style.css';
 
-interface Particle { x: number; y: number; vx: number; vy: number; hue: number }
+// --- settings ----------------------------------------------------------------
+
+type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
+type Render = 'dots' | 'streaks' | 'links';
+type ColorBy = 'palette' | 'speed' | 'direction';
+type Palette = keyof typeof PALETTES;
+
+interface Settings {
+  count: number;
+  size: number;
+  speed: number;
+  friction: number;
+  jitter: number;
+  flow: number;
+  flowScale: number;
+  flowSpeed: number;
+  pointerMode: PointerMode;
+  radius: number;
+  force: number;
+  render: Render;
+  linkDist: number;
+  trail: number;
+  glow: boolean;
+  palette: Palette;
+  colorBy: ColorBy;
+}
+
+// Each palette is a list of [hue, saturation, lightness] stops plus a background.
+const PALETTES = {
+  aurora: { bg: [7, 7, 12], stops: [[200, 90, 65], [260, 85, 68], [320, 90, 66]] },
+  ember: { bg: [12, 6, 4], stops: [[5, 90, 55], [25, 95, 58], [45, 100, 62]] },
+  ocean: { bg: [3, 9, 14], stops: [[170, 80, 50], [195, 90, 58], [215, 85, 66]] },
+  neon: { bg: [6, 4, 10], stops: [[300, 100, 62], [180, 100, 55], [90, 100, 55]] },
+  mono: { bg: [8, 8, 8], stops: [[0, 0, 55], [0, 0, 75], [0, 0, 95]] },
+  rainbow: { bg: [6, 6, 8], stops: [[0, 90, 62], [120, 90, 58], [240, 90, 66], [360, 90, 62]] },
+} as const;
+
+const DEFAULTS: Settings = {
+  count: 1200,
+  size: 1.6,
+  speed: 1,
+  friction: 0.04,
+  jitter: 0.05,
+  flow: 0.3,
+  flowScale: 0.004,
+  flowSpeed: 0.2,
+  pointerMode: 'repel',
+  radius: 120,
+  force: 0.6,
+  render: 'dots',
+  linkDist: 70,
+  trail: 0.75,
+  glow: false,
+  palette: 'aurora',
+  colorBy: 'palette',
+};
+
+const STORAGE_KEY = 'particle-field:settings';
+const settings: Settings = { ...DEFAULTS, ...load() };
+if (!(settings.palette in PALETTES)) settings.palette = DEFAULTS.palette;
+
+function load(): Partial<Settings> {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    /* storage unavailable: settings just won't persist */
+  }
+}
+
+// --- layout ------------------------------------------------------------------
+
+const app = document.getElementById('app')!;
+app.innerHTML = `
+  <main class="stage" id="stage">
+    <canvas id="c"></canvas>
+    <p class="hint" id="hint">Move through the field · click to send a shockwave</p>
+  </main>
+  <aside class="panel" id="panel">
+    <header>
+      <h1>Particle field</h1>
+      <button class="icon" id="toggle" aria-expanded="true" title="Hide controls (H)">⟩</button>
+    </header>
+    <div class="panel-body" id="controls"></div>
+  </aside>
+`;
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
-const pointer = { x: -1e4, y: -1e4 };
-let particles: Particle[] = [];
+const hint = document.getElementById('hint')!;
+
+// --- particles ---------------------------------------------------------------
+
+// Struct-of-arrays keeps thousands of particles cheap to update.
+let cap = 0;
+let px = new Float32Array(0);
+let py = new Float32Array(0);
+let vx = new Float32Array(0);
+let vy = new Float32Array(0);
+let ox = new Float32Array(0); // previous position, for streaks
+let oy = new Float32Array(0);
+let tone = new Float32Array(0); // 0..1 position along the palette
+let n = 0;
+
 let w = 0;
 let h = 0;
+let t = 0;
+let paused = false;
+
+function ensureCount() {
+  const want = settings.count;
+  if (want > cap) {
+    const grow = (a: Float32Array) => {
+      const b = new Float32Array(want);
+      b.set(a.subarray(0, n));
+      return b;
+    };
+    [px, py, vx, vy, ox, oy, tone] = [px, py, vx, vy, ox, oy, tone].map(grow);
+    cap = want;
+  }
+  for (let i = n; i < want; i++) spawn(i, Math.random() * w, Math.random() * h);
+  n = want;
+}
+
+function spawn(i: number, x: number, y: number) {
+  px[i] = ox[i] = x;
+  py[i] = oy[i] = y;
+  vx[i] = (Math.random() - 0.5) * 0.4;
+  vy[i] = (Math.random() - 0.5) * 0.4;
+  tone[i] = Math.random();
+}
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   w = canvas.clientWidth;
   h = canvas.clientHeight;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const count = Math.round((w * h) / 2500);
-  particles = Array.from({ length: count }, () => ({
-    x: Math.random() * w,
-    y: Math.random() * h,
-    vx: (Math.random() - 0.5) * 0.4,
-    vy: (Math.random() - 0.5) * 0.4,
-    hue: 200 + Math.random() * 120,
-  }));
-}
-
-function tick() {
-  ctx.fillStyle = 'rgba(7, 7, 12, 0.25)';
-  ctx.fillRect(0, 0, w, h);
-  for (const p of particles) {
-    const dx = p.x - pointer.x;
-    const dy = p.y - pointer.y;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < 120 * 120) {
-      const f = (1 - Math.sqrt(d2) / 120) * 0.6;
-      p.vx += (dx / Math.sqrt(d2 + 1)) * f;
-      p.vy += (dy / Math.sqrt(d2 + 1)) * f;
-    }
-    p.vx *= 0.96;
-    p.vy *= 0.96;
-    p.vx += (Math.random() - 0.5) * 0.05;
-    p.vy += (Math.random() - 0.5) * 0.05;
-    p.x = (p.x + p.vx + w) % w;
-    p.y = (p.y + p.vy + h) % h;
-    ctx.fillStyle = `hsl(${p.hue} 90% 65%)`;
-    ctx.fillRect(p.x, p.y, 1.6, 1.6);
+  for (let i = 0; i < n; i++) {
+    if (px[i] > w || py[i] > h) spawn(i, Math.random() * w, Math.random() * h);
   }
-  requestAnimationFrame(tick);
+  ensureCount();
+  clear();
 }
 
-window.addEventListener('resize', resize);
-window.addEventListener('pointermove', (e) => { pointer.x = e.clientX; pointer.y = e.clientY; });
-window.addEventListener('pointerleave', () => { pointer.x = pointer.y = -1e4; });
+function clear() {
+  const [r, g, b] = PALETTES[settings.palette].bg;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgb(${r} ${g} ${b})`;
+  ctx.fillRect(0, 0, w, h);
+  document.body.style.background = `rgb(${r} ${g} ${b})`;
+}
 
+// --- pointer -----------------------------------------------------------------
+
+const pointer = { x: -1e4, y: -1e4, active: false };
+const waves: { x: number; y: number; r: number; life: number }[] = [];
+
+canvas.addEventListener('pointermove', (e) => {
+  pointer.x = e.offsetX;
+  pointer.y = e.offsetY;
+  pointer.active = true;
+});
+canvas.addEventListener('pointerleave', () => {
+  pointer.active = false;
+  pointer.x = pointer.y = -1e4;
+});
+canvas.addEventListener('pointerdown', (e) => {
+  pointer.x = e.offsetX;
+  pointer.y = e.offsetY;
+  pointer.active = e.pointerType === 'mouse';
+  waves.push({ x: e.offsetX, y: e.offsetY, r: 0, life: 1 });
+  hint.classList.add('gone');
+});
+canvas.addEventListener('pointerup', (e) => {
+  // Touch has no hover, so a lifted finger stops influencing the field.
+  if (e.pointerType !== 'mouse') {
+    pointer.active = false;
+    pointer.x = pointer.y = -1e4;
+  }
+});
+
+// --- simulation --------------------------------------------------------------
+
+// A cheap smooth flow field: layered sines read as a gently turning current.
+function flowAngle(x: number, y: number) {
+  const s = settings.flowScale;
+  const tt = t * settings.flowSpeed;
+  return (
+    Math.sin(x * s + tt) * 1.7 +
+    Math.cos(y * s * 1.3 - tt * 0.8) * 1.7 +
+    Math.sin((x + y) * s * 0.6 + tt * 0.5) * 1.2
+  );
+}
+
+function step(dt: number) {
+  t += dt / 60;
+  const { radius, force, pointerMode, friction, jitter, flow, speed } = settings;
+  const r2 = radius * radius;
+  const damp = 1 - friction;
+  const usePointer = pointer.active && pointerMode !== 'none';
+
+  for (const wv of waves) {
+    wv.r += 9 * dt;
+    wv.life -= 0.025 * dt;
+  }
+  for (let k = waves.length - 1; k >= 0; k--) if (waves[k].life <= 0) waves.splice(k, 1);
+
+  for (let i = 0; i < n; i++) {
+    let ax = (Math.random() - 0.5) * jitter;
+    let ay = (Math.random() - 0.5) * jitter;
+
+    if (flow > 0) {
+      const a = flowAngle(px[i], py[i]);
+      ax += Math.cos(a) * flow * 0.05;
+      ay += Math.sin(a) * flow * 0.05;
+    }
+
+    if (usePointer) {
+      const dx = px[i] - pointer.x;
+      const dy = py[i] - pointer.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < r2) {
+        const d = Math.sqrt(d2) + 0.001;
+        const f = (1 - d / radius) * force;
+        const nx = dx / d;
+        const ny = dy / d;
+        if (pointerMode === 'repel') {
+          ax += nx * f;
+          ay += ny * f;
+        } else if (pointerMode === 'attract') {
+          ax -= nx * f * 0.6;
+          ay -= ny * f * 0.6;
+        } else {
+          // Swirl around the pointer with a slight pull inward.
+          ax += (-ny - nx * 0.25) * f;
+          ay += (nx - ny * 0.25) * f;
+        }
+      }
+    }
+
+    for (const wv of waves) {
+      const dx = px[i] - wv.x;
+      const dy = py[i] - wv.y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      const band = Math.abs(d - wv.r);
+      if (band < 40) {
+        const f = (1 - band / 40) * wv.life * 2.2;
+        ax += (dx / d) * f;
+        ay += (dy / d) * f;
+      }
+    }
+
+    vx[i] = (vx[i] + ax * dt) * Math.pow(damp, dt);
+    vy[i] = (vy[i] + ay * dt) * Math.pow(damp, dt);
+    ox[i] = px[i];
+    oy[i] = py[i];
+    px[i] += vx[i] * speed * dt;
+    py[i] += vy[i] * speed * dt;
+
+    if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
+      if (flow > 0) {
+        // The flow field isn't periodic, so wrapping would trap particles on
+        // the seam where opposing currents meet. Respawn somewhere instead.
+        px[i] = ox[i] = Math.random() * w;
+        py[i] = oy[i] = Math.random() * h;
+      } else {
+        px[i] = ox[i] = ((px[i] % w) + w) % w;
+        py[i] = oy[i] = ((py[i] % h) + h) % h;
+      }
+    }
+  }
+}
+
+// --- rendering ---------------------------------------------------------------
+
+// Pre-built colour lookup: 64 steps along the palette, as CSS strings.
+const SHADES = 64;
+let shades: string[] = [];
+
+function buildShades() {
+  const stops = PALETTES[settings.palette].stops;
+  shades = [];
+  for (let k = 0; k < SHADES; k++) {
+    const u = (k / (SHADES - 1)) * (stops.length - 1);
+    const a = stops[Math.floor(u)];
+    const b = stops[Math.min(stops.length - 1, Math.floor(u) + 1)];
+    const f = u - Math.floor(u);
+    const mix = (i: number) => a[i] + (b[i] - a[i]) * f;
+    shades.push(`hsl(${mix(0).toFixed(1)} ${mix(1).toFixed(1)}% ${mix(2).toFixed(1)}%)`);
+  }
+}
+
+function shadeIndex(i: number) {
+  let u: number;
+  if (settings.colorBy === 'speed') {
+    u = Math.min(1, Math.hypot(vx[i], vy[i]) / 3);
+  } else if (settings.colorBy === 'direction') {
+    u = (Math.atan2(vy[i], vx[i]) / (Math.PI * 2) + 0.5) % 1;
+  } else {
+    u = tone[i];
+  }
+  return Math.min(SHADES - 1, (u * SHADES) | 0);
+}
+
+// Buckets let us draw every particle of one colour in a single path.
+const buckets: number[][] = Array.from({ length: SHADES }, () => []);
+
+function draw() {
+  const [r, g, b] = PALETTES[settings.palette].bg;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgb(${r} ${g} ${b} / ${(1 - settings.trail * 0.97).toFixed(3)})`;
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = settings.glow ? 'lighter' : 'source-over';
+
+  for (const bk of buckets) bk.length = 0;
+  for (let i = 0; i < n; i++) buckets[shadeIndex(i)].push(i);
+
+  if (settings.render === 'links') drawLinks();
+
+  const s = settings.size;
+  for (let k = 0; k < SHADES; k++) {
+    const list = buckets[k];
+    if (!list.length) continue;
+    if (settings.render === 'streaks') {
+      ctx.strokeStyle = shades[k];
+      ctx.lineWidth = s;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (const i of list) {
+        // Stretch the streak along velocity so slow particles still read as dots.
+        ctx.moveTo(px[i] - vx[i] * 3, py[i] - vy[i] * 3);
+        ctx.lineTo(px[i], py[i]);
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = shades[k];
+      ctx.beginPath();
+      for (const i of list) ctx.rect(px[i] - s / 2, py[i] - s / 2, s, s);
+      ctx.fill();
+    }
+  }
+
+  // Shockwave rings.
+  ctx.globalCompositeOperation = 'source-over';
+  for (const wv of waves) {
+    ctx.strokeStyle = `rgb(255 255 255 / ${(wv.life * 0.25).toFixed(3)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(wv.x, wv.y, wv.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// Spatial hash: only compare particles in neighbouring cells.
+const LINK_LEVELS = 4;
+const linkPaths: Path2D[] = [];
+const cellHead = new Map<number, number>();
+let cellNext = new Int32Array(0);
+
+function drawLinks() {
+  const d = settings.linkDist;
+  const d2max = d * d;
+  const cols = Math.ceil(w / d) + 1;
+  if (cellNext.length < n) cellNext = new Int32Array(cap);
+  cellHead.clear();
+  for (let i = 0; i < n; i++) {
+    const key = ((py[i] / d) | 0) * cols + ((px[i] / d) | 0);
+    cellNext[i] = cellHead.get(key) ?? -1;
+    cellHead.set(key, i);
+  }
+  for (let l = 0; l < LINK_LEVELS; l++) linkPaths[l] = new Path2D();
+
+  // Cap total segments so dense fields stay interactive.
+  let budget = 12000;
+  for (let i = 0; i < n && budget > 0; i++) {
+    const cx = (px[i] / d) | 0;
+    const cy = (py[i] / d) | 0;
+    for (let oy2 = 0; oy2 <= 1; oy2++) {
+      for (let ox2 = -1; ox2 <= 1; ox2++) {
+        if (oy2 === 0 && ox2 < 0) continue; // half-neighbourhood: each pair once
+        let j = cellHead.get((cy + oy2) * cols + (cx + ox2)) ?? -1;
+        while (j !== -1) {
+          if (j > i || oy2 > 0 || ox2 > 0) {
+            const dx = px[j] - px[i];
+            const dy = py[j] - py[i];
+            const dd = dx * dx + dy * dy;
+            if (dd < d2max && j !== i) {
+              const level = Math.min(LINK_LEVELS - 1, ((1 - Math.sqrt(dd) / d) * LINK_LEVELS) | 0);
+              linkPaths[level].moveTo(px[i], py[i]);
+              linkPaths[level].lineTo(px[j], py[j]);
+              budget--;
+            }
+          }
+          j = cellNext[j];
+        }
+      }
+    }
+  }
+
+  const stops = PALETTES[settings.palette].stops;
+  const [hh, ss, ll] = stops[Math.floor(stops.length / 2)];
+  ctx.lineWidth = 0.7;
+  for (let l = 0; l < LINK_LEVELS; l++) {
+    ctx.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / ${(((l + 1) / LINK_LEVELS) * 0.35).toFixed(3)})`;
+    ctx.stroke(linkPaths[l]);
+  }
+}
+
+// --- loop --------------------------------------------------------------------
+
+let last = performance.now();
+let fps = 60;
+
+function frame(now: number) {
+  // dt is in 60fps frames, clamped so a background tab doesn't explode the sim.
+  const dt = Math.min(3, (now - last) / (1000 / 60));
+  last = now;
+  fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
+  if (!paused) {
+    step(dt);
+    draw();
+  }
+  requestAnimationFrame(frame);
+}
+
+// --- controls ----------------------------------------------------------------
+
+type Control =
+  | { kind: 'section'; label: string }
+  | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
+  | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
+  | { kind: 'toggle'; key: keyof Settings; label: string }
+  | { kind: 'buttons'; buttons: [string, () => void][] };
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+const CONTROLS: Control[] = [
+  { kind: 'section', label: 'Presets' },
+  { kind: 'buttons', buttons: [] }, // filled with presets below
+  { kind: 'section', label: 'Particles' },
+  { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
+  { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
+  { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
+  { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
+  { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'section', label: 'Flow' },
+  { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1) },
+  { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2) },
+  { kind: 'section', label: 'Pointer' },
+  { kind: 'select', key: 'pointerMode', label: 'Mode', options: [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']] },
+  { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px` },
+  { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2) },
+  { kind: 'section', label: 'Look' },
+  { kind: 'select', key: 'render', label: 'Style', options: [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']] },
+  { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px` },
+  { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
+  { kind: 'select', key: 'palette', label: 'Palette', options: Object.keys(PALETTES).map((k) => [k, k[0].toUpperCase() + k.slice(1)]) },
+  { kind: 'select', key: 'colorBy', label: 'Colour by', options: [['palette', 'Particle'], ['speed', 'Speed'], ['direction', 'Direction']] },
+  { kind: 'toggle', key: 'glow', label: 'Additive glow' },
+  { kind: 'section', label: 'Actions' },
+  {
+    kind: 'buttons',
+    buttons: [
+      ['Pause', togglePause],
+      ['Clear', clear],
+      ['Scatter', scatter],
+      ['Shuffle', shuffle],
+      ['Reset', reset],
+    ],
+  },
+];
+
+const PRESETS: [string, Partial<Settings>][] = [
+  ['Drift', { ...DEFAULTS }],
+  ['Silk', { count: 3000, size: 1, render: 'streaks', flow: 1, flowScale: 0.003, flowSpeed: 0.15, trail: 0.95, friction: 0.06, jitter: 0.01, palette: 'ocean', colorBy: 'direction', glow: true, pointerMode: 'vortex', radius: 180, force: 0.5 }],
+  ['Embers', { count: 1500, size: 2.2, render: 'dots', flow: 0.5, flowScale: 0.008, flowSpeed: 0.6, trail: 0.85, friction: 0.03, jitter: 0.15, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 150, force: 1 }],
+  ['Constellation', { count: 500, size: 2, render: 'links', linkDist: 90, flow: 0.1, flowSpeed: 0.1, trail: 0, friction: 0.02, jitter: 0.04, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'attract', radius: 200, force: 0.3 }],
+  ['Neon storm', { count: 4000, size: 1.2, render: 'streaks', flow: 1.6, flowScale: 0.012, flowSpeed: 1, trail: 0.7, friction: 0.05, jitter: 0.05, speed: 1.6, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.2 }],
+  ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
+];
+(CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
+
+const controls = document.getElementById('controls')!;
+const refreshers: (() => void)[] = [];
+let pauseButton: HTMLButtonElement | null = null;
+
+function set<K extends keyof Settings>(k: K, v: Settings[K]) {
+  if (settings[k] === v) return;
+  settings[k] = v;
+  changed(new Set([k]));
+}
+
+function apply(p: Partial<Settings>) {
+  Object.assign(settings, DEFAULTS, p);
+  changed(new Set(Object.keys(DEFAULTS) as (keyof Settings)[]));
+}
+
+function changed(keys: Set<keyof Settings>) {
+  save();
+  if (keys.has('count')) {
+    n = Math.min(n, settings.count);
+    ensureCount();
+  }
+  if (keys.has('palette')) {
+    buildShades();
+    clear();
+  }
+  refresh();
+}
+
+function refresh() {
+  for (const r of refreshers) r();
+  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="linkDist"]')) {
+    el.classList.toggle('disabled', settings.render !== 'links');
+  }
+  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="radius"], [data-key="force"]')) {
+    el.classList.toggle('disabled', settings.pointerMode === 'none');
+  }
+  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="flowScale"], [data-key="flowSpeed"]')) {
+    el.classList.toggle('disabled', settings.flow === 0);
+  }
+}
+
+function renderControls() {
+  for (const ctl of CONTROLS) {
+    if (ctl.kind === 'section') {
+      const h2 = document.createElement('h2');
+      h2.textContent = ctl.label;
+      controls.append(h2);
+      continue;
+    }
+
+    if (ctl.kind === 'buttons') {
+      const row = document.createElement('div');
+      row.className = 'buttons';
+      for (const [label, fn] of ctl.buttons) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.addEventListener('click', fn);
+        if (label === 'Pause') pauseButton = b;
+        row.append(b);
+      }
+      controls.append(row);
+      continue;
+    }
+
+    const row = document.createElement('label');
+    row.className = `row ${ctl.kind}`;
+    row.dataset.key = ctl.key;
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = ctl.label;
+    row.append(name);
+    const k = ctl.key;
+
+    if (ctl.kind === 'range') {
+      const out = document.createElement('output');
+      const input = document.createElement('input');
+      Object.assign(input, { type: 'range', min: ctl.min, max: ctl.max, step: ctl.step });
+      input.addEventListener('input', () => set(k, Number(input.value) as never));
+      row.append(out, input);
+      refreshers.push(() => {
+        const v = settings[k] as number;
+        input.value = String(v);
+        out.textContent = ctl.format ? ctl.format(v) : String(v);
+      });
+    } else if (ctl.kind === 'select') {
+      const select = document.createElement('select');
+      for (const [value, label] of ctl.options) select.add(new Option(label, value));
+      select.addEventListener('change', () => set(k, select.value as never));
+      row.append(select);
+      refreshers.push(() => (select.value = String(settings[k])));
+    } else if (ctl.kind === 'toggle') {
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.addEventListener('change', () => set(k, input.checked as never));
+      row.prepend(input);
+      refreshers.push(() => (input.checked = Boolean(settings[k])));
+    }
+    controls.append(row);
+  }
+
+  const stats = document.createElement('p');
+  stats.className = 'stats';
+  stats.id = 'stats';
+  controls.append(stats);
+  const keys = document.createElement('p');
+  keys.className = 'stats';
+  keys.textContent = 'Click for a shockwave. Keys: Space pause · C clear · S scatter · R shuffle · H hide panel.';
+  controls.append(keys);
+}
+
+const statsEl = () => document.getElementById('stats');
+setInterval(() => {
+  const el = statsEl();
+  if (el) el.textContent = `${n.toLocaleString()} particles · ${paused ? 'paused' : `${Math.round(fps)} fps`}`;
+}, 500);
+
+function togglePause() {
+  paused = !paused;
+  if (pauseButton) pauseButton.textContent = paused ? 'Play' : 'Pause';
+}
+
+function scatter() {
+  for (let i = 0; i < n; i++) spawn(i, Math.random() * w, Math.random() * h);
+  clear();
+}
+
+function rand(min: number, max: number, stepSize: number) {
+  return Math.round((min + Math.random() * (max - min)) / stepSize) * stepSize;
+}
+
+function pick<T>(xs: readonly T[]): T {
+  return xs[Math.floor(Math.random() * xs.length)];
+}
+
+function shuffle() {
+  apply({
+    count: rand(600, 4000, 100),
+    size: rand(0.8, 2.6, 0.1),
+    speed: rand(0.6, 2, 0.1),
+    friction: rand(0.02, 0.08, 0.005),
+    jitter: rand(0, 0.15, 0.01),
+    flow: rand(0.2, 1.6, 0.05),
+    flowScale: rand(0.002, 0.012, 0.0005),
+    flowSpeed: rand(0.05, 1, 0.05),
+    pointerMode: pick(['repel', 'attract', 'vortex'] as const),
+    radius: rand(80, 260, 5),
+    force: rand(0.3, 1.4, 0.05),
+    render: pick(['dots', 'streaks', 'streaks', 'links'] as const),
+    linkDist: rand(50, 100, 5),
+    trail: rand(0.5, 0.95, 0.01),
+    glow: Math.random() < 0.6,
+    palette: pick(Object.keys(PALETTES) as Palette[]),
+    colorBy: pick(['palette', 'speed', 'direction'] as const),
+  });
+}
+
+function reset() {
+  apply({});
+}
+
+// --- panel toggle & keys -----------------------------------------------------
+
+const panel = document.getElementById('panel')!;
+const toggle = document.getElementById('toggle')!;
+toggle.addEventListener('click', () => {
+  const collapsed = panel.classList.toggle('collapsed');
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.title = collapsed ? 'Show controls (H)' : 'Hide controls (H)';
+  toggle.textContent = collapsed ? '⟨' : '⟩';
+  requestAnimationFrame(resize);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ') {
+    e.preventDefault();
+    togglePause();
+  } else if (k === 'c') clear();
+  else if (k === 's') scatter();
+  else if (k === 'r') shuffle();
+  else if (k === 'h') toggle.click();
+});
+
+new ResizeObserver(() => resize()).observe(canvas);
+if (window.innerWidth < 720) toggle.click();
+
+buildShades();
+renderControls();
 resize();
-tick();
+refresh();
+requestAnimationFrame(frame);
