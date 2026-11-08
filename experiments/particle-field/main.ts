@@ -1228,10 +1228,13 @@ function recordHistory() {
     histLen = 0;
     return;
   }
-  const L = settings.ribbonLen;
+  // Rounded: while a look morphs, ribbonLen glides through fractions, and a
+  // fractional length left the ring index fractional (nothing drew).
+  const L = Math.max(2, Math.round(settings.ribbonLen));
   if (histLen !== L || histCap < cap) {
     histLen = L;
     histCap = cap;
+    histHead = 0;
     hist = new Float32Array(cap * L * 2);
     for (let i = 0; i < n; i++)
       for (let k = 0; k < L; k++) {
@@ -3158,6 +3161,7 @@ function vjNext() {
   showToast(PRESETS[k][0]);
 }
 
+let intKeys: Set<string> | null = null;
 function tickMorph(now: number, beat: boolean) {
   if (pendingLook && (beat || now - pendingLook.since > 2500 || !settings.beatSnap || audio.source === 'off')) {
     const t2 = pendingLook.target;
@@ -3188,6 +3192,9 @@ function tickMorph(now: number, beat: boolean) {
   const e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2; // ease in-out
   const S = settings as unknown as Record<string, number>;
   for (const k in m.to) S[k] = m.from[k] + (m.to[k] - m.from[k]) * e;
+  // Whole-number settings (lengths, counts, every-N) glide in whole steps.
+  intKeys ??= new Set(CONTROLS.flatMap((c) => (c.kind === 'range' && Number.isInteger(c.step) && c.step >= 1 ? [c.key as string] : [])));
+  for (const k in m.to) if (intKeys.has(k)) S[k] = Math.round(S[k]);
   if ('count' in m.to) {
     S.count = Math.round(S.count / 10) * 10;
     n = Math.min(n, settings.count);
