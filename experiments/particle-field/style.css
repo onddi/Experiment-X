@@ -192,3 +192,25 @@ button:hover, select:hover { border-color: #3c3f46; }
   border-radius: 5px;
   box-shadow: 0 0 0 1px var(--line);
 }
+
+/* --- audio ------------------------------------------------------------------ */
+
+.audio .sources { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 10px; }
+.audio .sources [data-src='off'] { grid-column: 1 / -1; }
+.audio .sources [hidden] { display: none; }
+.audio .sources button.on { border-color: var(--accent); color: var(--accent); }
+.meter { display: grid; gap: 3px; margin: 12px 0 6px; }
+.meter i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+}
+.meter i:nth-child(2) { opacity: 0.75; }
+.meter i:nth-child(3) { opacity: 0.5; }
+.audio.beat .meter i:first-child { background: #fff; }
+.audio-status { margin: 0; font-size: 12px; color: #c9cad0; }
+.audio-status.error { color: oklch(75% 0.15 25); }
+.audio-help { margin: 4px 0 0; font-size: 11px; color: var(--muted); }

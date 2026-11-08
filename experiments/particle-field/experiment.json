@@ -1,10 +1,11 @@
 {
   "title": "Particle field",
-  "description": "Flow-field particles with pointer modes, shockwaves, presets and a full settings panel.",
+  "description": "Flow-field particles with pointer and click modes, presets, and audio reactivity (mic, shared tab or file).",
   "created": "2026-11-07",
   "tags": [
     "canvas",
     "motion",
-    "generative"
+    "generative",
+    "audio"
   ]
 }

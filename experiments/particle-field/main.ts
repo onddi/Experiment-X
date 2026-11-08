@@ -1,11 +1,13 @@
 import './style.css';
+import { AudioInput, tabAudioSupported } from './audio.ts';
 
 // --- settings ----------------------------------------------------------------
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
 type Render = 'dots' | 'streaks' | 'links';
-type ColorBy = 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
+type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'none';
+type ColorBy = 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES;
 
 interface Settings {
@@ -28,6 +30,8 @@ interface Settings {
   glow: boolean;
   palette: Palette;
   colorBy: ColorBy;
+  audioAmount: number;
+  audioBeat: BeatAction;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -79,6 +83,8 @@ const DEFAULTS: Settings = {
   glow: false,
   palette: 'aurora',
   colorBy: 'palette',
+  audioAmount: 1,
+  audioBeat: 'ripple',
 };
 
 const STORAGE_KEY = 'particle-field:settings';
@@ -229,6 +235,11 @@ function implodeStart() {
   return Math.max(200, settings.radius * 3);
 }
 
+// --- audio -------------------------------------------------------------------
+
+const audio = new AudioInput();
+let bassSlow = 0;
+
 // --- simulation --------------------------------------------------------------
 
 // A cheap smooth flow field: layered sines read as a gently turning current.
@@ -264,16 +275,43 @@ function step(dt: number) {
   if (pointer.down && settings.click === 'emit') emit(dt);
   // Hover behaviour pauses while gathering so the two don't fight.
   const usePointer = pointer.active && pointerMode !== 'none' && !gathering;
+
+  // Audio: loudness speeds everything up, mids stir the flow, treble adds
+  // sparkle, and a bass kick pushes the field out from the centre before it
+  // eases back.
+  const A = audio.levels;
+  const amt = audio.source === 'off' ? 0 : settings.audioAmount;
+  bassSlow = bassSlow * 0.9 + A.bass * 0.1;
+  const kick = (A.bass - bassSlow) * 0.9 * amt;
+  const flowNow = flow * (1 + A.mid * 2 * amt);
+  const jitterNow = jitter + A.treble * 0.4 * amt;
+  const speedNow = speed * (1 + A.level * 1.2 * amt);
+  if (A.beat && amt > 0 && settings.audioBeat !== 'none') {
+    const kind = settings.audioBeat;
+    const x = w * (0.25 + Math.random() * 0.5);
+    const y = h * (0.25 + Math.random() * 0.5);
+    waves.push({ kind, x, y, r: kind === 'implode' ? implodeStart() : 0, life: 0.6 + 0.4 * amt / 2 });
+  }
+  const cx = w / 2;
+  const cy = h / 2;
   for (let k = waves.length - 1; k >= 0; k--) if (waves[k].life <= 0) waves.splice(k, 1);
 
   for (let i = 0; i < n; i++) {
-    let ax = (Math.random() - 0.5) * jitter;
-    let ay = (Math.random() - 0.5) * jitter;
+    let ax = (Math.random() - 0.5) * jitterNow;
+    let ay = (Math.random() - 0.5) * jitterNow;
 
-    if (flow > 0) {
+    if (flowNow > 0) {
       const a = flowAngle(px[i], py[i]);
-      ax += Math.cos(a) * flow * 0.05;
-      ay += Math.sin(a) * flow * 0.05;
+      ax += Math.cos(a) * flowNow * 0.05;
+      ay += Math.sin(a) * flowNow * 0.05;
+    }
+
+    if (kick !== 0) {
+      const dx = px[i] - cx;
+      const dy = py[i] - cy;
+      const d = Math.sqrt(dx * dx + dy * dy) + 1;
+      ax += (dx / d) * kick;
+      ay += (dy / d) * kick;
     }
 
     if (usePointer) {
@@ -343,8 +381,8 @@ function step(dt: number) {
     vy[i] = (vy[i] + ay * dt) * Math.pow(damp, dt);
     ox[i] = px[i];
     oy[i] = py[i];
-    px[i] += vx[i] * speed * dt;
-    py[i] += vy[i] * speed * dt;
+    px[i] += vx[i] * speedNow * dt;
+    py[i] += vy[i] * speedNow * dt;
 
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
       if (flow > 0) {
@@ -441,6 +479,10 @@ function shadeIndex(i: number) {
       // the colour of wherever they are, so the flow shows through the bands.
       u = loop((px[i] / w * 0.9 + py[i] / h * 0.4 + tone[i] * 0.08 + t * 0.06) % 1);
       break;
+    case 'audio':
+      // Calm colours in quiet passages, the hot end of the palette on loud ones.
+      u = Math.min(1, tone[i] * 0.3 + audio.levels.level * 0.85);
+      break;
     default:
       u = tone[i];
   }
@@ -467,7 +509,7 @@ function draw() {
 
   if (settings.render === 'links') drawLinks();
 
-  const s = settings.size;
+  const s = settings.size * (1 + audio.levels.bass * 0.8 * (audio.source === 'off' ? 0 : settings.audioAmount));
   for (let k = 0; k < SHADES; k++) {
     const list = buckets[k];
     if (!list.length) continue;
@@ -568,6 +610,7 @@ function frame(now: number) {
   const dt = Math.min(3, (now - last) / (1000 / 60));
   last = now;
   fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
+  audio.update(now);
   if (!paused) {
     step(dt);
     draw();
@@ -585,7 +628,8 @@ type ControlBody =
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
   | { kind: 'buttons'; buttons: [string, () => void][] }
-  | { kind: 'swatch' };
+  | { kind: 'swatch' }
+  | { kind: 'audio' };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const label = (options: [string, string][], v: unknown) => options.find(([k]) => k === v)?.[1] ?? '';
@@ -593,7 +637,10 @@ const label = (options: [string, string][], v: unknown) => options.find(([k]) =>
 const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']];
 const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
 const RENDERS: [string, string][] = [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['audio', 'Music energy']];
+
+const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['shockwave', 'Shockwave'], ['implode', 'Implode'], ['none', 'Nothing']];
+const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
 
 const hasFlow = () => settings.flow > 0;
 const hasPointer = () => settings.pointerMode !== 'none';
@@ -626,6 +673,11 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'click', label: 'Click', summary: () => label(CLICK_MODES, settings.click) },
   { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
   { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
+
+  { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] },
+  { kind: 'audio' },
+  { kind: 'range', key: 'audioAmount', label: 'Reaction', min: 0, max: 2, step: 0.05, format: pct },
+  { kind: 'select', key: 'audioBeat', label: 'On beat', options: BEAT_ACTIONS },
 
   { kind: 'section', id: 'look', label: 'Look', open: true,
     summary: () => `${label(RENDERS, settings.render)}, ${(PALETTES[settings.palette] as PaletteDef).label}` },
@@ -758,6 +810,11 @@ function renderControls() {
       continue;
     }
 
+    if (ctl.kind === 'audio') {
+      body.append(renderAudio());
+      continue;
+    }
+
     if (ctl.kind === 'swatch') {
       const sw = document.createElement('div');
       sw.className = 'swatch';
@@ -838,6 +895,75 @@ setInterval(() => {
   if (el) el.textContent = `${n.toLocaleString()} particles · ${paused ? 'paused' : `${Math.round(fps)} fps`}`;
 }, 500);
 
+// Source buttons, status line and a live bass / mid / treble meter.
+function renderAudio() {
+  const wrap = document.createElement('div');
+  wrap.className = 'audio';
+  wrap.innerHTML = `
+    <div class="sources">
+      <button type="button" data-src="mic">Mic</button>
+      <button type="button" data-src="tab">Share tab</button>
+      <button type="button" data-src="file">File</button>
+      <button type="button" data-src="off">Stop</button>
+    </div>
+    <input type="file" accept="audio/*" hidden />
+    <div class="meter" aria-hidden="true"><i></i><i></i><i></i></div>
+    <p class="audio-status">Off</p>
+    <p class="audio-help"></p>`;
+  const fileInput = wrap.querySelector<HTMLInputElement>('input[type=file]')!;
+  const status = wrap.querySelector<HTMLElement>('.audio-status')!;
+  const help = wrap.querySelector<HTMLElement>('.audio-help')!;
+  const bars = [...wrap.querySelectorAll<HTMLElement>('.meter i')];
+  const buttons = [...wrap.querySelectorAll<HTMLButtonElement>('[data-src]')];
+
+  const HELP: Record<string, string> = {
+    off: 'Microphone hears whatever plays in the room. Share a tab gets clean sound from e.g. the Spotify web player (Chrome/Edge: tick “Share tab audio”).',
+    mic: 'Turn the music up a bit. Headphones won’t reach the mic.',
+    tab: 'Keep the shared tab playing. Stop sharing from the browser bar or press Stop.',
+    file: 'The file loops until you press Stop.',
+  };
+
+  const sync = () => {
+    for (const b of buttons) b.classList.toggle('on', b.dataset.src === audio.source && audio.source !== 'off');
+    wrap.querySelector<HTMLButtonElement>('[data-src=off]')!.hidden = audio.source === 'off';
+    help.textContent = HELP[audio.source];
+  };
+  audio.onChange = (msg) => {
+    status.textContent = msg;
+    status.classList.toggle('error', audio.source === 'off' && msg !== 'Off');
+    sync();
+    refresh();
+  };
+
+  if (!tabAudioSupported()) wrap.querySelector<HTMLButtonElement>('[data-src=tab]')!.hidden = true;
+  for (const b of buttons) {
+    b.addEventListener('click', () => {
+      const src = b.dataset.src!;
+      if (src === 'off') audio.stop();
+      else if (src === 'file') fileInput.click();
+      else {
+        status.textContent = src === 'mic' ? 'Asking for the microphone…' : 'Pick a tab to share…';
+        void audio.start(src as 'mic' | 'tab');
+      }
+    });
+  }
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files?.[0];
+    if (f) void audio.start('file', f);
+    fileInput.value = '';
+  });
+
+  const tick = () => {
+    const L = audio.levels;
+    [L.bass, L.mid, L.treble].forEach((v, k) => (bars[k].style.transform = `scaleX(${v.toFixed(3)})`));
+    wrap.classList.toggle('beat', L.beat);
+    requestAnimationFrame(tick);
+  };
+  tick();
+  sync();
+  return wrap;
+}
+
 function togglePause() {
   paused = !paused;
   if (pauseButton) pauseButton.textContent = paused ? 'Play' : 'Pause';
@@ -876,6 +1002,8 @@ function shuffle() {
     glow: Math.random() < 0.6,
     palette: pick(Object.keys(PALETTES) as Palette[]),
     colorBy: pick(['palette', 'speed', 'direction', 'pointer', 'cycle', 'horizontal', 'radial'] as const),
+    audioAmount: settings.audioAmount,
+    audioBeat: settings.audioBeat,
   });
 }
 
