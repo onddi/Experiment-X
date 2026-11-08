@@ -4,6 +4,7 @@ import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 // --- settings ----------------------------------------------------------------
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
+type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
 type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'glyphs' | 'links';
@@ -49,6 +50,7 @@ interface Settings {
   flow: number;
   flowScale: number;
   flowSpeed: number;
+  flowType: FlowType;
   pointerMode: PointerMode;
   click: ClickMode;
   clickForce: number;
@@ -174,6 +176,7 @@ const DEFAULTS: Settings = {
   friction: 0.04,
   jitter: 0.05,
   flow: 0.3,
+  flowType: 'waves',
   flowScale: 0.004,
   flowSpeed: 0.2,
   pointerMode: 'repel',
@@ -527,6 +530,31 @@ function updateFlowFreqs() {
   fk.y2 = q(s * 0.6, h);
 }
 
+// Flow as a vector, written to fvx/fvy. 'curl' is the curl of a smooth
+// potential made of sine waves: divergence-free, so particles swirl like smoke
+// and never pile up into streams. Its waves also tile in wrap mode.
+let fvx = 0;
+let fvy = 0;
+function flowVec(x: number, y: number) {
+  if (settings.flowType !== 'curl') {
+    const a = flowAngle(x, y);
+    fvx = Math.cos(a);
+    fvy = Math.sin(a);
+    return;
+  }
+  const tt = t * settings.flowSpeed;
+  const inv = 1 / settings.flowScale;
+  // Gradient of the potential: sum of amp * sin(kx*x + ky*y + phase).
+  const c1 = Math.cos(fk.x1 * x + fk.y1 * y + tt);
+  const c2 = 0.9 * Math.cos(fk.x2 * x - fk.y2 * y - tt * 0.7 + 1.3);
+  const c3 = 0.5 * Math.cos(fk.x2 * 2 * x + fk.y1 * y + tt * 0.6 + 2.1);
+  const c4 = 0.5 * Math.cos(-fk.x1 * x + fk.y2 * 2 * y - tt * 0.9 + 4.2);
+  const gx = c1 * fk.x1 + c2 * fk.x2 + c3 * fk.x2 * 2 - c4 * fk.x1;
+  const gy = c1 * fk.y1 - c2 * fk.y2 + c3 * fk.y1 + c4 * fk.y2 * 2;
+  fvx = gy * inv * 0.8;
+  fvy = -gx * inv * 0.8;
+}
+
 function flowAngle(x: number, y: number) {
   const tt = t * settings.flowSpeed;
   return (
@@ -638,9 +666,16 @@ function step(dt: number) {
     let ay = (Math.random() - 0.5) * jitterNow + settings.gravity * 0.05;
 
     if (flowNow > 0) {
-      const a = flowAngle(px[i], py[i]);
-      ax += Math.cos(a) * flowNow * 0.05;
-      ay += Math.sin(a) * flowNow * 0.05;
+      flowVec(px[i], py[i]);
+      if (settings.flowType === 'curl') {
+        // Steer the velocity towards the field (advection) rather than pushing:
+        // inertia would fling particles out of the swirls and into streams.
+        ax += (fvx * flowNow * 0.9 - vx[i]) * 0.06;
+        ay += (fvy * flowNow * 0.9 - vy[i]) * 0.06;
+      } else {
+        ax += fvx * flowNow * 0.05;
+        ay += fvy * flowNow * 0.05;
+      }
     }
 
     if (kick !== 0) {
@@ -792,9 +827,10 @@ function enterFromEdge(i: number) {
     const side = (Math.random() * 4) | 0;
     const x = side === 0 ? 0.5 : side === 1 ? w - 0.5 : Math.random() * w;
     const y = side === 2 ? 0.5 : side === 3 ? h - 0.5 : Math.random() * h;
-    const a = flowAngle(x, y);
-    const c = Math.cos(a);
-    const sn = Math.sin(a);
+    flowVec(x, y);
+    const m = Math.hypot(fvx, fvy) || 1;
+    const c = fvx / m;
+    const sn = fvy / m;
     const inward = side === 0 ? c : side === 1 ? -c : side === 2 ? sn : -sn;
     if (inward < 0.3) continue;
     px[i] = ox[i] = x;
@@ -1502,9 +1538,10 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
   { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
 
-  { kind: 'section', id: 'flow', label: 'Flow', lock: ['flow', 'flowScale', 'flowSpeed'],
+  { kind: 'section', id: 'flow', label: 'Flow', lock: ['flow', 'flowType', 'flowScale', 'flowSpeed'],
     summary: () => (hasFlow() ? `strength ${settings.flow.toFixed(2)}` : 'off') },
   { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
+  { kind: 'select', key: 'flowType', label: 'Type', options: [['waves', 'Currents (gathers into streams)'], ['curl', 'Smoke (curl noise, stays spread)']], show: hasFlow },
   { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1), show: hasFlow },
   { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasFlow },
 
@@ -2079,6 +2116,7 @@ function shuffle() {
     gravity: Math.random() < 0.15 ? rand(-0.4, 0.6, 0.05) : 0,
     lifespan: Math.random() < 0.3 ? rand(3, 12, 0.5) : 0,
     flow: rand(0.2, 1.6, 0.05),
+    flowType: Math.random() < 0.4 ? 'curl' : 'waves',
     flowScale: rand(0.002, 0.012, 0.0005),
     flowSpeed: rand(0.05, 1, 0.05),
     pointerMode: pick(['repel', 'attract', 'vortex'] as const),
