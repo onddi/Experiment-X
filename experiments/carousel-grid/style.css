@@ -379,11 +379,5 @@ button:hover, select:hover { border-color: #3c3f46; }
   overflow: hidden;
   cursor: zoom-out;
 }
-.viewer-box,
-.viewer-inner {
-  position: absolute;
-  will-change: transform;
-}
-.viewer-box { overflow: hidden; }
 .viewer .item { border-radius: 0; will-change: auto; }
 .viewer .item.img span { font-size: calc(var(--cell) * 0.09 * var(--font-scale, 1)); }
