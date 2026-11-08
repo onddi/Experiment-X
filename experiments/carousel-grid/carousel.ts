@@ -21,6 +21,8 @@ export interface CarouselItem {
   image?: string;
   /** Brightness correction for the photo (1 = as shot). */
   exposure?: number;
+  /** Which theme group (e.g. element) this item belongs to. */
+  group?: number;
 }
 
 export class Carousel {
@@ -86,6 +88,23 @@ export class Carousel {
   }
 
   /** Index of the item currently closest to centre (0..count-1). */
+  get currentItem(): CarouselItem | undefined {
+    return this.items[this.index];
+  }
+
+  /** Item index (unwrapped, nearest to where it rests) whose group is g. */
+  nearestInGroup(g: number): number | null {
+    const base = this.destination;
+    const n = this.count;
+    for (let d = 0; d <= n; d++) {
+      for (const t of d === 0 ? [base] : [base + d, base - d]) {
+        if (!this.loop && (t < 0 || t > n - 1)) continue;
+        if (this.items[mod(t, n)]?.group === g) return t;
+      }
+    }
+    return null;
+  }
+
   get index() {
     const i = Math.round(this.pos);
     return this.loop ? mod(i, this.count) : clamp(i, 0, this.count - 1);

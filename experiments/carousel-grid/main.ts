@@ -241,6 +241,7 @@ function imageItemsFor(r: number, c: number): CarouselItem[] {
       ink: '#fff',
       image: img.url,
       exposure: Math.min(1.6, Math.max(0.7, exposure)),
+      group: g,
     });
   }
   return out;
@@ -313,8 +314,10 @@ function build() {
     let lastGroup = carousel.index % groupCount();
     let lastStep = Math.round(carousel.pos);
     carousel.onMove = (c) => {
+      queueSeedUpdate();
       const n = groupCount();
-      if (!heroDrives()) {
+      if (holdDrive && Math.abs(c.pos - c.destination) < 0.001) holdDrive = false;
+      if (!heroDrives() || holdDrive) {
         lastGroup = c.index % n;
         lastStep = Math.round(c.pos);
         return;
@@ -341,6 +344,7 @@ function build() {
       const start = prev.get(`${r},${c}`) ?? 0;
       carousel.jumpTo(Math.min(start, settings.items - 1));
       carousel.linked = () => linkedTo(r, c);
+      carousel.onMove = queueSeedUpdate;
       grid.append(carousel.el);
       cells.push({ r, c, carousel });
     }
@@ -441,6 +445,7 @@ type Control = ControlBody & { show?: () => boolean };
 type ControlBody =
   | { kind: 'section'; id: string; label: string; open?: boolean; summary?: () => string }
   | { kind: 'sub'; label: string }
+  | { kind: 'seed' }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
@@ -543,6 +548,9 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'chroma', label: 'Saturation', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3), show: isColors },
   { kind: 'range', key: 'lightness', label: 'Lightness', min: 20, max: 95, step: 1, format: (v) => `${v}%`, show: isColors },
 
+  { kind: 'section', id: 'seed', label: 'Seed', open: true, show: isImages },
+  { kind: 'seed' },
+
   { kind: 'section', id: 'actions', label: 'Actions', open: true },
   {
     kind: 'buttons',
@@ -596,6 +604,113 @@ function loadCollapsed(): Record<string, boolean> {
   }
 }
 
+// --- seed --------------------------------------------------------------------
+//
+// A seed lists the element each carousel shows: the main row, a slash, then
+// the grid cells in reading order, one letter per element (F W E A), e.g.
+// "F/WEAFWEAFWEAF". Applying a seed fills cells from the first one; extra
+// letters are ignored and cells beyond the seed keep what they show.
+
+const SEED_LETTERS = 'FWEA'; // same order as the theme groups
+
+function currentSeed() {
+  if (!isImages()) return '';
+  const letter = (c: Carousel) => SEED_LETTERS[c.currentItem?.group ?? 0] ?? '?';
+  const hero = cells.find((x) => x.r === HERO);
+  const grid = cells.filter((x) => x.r !== HERO).map((x) => letter(x.carousel)).join('');
+  return `${hero ? letter(hero.carousel) : '-'}/${grid}`;
+}
+
+function parseSeed(text: string): { hero: number | null; grid: number[] } | null {
+  const clean = text.toUpperCase().replace(/[^FWEA/-]/g, '');
+  if (!clean) return null;
+  const toGroups = (s: string) => [...s].filter((ch) => ch !== '-').map((ch) => SEED_LETTERS.indexOf(ch));
+  if (clean.includes('/')) {
+    const [h, g] = clean.split('/');
+    return { hero: toGroups(h)[0] ?? null, grid: toGroups(g ?? '') };
+  }
+  // No slash: the first letter is the main row when it is shown.
+  const all = toGroups(clean);
+  return settings.hero ? { hero: all[0] ?? null, grid: all.slice(1) } : { hero: null, grid: all };
+}
+
+function applySeed(text: string) {
+  const seed = parseSeed(text);
+  if (!seed) return false;
+  // Cells need every element available to follow a seed.
+  if (!cycling()) set('imageMode', 'cycle');
+  const hero = cells.find((x) => x.r === HERO);
+  // The main row moves without driving the grid, so cells land on the seed.
+  if (hero && seed.hero !== null) {
+    const t = hero.carousel.nearestInGroup(seed.hero);
+    if (t !== null && t !== hero.carousel.destination) {
+      holdDrive = true;
+      hero.carousel.goTo(t, 0);
+    }
+  }
+  const grid = cells.filter((x) => x.r !== HERO);
+  grid.forEach((x, i) => {
+    const g = seed.grid[i];
+    if (g === undefined) return;
+    const t = x.carousel.nearestInGroup(g);
+    if (t !== null) x.carousel.goTo(t, 0);
+  });
+  return true;
+}
+
+let seedInput: HTMLInputElement | null = null;
+let seedQueued = false;
+
+/** Keep the seed box in step with the carousels (at most once a frame). */
+function queueSeedUpdate() {
+  if (seedQueued) return;
+  seedQueued = true;
+  requestAnimationFrame(() => {
+    seedQueued = false;
+    if (seedInput && document.activeElement !== seedInput) seedInput.value = currentSeed();
+  });
+}
+
+function renderSeed(body: HTMLElement) {
+  const wrap = document.createElement('div');
+  wrap.className = 'seed';
+  wrap.innerHTML = `
+    <p class="hint">Main row / grid cells, one letter each: F fire, W water, E earth, A air.</p>
+    <input class="seed-input" spellcheck="false" autocomplete="off" aria-label="Seed" />
+    <div class="buttons">
+      <button type="button" data-act="copy">Copy</button>
+      <button type="button" data-act="apply">Apply</button>
+    </div>
+    <p class="seed-status" aria-live="polite"></p>`;
+  const input = wrap.querySelector<HTMLInputElement>('input')!;
+  const status = wrap.querySelector<HTMLElement>('.seed-status')!;
+  const say = (msg: string) => {
+    status.textContent = msg;
+    setTimeout(() => status.textContent === msg && (status.textContent = ''), 2000);
+  };
+  const apply = () => {
+    if (applySeed(input.value)) {
+      say('Applied');
+      input.blur();
+    } else say('Use letters F, W, E and A');
+  };
+  wrap.querySelector('[data-act="copy"]')!.addEventListener('click', async () => {
+    input.value = currentSeed();
+    try {
+      await navigator.clipboard.writeText(input.value);
+      say('Copied');
+    } catch {
+      input.select();
+      say('Selected, press Ctrl/⌘+C');
+    }
+  });
+  wrap.querySelector('[data-act="apply"]')!.addEventListener('click', apply);
+  input.addEventListener('keydown', (e) => e.key === 'Enter' && apply());
+  input.addEventListener('blur', () => queueSeedUpdate());
+  seedInput = input;
+  body.append(wrap);
+}
+
 function renderControls() {
   const collapsed = loadCollapsed();
   let body: HTMLElement = controls;
@@ -643,6 +758,11 @@ function renderControls() {
       h.textContent = ctl.label;
       body.append(h);
       if (ctl.show) conditional.push([h, ctl.show]);
+      continue;
+    }
+
+    if (ctl.kind === 'seed') {
+      renderSeed(body);
       continue;
     }
 
@@ -732,6 +852,8 @@ function updateStats() {
  * from the top-left so the change reads as a wave rather than a jump.
  */
 let waveTimers: number[] = [];
+/** Set while a seed moves the main row, so it doesn't drag the grid along. */
+let holdDrive = false;
 
 /**
  * Turn every grid cell by dg items (all cells the same amount, from where
