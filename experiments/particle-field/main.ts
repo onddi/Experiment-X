@@ -204,6 +204,7 @@ const app = document.getElementById('app')!;
 app.innerHTML = `
   <main class="stage" id="stage">
     <canvas id="c"></canvas>
+    <button class="fab-shuffle" id="fab-shuffle" type="button" title="Shuffle (keeps locked sections)" aria-label="Shuffle"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></button>
     <p class="hint" id="hint">Move through the field · click and hold</p>
   </main>
   <aside class="panel" id="panel">
@@ -1875,6 +1876,8 @@ const panel = document.getElementById('panel')!;
 const toggle = document.getElementById('toggle')!;
 toggle.addEventListener('click', () => {
   const collapsed = panel.classList.toggle('collapsed');
+  // The floating shuffle button only shows while the drawer is closed.
+  document.body.classList.toggle('panel-open', !collapsed);
   toggle.setAttribute('aria-expanded', String(!collapsed));
   toggle.title = collapsed ? 'Show controls (H)' : 'Hide controls (H)';
   toggle.textContent = collapsed ? '⟨' : '⟩';
@@ -1894,6 +1897,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'h') toggle.click();
 });
 
+document.getElementById('fab-shuffle')!.addEventListener('click', shuffle);
+document.body.classList.add('panel-open');
 new ResizeObserver(() => resize()).observe(canvas);
 if (window.innerWidth < 720) toggle.click();
 

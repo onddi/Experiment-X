@@ -186,7 +186,8 @@ button:hover, select:hover { border-color: #3c3f46; }
     z-index: 10;
     box-shadow: -8px 0 24px rgb(0 0 0 / 0.4);
   }
-  .panel.collapsed { box-shadow: none; }
+  /* Collapsed, only the toggle stays: don't cover the field below it. */
+  .panel.collapsed { bottom: auto; box-shadow: none; }
 }
 
 .swatch {
@@ -292,4 +293,31 @@ button:hover, select:hover { border-color: #3c3f46; }
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 4px 8px;
+}
+
+/* Small shuffle button for touch screens, bottom-right of the field. */
+.fab-shuffle {
+  position: absolute;
+  right: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(20 21 26 / 0.45);
+  color: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  touch-action: manipulation;
+}
+.fab-shuffle:active { transform: scale(0.92); color: #fff; }
+@media (hover: none), (max-width: 720px) {
+  .fab-shuffle { display: grid; }
+  body.panel-open .fab-shuffle { display: none; }
+  /* Keep the hint clear of the button. */
+  .hint { padding: 0 64px; line-height: 1.5; }
 }
