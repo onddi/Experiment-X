@@ -2045,10 +2045,18 @@ function glyphFor(i: number) {
   return glyphChars[g];
 }
 
+// Glyph sizes snap to steps of 1.25×: text drawn at an endless variety of
+// sizes (3D depth, size variety) can't use the browser's glyph cache and
+// was several times slower.
+const GLYPH_STEP = Math.log(1.25);
+const glyphLevel = (z: number) => Math.max(-8, Math.min(8, Math.round(Math.log(z) / GLYPH_STEP)));
+const glyphGroups: number[][] = Array.from({ length: 17 }, () => []);
+
 function drawGlyphs(list: number[], k: number, s: number) {
   const size = Math.max(6, s * 5 * settings.glyphScale);
   const f = FONTS[settings.glyphFont];
-  ctx.font = f.includes('{px}') ? f.replace('{px}', `${size.toFixed(1)}px`) : `${size.toFixed(1)}px ${f}`;
+  const font = (px: number) => (f.includes('{px}') ? f.replace('{px}', `${px.toFixed(1)}px`) : `${px.toFixed(1)}px ${f}`);
+  ctx.font = font(size);
   ctx.fillStyle = shades[k];
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -2057,9 +2065,19 @@ function drawGlyphs(list: number[], k: number, s: number) {
     for (const i of list) ctx.fillText(glyphFor(i), px[i], py[i]);
     return;
   }
+  if (rot === 'none') {
+    for (const g of glyphGroups) g.length = 0;
+    for (const i of list) glyphGroups[glyphLevel(psz[i]) + 8].push(i);
+    glyphGroups.forEach((g, lv) => {
+      if (!g.length) return;
+      ctx.font = font(size * Math.exp((lv - 8) * GLYPH_STEP));
+      for (const i of g) ctx.fillText(glyphFor(i), px[i], py[i]);
+    });
+    return;
+  }
   for (const i of list) {
-    const a = rot === 'none' ? 0 : rot === 'heading' ? Math.atan2(vy[i], vx[i]) : t * (1 + tone[i] * 2) * (tone[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
-    const z = uniformSize ? 1 : psz[i];
+    const a = rot === 'heading' ? Math.atan2(vy[i], vx[i]) : t * (1 + tone[i] * 2) * (tone[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+    const z = uniformSize ? 1 : Math.exp(glyphLevel(psz[i]) * GLYPH_STEP);
     const c = Math.cos(a) * z;
     const sn = Math.sin(a) * z;
     ctx.setTransform(c * dpr, sn * dpr, -sn * dpr, c * dpr, px[i] * dpr, py[i] * dpr);
