@@ -1,7 +1,7 @@
 import './style.css';
 import { Carousel, type Axis, type CarouselItem, type Effect } from './carousel.ts';
 import { randomWord } from './words.ts';
-import { THEMES } from './themes.ts';
+import { STYLES, themeFor } from './themes.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -49,6 +49,7 @@ interface Settings {
   labels: boolean;
   imageMode: 'per-cell' | 'cycle';
   heroDrives: boolean;
+  imageStyle: string;
   wave: number;
 }
 
@@ -93,6 +94,7 @@ const DEFAULTS: Settings = {
   labels: false,
   imageMode: 'per-cell',
   heroDrives: true,
+  imageStyle: 'photo',
   wave: 0,
 };
 
@@ -124,7 +126,7 @@ const STRUCTURAL = new Set<keyof Settings>([
 // The optional main carousel sits above the grid as row -1 and spans every column.
 const HERO = -1;
 const COLOR = new Set<keyof Settings>([
-  'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels', 'imageMode', 'heroDrives',
+  'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels', 'imageMode', 'heroDrives', 'imageStyle',
 ]);
 
 // --- content -----------------------------------------------------------------
@@ -166,7 +168,7 @@ function roundUpTo(v: number, n: number) {
  */
 function itemCount(r: number, wanted: number) {
   if (settings.surface === 'colors') return wanted;
-  const n = THEMES[settings.surface].groups.length;
+  const n = theme().groups.length;
   if (r === HERO ? heroDrives() : cycling()) return roundUpTo(wanted, n);
   return wanted;
 }
@@ -183,6 +185,9 @@ function carouselOpts(r: number) {
       : { tension: settings.tension, flick: settings.flick },
   };
 }
+
+/** The image set in use (same elements, different look). */
+const theme = () => themeFor(settings.imageStyle);
 
 /** Main row drives the grid: only on image surfaces with the main row shown. */
 const heroDrives = () => settings.surface !== 'colors' && settings.hero && settings.heroDrives;
@@ -201,7 +206,7 @@ function hash(...xs: number[]) {
 }
 
 function imageItemsFor(r: number, c: number): CarouselItem[] {
-  const theme = THEMES[settings.surface];
+  const theme = themeFor(settings.imageStyle);
   const groups = theme.groups;
   const out: CarouselItem[] = [];
   const cellIndex = r === HERO ? 0 : r * settings.cols + c;
@@ -304,7 +309,7 @@ function build() {
     carousel.jumpTo(Math.min(prev.get(`${HERO},${HERO}`) ?? 0, o.items - 1));
     carousel.linked = () => linkedTo(HERO, HERO);
     // When the main row lands on a new element, send the grid to it.
-    const groupCount = () => (settings.surface === 'colors' ? 4 : THEMES[settings.surface].groups.length);
+    const groupCount = () => (settings.surface === 'colors' ? 4 : theme().groups.length);
     let lastGroup = carousel.index % groupCount();
     let lastStep = Math.round(carousel.pos);
     carousel.onMove = (c) => {
@@ -393,7 +398,7 @@ function applyStyle() {
 function syncToHero() {
   const hero = cells.find((x) => x.r === HERO);
   if (!hero || !heroDrives()) return;
-  jumpGridTo(hero.carousel.index % THEMES[settings.surface].groups.length);
+  jumpGridTo(hero.carousel.index % theme().groups.length);
 }
 
 function recolor() {
@@ -503,13 +508,17 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'flick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },
 
   { kind: 'section', id: 'surface', label: 'Surface', open: true,
-    summary: () => (isImages() ? THEMES[settings.surface].title : 'Colors & words') },
+    summary: () => (isImages() ? `${theme().title}, ${STYLES.find((x) => x.id === settings.imageStyle)?.title ?? ''}` : 'Colors & words') },
   {
     kind: 'select', key: 'surface', label: 'Show',
     options: [['colors', 'Colors & Latin words'], ['four-elements', 'Images: Four Elements']],
   },
   { kind: 'range', key: 'fontSize', label: 'Text size', min: 40, max: 220, step: 5, format: (v) => `${v}%`,
     show: () => isColors() || settings.labels },
+  {
+    kind: 'select', key: 'imageStyle', label: 'Image style',
+    options: STYLES.map((x) => [x.id, x.title] as [string, string]), show: isImages,
+  },
   { kind: 'sub', label: 'Image grading', show: isImages },
   { kind: 'range', key: 'harmony', label: 'Harmony', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
   { kind: 'range', key: 'gradeHue', label: 'Harmony tint', min: 0, max: 360, step: 1, format: (v) => `${v}°`, show: isImages },
@@ -732,7 +741,7 @@ let waveTimers: number[] = [];
 function driveGridBy(dg: number, g: number) {
   for (const t of waveTimers) clearTimeout(t);
   waveTimers = [];
-  const n = THEMES[settings.surface].groups.length;
+  const n = theme().groups.length;
   for (const x of cells) {
     if (x.r === HERO) continue;
     const car = x.carousel;
@@ -764,7 +773,7 @@ function nearestOf(car: Carousel, g: number, n: number) {
 
 /** Snap every grid cell straight to its nearest item showing group g. */
 function jumpGridTo(g: number) {
-  const n = THEMES[settings.surface].groups.length;
+  const n = theme().groups.length;
   for (const x of cells) {
     if (x.r === HERO) continue;
     const t = nearestOf(x.carousel, g, n);

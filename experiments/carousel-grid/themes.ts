@@ -1,9 +1,15 @@
-// Image themes. Each theme is a set of groups; a grid cell shows one group and
-// its carousel steps through that group's photos.
+// Image themes. A theme is a fixed set of groups (here the four elements);
+// each grid cell shows one group and steps through its images.
+//
+// A theme can come in several styles (photographs, anime, ...). Every style
+// fills the same groups, so element order, colour matching and the main row
+// keep working whichever style is picked. Add a style by dropping a folder in
+// images/four-elements/<style>/ with <element>-<n>.webp files and a
+// style.json ({ "title": "...", "lum": { "fire-1": 43, ... } }).
 
 export interface ThemeImage {
   url: string;
-  /** Mean luminance 0-255, measured when the photos were picked. */
+  /** Mean luminance 0-255, used to even out exposure across a set. */
   lum: number;
 }
 
@@ -18,35 +24,60 @@ export interface Theme {
   groups: ThemeGroup[];
 }
 
-const files = import.meta.glob<string>('./images/four-elements/*.webp', {
+interface StyleManifest {
+  title: string;
+  lum?: Record<string, number>;
+}
+
+const files = import.meta.glob<string>('./images/four-elements/*/*.webp', {
   eager: true,
   query: '?url',
   import: 'default',
 });
+const manifests = import.meta.glob<StyleManifest>('./images/four-elements/*/style.json', {
+  eager: true,
+  import: 'default',
+});
 
-// Mean luminance per photo; used to even out exposure across the set.
-const LUM: Record<string, number> = {
-  'fire-1': 43, 'fire-2': 45, 'fire-3': 42, 'fire-4': 21, 'fire-5': 21, 'fire-6': 75, 'fire-7': 41, 'fire-8': 38,
-  'water-1': 145, 'water-2': 81, 'water-3': 89, 'water-4': 162, 'water-5': 122, 'water-6': 140, 'water-7': 127, 'water-8': 82,
-  'earth-1': 132, 'earth-2': 124, 'earth-3': 157, 'earth-4': 121, 'earth-5': 94, 'earth-6': 79, 'earth-7': 79, 'earth-8': 57,
-  'air-1': 45, 'air-2': 117, 'air-3': 79, 'air-4': 39, 'air-5': 63, 'air-6': 142, 'air-7': 58, 'air-8': 109,
-};
+// Order matters: cells use (column + 2 × row) mod 4, so neighbours never
+// share an element, and fire/water and earth/air sit diagonally.
+const ELEMENTS = [
+  { key: 'fire', name: 'Ignis' },
+  { key: 'water', name: 'Aqua' },
+  { key: 'earth', name: 'Terra' },
+  { key: 'air', name: 'Aer' },
+];
 
-function group(name: string, prefix: string): ThemeGroup {
-  const images: ThemeImage[] = [];
-  for (let i = 1; i <= 8; i++) {
-    const key = `${prefix}-${i}`;
-    const url = files[`./images/four-elements/${key}.webp`];
-    if (url) images.push({ url, lum: LUM[key] ?? 100 });
-  }
-  return { name, images };
+export interface ThemeStyle {
+  id: string;
+  title: string;
+  theme: Theme;
 }
 
-export const THEMES: Record<string, Theme> = {
-  'four-elements': {
-    title: 'Four Elements',
-    // Order matters: cells use (column + 2 × row) mod 4, so neighbours never
-    // share an element, and fire/water and earth/air sit diagonally.
-    groups: [group('Ignis', 'fire'), group('Aqua', 'water'), group('Terra', 'earth'), group('Aer', 'air')],
-  },
-};
+function loadStyles(): ThemeStyle[] {
+  const styles: ThemeStyle[] = [];
+  for (const [path, manifest] of Object.entries(manifests)) {
+    const id = path.split('/').at(-2)!;
+    const groups = ELEMENTS.map(({ key, name }) => {
+      const images: ThemeImage[] = [];
+      for (const [file, url] of Object.entries(files)) {
+        const m = file.match(new RegExp(`/${id}/(${key}-\\d+)\\.webp$`));
+        if (m) images.push({ url, lum: manifest.lum?.[m[1]] ?? 100 });
+      }
+      images.sort((a, b) => a.url.localeCompare(b.url, undefined, { numeric: true }));
+      return { name, images };
+    });
+    // A style needs at least one image for every element.
+    if (groups.every((g) => g.images.length)) {
+      styles.push({ id, title: manifest.title, theme: { title: 'Four Elements', groups } });
+    }
+  }
+  // Photographs first, the rest alphabetically.
+  return styles.sort((a, b) => (a.id === 'photo' ? -1 : b.id === 'photo' ? 1 : a.title.localeCompare(b.title)));
+}
+
+export const STYLES = loadStyles();
+
+export function themeFor(styleId: string): Theme {
+  return (STYLES.find((s) => s.id === styleId) ?? STYLES[0]).theme;
+}
