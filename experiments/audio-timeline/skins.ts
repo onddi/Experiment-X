@@ -7,13 +7,14 @@
 //   ring     the song wrapped into a circle; drag the ring to scrub
 //   ghost    a hairline progress bar and big type; controls fade in on use
 //   button   just a play button in the middle that fades away while playing
+//   hidden   nothing at all; play/pause comes from X-Frame or other layers
 //
 // Each layout draws its timeline on one shared overlay canvas and uses
 // plain DOM for buttons and hit areas.
 
 import type { TrackAnalysis } from './analysis.ts';
 
-export type Skin = 'classic' | 'capsule' | 'horizon' | 'ring' | 'ghost' | 'button';
+export type Skin = 'classic' | 'capsule' | 'horizon' | 'ring' | 'ghost' | 'button' | 'hidden';
 export const SKINS: [Skin, string][] = [
   ['classic', 'Classic'],
   ['capsule', 'Capsule'],
@@ -21,6 +22,7 @@ export const SKINS: [Skin, string][] = [
   ['ring', 'Ring'],
   ['ghost', 'Ghost'],
   ['button', 'Button'],
+  ['hidden', 'Hidden'],
 ];
 
 export interface PlayerApi {
@@ -381,7 +383,7 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
     remotePointer(type: 'down' | 'move', x: number, y: number) {
       const wasAwake = root.classList.contains('awake');
       wake();
-      if (type !== 'down' || skin === 'classic') return;
+      if (type !== 'down' || skin === 'classic' || skin === 'hidden') return;
       // A tap on one of our (visible) buttons still presses it.
       const el = document.elementFromPoint(x * innerWidth, y * innerHeight);
       const btn = el?.closest<HTMLElement>('.sk [data-act]');
@@ -401,7 +403,7 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
     },
     draw(now: number) {
       g.clearRect(0, 0, canvas.width, canvas.height);
-      if (skin === 'classic') return;
+      if (skin === 'classic' || skin === 'hidden') return;
       syncDom(now);
       const a = api.track();
       if (!a) return;

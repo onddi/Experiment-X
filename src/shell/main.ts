@@ -100,6 +100,8 @@ function createFrame(exp: Experiment) {
   const frame = document.createElement('iframe');
   frame.className = 'layer';
   frame.title = exp.title;
+  // Lets an audio layer start from the toolbar's play button without a tap of its own.
+  frame.allow = 'autoplay';
   frame.src = exp.url;
   frame.addEventListener('load', () => tellLayer(frame));
   stack.append(frame);

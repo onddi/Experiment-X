@@ -279,7 +279,8 @@ function applyVolume() {
 async function togglePlay() {
   if (!track) return;
   ensureGraph();
-  await actx!.resume();
+  // Don't wait on resume(): without a tap in this frame (Hidden layout) it can stay pending.
+  void actx!.resume().catch(() => {});
   if (audio.paused) {
     if (audio.ended || audio.currentTime >= track.duration - 0.05) audio.currentTime = 0;
     followPaused = false;
@@ -330,6 +331,12 @@ function shareState() {
 }
 audio.addEventListener('play', shareState);
 audio.addEventListener('pause', shareState);
+// The Hidden layout has no button of its own, so X-Frame's shared button is how
+// the music starts. Say we're paused, so that button reads "play" and its first
+// press starts everything together (rather than pausing whatever else is running).
+function alignHidden() {
+  if (settings.skin === 'hidden' && track) shareState();
+}
 xframe.subscribe('play', (d: { playing?: boolean }) => {
   if (!settings.syncPlay || typeof d?.playing !== 'boolean') return;
   sharedPlaying = d.playing;
@@ -424,6 +431,7 @@ async function load(blob: Blob, name: string, decoded?: AudioBuffer) {
     publishTransport();
     feed.publishTrack({ name, duration: result.duration, peakRate: result.peakRate, peaks: result.rms, analysis: result });
     busy(null);
+    alignHidden();
   } catch (err) {
     if (token !== loadToken) return;
     console.error(err);
@@ -1028,6 +1036,7 @@ function refreshPanel() {
   chips(body, SKINS, () => settings.skin, (k) => {
     settings.skin = k;
     skins.set(k);
+    alignHidden();
     save();
     refreshPanel();
   });
@@ -1049,6 +1058,7 @@ function refreshPanel() {
     ring: 'The song wrapped into a circle. Drag the ring to scrub.',
     ghost: 'A hairline progress bar and big type. Controls fade in when you move the pointer.',
     button: 'Just a play button. It fades away while the music plays; move the pointer or tap to bring it back.',
+    hidden: 'Nothing on screen, just the sound. Play and pause from X-Frame’s toolbar or another layer (e.g. the particle field).',
   };
   refreshers.push(() => {
     syncHue();
