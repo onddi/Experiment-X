@@ -251,6 +251,7 @@ button:hover, select:hover { border-color: #3c3f46; }
 .icon { width: 26px; height: 26px; padding: 0; flex: none; }
 
 .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.buttons .wide { grid-column: 1 / -1; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
 .chips button { flex: 1 0 auto; padding: 4px 8px; font-size: 12px; }
@@ -488,3 +489,10 @@ html:has(body.see-through) { color-scheme: normal; }
   .bt-play { width: 64px; height: 64px; }
   .bt-play svg { width: 26px; height: 26px; }
 }
+
+/* Loop toggles: dim when off, accent when on. */
+.loop-btn, .sk-loop { display: grid; place-items: center; color: var(--muted); }
+.loop-btn { border: none; background: none; }
+.loop-btn svg, .sk-loop svg { width: 18px; height: 18px; }
+.sk-loop { width: 40px; height: 40px; flex: none; color: rgb(233 233 236 / 0.5) !important; }
+.loop-btn.on, .sk-loop.on { color: var(--accent) !important; }

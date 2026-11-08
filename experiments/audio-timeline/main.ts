@@ -2,6 +2,7 @@ import './style.css';
 import { analyse, type TrackAnalysis } from './analysis.ts';
 import { AudioFeed, BandMeter } from './feed.ts';
 import { renderDemo, toWav } from './demo.ts';
+import { LOOP_NAME, renderLoop } from './loop.ts';
 import { xframe } from './xframe.ts';
 import { createSkins, SKINS, type Skin } from './skins.ts';
 
@@ -111,6 +112,7 @@ app.innerHTML = `
           <button id="zoom-fit" title="Show the whole track (0)">Fit</button>
           <button class="icon" id="zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button>
         </span>
+        <button class="icon loop-btn" id="loop" title="Loop" aria-label="Loop" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l3 3-3 3"/><path d="M4 11V9a3 3 0 0 1 3-3h13"/><path d="M7 21l-3-3 3-3"/><path d="M20 13v2a3 3 0 0 1-3 3H4"/></svg></button>
         <span class="volume">
           <button class="icon mute" id="mute" title="Mute (M)" aria-label="Mute"></button>
           <input type="range" id="volume" min="0" max="1" step="0.01" aria-label="Volume" />
@@ -430,13 +432,29 @@ async function load(blob: Blob, name: string, decoded?: AudioBuffer) {
   }
 }
 
-async function loadDemo() {
+async function loadDemo(kind: 'track' | 'loop' = 'track') {
   const token = ++loadToken;
-  busy('Rendering the demo track…', 0.05);
-  const buffer = await renderDemo();
+  busy(kind === 'loop' ? 'Rendering the demo loop…' : 'Rendering the demo track…', 0.05);
+  const buffer = kind === 'loop' ? await renderLoop() : await renderDemo();
   if (token !== loadToken) return;
-  await load(toWav(buffer), 'Demo track', buffer);
+  // The loop is made to repeat seamlessly, so switch repeat on with it.
+  if (kind === 'loop') setLoop(true);
+  await load(toWav(buffer), kind === 'loop' ? LOOP_NAME : 'Demo track', buffer);
 }
+
+const loopSyncs: (() => void)[] = [];
+function setLoop(on: boolean) {
+  settings.loop = audio.loop = on;
+  save();
+  for (const f of loopSyncs) f();
+}
+loopSyncs.push(() => {
+  const b = $('loop');
+  b.classList.toggle('on', settings.loop);
+  b.setAttribute('aria-pressed', String(settings.loop));
+  b.title = settings.loop ? 'Loop is on' : 'Loop';
+});
+$('loop').addEventListener('click', () => setLoop(!settings.loop));
 
 const fileInput = $<HTMLInputElement>('file');
 fileInput.addEventListener('change', () => {
@@ -987,6 +1005,8 @@ const skins = createSkins($('skin'), {
     applyVolume();
     save();
   },
+  loop: () => settings.loop,
+  toggleLoop: () => setLoop(!settings.loop),
   toggleMute: () => {
     settings.muted = !settings.muted;
     applyVolume();
@@ -1041,10 +1061,11 @@ function refreshPanel() {
   const { body, summary } = group('track', 'Track');
   const buttons = document.createElement('div');
   buttons.className = 'buttons';
-  buttons.innerHTML = `<button type="button" id="open">Open file…</button><button type="button" id="demo">Demo track</button>`;
+  buttons.innerHTML = `<button type="button" id="open" class="wide">Open file…</button><button type="button" id="demo">Demo track</button><button type="button" id="demo-loop">Demo loop</button>`;
   body.append(buttons);
   buttons.querySelector('#open')!.addEventListener('click', () => fileInput.click());
-  buttons.querySelector('#demo')!.addEventListener('click', () => void loadDemo());
+  buttons.querySelector('#demo')!.addEventListener('click', () => void loadDemo('track'));
+  buttons.querySelector('#demo-loop')!.addEventListener('click', () => void loadDemo('loop'));
   const info = note(body, '');
   note(body, 'Or drop an audio file anywhere on the page.');
   const speed = document.createElement('div');
@@ -1056,11 +1077,9 @@ function refreshPanel() {
     audio.playbackRate = r;
     save();
   });
-  toggleRow(body, 'Loop', () => settings.loop, (v) => {
-    settings.loop = audio.loop = v;
-    save();
-  });
+  loopSyncs.push(toggleRow(body, 'Loop', () => settings.loop, (v) => setLoop(v)));
   audio.loop = settings.loop;
+  for (const f of loopSyncs) f();
   refreshers.push(() => {
     summary.textContent = track ? trackName.replace(/\.[a-z0-9]+$/i, '') : '';
     info.textContent = track

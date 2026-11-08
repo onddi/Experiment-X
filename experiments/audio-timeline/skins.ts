@@ -34,6 +34,8 @@ export interface PlayerApi {
   muted(): boolean;
   setVolume(v: number): void;
   toggleMute(): void;
+  loop(): boolean;
+  toggleLoop(): void;
   hue(): number;
   /** Live loudness 0..1 and bass 0..1, for small pulses. */
   level(): number;
@@ -47,6 +49,7 @@ const vol = (v: number) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/>${
     v === 0 ? '<path d="M16 9.5l5 5M21 9.5l-5 5"/>' : `<path d="M15.5 9.2a4 4 0 0 1 0 5.6"/>${v > 0.5 ? '<path d="M18.3 6.6a7.6 7.6 0 0 1 0 10.8"/>' : ''}`
   }</svg>`;
+const LOOP = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l3 3-3 3"/><path d="M4 11V9a3 3 0 0 1 3-3h13"/><path d="M7 21l-3-3 3-3"/><path d="M20 13v2a3 3 0 0 1-3 3H4"/></svg>';
 const SKIP = (dir: 1 | -1) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${
     dir < 0 ? '<path d="M11 7l-5 5 5 5"/><path d="M18 7l-5 5 5 5"/>' : '<path d="M13 7l5 5-5 5"/><path d="M6 7l5 5-5 5"/>'
@@ -91,6 +94,7 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
         <button class="sk-play cap-play" data-act="toggle" aria-label="Play"></button>
         <div class="cap-meta"><b data-text="title"></b><span data-text="clock"></span></div>
         <div class="cap-wave" data-seek="capsule" role="slider" aria-label="Position" tabindex="0"></div>
+        <button class="sk-loop" data-act="loop" aria-label="Loop">${LOOP}</button>
         <button class="sk-mute" data-act="mute" aria-label="Mute"></button>
         <input class="sk-vol" type="range" min="0" max="1" step="0.01" aria-label="Volume" />
       </div>
@@ -105,7 +109,7 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
         <div class="hz-time"><span data-text="time"></span><em data-text="dur"></em></div>
       </div>
       <div class="hz-band" data-seek="horizon" role="slider" aria-label="Position" tabindex="0"></div>
-      <div class="hz-foot"><button class="sk-mute" data-act="mute" aria-label="Mute"></button><input class="sk-vol" type="range" min="0" max="1" step="0.01" aria-label="Volume" /></div>
+      <div class="hz-foot"><button class="sk-loop" data-act="loop" aria-label="Loop">${LOOP}</button><button class="sk-mute" data-act="mute" aria-label="Mute"></button><input class="sk-vol" type="range" min="0" max="1" step="0.01" aria-label="Volume" /></div>
     </div>
 
     <div class="sk sk-ring">
@@ -115,7 +119,7 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
         <button class="sk-play ring-play" data-act="toggle" aria-label="Play"></button>
         <span data-text="clock"></span>
       </div>
-      <div class="ring-vol"><button class="sk-mute" data-act="mute" aria-label="Mute"></button><input class="sk-vol" type="range" min="0" max="1" step="0.01" aria-label="Volume" /></div>
+      <div class="ring-vol"><button class="sk-loop" data-act="loop" aria-label="Loop">${LOOP}</button><button class="sk-mute" data-act="mute" aria-label="Mute"></button><input class="sk-vol" type="range" min="0" max="1" step="0.01" aria-label="Volume" /></div>
     </div>
 
     <div class="sk sk-button">
@@ -129,6 +133,7 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
         <button class="gh-skip" data-act="back" aria-label="Back 5 seconds">${SKIP(-1)}</button>
         <button class="sk-play gh-play" data-act="toggle" aria-label="Play"></button>
         <button class="gh-skip" data-act="fwd" aria-label="Forward 5 seconds">${SKIP(1)}</button>
+        <button class="sk-loop" data-act="loop" aria-label="Loop">${LOOP}</button>
         <button class="sk-mute" data-act="mute" aria-label="Mute"></button>
       </div>
     </div>
@@ -152,6 +157,7 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
     const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
     if (act === 'toggle') api.toggle();
     else if (act === 'mute') api.toggleMute();
+    else if (act === 'loop') api.toggleLoop();
     else if (act === 'back') api.seek(api.time() - 5);
     else if (act === 'fwd') api.seek(api.time() + 5);
   });
@@ -239,6 +245,10 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
         b.innerHTML = playing ? PAUSE : PLAY;
         b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
       }
+    }
+    for (const b of all('.sk-loop')) {
+      b.classList.toggle('on', api.loop());
+      b.setAttribute('aria-pressed', String(api.loop()));
     }
     const v = api.muted() ? 0 : api.volume();
     if (v !== lastVol) {
