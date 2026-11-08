@@ -412,6 +412,11 @@ function applyStyle() {
   s.setProperty('--grade', `oklch(62% 0.13 ${settings.gradeHue})`);
   s.setProperty('--vignette', String(settings.vignette));
   s.setProperty('--element-tint', String(settings.elementTint));
+  // Effects set to 0 are removed outright: even fully transparent, blend-mode
+  // layers and filters still cost Safari work on every frame.
+  app.classList.toggle('no-harmony', !settings.harmony);
+  app.classList.toggle('no-vignette', !settings.vignette);
+  app.classList.toggle('no-tint', !settings.elementTint);
   grid.classList.toggle('show-dots', settings.dots);
   grid.dataset.surface = settings.surface;
   for (const x of cells) {

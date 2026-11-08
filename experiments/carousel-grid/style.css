@@ -111,6 +111,12 @@ body {
   background: radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 0.85) 130%);
   opacity: var(--vignette, 0);
 }
+/* Effects at 0 are dropped entirely (see applyStyle). */
+.no-harmony .item.img::before,
+.no-vignette .item.img::after,
+.no-tint .item.img .tint { display: none; }
+.no-harmony .item.img { filter: brightness(calc(var(--exposure, 1) * var(--turn, 1))); }
+
 /* Element colour: pushes every image of an element towards that element's
    own hue (keeping its light and shade), so the four sets read apart. */
 .item .tint { display: none; }
