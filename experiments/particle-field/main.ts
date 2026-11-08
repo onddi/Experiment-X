@@ -67,6 +67,10 @@ interface Settings {
   mixStyles: string;
   gravity: number;
   lifespan: number;
+  sizeVar: number;
+  launchSpeed: number;
+  launchDir: number;
+  launchSpread: number;
   edges: Edges;
   glyphSet: GlyphSet;
   glyphText: string;
@@ -195,6 +199,10 @@ const DEFAULTS: Settings = {
   mixStyles: 'circles,glow,sparkles,rings,glyphs,comets',
   gravity: 0,
   lifespan: 0,
+  sizeVar: 0,
+  launchSpeed: 0,
+  launchDir: 270,
+  launchSpread: 360,
   edges: 'wrap',
   glyphSet: 'katakana',
   glyphText: 'HELLO WORLD',
@@ -286,6 +294,8 @@ let tone = new Float32Array(0); // 0..1 position along the palette
 let gl = new Float32Array(0); // glyph choice, 0..1
 let age = new Float32Array(0); // frames since (re)spawn, for fading in and out
 let span = new Float32Array(0); // this particle's lifetime in frames (Lifespan setting)
+let rnd = new Float32Array(0); // a random 0..1 drawn at birth (size variety)
+let psz = new Float32Array(0); // per-particle size multiplier, worked out each frame
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
 const FADE_IN = 45;
@@ -306,7 +316,7 @@ function ensureCount() {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span] = [px, py, vx, vy, ox, oy, tone, gl, age, span].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz].map(grow);
     cap = want;
   }
   for (let i = n; i < want; i++) spawn(i, Math.random() * w, Math.random() * h);
@@ -316,15 +326,28 @@ function ensureCount() {
 function spawn(i: number, x: number, y: number) {
   px[i] = ox[i] = x;
   py[i] = oy[i] = y;
-  vx[i] = (Math.random() - 0.5) * 0.4;
-  vy[i] = (Math.random() - 0.5) * 0.4;
   tone[i] = Math.random();
   gl[i] = Math.random();
   rebirth(i);
+  launch(i);
+}
+
+// Starting velocity: a gentle random drift, plus the Launch settings.
+function launch(i: number) {
+  vx[i] = (Math.random() - 0.5) * 0.4;
+  vy[i] = (Math.random() - 0.5) * 0.4;
+  const v = settings.launchSpeed;
+  if (v <= 0) return;
+  const spread = (settings.launchSpread / 360) * Math.PI * 2;
+  const a = (settings.launchDir / 180) * Math.PI + (Math.random() - 0.5) * spread;
+  const sp = v * (0.6 + Math.random() * 0.8);
+  vx[i] += Math.cos(a) * sp;
+  vy[i] += Math.sin(a) * sp;
 }
 
 function rebirth(i: number) {
   age[i] = 0;
+  rnd[i] = Math.random();
   // Spread lifetimes (50–150%) so particles don't all fade at once.
   span[i] = settings.lifespan > 0 ? settings.lifespan * 60 * (0.5 + Math.random()) : 0;
 }
@@ -656,6 +679,7 @@ function step(dt: number) {
         px[i] = ox[i] = Math.random() * w;
         py[i] = oy[i] = Math.random() * h;
         rebirth(i);
+        launch(i);
       } else {
         // Lifespan just switched on: stay visible, at a random point in life.
         rebirth(i);
@@ -1097,14 +1121,15 @@ function drawGlyphs(list: number[], k: number, s: number) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const rot = settings.glyphRotate;
-  if (rot === 'none') {
+  if (rot === 'none' && uniformSize) {
     for (const i of list) ctx.fillText(glyphFor(i), px[i], py[i]);
     return;
   }
   for (const i of list) {
-    const a = rot === 'heading' ? Math.atan2(vy[i], vx[i]) : t * (1 + tone[i] * 2) * (tone[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
-    const c = Math.cos(a);
-    const sn = Math.sin(a);
+    const a = rot === 'none' ? 0 : rot === 'heading' ? Math.atan2(vy[i], vx[i]) : t * (1 + tone[i] * 2) * (tone[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+    const z = uniformSize ? 1 : psz[i];
+    const c = Math.cos(a) * z;
+    const sn = Math.sin(a) * z;
     ctx.setTransform(c * dpr, sn * dpr, -sn * dpr, c * dpr, px[i] * dpr, py[i] * dpr);
     ctx.fillText(glyphFor(i), 0, 0);
   }
@@ -1121,16 +1146,21 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     // Pre-rendered shapes, stamped with drawImage: much faster than a path
     // per particle for soft or curved shapes.
     const img = spriteFor(style as SpriteStyle, k);
-    const d = s * sprite.scale;
+    const d0 = s * sprite.scale;
     ctx.globalAlpha = sprite.alpha;
-    for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    if (uniformSize) for (const i of list) ctx.drawImage(img, px[i] - d0 / 2, py[i] - d0 / 2, d0, d0);
+    else
+      for (const i of list) {
+        const d = d0 * psz[i];
+        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      }
     ctx.globalAlpha = 1;
   } else if (style === 'arrows') {
     // Small triangles pointing where each particle is heading.
     ctx.fillStyle = shades[k];
     ctx.beginPath();
-    const L = s * 2.2;
     for (const i of list) {
+      const L = s * 2.2 * (uniformSize ? 1 : psz[i]);
       const v = Math.hypot(vx[i], vy[i]) + 1e-6;
       const ux = vx[i] / v;
       const uy = vy[i] / v;
@@ -1154,8 +1184,10 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     ctx.stroke();
     ctx.globalAlpha = 1;
     const img = spriteFor('glow', k);
-    const d = s * 3;
-    for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    for (const i of list) {
+      const d = s * 3 * (uniformSize ? 1 : psz[i]);
+      ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    }
   } else if (style === 'glyphs') {
     drawGlyphs(list, k, s);
   } else if (style === 'streaks') {
@@ -1172,7 +1204,12 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
   } else {
     ctx.fillStyle = shades[k];
     ctx.beginPath();
-    for (const i of list) ctx.rect(px[i] - s / 2, py[i] - s / 2, s, s);
+    if (uniformSize) for (const i of list) ctx.rect(px[i] - s / 2, py[i] - s / 2, s, s);
+    else
+      for (const i of list) {
+        const d = s * psz[i];
+        ctx.rect(px[i] - d / 2, py[i] - d / 2, d, d);
+      }
     ctx.fill();
   }
 }
@@ -1191,6 +1228,19 @@ function mixStyles(): Render[] {
 function styleHash(i: number) {
   const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
   return x - Math.floor(x);
+}
+
+// Per-particle size multipliers. Size variety spreads sizes over roughly
+// 0.3×–3× (log scale, so most stay near the base size).
+let uniformSize = true;
+function updateSizes() {
+  const sv = settings.sizeVar;
+  uniformSize = sv <= 0;
+  if (uniformSize) return;
+  for (let i = 0; i < n; i++) {
+    const u = rnd[i] * 2 - 1;
+    psz[i] = Math.exp(u * Math.abs(u) * sv * 1.2);
+  }
 }
 
 const FADE_LEVELS = 4;
@@ -1228,6 +1278,7 @@ function draw() {
   }
   for (const bk of buckets) bk.length = 0;
   for (const lv of fadeBuckets) for (const bk of lv) bk.length = 0;
+  updateSizes();
   for (let i = 0; i < n; i++) {
     const a = fadeOf(i);
     if (a >= 0.99) buckets[shadeIndex(i)].push(i);
@@ -1527,7 +1578,7 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [] }, // filled with presets below
   { kind: 'mypresets' },
 
-  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity', 'lifespan', 'edges'],
+  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity', 'edges'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
@@ -1535,8 +1586,16 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
   { kind: 'select', key: 'edges', label: 'Off-screen', options: [['wrap', 'Wrap to the other side'], ['enter', 'Re-enter with the flow'], ['bounce', 'Bounce off the edges']] },
-  { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
   { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
+
+  { kind: 'section', id: 'life', label: 'Birth & life', lock: ['lifespan', 'sizeVar', 'launchSpeed', 'launchDir', 'launchSpread'],
+    summary: () => [settings.lifespan > 0 ? `~${settings.lifespan}s life` : 'endless', settings.sizeVar > 0 ? 'mixed sizes' : '', settings.launchSpeed > 0 ? 'launched' : ''].filter(Boolean).join(', ') },
+  { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
+  { kind: 'range', key: 'sizeVar', label: 'Size variety', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'all same' : pct(v)) },
+  { kind: 'range', key: 'launchSpeed', label: 'Launch speed', min: 0, max: 6, step: 0.1, format: (v) => (v === 0 ? 'still' : v.toFixed(1)) },
+  { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
+  { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
+  { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and (soon) from emitters.' },
 
   { kind: 'section', id: 'flow', label: 'Flow', lock: ['flow', 'flowType', 'flowScale', 'flowSpeed'],
     summary: () => (hasFlow() ? `strength ${settings.flow.toFixed(2)}` : 'off') },
@@ -2113,8 +2172,9 @@ function shuffle() {
     speed: rand(0.6, 2, 0.1),
     friction: rand(0.02, 0.08, 0.005),
     jitter: rand(0, 0.15, 0.01),
-    gravity: Math.random() < 0.15 ? rand(-0.4, 0.6, 0.05) : 0,
     lifespan: Math.random() < 0.3 ? rand(3, 12, 0.5) : 0,
+    sizeVar: Math.random() < 0.4 ? rand(0.2, 0.8, 0.05) : 0,
+    gravity: Math.random() < 0.15 ? rand(-0.4, 0.6, 0.05) : 0,
     flow: rand(0.2, 1.6, 0.05),
     flowType: Math.random() < 0.4 ? 'curl' : 'waves',
     flowScale: rand(0.002, 0.012, 0.0005),
