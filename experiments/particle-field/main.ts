@@ -3857,7 +3857,10 @@ function apply(p: Partial<Settings>, keepAudio = true) {
     currentMine = null;
     redrawMine();
   }
-  const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings() } as Settings;
+  // Your own presets bring their whole Sound setup back too (the music cards
+  // included), all but Auto VJ, so a VJ stepping through them keeps going.
+  const own = keepAudio ? {} : Object.fromEntries(MUSIC_KEYS.filter((k) => k in p && !k.startsWith('audioVj')).map((k) => [k, p[k]]));
+  const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
     pendingLook = { target, since: performance.now() };
     return;
