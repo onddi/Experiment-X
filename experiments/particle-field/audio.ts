@@ -8,18 +8,30 @@
 export type AudioSource = 'off' | 'mic' | 'tab' | 'file';
 
 export interface AudioLevels {
-  level: number; // overall loudness
+  // Smoothed loudness per band, auto-gained to 0..1. Good for meters and
+  // colour, but a typical song sits high here most of the time.
+  level: number;
   bass: number;
   mid: number;
   treble: number;
-  beat: boolean; // true on the frame a bass hit is detected
+  // How far each band is above its own average of the last few seconds,
+  // 0..1. Zero in a steady section, high on hits, drops and builds. This
+  // is what motion should follow, so it reacts to the music's changes.
+  liftLevel: number;
+  liftMid: number;
+  // Beat envelope: jumps on a detected kick (by its strength) and decays
+  // smoothly, so effects get a clean, predictable shape.
+  pulse: number;
+  beat: boolean; // true on the frame a kick is detected
 }
+
+const ZERO: AudioLevels = { level: 0, bass: 0, mid: 0, treble: 0, liftLevel: 0, liftMid: 0, pulse: 0, beat: false };
 
 const BANDS = { bass: [25, 160], mid: [160, 2000], treble: [2000, 9000] } as const;
 
 export class AudioInput {
   source: AudioSource = 'off';
-  levels: AudioLevels = { level: 0, bass: 0, mid: 0, treble: 0, beat: false };
+  levels: AudioLevels = { ...ZERO };
   onChange: (status: string) => void = () => {};
 
   private ctx: AudioContext | null = null;
@@ -31,7 +43,10 @@ export class AudioInput {
   // Running peaks per band act as automatic gain, so quiet and loud
   // sources both use the full 0..1 range.
   private peaks = { bass: 0.2, mid: 0.2, treble: 0.2, level: 0.2 };
-  private bassAvg = 0;
+  private avg = { level: 0, mid: 0 };
+  private prevBass = 0;
+  private fluxMean = 0;
+  private fluxVar = 0;
   private lastBeat = 0;
 
   async start(source: Exclude<AudioSource, 'off'>, file?: File) {
@@ -97,7 +112,7 @@ export class AudioInput {
     void this.ctx?.close();
     this.ctx = this.analyser = this.node = this.stream = this.element = null;
     this.source = 'off';
-    this.levels = { level: 0, bass: 0, mid: 0, treble: 0, beat: false };
+    this.levels = { ...ZERO };
     if (wasOn) this.onChange('Off');
   }
 
@@ -123,17 +138,35 @@ export class AudioInput {
 
     for (const k of ['bass', 'mid', 'treble', 'level'] as const) {
       // Peaks rise instantly and fall slowly; a floor keeps silence silent.
-      this.peaks[k] = Math.max(raw[k], this.peaks[k] * 0.998, 0.08);
+      this.peaks[k] = Math.max(raw[k], this.peaks[k] * 0.999, 0.08);
       const v = Math.min(1, raw[k] / this.peaks[k]);
-      // Fast attack, slower release, so hits pop and then ease off.
-      L[k] = v > L[k] ? v : L[k] * 0.88 + v * 0.12;
+      // Quick attack, gentle release.
+      L[k] = v > L[k] ? L[k] * 0.4 + v * 0.6 : L[k] * 0.92 + v * 0.08;
     }
 
-    // Beat: bass jumps clearly above its recent average.
-    this.bassAvg = this.bassAvg * 0.95 + raw.bass * 0.05;
-    if (raw.bass > this.bassAvg * 1.3 && raw.bass > 0.12 && now - this.lastBeat > 230) {
+    // Lift: the band relative to its ~3 second average.
+    for (const k of ['level', 'mid'] as const) {
+      this.avg[k] = this.avg[k] * 0.995 + L[k] * 0.005;
+      const lift = Math.max(0, Math.min(1, (L[k] - this.avg[k]) / (this.avg[k] * 0.6 + 0.08)));
+      const key = k === 'level' ? 'liftLevel' : 'liftMid';
+      L[key] = L[key] * 0.85 + lift * 0.15;
+    }
+
+    // Kick detection by spectral flux: how much the bass rose since last
+    // frame, compared with how much it usually moves (mean + 2 std devs
+    // over roughly the last second).
+    const flux = Math.max(0, raw.bass - this.prevBass);
+    this.prevBass = raw.bass;
+    const dev = flux - this.fluxMean;
+    this.fluxMean += dev * 0.05;
+    this.fluxVar = this.fluxVar * 0.95 + dev * dev * 0.05;
+    const threshold = this.fluxMean + 2 * Math.sqrt(this.fluxVar) + 0.01;
+    if (flux > threshold && raw.bass > 0.1 && now - this.lastBeat > 260) {
       L.beat = true;
       this.lastBeat = now;
+      L.pulse = Math.max(L.pulse, Math.min(1, 0.5 + flux / (threshold * 2)));
+    } else {
+      L.pulse *= 0.9;
     }
   }
 }

@@ -6,6 +6,7 @@ import { AudioInput, tabAudioSupported } from './audio.ts';
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
 type Render = 'dots' | 'streaks' | 'links';
+type WaveAt = 'centre' | 'pointer' | 'random';
 type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'none';
 type ColorBy = 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES;
@@ -30,8 +31,11 @@ interface Settings {
   glow: boolean;
   palette: Palette;
   colorBy: ColorBy;
-  audioAmount: number;
+  audioSpeed: number;
+  audioFlow: number;
+  audioPulse: number;
   audioBeat: BeatAction;
+  audioWaveAt: WaveAt;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -83,8 +87,11 @@ const DEFAULTS: Settings = {
   glow: false,
   palette: 'aurora',
   colorBy: 'palette',
-  audioAmount: 1,
+  audioSpeed: 0.4,
+  audioFlow: 0.5,
+  audioPulse: 0.6,
   audioBeat: 'ripple',
+  audioWaveAt: 'centre',
 };
 
 const STORAGE_KEY = 'particle-field:settings';
@@ -238,7 +245,7 @@ function implodeStart() {
 // --- audio -------------------------------------------------------------------
 
 const audio = new AudioInput();
-let bassSlow = 0;
+let lastPulse = 0;
 
 // --- simulation --------------------------------------------------------------
 
@@ -280,17 +287,25 @@ function step(dt: number) {
   // sparkle, and a bass kick pushes the field out from the centre before it
   // eases back.
   const A = audio.levels;
-  const amt = audio.source === 'off' ? 0 : settings.audioAmount;
-  bassSlow = bassSlow * 0.9 + A.bass * 0.1;
-  const kick = (A.bass - bassSlow) * 0.9 * amt;
-  const flowNow = flow * (1 + A.mid * 2 * amt);
-  const jitterNow = jitter + A.treble * 0.4 * amt;
-  const speedNow = speed * (1 + A.level * 1.2 * amt);
-  if (A.beat && amt > 0 && settings.audioBeat !== 'none') {
+  const on = audio.source !== 'off';
+  const { audioSpeed, audioFlow, audioPulse } = settings;
+  // Motion follows changes in the music (lift), with only a little of the
+  // absolute loudness, so steady passages settle and hits stand out.
+  const speedNow = on ? speed * (1 + (A.liftLevel * 1.2 + A.level * 0.25) * audioSpeed) : speed;
+  const flowNow = on ? flow * (1 + A.liftMid * 2 * audioFlow) : flow;
+  const jitterNow = jitter;
+  // Bass pulse: an outward shove while the beat envelope rises and a gentle
+  // pull back while it decays, so the field breathes in place.
+  const dPulse = on ? A.pulse - lastPulse : 0;
+  lastPulse = A.pulse;
+  const kick = dPulse * (dPulse > 0 ? 3 : 2.5) * audioPulse;
+  if (on && A.beat && settings.audioBeat !== 'none') {
     const kind = settings.audioBeat;
-    const x = w * (0.25 + Math.random() * 0.5);
-    const y = h * (0.25 + Math.random() * 0.5);
-    waves.push({ kind, x, y, r: kind === 'implode' ? implodeStart() : 0, life: 0.6 + 0.4 * amt / 2 });
+    const at = settings.audioWaveAt;
+    const usePtr = at === 'pointer' && pointer.active;
+    const x = usePtr ? pointer.x : at === 'random' ? w * (0.2 + Math.random() * 0.6) : w / 2;
+    const y = usePtr ? pointer.y : at === 'random' ? h * (0.2 + Math.random() * 0.6) : h / 2;
+    waves.push({ kind, x, y, r: kind === 'implode' ? implodeStart() : 0, life: 0.4 + A.pulse * 0.6 });
   }
   const cx = w / 2;
   const cy = h / 2;
@@ -310,8 +325,10 @@ function step(dt: number) {
       const dx = px[i] - cx;
       const dy = py[i] - cy;
       const d = Math.sqrt(dx * dx + dy * dy) + 1;
-      ax += (dx / d) * kick;
-      ay += (dy / d) * kick;
+      // Outer particles move more, so it reads as the whole field expanding.
+      const k = kick * Math.min(1, d / (Math.min(w, h) * 0.5));
+      ax += (dx / d) * k;
+      ay += (dy / d) * k;
     }
 
     if (usePointer) {
@@ -509,7 +526,7 @@ function draw() {
 
   if (settings.render === 'links') drawLinks();
 
-  const s = settings.size * (1 + audio.levels.bass * 0.8 * (audio.source === 'off' ? 0 : settings.audioAmount));
+  const s = settings.size * (1 + (audio.source === 'off' ? 0 : audio.levels.pulse * 0.7 * settings.audioPulse));
   for (let k = 0; k < SHADES; k++) {
     const list = buckets[k];
     if (!list.length) continue;
@@ -639,7 +656,12 @@ const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', '
 const RENDERS: [string, string][] = [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['audio', 'Music energy']];
 
-const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['shockwave', 'Shockwave'], ['implode', 'Implode'], ['none', 'Nothing']];
+const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['shockwave', 'Shockwave'], ['implode', 'Implode'], ['none', 'Off']];
+const AUDIO_PRESETS: [string, Partial<Settings>][] = [
+  ['Breathe', { audioSpeed: 0.2, audioFlow: 0.4, audioPulse: 0.9, audioBeat: 'none' }],
+  ['Pulse', { audioSpeed: 0.4, audioFlow: 0.5, audioPulse: 0.6, audioBeat: 'ripple', audioWaveAt: 'centre' }],
+  ['Club', { audioSpeed: 0.9, audioFlow: 1, audioPulse: 1.2, audioBeat: 'shockwave', audioWaveAt: 'random' }],
+];
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
 
 const hasFlow = () => settings.flow > 0;
@@ -676,8 +698,12 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] },
   { kind: 'audio' },
-  { kind: 'range', key: 'audioAmount', label: 'Reaction', min: 0, max: 2, step: 0.05, format: pct },
-  { kind: 'select', key: 'audioBeat', label: 'On beat', options: BEAT_ACTIONS },
+  { kind: 'buttons', buttons: AUDIO_PRESETS.map(([name, p]) => [name, () => { Object.assign(settings, p); changed(new Set(Object.keys(p) as (keyof Settings)[])); }]) },
+  { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct },
+  { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct },
+  { kind: 'range', key: 'audioPulse', label: 'Bass pulse', min: 0, max: 2, step: 0.05, format: pct },
+  { kind: 'select', key: 'audioBeat', label: 'Beat waves', options: BEAT_ACTIONS },
+  { kind: 'select', key: 'audioWaveAt', label: 'Waves from', options: [['centre', 'Centre'], ['pointer', 'Pointer'], ['random', 'Random spot']], show: () => settings.audioBeat !== 'none' },
 
   { kind: 'section', id: 'look', label: 'Look', open: true,
     summary: () => `${label(RENDERS, settings.render)}, ${(PALETTES[settings.palette] as PaletteDef).label}` },
@@ -725,8 +751,12 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   changed(new Set([k]));
 }
 
-function apply(p: Partial<Settings>) {
-  Object.assign(settings, DEFAULTS, p);
+// Visual presets, shuffle and reset keep the audio settings you've tuned.
+const audioSettings = (): Partial<Settings> =>
+  Object.fromEntries(Object.entries(settings).filter(([k]) => k.startsWith('audio')));
+
+function apply(p: Partial<Settings>, keepAudio = true) {
+  Object.assign(settings, DEFAULTS, keepAudio ? audioSettings() : {}, p);
   changed(new Set(Object.keys(DEFAULTS) as (keyof Settings)[]));
 }
 
@@ -1002,13 +1032,11 @@ function shuffle() {
     glow: Math.random() < 0.6,
     palette: pick(Object.keys(PALETTES) as Palette[]),
     colorBy: pick(['palette', 'speed', 'direction', 'pointer', 'cycle', 'horizontal', 'radial'] as const),
-    audioAmount: settings.audioAmount,
-    audioBeat: settings.audioBeat,
   });
 }
 
 function reset() {
-  apply({});
+  apply({}, false);
 }
 
 // --- panel toggle & keys -----------------------------------------------------
