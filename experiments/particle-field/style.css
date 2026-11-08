@@ -474,3 +474,8 @@ button:hover, select:hover { border-color: #3c3f46; }
 .row.select { grid-template-columns: auto minmax(0, 1fr); }
 .row.select select { min-width: 0; max-width: 100%; justify-self: end; }
 .buttons[hidden] { display: none; }
+
+/* My presets: one compact row each. */
+.mine-list { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.mine-list .mine { min-width: 0; }
+.mypresets > span:empty { display: none; }

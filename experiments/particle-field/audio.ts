@@ -60,11 +60,21 @@ export interface AudioLevels {
   snare: boolean;
   hat: boolean;
   bpm: number; // 0 until there are enough kicks to estimate
+  // Song structure. Tension builds while the kick is away (a breakdown or
+  // build-up) and grows faster as the music rises; the first kick back
+  // after enough tension is a drop.
+  tension: number; // 0..1
+  drop: boolean; // true on the drop frame
+  dropEnv: number; // 1 at a drop, decaying over a couple of seconds
+  // Bars, assuming 4/4: from the tempo once known, else every 4 kicks.
+  bar: boolean; // true on the frame a new bar starts
+  bars: number; // bars counted since the music started
 }
 
 const ZERO: AudioLevels = {
   level: 0, bass: 0, mid: 0, treble: 0, sub: 0, liftLevel: 0, liftMid: 0,
   pulse: 0, snareEnv: 0, beat: false, snare: false, hat: false, bpm: 0,
+  tension: 0, drop: false, dropEnv: 0, bar: false, bars: 0,
 };
 
 const BANDS = { bass: [25, 160], mid: [160, 2000], treble: [2000, 9000], sub: [28, 60], snare: [1500, 5000], hat: [7000, 14000] } as const;
@@ -111,6 +121,14 @@ export class AudioInput {
   private avg = { level: 0, mid: 0 };
   private onsets = { kick: new Onset(), snare: new Onset(), hat: new Onset() };
   private kickTimes: number[] = []; // kick and snare hit times, for tempo
+  private lastKick = 0;
+  private lastFrame = 0;
+  private slow = { fast: 0, slow: 0 }; // ~1 s and ~4 s loudness averages
+  private snareTimes: number[] = [];
+  private beatAnchor = 0; // time of a kick on the beat grid
+  private beatsAtAnchor = 0;
+  private lastBeatIdx = 0;
+  private kicksInBar = 0;
 
   async start(source: Exclude<AudioSource, 'off'>, file?: File) {
     this.stop();
@@ -179,6 +197,9 @@ export class AudioInput {
     this.source = 'off';
     this.levels = { ...ZERO };
     this.kickTimes = [];
+    this.snareTimes = [];
+    this.lastKick = this.lastFrame = this.beatAnchor = this.beatsAtAnchor = this.lastBeatIdx = this.kicksInBar = 0;
+    this.slow = { fast: 0, slow: 0 };
     if (wasOn) this.onChange('Off');
   }
 
@@ -186,7 +207,7 @@ export class AudioInput {
   update(now: number) {
     const a = this.analyser;
     const L = this.levels;
-    L.beat = L.snare = L.hat = false;
+    L.beat = L.snare = L.hat = L.drop = L.bar = false;
     if (!a || !this.ctx) return;
     a.getByteFrequencyData(this.freq);
 
@@ -223,13 +244,17 @@ export class AudioInput {
 
     // Hits per band.
     const tu = TUNING[this.genre];
-    const kick = this.onsets.kick.test(band(tu.kick), now, tu.sensitivity, tu.cooldown.kick, 0.1);
+    const kickSig = band(tu.kick);
+    let kick = this.onsets.kick.test(kickSig, now, tu.sensitivity, tu.cooldown.kick, 0.1);
     // Snares and claps are loudest in 1.5-5 kHz; hats spill into that band
     // too but are stronger above 7 kHz, so subtract some of the hat band.
     const hatSig = band(BANDS.hat);
     const snareSig = Math.max(0, band(BANDS.snare) - hatSig * 0.8);
     const snare = this.onsets.snare.test(snareSig, now, tu.sensitivity * 1.1, tu.cooldown.snare, 0.03);
     const hat = this.onsets.hat.test(hatSig, now, tu.sensitivity * 0.9, tu.cooldown.hat, 0.005);
+    // Noise (a snare roll, a white-noise riser) also lights up the kick
+    // band; it's only a kick when the low end clearly outweighs the highs.
+    if (kick > 0 && kickSig < band(BANDS.snare) * 1.15) kick = 0;
 
     L.beat = kick > 0;
     L.snare = snare > 0;
@@ -241,6 +266,61 @@ export class AudioInput {
       this.kickTimes.push(now);
       while (this.kickTimes.length && now - this.kickTimes[0] > 8000) this.kickTimes.shift();
       L.bpm = estimateBpm(this.kickTimes, tu.bpm);
+    }
+    this.structure(now, kick > 0, snare > 0);
+  }
+
+  // Build-ups, drops and bars.
+  private structure(now: number, kick: boolean, snare: boolean) {
+    const L = this.levels;
+    const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
+    this.lastFrame = now;
+    this.slow.fast += (L.level - this.slow.fast) * Math.min(1, dt * 1);
+    this.slow.slow += (L.level - this.slow.slow) * Math.min(1, dt * 0.25);
+    if (snare) this.snareTimes.push(now);
+    while (this.snareTimes.length && now - this.snareTimes[0] > 2000) this.snareTimes.shift();
+
+    const away = this.lastKick > 0 && now - this.lastKick > 1800; // kick has dropped out
+    const rising = this.slow.fast > this.slow.slow + 0.02;
+    const roll = this.snareTimes.length >= 6; // snare roll: lots of hits in 2 s
+    const audible = L.level > 0.05;
+    if (audible && (away || roll)) L.tension = Math.min(1, L.tension + dt * (0.1 + (rising ? 0.2 : 0) + (roll ? 0.15 : 0)));
+    else if (!away) L.tension = Math.max(0, L.tension - dt * 0.4);
+
+    if (kick) {
+      if ((away || roll) && L.tension > 0.25) {
+        L.drop = true;
+        L.dropEnv = 1;
+        L.tension = 0;
+      }
+      this.lastKick = now;
+    }
+    L.dropEnv *= Math.pow(0.35, dt); // ~2 s tail
+
+    // Bars: count beats on a grid anchored to kicks, re-anchoring when a
+    // kick lands off the grid. Without a tempo, every 4th kick.
+    if (L.bpm > 0) {
+      const period = 60000 / L.bpm;
+      if (kick) {
+        const beats = this.beatsAtAnchor + (now - this.beatAnchor) / period;
+        const off = Math.abs(beats - Math.round(beats));
+        if (!this.beatAnchor || off > 0.25) {
+          this.beatsAtAnchor = Math.ceil(this.lastBeatIdx / 4) * 4; // treat as a downbeat
+          this.beatAnchor = now;
+        }
+      }
+      if (this.beatAnchor) {
+        const idx = Math.floor(this.beatsAtAnchor + (now - this.beatAnchor) / period + 0.02);
+        if (idx > this.lastBeatIdx && idx % 4 === 0) {
+          L.bar = true;
+          L.bars++;
+        }
+        this.lastBeatIdx = Math.max(this.lastBeatIdx, idx);
+      }
+    } else if (kick && ++this.kicksInBar >= 4) {
+      this.kicksInBar = 0;
+      L.bar = true;
+      L.bars++;
     }
   }
 }
