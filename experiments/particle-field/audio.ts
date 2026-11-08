@@ -10,7 +10,7 @@ export type AudioSource = 'off' | 'mic' | 'tab' | 'file';
 // Detector tuning per style of music. Cooldowns stop one hit triggering
 // twice; sensitivity is how many standard deviations above normal a
 // band's jump must be to count as a hit (lower = more hits).
-export type Genre = 'general' | 'hiphop' | 'dnb' | 'afro' | 'techno';
+export type Genre = 'general' | 'hiphop' | 'dnb' | 'afro' | 'reggae' | 'techno';
 
 interface Tuning {
   kick: [number, number]; // Hz range for the kick
@@ -29,6 +29,9 @@ export const TUNING: Record<Genre, Tuning> = {
   dnb: { kick: [45, 120], cooldown: { kick: 140, snare: 170, hat: 60 }, sensitivity: 1.8, bpm: [160, 180] },
   // Afrobeats / amapiano: log drums sit higher, percussion is busy.
   afro: { kick: [50, 180], cooldown: { kick: 200, snare: 150, hat: 80 }, sensitivity: 1.9, bpm: [95, 125] },
+  // Reggae / dub: one-drop (kick and snare together on beat 3), slow
+  // 60-90 BPM, heavy bassline, offbeat skank chops in the mids.
+  reggae: { kick: [45, 120], cooldown: { kick: 380, snare: 280, hat: 120 }, sensitivity: 1.9, bpm: [60, 95] },
   // Techno: four-on-the-floor, so one kick per beat at 120-150 BPM.
   techno: { kick: [40, 110], cooldown: { kick: 320, snare: 300, hat: 100 }, sensitivity: 2, bpm: [118, 150] },
 };

@@ -231,3 +231,6 @@ button:hover, select:hover { border-color: #3c3f46; }
 .audio-status { margin: 0; font-size: 12px; color: #c9cad0; }
 .audio-status.error { color: oklch(75% 0.15 25); }
 .audio-help { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+
+.note { margin: 4px 0 8px; font-size: 11px; line-height: 1.35; color: var(--muted); }
+.buttons button.on { border-color: var(--accent); color: var(--accent); }

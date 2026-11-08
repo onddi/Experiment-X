@@ -979,7 +979,8 @@ type ControlBody =
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
-  | { kind: 'buttons'; buttons: [string, () => void][] }
+  | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean }
+  | { kind: 'note'; text: string }
   | { kind: 'swatch' }
   | { kind: 'audio' };
 
@@ -1003,10 +1004,11 @@ const AUDIO_PRESETS: [string, Partial<Settings>][] = [
   ['Drill', { audioGenre: 'hiphop', audioKick: 'pulse', audioPulse: 0.6, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.3, audioFlow: 0.3 }],
   ['Drum & bass', { audioGenre: 'dnb', audioKick: 'pulse', audioPulse: 0.5, audioSnare: 'wave', audioHats: 'sparkle', audioHits: 0.5, audioSub: 'speed', audioSubAmt: 0.6, audioSpeed: 0.5, audioFlow: 0.8 }],
   ['Afro', { audioGenre: 'afro', audioKick: 'pulse', audioPulse: 0.6, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.4, audioSub: 'flow', audioSubAmt: 0.5, audioSpeed: 0.3, audioFlow: 0.6 }],
+  ['Reggae', { audioGenre: 'reggae', audioKick: 'pulse', audioPulse: 1, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.35, audioSub: 'flow', audioSubAmt: 0.9, audioSpeed: 0.15, audioFlow: 0.5 }],
   ['Techno', { audioGenre: 'techno', audioKick: 'both', audioPulse: 0.7, audioBeat: 'mix', audioWaveAt: 'orbit', audioWaveEvery: 1, audioWaveReach: 0.8, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.4, audioSub: 'none', audioSpeed: 0.2, audioFlow: 0.3 }],
   ['Breathe', { audioGenre: 'general', audioKick: 'pulse', audioPulse: 0.9, audioSnare: 'none', audioHats: 'none', audioSub: 'size', audioSubAmt: 0.4, audioSpeed: 0.15, audioFlow: 0.3 }],
 ];
-const GENRES: [string, string][] = [['general', 'Any music'], ['hiphop', 'Rap / trap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afrobeats / amapiano'], ['techno', 'Techno / house']];
+const GENRES: [string, string][] = [['general', 'Any music'], ['hiphop', 'Rap / trap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afrobeats / amapiano'], ['reggae', 'Reggae / dub'], ['techno', 'Techno / house']];
 const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick === 'both';
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
@@ -1045,8 +1047,20 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : `, ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
   { kind: 'audio' },
-  { kind: 'buttons', buttons: AUDIO_PRESETS.map(([name, p]) => [name, () => { Object.assign(settings, p); changed(new Set(Object.keys(p) as (keyof Settings)[])); }]) },
-  { kind: 'select', key: 'audioGenre', label: 'Tuned for', options: GENRES },
+  { kind: 'sub', label: 'Presets' },
+  { kind: 'note', text: 'Each preset sets the detection and what every drum does. Tweak anything below afterwards.' },
+  {
+    kind: 'buttons',
+    buttons: AUDIO_PRESETS.map(([name, p]) => [name, () => { Object.assign(settings, p); changed(new Set(Object.keys(p) as (keyof Settings)[])); }]),
+    // Lit while every setting of the preset is unchanged.
+    active: (name) => {
+      const p = AUDIO_PRESETS.find(([n]) => n === name)?.[1] ?? {};
+      return Object.entries(p).every(([k, v]) => settings[k as keyof Settings] === v);
+    },
+  },
+  { kind: 'sub', label: 'Detection' },
+  { kind: 'select', key: 'audioGenre', label: 'Genre', options: GENRES },
+  { kind: 'note', text: 'Only changes how kicks, snares and hats are picked out (timing and frequencies), not what they do.' },
   { kind: 'sub', label: 'Kick' },
   { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['none', 'Nothing']] },
   { kind: 'range', key: 'audioPulse', label: 'Pulse strength', min: 0, max: 2, step: 0.05, format: pct, show: kickPulse },
@@ -1199,6 +1213,15 @@ function renderControls() {
       continue;
     }
 
+    if (ctl.kind === 'note') {
+      const pEl = document.createElement('p');
+      pEl.className = 'note';
+      pEl.textContent = ctl.text;
+      body.append(pEl);
+      if (ctl.show) conditional.push([pEl, ctl.show]);
+      continue;
+    }
+
     if (ctl.kind === 'sub') {
       const h = document.createElement('h3');
       h.textContent = ctl.label;
@@ -1233,6 +1256,7 @@ function renderControls() {
         b.textContent = text;
         b.addEventListener('click', fn);
         if (text === 'Pause') pauseButton = b;
+        if (ctl.active) refreshers.push(() => b.classList.toggle('on', ctl.active!(text)));
         row.append(b);
       }
       body.append(row);
