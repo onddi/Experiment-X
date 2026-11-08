@@ -754,16 +754,40 @@ function step(dt: number) {
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
       if (flow > 0) {
         // The flow field isn't periodic, so wrapping would trap particles on
-        // the seam where opposing currents meet. Respawn somewhere instead.
-        px[i] = ox[i] = Math.random() * w;
-        py[i] = oy[i] = Math.random() * h;
-        rebirth(i);
+        // the seam where opposing currents meet. Re-enter from an edge where
+        // the current flows inwards instead, so nothing appears mid-screen.
+        enterFromEdge(i);
       } else {
         px[i] = ox[i] = ((px[i] % w) + w) % w;
         py[i] = oy[i] = ((py[i] % h) + h) % h;
       }
     }
   }
+}
+
+function enterFromEdge(i: number) {
+  for (let tries = 0; tries < 12; tries++) {
+    const side = (Math.random() * 4) | 0;
+    const x = side === 0 ? 0.5 : side === 1 ? w - 0.5 : Math.random() * w;
+    const y = side === 2 ? 0.5 : side === 3 ? h - 0.5 : Math.random() * h;
+    const a = flowAngle(x, y);
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    const inward = side === 0 ? c : side === 1 ? -c : side === 2 ? sn : -sn;
+    if (inward < 0.3) continue;
+    px[i] = ox[i] = x;
+    py[i] = oy[i] = y;
+    vx[i] = c * 0.5;
+    vy[i] = sn * 0.5;
+    // Already at the edge, so it can show at once (only a short fade).
+    rebirth(i);
+    age[i] = FADE_IN * 0.6;
+    return;
+  }
+  // No inward current found: fall back to a random spot and fade in.
+  px[i] = ox[i] = Math.random() * w;
+  py[i] = oy[i] = Math.random() * h;
+  rebirth(i);
 }
 
 // A fountain: while held, recycle random particles out of the pointer.
