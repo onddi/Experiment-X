@@ -3,6 +3,7 @@ import { analyse, type TrackAnalysis } from './analysis.ts';
 import { AudioFeed, BandMeter } from './feed.ts';
 import { renderDemo, toWav } from './demo.ts';
 import { xframe } from './xframe.ts';
+import { createSkins, SKINS, type Skin } from './skins.ts';
 
 type Style = 'waveform' | 'bars' | 'spectral' | 'spectrogram';
 type Live = 'spectrum' | 'radial' | 'scope' | 'off';
@@ -33,6 +34,7 @@ interface Settings {
   hue: number;
   smoothing: number;
   rate: number;
+  skin: Skin;
 }
 const DEFAULTS: Settings = {
   style: 'spectral',
@@ -44,11 +46,17 @@ const DEFAULTS: Settings = {
   hue: 260,
   smoothing: 0.6,
   rate: 1,
+  skin: 'classic',
 };
 const STORAGE_KEY = 'audio-timeline:settings';
 const COLLAPSE_KEY = 'audio-timeline:collapsed';
 const settings: Settings = { ...DEFAULTS, ...readJson(STORAGE_KEY, {}) };
 const collapsed: Record<string, boolean> = readJson(COLLAPSE_KEY, {});
+// ?skin=ring picks the layout from the URL (handy for X-Frame layer links).
+{
+  const fromUrl = new URLSearchParams(location.search).get('skin');
+  if (SKINS.some(([s]) => s === fromUrl)) settings.skin = fromUrl as Skin;
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -112,6 +120,7 @@ app.innerHTML = `
       </div>
       <div class="overview" id="ov-wrap"><canvas id="ov"></canvas></div>
     </section>
+    <div class="skin-layer" id="skin"></div>
     <div class="drop-zone" id="drop-zone" hidden><span>Drop to load</span></div>
   </main>
   <aside class="panel" id="panel">
@@ -837,6 +846,8 @@ function drawLive() {
   }
 
   if (mode === 'off') return;
+  // Layered under/over another experiment with a light layout: that experiment is the visual.
+  if (skins.skin !== 'classic' && document.body.classList.contains('see-through')) return;
 
   if (mode === 'spectrum') {
     const pad = 24 * dpr;
@@ -928,9 +939,60 @@ function drawLive() {
 
 // --- panel -------------------------------------------------------------------
 
+const skins = createSkins($('skin'), {
+  track: () => track,
+  title: () => trackName.replace(/\.[a-z0-9]+$/i, ''),
+  time: () => playhead,
+  playing: () => !audio.paused,
+  seek: (t) => {
+    followPaused = false;
+    seek(t);
+  },
+  toggle: () => void togglePlay(),
+  volume: () => settings.volume,
+  muted: () => settings.muted,
+  setVolume: (v) => {
+    settings.volume = v;
+    settings.muted = false;
+    applyVolume();
+    save();
+  },
+  toggleMute: () => {
+    settings.muted = !settings.muted;
+    applyVolume();
+    save();
+  },
+  hue: () => settings.hue,
+  level: () => meter.level,
+  bass: () => meter.bass,
+});
+skins.set(settings.skin);
+
 const refreshers: (() => void)[] = [];
 function refreshPanel() {
   for (const f of refreshers) f();
+}
+
+{
+  const { body, summary } = group('layout', 'Layout');
+  chips(body, SKINS, () => settings.skin, (k) => {
+    settings.skin = k;
+    skins.set(k);
+    save();
+    refreshPanel();
+  });
+  const about = note(body, '');
+  const ABOUT: Record<Skin, string> = {
+    classic: 'The full deck: live view on top, zoomable timeline and overview below.',
+    capsule: 'A frosted pill at the bottom with a mini waveform. Leaves the screen to what’s underneath.',
+    horizon: 'The whole song as a band of dots along the bottom; the dots near the playhead pulse.',
+    ring: 'The song wrapped into a circle. Drag the ring to scrub.',
+    ghost: 'A hairline progress bar and big type. Controls fade in when you move the pointer.',
+  };
+  refreshers.push(() => {
+    summary.textContent = SKINS.find(([k]) => k === settings.skin)![1];
+    about.textContent = ABOUT[settings.skin];
+  });
 }
 
 {
@@ -1220,8 +1282,11 @@ function frame(now: number) {
   liveBands(sr);
 
   drawLive();
-  drawTimeline();
-  drawOverview();
+  if (skins.skin === 'classic') {
+    drawTimeline();
+    drawOverview();
+  }
+  skins.draw(now);
   $('cur').textContent = fmtTime(playhead);
 
   publishBus(now, playing);

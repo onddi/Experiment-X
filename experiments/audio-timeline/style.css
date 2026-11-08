@@ -307,3 +307,127 @@ button:hover, select:hover { border-color: #3c3f46; }
 /* Stacked over another experiment in X-Frame: let it show through. */
 body.see-through { background: transparent; }
 body.see-through .deck { background: rgb(7 7 12 / 0.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+
+/* --- layouts (skins.ts) -------------------------------------------------------- */
+
+.skin-layer { position: absolute; inset: 0; z-index: 5; pointer-events: none; display: none; }
+body.skinned .skin-layer { display: block; }
+body.skinned .deck,
+body.skinned .now { display: none; }
+.skin-canvas { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+/* Behind a layout the live view is a backdrop, not the show. */
+body.skinned #live { opacity: 0.35; }
+.sk { display: none; }
+.skin-layer[data-skin='capsule'] .sk-capsule,
+.skin-layer[data-skin='horizon'] .sk-horizon,
+.skin-layer[data-skin='ring'] .sk-ring,
+.skin-layer[data-skin='ghost'] .sk-ghost { display: block; }
+.sk button, .sk input, .sk [data-seek] { pointer-events: auto; }
+.sk button { border: none; background: none; color: var(--text); padding: 0; display: grid; place-items: center; }
+.sk button svg { width: 20px; height: 20px; }
+.sk-mute { width: 44px; height: 44px; flex: none; }
+.sk-vol { accent-color: var(--accent); }
+.sk [data-seek] { cursor: pointer; touch-action: none; }
+.sk [data-seek]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+
+/* A · capsule */
+.cap {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  width: min(820px, calc(100% - 32px));
+  height: 76px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px 0 12px;
+  border-radius: 38px;
+  pointer-events: auto;
+  background: rgb(14 15 22 / 0.55);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+.cap-play { width: 50px; height: 50px; flex: none; border-radius: 50%; background: var(--accent) !important; color: var(--bg) !important; }
+.cap-play svg { width: 22px; height: 22px; }
+.cap-meta { width: 140px; flex: none; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cap-meta b { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cap-meta span { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); letter-spacing: 0.05em; }
+.cap-wave { flex: 1; height: 40px; min-width: 60px; }
+.cap .sk-vol { width: 70px; flex: none; }
+
+/* B · horizon */
+.sk-horizon::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 300px;
+  background: linear-gradient(to bottom, rgb(7 7 12 / 0), rgb(7 7 12 / 0.85) 70%);
+  pointer-events: none;
+}
+.hz-head { position: absolute; left: 40px; right: 40px; bottom: 190px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.hz-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.hz-left div { display: flex; flex-direction: column; min-width: 0; }
+.hz-left small { font: 500 11px ui-monospace, Menlo, monospace; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+.hz-left b { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hz-play { width: 48px; height: 48px; flex: none; border-radius: 50% !important; border: 1px solid rgb(255 255 255 / 0.25) !important; }
+.hz-time { font: 300 52px/1 ui-monospace, Menlo, monospace; letter-spacing: -0.02em; white-space: nowrap; }
+.hz-time em { font-size: 18px; font-style: normal; color: #7a7d88; }
+.hz-band { position: absolute; left: 40px; right: 40px; bottom: 44px; height: 130px; }
+.hz-foot { position: absolute; right: 36px; bottom: 6px; display: flex; align-items: center; gap: 4px; }
+.hz-foot .sk-mute { width: 36px; height: 36px; }
+.hz-foot .sk-vol { width: 90px; }
+
+/* C · ring */
+.ring-title { position: absolute; left: 32px; top: 24px; display: flex; flex-direction: column; gap: 2px; max-width: calc(100% - 120px); }
+.ring-title b { font-size: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ring-title small { font: 500 10px ui-monospace, Menlo, monospace; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.ring-hit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(78vh, 82vw);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
+.ring-centre { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+.ring-centre span { font: 13px ui-monospace, Menlo, monospace; color: #c9cbd3; }
+.ring-play { width: 78px; height: 78px; border-radius: 50%; background: rgb(233 233 236 / 0.95) !important; color: var(--bg) !important; box-shadow: 0 0 40px color-mix(in oklch, var(--accent) 45%, transparent); }
+.ring-play svg { width: 30px; height: 30px; }
+.ring-vol { position: absolute; right: 28px; bottom: 20px; display: flex; align-items: center; gap: 4px; }
+.ring-vol .sk-vol { width: 110px; }
+
+/* E · ghost */
+.gh-bar { position: absolute; left: 0; right: 0; top: 0; height: 16px; }
+.gh-bar::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: rgb(255 255 255 / 0.08); }
+.gh-fill { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--accent); box-shadow: 0 0 12px var(--accent); transform-origin: left; transform: scaleX(0); }
+.gh-knob { position: absolute; top: -3px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #fff; transition: transform 0.2s; transform: scale(0.6); }
+.skin-layer.awake .gh-knob { transform: scale(1); }
+.gh-text { position: absolute; left: 48px; bottom: 44px; right: 280px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+.gh-text span { font: 300 14px ui-monospace, Menlo, monospace; letter-spacing: 0.3em; color: rgb(233 233 236 / 0.6); }
+.gh-text b { font-size: clamp(40px, 9vw, 96px); font-weight: 750; line-height: 0.95; letter-spacing: -0.035em; color: rgb(233 233 236 / 0.92); overflow-wrap: anywhere; }
+.gh-controls { position: absolute; right: 44px; bottom: 48px; display: flex; align-items: center; gap: 10px; opacity: 0; transition: opacity 0.4s; }
+.skin-layer.awake .gh-controls { opacity: 1; }
+.gh-skip { width: 44px; height: 44px; border-radius: 50% !important; border: 1px solid rgb(255 255 255 / 0.18) !important; }
+.gh-skip svg { width: 18px; height: 18px; }
+.gh-play { width: 60px; height: 60px; border-radius: 50% !important; border: 1px solid rgb(255 255 255 / 0.32) !important; }
+
+@media (max-width: 720px) {
+  .cap { gap: 8px; padding: 0 8px; }
+  .cap-meta { width: 90px; }
+  .cap .sk-vol { display: none; }
+  .hz-head { left: 16px; right: 16px; }
+  .hz-left b { font-size: 20px; }
+  .hz-time { font-size: 30px; }
+  .hz-band { left: 16px; right: 16px; }
+  .gh-text { left: 20px; right: 20px; bottom: 120px; }
+  .gh-controls { right: 50%; transform: translateX(50%); bottom: 32px; }
+}
+/* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
+html:has(body.see-through) { color-scheme: normal; }
