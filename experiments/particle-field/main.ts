@@ -353,6 +353,7 @@ app.innerHTML = `
       <button class="icon" id="toggle" aria-expanded="true" title="Hide controls (H)">⟩</button>
     </header>
     <div class="panel-body" id="controls"></div>
+    <div class="actionbar" id="actionbar"></div>
   </aside>
 `;
 
@@ -1357,6 +1358,7 @@ function buildShape() {
   const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? ''].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   shapeKey = key;
+  if (!glideHomes) homeGlide = null;
   const cx = w / 2;
   const cy = h / 2;
   const R = (Math.min(w, h) / 2) * S.shapeSize;
@@ -1409,16 +1411,53 @@ function buildShape() {
     }
     return;
   }
-  // Shuffle so neighbouring particles don't all map to one area.
+  // Shuffle so the targets cover the shape evenly whatever the count.
   for (let k = pts.length - 1; k > 0; k--) {
     const j = (Math.random() * (k + 1)) | 0;
     [pts[k], pts[j]] = [pts[j], pts[k]];
   }
+  // Then give each target to a nearby particle: sort particles and targets
+  // along a Hilbert curve and pair them by rank. Neighbours stay neighbours,
+  // so a new word grows out of the old one instead of everything swapping.
+  const tx = new Float32Array(n);
+  const ty = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const [x, y] = pts[i % pts.length];
-    hx[i] = x + (Math.random() - 0.5) * 2;
-    hy[i] = y + (Math.random() - 0.5) * 2;
+    tx[i] = x + (Math.random() - 0.5) * 2;
+    ty[i] = y + (Math.random() - 0.5) * 2;
   }
+  const hk = (x: number, y: number) => hilbert(Math.min(1023, Math.max(0, (x / w) * 1024)) | 0, Math.min(1023, Math.max(0, (y / h) * 1024)) | 0);
+  const pKey = new Float64Array(n);
+  const tKey = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    pKey[i] = hk(px[i], py[i]) * 65536 + i; // index breaks ties, keeps keys unique
+    tKey[i] = hk(tx[i], ty[i]) * 65536 + i;
+  }
+  const pOrder = Array.from({ length: n }, (_, i) => i).sort((a, b) => pKey[a] - pKey[b]);
+  const tOrder = Array.from({ length: n }, (_, i) => i).sort((a, b) => tKey[a] - tKey[b]);
+  for (let k = 0; k < n; k++) {
+    hx[pOrder[k]] = tx[tOrder[k]];
+    hy[pOrder[k]] = ty[tOrder[k]];
+  }
+}
+
+// Position along a Hilbert curve on a 1024 × 1024 grid: points close on the
+// curve are close on screen.
+function hilbert(x: number, y: number): number {
+  let d = 0;
+  for (let s = 512; s > 0; s >>= 1) {
+    const rx = (x & s) > 0 ? 1 : 0;
+    const ry = (y & s) > 0 ? 1 : 0;
+    d += s * s * ((3 * rx) ^ ry);
+    if (ry === 0) {
+      if (rx === 1) {
+        x = 1023 - x;
+        y = 1023 - y;
+      }
+      [x, y] = [y, x];
+    }
+  }
+  return d;
 }
 
 // --- emitter -------------------------------------------------------------------
@@ -2292,8 +2331,14 @@ function adaptQuality(dt: number) {
 // --- controls ----------------------------------------------------------------
 
 type Control = ControlBody & { show?: () => boolean };
+type Tab = 'look' | 'motion' | 'life' | 'sound';
+const TABS: [Tab, string][] = [['look', 'Look'], ['motion', 'Motion'], ['life', 'Life'], ['sound', 'Sound']];
+// A card that can be switched off: `off` is what switching off sets, `start`
+// what switching on sets the first time (later it restores what you had).
+type Power = { on: () => boolean; off: Partial<Settings>; start: Partial<Settings> };
 type ControlBody =
-  | { kind: 'section'; id: string; label: string; open?: boolean; fixed?: boolean; summary?: () => string; lock?: (keyof Settings)[] }
+  | { kind: 'section'; id: string; label: string; tab?: Tab; fixed?: boolean; summary?: () => string; lock?: (keyof Settings)[]; power?: Power; about?: string }
+  | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
   | { kind: 'sub'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
@@ -2304,7 +2349,7 @@ type ControlBody =
   | { kind: 'colors'; key: keyof Settings; label: string }
   | { kind: 'multi'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'text'; key: keyof Settings; label: string; placeholder?: string }
-  | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean }
+  | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean; limit?: number }
   | { kind: 'icons'; buttons: [string, string, () => void][] }
   | { kind: 'note'; text: string }
   | { kind: 'swatch' }
@@ -2400,63 +2445,113 @@ const ICONS = {
 };
 
 const CONTROLS: Control[] = [
-  { kind: 'section', id: 'presets', label: 'Presets', open: true },
-  { kind: 'buttons', buttons: [] }, // filled with presets below
+  // --- Look ---
+  { kind: 'section', id: 'presets', label: 'Presets', tab: 'look' },
+  { kind: 'buttons', buttons: [], limit: 8 }, // filled with presets below
   { kind: 'mypresets' },
-
-  { kind: 'section', id: 'play', label: 'Play with keys', open: true, summary: () => `${settings.morph > 0 ? `${settings.morph.toFixed(1)}s morph` : 'instant'}${settings.beatSnap ? ', on the beat' : ''}` },
+  { kind: 'more', label: 'Keys & morph time' },
   { kind: 'note', text: 'Keys 1–9 and 0 play your own presets: pick a key next to a preset under My presets, or press Shift + a number to save the current look to it.' },
   { kind: 'range', key: 'morph', label: 'Morph time', min: 0, max: 4, step: 0.1, format: (v) => (v === 0 ? 'instant' : `${v.toFixed(1)}s`) },
   { kind: 'toggle', key: 'beatSnap', label: 'Switch on the next kick drum' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
 
-  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity', 'edges'],
+  { kind: 'section', id: 'look', label: 'Style', tab: 'look',
+    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
+    summary: () => label(RENDERS, settings.render) },
+  { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
+  { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
+  { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
+  { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
+  { kind: 'toggle', key: 'glow', label: 'Additive glow' },
+  { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
+  { kind: 'range', key: 'ribbonLen', label: 'Ribbon length', min: 4, max: 40, step: 1, format: (v) => `${v} steps`, show: () => usesRibbons() },
+  { kind: 'note', text: 'Ribbons draw their own trails, so they look cleanest with Trails near 0.', show: () => usesRibbons() && settings.trail > 0.3 },
+  { kind: 'select', key: 'glyphSet', label: 'Characters', options: [...Object.entries(GLYPH_SETS).map(([k, g]) => [k, g.label] as [string, string]), ['custom', 'Your own text']], show: isGlyphs },
+  { kind: 'text', key: 'glyphText', label: 'Text', placeholder: 'Type characters or a word', show: () => isGlyphs() && settings.glyphSet === 'custom' },
+  { kind: 'more', label: 'More style' },
+  { kind: 'range', key: 'sizeVar', label: 'Size variety', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'all same' : pct(v)) },
+  { kind: 'select', key: 'glyphPick', label: 'Each particle shows', options: [['random', 'A random glyph'], ['speed', 'By speed'], ['heading', 'By direction'], ['sequence', 'In order (spells it)']], show: isGlyphs },
+  { kind: 'select', key: 'glyphChange', label: 'Glyphs change', options: [['fixed', 'Never'], ['flicker', 'Flicker'], ['beat', 'On the beat']], show: () => isGlyphs() && (settings.glyphPick === 'random') },
+  { kind: 'range', key: 'glyphRate', label: 'Flicker rate', min: 0, max: 0.2, step: 0.005, format: pct, show: () => isGlyphs() && settings.glyphPick === 'random' && settings.glyphChange === 'flicker' },
+  { kind: 'select', key: 'glyphFont', label: 'Font', options: [['mono', 'Monospace'], ['serif', 'Serif'], ['sans', 'Sans'], ['bold', 'Heavy']], show: isGlyphs },
+  { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
+  { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
+
+  { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
+    power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
+    summary: () => (settings.depth > 0 ? `${pct(settings.depth)}${settings.depthParallax > 0 ? ', parallax' : ''}` : 'off') },
+  { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
+  { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
+
+  { kind: 'section', id: 'colour', label: 'Colour', tab: 'look', lock: ['palette', 'colorBy', 'customColors', 'customBg'],
+    summary: () => `${pal().label}, ${label(COLOR_BY, settings.colorBy)}` },
+  { kind: 'select', key: 'palette', label: 'Palette', options: [...Object.entries(PALETTES).map(([k, p]) => [k, p.label] as [string, string]), ['custom', 'Custom…']] },
+  { kind: 'colors', key: 'customColors', label: 'Colours (calm → hot)', show: () => settings.palette === 'custom' },
+  { kind: 'color', key: 'customBg', label: 'Background', show: () => settings.palette === 'custom' },
+  { kind: 'swatch' },
+  { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
+
+  // --- Motion ---
+  { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
-  { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
+  { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
   { kind: 'select', key: 'edges', label: 'Off-screen', options: [['wrap', 'Wrap to the other side'], ['enter', 'Re-enter with the flow'], ['bounce', 'Bounce off the edges']] },
+
+  { kind: 'section', about: 'Invisible currents that carry the particles.', id: 'flow', label: 'Flow', tab: 'motion', lock: ['flow', 'flowType', 'flowScale', 'flowSpeed'],
+    power: { on: hasFlow, off: { flow: 0 }, start: { flow: 0.6, flowType: 'curl' } },
+    summary: () => (hasFlow() ? `${settings.flowType === 'curl' ? 'smoke' : 'currents'} ${settings.flow.toFixed(2)}` : 'off') },
+  { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
+  { kind: 'select', key: 'flowType', label: 'Type', options: [['waves', 'Currents (streams)'], ['curl', 'Smoke (stays spread)']], show: hasFlow },
+  { kind: 'more', label: 'More settings' },
+  { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1), show: hasFlow },
+  { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasFlow },
+
+  { kind: 'section', about: 'Gravity, wind and points that pull, push or swirl.', id: 'forces', label: 'Forces', tab: 'motion', lock: ['gravity', 'wind', 'windDir', 'wells', 'wellForce', 'wellRange'],
+    power: { on: () => settings.gravity !== 0 || settings.wind > 0 || wellList().length > 0, off: { gravity: 0, wind: 0, wells: '', placeWell: 'off' }, start: { wind: 0.2 } },
+    summary: () => [settings.gravity !== 0 ? 'gravity' : '', settings.wind > 0 ? `wind ${settings.wind.toFixed(2)}` : '', wellList().length ? `${wellList().length} point${wellList().length > 1 ? 's' : ''}` : ''].filter(Boolean).join(', ') || 'off' },
   { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
+  { kind: 'range', key: 'wind', label: 'Wind', min: 0, max: 1, step: 0.02, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
+  { kind: 'range', key: 'windDir', label: 'Wind direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.wind > 0 },
+  { kind: 'select', key: 'placeWell', label: 'Click places', options: [['off', 'Nothing (normal click)'], ['attract', 'Attractor'], ['repel', 'Repeller'], ['vortex', 'Vortex'], ['emitter', 'Emitter position']] },
+  { kind: 'note', text: 'Click the field to drop a point, click a point again to remove it.', show: () => settings.placeWell !== 'off' },
+  { kind: 'range', key: 'wellForce', label: 'Point strength', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
+  { kind: 'range', key: 'wellRange', label: 'Point reach', min: 50, max: 600, step: 10, format: (v) => `${v}px`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
+  { kind: 'toggle', key: 'showWells', label: 'Show the points', show: () => wellList().length > 0 },
+  { kind: 'buttons', buttons: [['Remove all points', () => setWells([])]], show: () => wellList().length > 0 },
 
-  { kind: 'section', id: 'life', label: 'Birth & life', lock: ['lifespan', 'lifeSize', 'lifeFade', 'sizeVar', 'launchSpeed', 'launchDir', 'launchSpread'],
-    summary: () => [settings.lifespan > 0 ? `~${settings.lifespan}s life` : 'endless', settings.sizeVar > 0 ? 'mixed sizes' : '', settings.launchSpeed > 0 ? 'launched' : ''].filter(Boolean).join(', ') },
-  { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
-  { kind: 'select', key: 'lifeSize', label: 'Size over life', options: [['none', 'Stays the same'], ['grow', 'Grows'], ['shrink', 'Shrinks'], ['swell', 'Swells then shrinks']], show: () => settings.lifespan > 0 },
-  { kind: 'select', key: 'lifeFade', label: 'Fade over life', options: [['edges', 'Quick fade in and out'], ['out', 'Bright at birth, fades out'], ['swell', 'Slow fade in and out'], ['flash', 'Flash at birth']], show: () => settings.lifespan > 0 },
-  { kind: 'note', text: 'Tip: set Colour by → Age to shift colour from birth (calm end) to old age (hot end).', show: () => settings.lifespan > 0 && settings.colorBy !== 'age' },
-  { kind: 'range', key: 'sizeVar', label: 'Size variety', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'all same' : pct(v)) },
-  { kind: 'range', key: 'launchSpeed', label: 'Launch speed', min: 0, max: 6, step: 0.1, format: (v) => (v === 0 ? 'still' : v.toFixed(1)) },
-  { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
-  { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
-  { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
-
-  { kind: 'section', id: 'swarm', label: 'Swarm', lock: ['flock', 'flockSep', 'flockAlign', 'flockCohesion', 'flockRange', 'space', 'spaceDist'],
+  { kind: 'section', about: 'Flocking like birds, or keeping personal space.', id: 'swarm', label: 'Swarm', tab: 'motion', lock: ['flock', 'flockSep', 'flockAlign', 'flockCohesion', 'flockRange', 'space', 'spaceDist'],
+    power: { on: () => settings.flock > 0 || settings.space > 0, off: { flock: 0, space: 0 }, start: { flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45 } },
     summary: () => [settings.flock > 0 ? 'flocking' : '', settings.space > 0 ? 'spaced' : ''].filter(Boolean).join(', ') || 'off' },
   { kind: 'range', key: 'flock', label: 'Flocking', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'space', label: 'Personal space', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'note', text: 'Flocking works best with little or no Flow, and Pixels, Arrows or Comets.', show: () => settings.flock > 0 },
+  { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'flockAlign', label: 'Follow neighbours', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'flockCohesion', label: 'Stay together', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'flockSep', label: 'Avoid crowding', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
-  { kind: 'range', key: 'space', label: 'Personal space', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
-  { kind: 'note', text: 'Flocking works best with little or no Flow, and Pixels, Arrows or Comets.', show: () => settings.flock > 0 },
 
-  { kind: 'section', id: 'shape', label: 'Shape', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'homeStrength', 'shapeCycle'],
-    summary: () => (settings.shape === 'none' ? 'free' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
-  { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
-  { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
-  { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
-  { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
-  { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
-  { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
-  { kind: 'range', key: 'homeStrength', label: 'Pull home', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasShape },
-  { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
-  { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
+  { kind: 'section', about: 'How particles react to your pointer and clicks.', id: 'pointer', label: 'Pointer & click', tab: 'motion', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
+    power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
+    summary: () => [hasPointer() ? label(POINTER_MODES, settings.pointerMode) : '', hasClick() ? label(CLICK_MODES, settings.click).replace(' (hold)', '') : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'select', key: 'pointerMode', label: 'On hover', options: POINTER_MODES },
+  { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px`, show: hasPointer },
+  { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasPointer },
+  { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
+  { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
 
-  { kind: 'section', id: 'emitter', label: 'Emitter', lock: ['emitter', 'emitMode', 'emitX', 'emitY', 'emitSize', 'emitAngle', 'emitRate', 'burstEvery', 'burstSize', 'emitOut'],
-    summary: () => (settings.emitter === 'none' ? 'whole screen' : `${label(EMITTERS, settings.emitter)}, ${label(EMIT_MODES, settings.emitMode).toLowerCase()}`) },
+  // --- Life ---
+  { kind: 'section', about: 'Lifespans, emitters and launch speed.', id: 'life', label: 'Birth & spawning', tab: 'life',
+    lock: ['lifespan', 'lifeSize', 'lifeFade', 'launchSpeed', 'launchDir', 'launchSpread', 'emitter', 'emitMode', 'emitX', 'emitY', 'emitSize', 'emitAngle', 'emitRate', 'burstEvery', 'burstSize', 'emitOut'],
+    power: { on: () => settings.lifespan > 0 || hasEmitter() || settings.launchSpeed > 0, off: { lifespan: 0, emitter: 'none', launchSpeed: 0 }, start: { lifespan: 6, lifeFade: 'swell' } },
+    summary: () => [settings.lifespan > 0 ? `~${settings.lifespan}s life` : '', hasEmitter() ? label(EMITTERS, settings.emitter).toLowerCase() : '', settings.launchSpeed > 0 ? 'launched' : ''].filter(Boolean).join(', ') || 'off' },
+  { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
   { kind: 'select', key: 'emitter', label: 'Born from', options: EMITTERS },
   { kind: 'select', key: 'emitMode', label: 'Release', options: EMIT_MODES, show: hasEmitter },
   { kind: 'range', key: 'emitRate', label: 'Rate', min: 0.02, max: 1, step: 0.01, format: (v) => `${Math.round(v * 100)}% / s`, show: () => hasEmitter() && settings.emitMode === 'steady' },
@@ -2467,38 +2562,33 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'emitY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
   { kind: 'range', key: 'emitSize', label: 'Size', min: 10, max: 600, step: 5, format: (v) => `${v}px`, show: () => ['line', 'circle', 'ring'].includes(settings.emitter) },
   { kind: 'range', key: 'emitAngle', label: 'Line angle', min: 0, max: 179, step: 1, format: (v) => `${v}°`, show: () => settings.emitter === 'line' },
+  { kind: 'more', label: 'More birth settings' },
+  { kind: 'select', key: 'lifeSize', label: 'Size over life', options: [['none', 'Stays the same'], ['grow', 'Grows'], ['shrink', 'Shrinks'], ['swell', 'Swells then shrinks']], show: () => settings.lifespan > 0 },
+  { kind: 'select', key: 'lifeFade', label: 'Fade over life', options: [['edges', 'Quick fade in and out'], ['out', 'Bright at birth, fades out'], ['swell', 'Slow fade in and out'], ['flash', 'Flash at birth']], show: () => settings.lifespan > 0 },
+  { kind: 'note', text: 'Tip: set Colour by → Age to shift colour from birth (calm end) to old age (hot end).', show: () => settings.lifespan > 0 && settings.colorBy !== 'age' },
+  { kind: 'range', key: 'launchSpeed', label: 'Launch speed', min: 0, max: 6, step: 0.1, format: (v) => (v === 0 ? 'still' : v.toFixed(1)) },
+  { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
+  { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
+  { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
-  { kind: 'section', id: 'flow', label: 'Flow', lock: ['flow', 'flowType', 'flowScale', 'flowSpeed'],
-    summary: () => (hasFlow() ? `strength ${settings.flow.toFixed(2)}` : 'off') },
-  { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
-  { kind: 'select', key: 'flowType', label: 'Type', options: [['waves', 'Currents (gathers into streams)'], ['curl', 'Smoke (curl noise, stays spread)']], show: hasFlow },
-  { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1), show: hasFlow },
-  { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasFlow },
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'homeStrength', 'shapeCycle'],
+    power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
+    summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
+  { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
+  { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
+  { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
+  { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
+  { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
+  { kind: 'more', label: 'More settings' },
+  { kind: 'range', key: 'homeStrength', label: 'Pull home', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasShape },
+  { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
+  { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
 
-  { kind: 'section', id: 'forces', label: 'Forces', lock: ['wind', 'windDir', 'wells', 'wellForce', 'wellRange'],
-    summary: () => [settings.wind > 0 ? `wind ${settings.wind.toFixed(2)}` : '', wellList().length ? `${wellList().length} point${wellList().length > 1 ? 's' : ''}` : ''].filter(Boolean).join(', ') || 'none' },
-  { kind: 'range', key: 'wind', label: 'Wind', min: 0, max: 1, step: 0.02, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
-  { kind: 'range', key: 'windDir', label: 'Wind direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.wind > 0 },
-  { kind: 'select', key: 'placeWell', label: 'Click places', options: [['off', 'Nothing (normal click)'], ['attract', 'Attractor'], ['repel', 'Repeller'], ['vortex', 'Vortex'], ['emitter', 'Emitter position']] },
-  { kind: 'note', text: 'Click the field to drop a point, click a point again to remove it.', show: () => settings.placeWell !== 'off' },
-  { kind: 'range', key: 'wellForce', label: 'Point strength', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
-  { kind: 'range', key: 'wellRange', label: 'Point reach', min: 50, max: 600, step: 10, format: (v) => `${v}px`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
-  { kind: 'toggle', key: 'showWells', label: 'Show the points', show: () => wellList().length > 0 },
-  { kind: 'buttons', buttons: [['Remove all points', () => setWells([])]], show: () => wellList().length > 0 },
-
-  { kind: 'section', id: 'pointer', label: 'Pointer', lock: ['pointerMode', 'radius', 'force'],
-    summary: () => label(POINTER_MODES, settings.pointerMode) + (hasPointer() ? `, ${settings.radius}px` : '') },
-  { kind: 'select', key: 'pointerMode', label: 'On hover', options: POINTER_MODES },
-  { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px`, show: hasPointer },
-  { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasPointer },
-
-  { kind: 'section', id: 'click', label: 'Click', lock: ['click', 'clickForce'], summary: () => label(CLICK_MODES, settings.click) },
-  { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
-  { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
-
-  { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : `, ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}, ${VIBES.find(([, v]) => Object.entries(v).every(([k, x]) => settings[k as keyof Settings] === x))?.[0] ?? 'custom'}`) },
+  // --- Sound ---
+  { kind: 'section', id: 'audio', label: 'Audio', tab: 'sound', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : `, ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}, ${VIBES.find(([, v]) => Object.entries(v).every(([k, x]) => settings[k as keyof Settings] === x))?.[0] ?? 'custom'}`) },
   { kind: 'audio' },
   { kind: 'sub', label: 'Genre' },
   { kind: 'choice', key: 'audioGenre', label: 'Genre', options: GENRES },
@@ -2539,38 +2629,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct, show: ft },
   { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct, show: ft },
 
-  { kind: 'section', id: 'look', label: 'Style', open: true,
-    lock: ['render', 'mixStyles', 'linkDist', 'ribbonLen', 'depth', 'depthParallax', 'trail', 'glow', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
-    summary: () => label(RENDERS, settings.render) },
-  { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
-  { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
-  { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
-  { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
-  { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
-  { kind: 'range', key: 'ribbonLen', label: 'Ribbon length', min: 4, max: 40, step: 1, format: (v) => `${v} steps`, show: () => usesRibbons() },
-  { kind: 'note', text: 'Ribbons draw their own trails, so they look cleanest with Trails near 0.', show: () => usesRibbons() && settings.trail > 0.3 },
-  { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
-  { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
-  { kind: 'toggle', key: 'glow', label: 'Additive glow' },
-  { kind: 'sub', label: 'Glyphs', show: isGlyphs },
-  { kind: 'select', key: 'glyphSet', label: 'Characters', options: [...Object.entries(GLYPH_SETS).map(([k, g]) => [k, g.label] as [string, string]), ['custom', 'Your own text']], show: isGlyphs },
-  { kind: 'text', key: 'glyphText', label: 'Text', placeholder: 'Type characters or a word', show: () => isGlyphs() && settings.glyphSet === 'custom' },
-  { kind: 'select', key: 'glyphPick', label: 'Each particle shows', options: [['random', 'A random glyph'], ['speed', 'By speed'], ['heading', 'By direction'], ['sequence', 'In order (spells it)']], show: isGlyphs },
-  { kind: 'select', key: 'glyphChange', label: 'Glyphs change', options: [['fixed', 'Never'], ['flicker', 'Flicker'], ['beat', 'On the beat']], show: () => isGlyphs() && (settings.glyphPick === 'random') },
-  { kind: 'range', key: 'glyphRate', label: 'Flicker rate', min: 0, max: 0.2, step: 0.005, format: pct, show: () => isGlyphs() && settings.glyphPick === 'random' && settings.glyphChange === 'flicker' },
-  { kind: 'select', key: 'glyphFont', label: 'Font', options: [['mono', 'Monospace'], ['serif', 'Serif'], ['sans', 'Sans'], ['bold', 'Heavy']], show: isGlyphs },
-  { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
-  { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
-
-  { kind: 'section', id: 'colour', label: 'Colour', open: true, lock: ['palette', 'colorBy', 'customColors', 'customBg'],
-    summary: () => `${pal().label}, ${label(COLOR_BY, settings.colorBy)}` },
-  { kind: 'select', key: 'palette', label: 'Palette', options: [...Object.entries(PALETTES).map(([k, p]) => [k, p.label] as [string, string]), ['custom', 'Custom…']] },
-  { kind: 'colors', key: 'customColors', label: 'Colours (calm → hot)', show: () => settings.palette === 'custom' },
-  { kind: 'color', key: 'customBg', label: 'Background', show: () => settings.palette === 'custom' },
-  { kind: 'swatch' },
-  { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
-
-  { kind: 'section', id: 'actions', label: 'Actions', open: true, fixed: true },
+  { kind: 'section', id: 'actions', label: 'Actions', fixed: true },
   {
     kind: 'icons',
     buttons: [
@@ -2647,6 +2706,10 @@ type Rgb = [number, number, number];
 let morphState: { from: Record<string, number>; to: Record<string, number>; start: number; dur: number } | null = null;
 let palMix: { from: Rgb[]; fromBg: Rgb; start: number; dur: number; tick: number } | null = null;
 let pendingLook: { target: Settings; since: number } | null = null;
+// Set while morphTo applies a shape change; homeGlide then moves each
+// particle's target from where it was to its new spot.
+let glideHomes: { ms: number; fromFree: boolean } | null = null;
+let homeGlide: { fx: Float32Array; fy: Float32Array; tx: Float32Array; ty: Float32Array; start: number; dur: number } | null = null;
 
 function morphTo(target: Settings) {
   const dur = settings.morph * 1000;
@@ -2671,11 +2734,26 @@ function morphTo(target: Settings) {
       }
     } else if (S[k] !== T[k]) instant.add(k);
   }
+  // Shape changes: settle size and count at once so the new targets are
+  // final, then let the targets glide there over the morph time.
+  const shapeKeys = ['shape', 'shapeText', 'imageMode'] as const;
+  if (T.shape !== 'none' && (shapeKeys.some((k) => instant.has(k)) || 'shapeSize' in to)) {
+    for (const k of ['shapeSize', 'count'] as const) {
+      if (k in to) {
+        S[k] = to[k];
+        delete from[k];
+        delete to[k];
+        instant.add(k);
+      }
+    }
+    glideHomes = { ms: dur, fromFree: S.shape === 'none' };
+  }
   const palChanged = instant.has('palette') || instant.has('customColors') || instant.has('customBg');
   if (palChanged) palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur, tick: 0 };
   for (const k of instant) S[k] = T[k];
   morphState = Object.keys(to).length ? { from, to, start: now, dur } : null;
   if (instant.size) changed(instant, palChanged);
+  glideHomes = null;
 }
 
 function tickMorph(now: number, beat: boolean) {
@@ -2690,6 +2768,17 @@ function tickMorph(now: number, beat: boolean) {
       palMix = null;
       buildShades();
     } else if (palMix.tick++ % 4 === 0) buildShades();
+  }
+  if (homeGlide) {
+    const hg = homeGlide;
+    const u = Math.min(1, (now - hg.start) / hg.dur);
+    const e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
+    const len = Math.min(n, hg.fx.length);
+    for (let i = 0; i < len; i++) {
+      hx[i] = hg.fx[i] + (hg.tx[i] - hg.fx[i]) * e;
+      hy[i] = hg.fy[i] + (hg.ty[i] - hg.fy[i]) * e;
+    }
+    if (u >= 1) homeGlide = null;
   }
   if (!morphState) return;
   const m = morphState;
@@ -2724,7 +2813,15 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
     ensureCount();
   }
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
-  if (keys.has('shape') || keys.has('shapeText') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) buildShape();
+  if (keys.has('shape') || keys.has('shapeText') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
+    const g = glideHomes && settings.shape !== 'none' ? glideHomes : null;
+    const fx = g ? (g.fromFree ? px : hx).slice(0, n) : null;
+    const fy = g ? (g.fromFree ? py : hy).slice(0, n) : null;
+    const before = shapeKey;
+    buildShape();
+    if (g && fx && fy && shapeKey !== before) homeGlide = { fx, fy, tx: hx.slice(0, n), ty: hy.slice(0, n), start: performance.now(), dur: g.ms };
+    else if (!g) homeGlide = null;
+  }
   if (keys.has('emitter') && settings.emitter !== prevEmitter) {
     prevEmitter = settings.emitter;
     emitterChanged();
@@ -2743,40 +2840,98 @@ function refresh() {
   for (const [el, show] of conditional) el.hidden = !show();
 }
 
-const COLLAPSE_KEY = 'particle-field:collapsed';
+const TAB_KEY = 'particle-field:tab';
+const MORE_KEY = 'particle-field:more';
+const tabButtons: [Tab, HTMLButtonElement][] = [];
+const sectionTabs: [HTMLElement, Tab][] = [];
+// What a card had when you switched it off, so switching on brings it back.
+const powerMemory: Record<string, Partial<Settings>> = {};
 
-function loadCollapsed(): Record<string, boolean> {
+function showTab(tab: Tab) {
+  for (const [t, b] of tabButtons) {
+    b.classList.toggle('on', t === tab);
+    b.setAttribute('aria-selected', String(t === tab));
+  }
+  for (const [el, t] of sectionTabs) el.classList.toggle('other-tab', t !== tab);
   try {
-    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '{}');
+    localStorage.setItem(TAB_KEY, tab);
   } catch {
-    return {};
+    /* not persisted */
   }
 }
 
+// A dot on a tab when one of its cards is locked.
+function syncTabDots() {
+  for (const [t, b] of tabButtons) {
+    const locked = CONTROLS.some((c) => c.kind === 'section' && c.tab === t && locks.has(c.id));
+    b.classList.toggle('has-lock', locked);
+  }
+}
+
+function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
+  const pw = ctl.power!;
+  if (on === pw.on()) return;
+  let patch: Partial<Settings>;
+  if (on) patch = powerMemory[ctl.id] ?? pw.start;
+  else {
+    powerMemory[ctl.id] = Object.fromEntries((ctl.lock ?? []).map((k) => [k, settings[k]]));
+    patch = pw.off;
+  }
+  Object.assign(settings, patch);
+  // A remembered "on" that was really off (e.g. after a preset) falls back to the start values.
+  if (on && !pw.on()) {
+    Object.assign(settings, pw.start);
+    patch = { ...patch, ...pw.start };
+  }
+  changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+}
+
 function renderControls() {
-  const collapsed = loadCollapsed();
+  let moreOpen: Record<string, boolean> = {};
+  try {
+    moreOpen = JSON.parse(localStorage.getItem(MORE_KEY) ?? '{}');
+  } catch {
+    /* defaults */
+  }
   let body: HTMLElement = controls;
+  let sectionBody: HTMLElement = controls;
+  let sectionId = '';
+
+  // Tabs along the top; Actions get their own bar at the bottom.
+  const tabBar = document.createElement('div');
+  tabBar.className = 'tabs';
+  tabBar.setAttribute('role', 'tablist');
+  for (const [t, text] of TABS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.textContent = text;
+    b.addEventListener('click', () => showTab(t));
+    tabBar.append(b);
+    tabButtons.push([t, b]);
+  }
+  controls.before(tabBar);
+  const actionBar = document.getElementById('actionbar')!;
 
   for (const ctl of CONTROLS) {
     if (ctl.kind === 'section') {
-      // Each section is a card with a clickable header that folds it away.
       const section = document.createElement('section');
       section.className = 'group';
-      const head = document.createElement('button');
-      head.type = 'button';
+      const head = document.createElement('div');
       head.className = 'group-head';
-      head.innerHTML = `<span class="chev" aria-hidden="true"></span><span class="group-title"></span><span class="group-summary"></span>`;
+      head.innerHTML = `<span class="group-title"></span><span class="group-summary"></span>`;
       head.querySelector('.group-title')!.textContent = ctl.label;
       const summary = head.querySelector<HTMLElement>('.group-summary')!;
       body = document.createElement('div');
       body.className = 'group-body';
       body.id = `group-${ctl.id}`;
-      head.setAttribute('aria-controls', body.id);
+      sectionBody = body;
+      sectionId = ctl.id;
       const top = document.createElement('div');
       top.className = 'group-top';
       top.append(head);
       if (ctl.lock) {
-        // Locked sections keep their settings when you press Shuffle.
+        // Locked cards keep their settings when you press Shuffle.
         const lockBtn = document.createElement('button');
         lockBtn.type = 'button';
         lockBtn.className = 'lock';
@@ -2794,38 +2949,79 @@ function renderControls() {
           else locks.add(id);
           saveLocks();
           sync();
+          syncTabDots();
         });
         sync();
         top.append(lockBtn);
       }
-      section.append(top, body);
-      controls.append(section);
-
-      const setOpen = (open: boolean) => {
-        section.classList.toggle('closed', !open);
-        head.setAttribute('aria-expanded', String(open));
-      };
+      if (ctl.power) {
+        // On/off switch: an off card folds down to its header.
+        const sw = document.createElement('button');
+        sw.type = 'button';
+        sw.className = 'power';
+        sw.setAttribute('role', 'switch');
+        sw.setAttribute('aria-label', ctl.label);
+        sw.addEventListener('click', () => setPower(ctl, !ctl.power!.on()));
+        top.append(sw);
+        refreshers.push(() => {
+          const on = ctl.power!.on();
+          sw.setAttribute('aria-checked', String(on));
+          sw.title = on ? `Turn ${ctl.label.toLowerCase()} off` : `Turn ${ctl.label.toLowerCase()} on`;
+          section.classList.toggle('off', !on);
+        });
+      }
+      section.append(top);
+      if (ctl.about) {
+        const about = document.createElement('p');
+        about.className = 'about';
+        about.textContent = ctl.about;
+        section.append(about);
+      }
+      section.append(body);
       if (ctl.fixed) {
-        // Always open: the header is just a title.
+        // Actions: a bar pinned under the cards, no header.
         section.classList.add('fixed');
-        head.disabled = true;
-        head.removeAttribute('aria-controls');
-        if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
+        top.remove();
+        actionBar.append(section);
         continue;
       }
-      setOpen(!(collapsed[ctl.id] ?? !ctl.open));
-      head.addEventListener('click', () => {
-        const open = section.classList.contains('closed');
+      controls.append(section);
+      sectionTabs.push([section, ctl.tab ?? 'look']);
+      if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
+      if (ctl.show) conditional.push([section, ctl.show]);
+      continue;
+    }
+
+    if (ctl.kind === 'more') {
+      // Everything after this in the card hides behind a "More" link.
+      const id = sectionId;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'more-toggle';
+      btn.innerHTML = `<span class="chev" aria-hidden="true"></span><span></span>`;
+      btn.lastElementChild!.textContent = ctl.label;
+      const more = document.createElement('div');
+      more.className = 'more-body';
+      more.id = `more-${id}`;
+      btn.setAttribute('aria-controls', more.id);
+      const setOpen = (open: boolean) => {
+        more.hidden = !open;
+        btn.classList.toggle('open', open);
+        btn.setAttribute('aria-expanded', String(open));
+      };
+      setOpen(!!moreOpen[id]);
+      btn.addEventListener('click', () => {
+        const open = btn.getAttribute('aria-expanded') !== 'true';
+        moreOpen[id] = open;
         setOpen(open);
-        collapsed[ctl.id] = !open;
         try {
-          localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed));
+          localStorage.setItem(MORE_KEY, JSON.stringify(moreOpen));
         } catch {
           /* not persisted */
         }
       });
-      if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
-      if (ctl.show) conditional.push([section, ctl.show]);
+      sectionBody.append(btn, more);
+      body = more;
       continue;
     }
 
@@ -2889,15 +3085,32 @@ function renderControls() {
     if (ctl.kind === 'buttons') {
       const row = document.createElement('div');
       row.className = 'buttons';
-      for (const [text, fn] of ctl.buttons) {
+      if (ctl.limit && ctl.buttons.length > ctl.limit) {
+        // Show the first few; a last button reveals the rest.
+        row.classList.add('short');
+        row.style.setProperty('--limit', String(ctl.limit));
+        const all = document.createElement('button');
+        all.type = 'button';
+        all.className = 'show-all';
+        all.textContent = `All ${ctl.buttons.length} presets`;
+        all.addEventListener('click', () => {
+          const short = row.classList.toggle('short');
+          all.textContent = short ? `All ${ctl.buttons.length} presets` : 'Fewer presets';
+          row.append(all);
+        });
+        queueMicrotask(() => row.append(all));
+      }
+      ctl.buttons.forEach(([text, fn], idx) => {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = text;
+        if (ctl.limit && idx >= ctl.limit) b.classList.add('extra');
         b.addEventListener('click', fn);
         if (ctl.active) refreshers.push(() => b.classList.toggle('on', ctl.active!(text)));
         row.append(b);
-      }
+      });
       body.append(row);
+      if (ctl.show) conditional.push([row, ctl.show]);
       continue;
     }
 
@@ -3187,13 +3400,17 @@ function shuffle() {
   };
   // Only unlocked sections change; anything a section has that we don't
   // randomise goes back to its default.
+  // Cards you switched off stay off; cards that are on stay on and keep
+  // whatever shuffle doesn't roll.
   const keys = new Set<keyof Settings>();
+  const S = settings as unknown as Record<string, unknown>;
   for (const ctl of CONTROLS) {
     if (ctl.kind !== 'section' || !ctl.lock || locks.has(ctl.id)) continue;
-    for (const k of ctl.lock) {
-      (settings as unknown as Record<string, unknown>)[k] = k in r ? r[k] : DEFAULTS[k];
-      keys.add(k);
-    }
+    if (ctl.power && !ctl.power.on()) continue;
+    const before = Object.fromEntries(ctl.lock.map((k) => [k, S[k]]));
+    for (const k of ctl.lock) S[k] = k in r ? r[k] : ctl.power ? S[k] : DEFAULTS[k];
+    if (ctl.power && !ctl.power.on()) Object.assign(S, before);
+    for (const k of ctl.lock) keys.add(k);
   }
   if (keys.size) changed(keys);
 }
@@ -3203,6 +3420,12 @@ function shuffle() {
 const LOCK_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path class="shackle" d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 const LOCKS_KEY = 'particle-field:locks';
 const locks = new Set<string>(readJson<string[]>(LOCKS_KEY, []));
+// Cards that were merged or split keep their old locks.
+for (const [from, to] of [['click', 'pointer'], ['emitter', 'life'], ['look', 'depth']]) {
+  if (locks.has(from)) locks.add(to);
+}
+locks.delete('click');
+locks.delete('emitter');
 function saveLocks() {
   writeJson(LOCKS_KEY, [...locks]);
 }
@@ -3408,6 +3631,17 @@ if (window.innerWidth < 720) toggle.click();
 buildShades();
 buildGlyphs();
 renderControls();
+{
+  const saved = (() => {
+    try {
+      return localStorage.getItem(TAB_KEY);
+    } catch {
+      return null;
+    }
+  })();
+  showTab(TABS.some(([t]) => t === saved) ? (saved as Tab) : 'look');
+  syncTabDots();
+}
 resize();
 refresh();
 requestAnimationFrame(frame);
