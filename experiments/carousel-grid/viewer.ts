@@ -231,9 +231,9 @@ export class Viewer {
       } else this.afterOpen();
       return;
     }
-    // Zoom morphs the cell into the viewer, so both carry the shared name on
-    // their side of the change; Iris only animates the viewer.
-    const morph = this.transition === 'zoom';
+    // The cell morphs into the viewer, so both carry the shared name on
+    // their side of the change.
+    const morph = true;
     this.css.textContent = this.styles(closing);
     if (morph && !closing) source.style.viewTransitionName = NAME;
     if (closing) this.el.style.viewTransitionName = NAME;
@@ -295,34 +295,73 @@ export class Viewer {
         ::view-transition-new(root) { animation: cg-recede ${time}; }
         @keyframes cg-recede { ${frames('transform: none; opacity: 1;', `transform: scale(${s}); opacity: ${1 - o.recede * 0.5};`)} }`;
     }
+    // The full-screen view is the cell magnified, so its picture fits inside
+    // the morphing box ("contain") exactly where the cell's picture covers
+    // it. Laid over the cell's picture with no cross-fade, the two line up
+    // at every size, so nothing ghosts or jumps; the cell's picture only
+    // fills the edges the full-screen one doesn't reach.
+    const big = `::view-transition-${closing ? 'old' : 'new'}(${NAME})`;
+    const small = `::view-transition-${closing ? 'new' : 'old'}(${NAME})`;
+    css += `
+      ${big} { object-fit: contain; z-index: 1; animation: none; opacity: 1; }
+      ${small} { object-fit: cover; animation: none; opacity: 1; }`;
     if (this.transition === 'zoom') {
-      // The full-screen view is the cell magnified, so its picture fits inside
-      // the morphing box ("contain") exactly where the cell's picture covers
-      // it. Laid over the cell's picture with no cross-fade, the two line up
-      // at every size, so nothing ghosts or jumps; the cell's picture only
-      // fills the edges the full-screen one doesn't reach.
-      const big = `::view-transition-${closing ? 'old' : 'new'}(${NAME})`;
-      const small = `::view-transition-${closing ? 'new' : 'old'}(${NAME})`;
       const hold = Math.round(Math.min(0.95, o.cornerHold) * 100);
       // Corners stay as round as the cell's for the first part of the zoom.
       const mid = hold > 0 ? `${closing ? 100 - hold : hold}% { border-radius: ${rad}px; }` : '';
       css += `
-        ${big} { object-fit: contain; z-index: 1; animation: none; opacity: 1; }
-        ${small} { object-fit: cover; animation: none; opacity: 1; }
         ::view-transition-image-pair(${NAME}) { overflow: clip; animation: cg-round ${time}; }
         @keyframes cg-round { ${frames(`border-radius: ${rad}px;`, 'border-radius: 0px;', mid)} }`;
     } else {
-      const cx = r.left + r.width / 2;
-      const cy = r.top + r.height / 2;
-      const far = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy));
-      const view = `::view-transition-${closing ? 'old' : 'new'}(${NAME})`;
+      // Iris: the cell itself rounds into a circle in the first part of the
+      // zoom, then that circle keeps growing until it covers the screen. The
+      // circle is measured against the morphing box, which the browser grows
+      // with the chosen curve, so the keyframes are sampled along that same
+      // curve (and the animation itself runs linear) to stay in step with it.
+      const ease = cubicBezier(...o.curve);
+      const ROUND = 0.25; // share of the growth spent turning into a circle
+      const radiusAt = (p: number) => {
+        const w = r.width + (W - r.width) * p;
+        const h = r.height + (H - r.height) * p;
+        const corner = Math.hypot(w, h) / 2;
+        const inscribed = Math.min(w, h) / 2;
+        if (p < ROUND) {
+          // Start on the cell's own rounded corners, so the first frame matches it.
+          const cut = rad * (1 - Math.SQRT1_2);
+          const start = Math.hypot(r.width / 2 - cut, r.height / 2 - cut);
+          const k = p / ROUND;
+          return start + (inscribed - start) * (k * (2 - k));
+        }
+        const k = (p - ROUND) / (1 - ROUND);
+        return inscribed + (corner - inscribed) * k * k;
+      };
+      const STEPS = 30;
+      const keys: string[] = [];
+      for (let s = 0; s <= STEPS; s++) {
+        const t = s / STEPS;
+        const p = closing ? 1 - ease(t) : ease(t);
+        keys.push(`${((t * 100).toFixed(2))}% { clip-path: circle(${radiusAt(p).toFixed(1)}px at 50% 50%); }`);
+      }
       css += `
-        ${view} { animation: cg-iris ${time}; }
-        @keyframes cg-iris { ${frames(
-          `clip-path: circle(${Math.min(r.width, r.height) / 2}px at ${cx}px ${cy}px);`,
-          `clip-path: circle(${far}px at ${cx}px ${cy}px);`,
-        )} }`;
+        ::view-transition-image-pair(${NAME}) { animation: cg-iris ${ms}ms linear both; }
+        @keyframes cg-iris { ${keys.join(' ')} }`;
     }
     return css;
   }
+}
+
+/** CSS cubic-bezier timing function as a JS function of progress 0..1. */
+function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
+  const at = (a: number, b: number, t: number) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (x: number) => {
+    if (x <= 0 || x >= 1) return x;
+    let lo = 0;
+    let hi = 1;
+    for (let k = 0; k < 30; k++) {
+      const mid = (lo + hi) / 2;
+      if (at(x1, x2, mid) < x) lo = mid;
+      else hi = mid;
+    }
+    return at(y1, y2, (lo + hi) / 2);
+  };
 }
