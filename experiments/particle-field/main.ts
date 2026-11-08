@@ -63,6 +63,7 @@ interface Settings {
   customBg: string;
   mixStyles: string;
   gravity: number;
+  lifespan: number;
   glyphSet: GlyphSet;
   glyphText: string;
   glyphPick: GlyphPick;
@@ -188,6 +189,7 @@ const DEFAULTS: Settings = {
   customBg: '#07070c',
   mixStyles: 'circles,glow,sparkles,rings,glyphs,comets',
   gravity: 0,
+  lifespan: 0,
   glyphSet: 'katakana',
   glyphText: 'HELLO WORLD',
   glyphPick: 'random',
@@ -276,6 +278,12 @@ let ox = new Float32Array(0); // previous position, for streaks
 let oy = new Float32Array(0);
 let tone = new Float32Array(0); // 0..1 position along the palette
 let gl = new Float32Array(0); // glyph choice, 0..1
+let age = new Float32Array(0); // frames since (re)spawn, for fading in and out
+let span = new Float32Array(0); // this particle's lifetime in frames (Lifespan setting)
+// Particles fade in after a (re)spawn and fade out before the end of a lifespan,
+// so they never pop in or out.
+const FADE_IN = 45;
+const FADE_OUT = 45;
 let n = 0;
 
 let w = 0;
@@ -292,7 +300,7 @@ function ensureCount() {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl] = [px, py, vx, vy, ox, oy, tone, gl].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span] = [px, py, vx, vy, ox, oy, tone, gl, age, span].map(grow);
     cap = want;
   }
   for (let i = n; i < want; i++) spawn(i, Math.random() * w, Math.random() * h);
@@ -306,6 +314,19 @@ function spawn(i: number, x: number, y: number) {
   vy[i] = (Math.random() - 0.5) * 0.4;
   tone[i] = Math.random();
   gl[i] = Math.random();
+  rebirth(i);
+}
+
+function rebirth(i: number) {
+  age[i] = 0;
+  // Spread lifetimes (50–150%) so particles don't all fade at once.
+  span[i] = settings.lifespan > 0 ? settings.lifespan * 60 * (0.5 + Math.random()) : 0;
+}
+
+function fadeOf(i: number) {
+  let a = age[i] < FADE_IN ? age[i] / FADE_IN : 1;
+  if (span[i] > 0) a = Math.min(a, (span[i] - age[i]) / FADE_OUT);
+  return a;
 }
 
 function resize() {
@@ -582,7 +603,21 @@ function step(dt: number) {
   const cy = h / 2;
   for (let k = waves.length - 1; k >= 0; k--) if (waves[k].life <= 0) waves.splice(k, 1);
 
+  const lifeOn = settings.lifespan > 0;
   for (let i = 0; i < n; i++) {
+    age[i] += dt;
+    if (lifeOn && (span[i] <= 0 || age[i] >= span[i])) {
+      // End of life (or lifespan just switched on): start again somewhere new.
+      if (span[i] > 0) {
+        px[i] = ox[i] = Math.random() * w;
+        py[i] = oy[i] = Math.random() * h;
+        rebirth(i);
+      } else {
+        // Lifespan just switched on: stay visible, at a random point in life.
+        rebirth(i);
+        age[i] = FADE_IN + Math.random() * Math.max(0, span[i] - FADE_IN - FADE_OUT);
+      }
+    } else if (!lifeOn && span[i] > 0) span[i] = 0;
     let ax = (Math.random() - 0.5) * jitterNow;
     let ay = (Math.random() - 0.5) * jitterNow + settings.gravity * 0.05;
 
@@ -722,6 +757,7 @@ function step(dt: number) {
         // the seam where opposing currents meet. Respawn somewhere instead.
         px[i] = ox[i] = Math.random() * w;
         py[i] = oy[i] = Math.random() * h;
+        rebirth(i);
       } else {
         px[i] = ox[i] = ((px[i] % w) + w) % w;
         py[i] = oy[i] = ((py[i] % h) + h) % h;
@@ -744,6 +780,8 @@ function emit(dt: number) {
     py[i] = oy[i] = pointer.y + Math.sin(a) * 3;
     vx[i] = Math.cos(a) * v;
     vy[i] = Math.sin(a) * v;
+    rebirth(i);
+    age[i] = FADE_IN; // a fountain shows at once
   }
 }
 
@@ -1073,6 +1111,26 @@ function styleHash(i: number) {
   return x - Math.floor(x);
 }
 
+const FADE_LEVELS = 4;
+const fadeBuckets: number[][][] = Array.from({ length: FADE_LEVELS }, () => Array.from({ length: SHADES }, () => []));
+
+function drawBuckets(bks: number[][], s: number) {
+  if (settings.render === 'mixed') {
+    // Each particle keeps one style from the mix, picked by its index.
+    const mix = mixStyles();
+    const parts: number[][] = mix.map(() => []);
+    for (let k = 0; k < SHADES; k++) {
+      const list = bks[k];
+      if (!list.length) continue;
+      for (const p of parts) p.length = 0;
+      for (const i of list) parts[(styleHash(i) * mix.length) | 0].push(i);
+      mix.forEach((st, m) => parts[m].length && drawStyle(st, parts[m], k, s));
+    }
+  } else {
+    for (let k = 0; k < SHADES; k++) if (bks[k].length) drawStyle(settings.render, bks[k], k, s);
+  }
+}
+
 function draw() {
   const [r, g, b] = pal().bg;
   ctx.globalCompositeOperation = 'source-over';
@@ -1087,25 +1145,23 @@ function draw() {
     meanSpeed = meanSpeed * 0.9 + (sum / Math.max(1, n)) * 0.1;
   }
   for (const bk of buckets) bk.length = 0;
-  for (let i = 0; i < n; i++) buckets[shadeIndex(i)].push(i);
+  for (const lv of fadeBuckets) for (const bk of lv) bk.length = 0;
+  for (let i = 0; i < n; i++) {
+    const a = fadeOf(i);
+    if (a >= 0.99) buckets[shadeIndex(i)].push(i);
+    else if (a > 0) fadeBuckets[Math.min(FADE_LEVELS - 1, (a * FADE_LEVELS) | 0)][shadeIndex(i)].push(i);
+  }
 
   if (settings.render === 'links') drawLinks();
 
   const s = settings.size * audioSizeBoost();
-  if (settings.render === 'mixed') {
-    // Each particle keeps one style from the mix, picked by its index.
-    const mix = mixStyles();
-    const parts: number[][] = mix.map(() => []);
-    for (let k = 0; k < SHADES; k++) {
-      const list = buckets[k];
-      if (!list.length) continue;
-      for (const p of parts) p.length = 0;
-      for (const i of list) parts[(styleHash(i) * mix.length) | 0].push(i);
-      mix.forEach((st, m) => parts[m].length && drawStyle(st, parts[m], k, s));
-    }
-  } else {
-    for (let k = 0; k < SHADES; k++) if (buckets[k].length) drawStyle(settings.render, buckets[k], k, s);
+  drawBuckets(buckets, s);
+  // Fading particles, drawn in a few alpha steps to keep draw calls batched.
+  for (let L = 0; L < FADE_LEVELS; L++) {
+    ctx.globalAlpha = (L + 0.5) / FADE_LEVELS;
+    drawBuckets(fadeBuckets[L], s);
   }
+  ctx.globalAlpha = 1;
 
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
@@ -1389,13 +1445,14 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [] }, // filled with presets below
   { kind: 'mypresets' },
 
-  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity'],
+  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity', 'lifespan'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
   { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
 
   { kind: 'section', id: 'flow', label: 'Flow', lock: ['flow', 'flowScale', 'flowSpeed'],
@@ -1502,8 +1559,8 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Neon storm', { count: 4000, size: 1.2, render: 'streaks', flow: 1.6, flowScale: 0.012, flowSpeed: 1, trail: 0.7, friction: 0.05, jitter: 0.05, speed: 1.6, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.2, click: 'shockwave' }],
   ['Dusk', { count: 2200, size: 1.3, render: 'streaks', flow: 0.7, flowScale: 0.004, flowSpeed: 0.25, trail: 0.92, friction: 0.05, jitter: 0.02, palette: 'sunset', colorBy: 'vertical', glow: true, pointerMode: 'vortex', radius: 160, force: 0.7 }],
   ['Heat', { count: 3500, size: 2, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5, click: 'implode' }],
-  ['Fireflies', { count: 400, size: 1.6, render: 'glow', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0.6, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather' }],
-  ['Bokeh', { count: 250, size: 3, render: 'bokeh', flow: 0.2, flowScale: 0.002, flowSpeed: 0.08, trail: 0, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
+  ['Fireflies', { lifespan: 5, count: 400, size: 1.6, render: 'glow', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0.6, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather' }],
+  ['Bokeh', { lifespan: 9, count: 250, size: 3, render: 'bokeh', flow: 0.2, flowScale: 0.002, flowSpeed: 0.08, trail: 0, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
   ['Confetti', { count: 700, size: 3.2, render: 'mixed', mixStyles: 'circles,sparkles,rings,arrows,glyphs', glyphSet: 'shapes', flow: 0.3, flowScale: 0.004, flowSpeed: 0.3, gravity: 0.15, trail: 0, friction: 0.04, jitter: 0.06, palette: 'risograph', colorBy: 'palette', glow: false, pointerMode: 'vortex', radius: 180, force: 0.7, click: 'emit' }],
   ['Digital rain', { count: 900, size: 2.4, render: 'glyphs', glyphSet: 'katakana', glyphPick: 'random', glyphChange: 'flicker', glyphRate: 0.02, glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', gravity: 1, flow: 0, trail: 0.88, friction: 0.03, jitter: 0, speed: 1, palette: 'toxic', colorBy: 'speed', glow: false, pointerMode: 'repel', radius: 120, force: 0.6, click: 'ripple' }],
   ['ASCII', { count: 2500, size: 2, render: 'glyphs', glyphSet: 'density', glyphPick: 'speed', glyphChange: 'fixed', glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', flow: 0.8, flowScale: 0.004, flowSpeed: 0.3, trail: 0, friction: 0.05, jitter: 0.02, palette: 'mono', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 180, force: 0.8, click: 'gather' }],
@@ -1973,6 +2030,7 @@ function shuffle() {
     friction: rand(0.02, 0.08, 0.005),
     jitter: rand(0, 0.15, 0.01),
     gravity: Math.random() < 0.15 ? rand(-0.4, 0.6, 0.05) : 0,
+    lifespan: Math.random() < 0.3 ? rand(3, 12, 0.5) : 0,
     flow: rand(0.2, 1.6, 0.05),
     flowScale: rand(0.002, 0.012, 0.0005),
     flowSpeed: rand(0.05, 1, 0.05),
