@@ -4896,7 +4896,7 @@ function toggleDebug() {
   const wake = () => {
     fab.classList.remove('idle');
     clearTimeout(idle);
-    idle = window.setTimeout(() => fab.classList.add('idle'), 1500);
+    idle = window.setTimeout(() => fab.classList.add('idle'), 1000);
   };
   window.addEventListener('pointerdown', wake, { capture: true, passive: true });
   wake();
