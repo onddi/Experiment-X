@@ -2813,7 +2813,7 @@ function frame(now: number) {
   last = now;
   fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
   // Frozen by the user (Space) or by the audio player pausing with "hold" on.
-  const frozen = paused || musicHold;
+  const frozen = paused;
   if (!frozen) adaptQuality(dt);
   audio.genre = settings.audioGenre;
   audio.update(now);
@@ -4221,16 +4221,18 @@ setInterval(() => {
 // once, from the player. It switches on by itself when a feed starts, unless
 // you pressed Stop.
 let feedDeclined = false;
-// The player can ask layers to freeze while its music is paused
-// ('transport' with hold: true). Separate from the Space pause.
-let musicHold = false;
+// Shared play/pause across X-Frame ('play' topic): pausing here pauses the
+// music player too, and pausing the player (or X-Frame's button) pauses us.
+let sharedPlaying: boolean | null = null;
 function startFeed() {
   feedDeclined = false;
   audio.startFeed((onFrame) => xframe.subscribe('audio.spectrum', (d: SpectrumFrame) => onFrame(d)));
 }
 if (xframe.inFrame) {
-  xframe.subscribe('transport', (t: { playing?: boolean; hold?: boolean }) => {
-    musicHold = !!t?.hold && !t.playing;
+  xframe.subscribe('play', (d: { playing?: boolean }) => {
+    if (typeof d?.playing !== 'boolean') return;
+    sharedPlaying = d.playing;
+    if (paused === d.playing) togglePause();
   });
   xframe.subscribe('audio.spectrum', (d: SpectrumFrame) => {
     if (audio.source === 'off' && !feedDeclined && d?.bins?.some((v) => v > 0)) startFeed();
@@ -4345,6 +4347,10 @@ function renderAudio() {
 
 function togglePause() {
   paused = !paused;
+  if (sharedPlaying !== !paused) {
+    sharedPlaying = !paused;
+    xframe.publish('play', { playing: !paused });
+  }
   for (const b of pauseButtons) {
     b.innerHTML = paused ? ICONS.play : ICONS.pause;
     b.title = paused ? 'Play (Space)' : 'Pause (Space)';

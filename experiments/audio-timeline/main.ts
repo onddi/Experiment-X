@@ -35,7 +35,7 @@ interface Settings {
   smoothing: number;
   rate: number;
   skin: Skin;
-  holdLayers: boolean;
+  syncPlay: boolean;
 }
 const DEFAULTS: Settings = {
   style: 'spectral',
@@ -48,7 +48,7 @@ const DEFAULTS: Settings = {
   smoothing: 0.6,
   rate: 1,
   skin: 'classic',
-  holdLayers: false,
+  syncPlay: true,
 };
 const STORAGE_KEY = 'audio-timeline:settings';
 const COLLAPSE_KEY = 'audio-timeline:collapsed';
@@ -313,11 +313,26 @@ function publishTransport() {
     time: audio.currentTime || 0,
     duration: track?.duration ?? 0,
     title: trackName ? trackName.replace(/\.[a-z0-9]+$/i, '') : undefined,
-    // Ask the other layers to freeze while the music is paused.
-    hold: settings.holdLayers,
   });
 }
 for (const ev of ['play', 'pause', 'ended', 'seeked', 'ratechange', 'loadedmetadata']) audio.addEventListener(ev, publishTransport);
+
+// Shared play/pause ('play' topic): pressing play or pause here plays or pauses
+// everything else that hooks in (e.g. the particle field), and the other way round.
+let sharedPlaying: boolean | null = null;
+function shareState() {
+  const playing = !audio.paused;
+  if (!settings.syncPlay || playing === sharedPlaying) return;
+  sharedPlaying = playing;
+  xframe.publish('play', { playing });
+}
+audio.addEventListener('play', shareState);
+audio.addEventListener('pause', shareState);
+xframe.subscribe('play', (d: { playing?: boolean }) => {
+  if (!settings.syncPlay || typeof d?.playing !== 'boolean') return;
+  sharedPlaying = d.playing;
+  if (d.playing === audio.paused) void togglePlay();
+});
 
 xframe.subscribe('transport.command', (cmd: { action?: string; time?: number }) => {
   if (!cmd || !track) return;
@@ -1001,10 +1016,10 @@ function refreshPanel() {
     applyHue();
     save();
   }, (v) => `${Math.round(v)}°`);
-  toggleRow(body, 'Pause other layers with the music', () => settings.holdLayers, (v) => {
-    settings.holdLayers = v;
+  toggleRow(body, 'Play and pause together with other layers', () => settings.syncPlay, (v) => {
+    settings.syncPlay = v;
+    sharedPlaying = null;
     save();
-    publishTransport();
   });
   const about = note(body, '');
   const ABOUT: Record<Skin, string> = {

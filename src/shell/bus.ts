@@ -30,6 +30,7 @@ interface Topic {
 }
 
 const topics = new Map<string, Topic>();
+const shellListeners = new Map<string, Set<(data: unknown, from: string) => void>>();
 
 /** Resolves an iframe window to the experiment slug running in it. */
 let slugOf: (win: Window) => string | undefined = () => undefined;
@@ -76,10 +77,37 @@ export function handleBusMessage(source: Window, msg: { type?: string; topic?: u
       t.publishers.add(from);
       t.count++;
       for (const win of t.subscribers) if (win !== source) send(win, name, msg.data, from);
+      shellListeners.get(name)?.forEach((fn) => fn(msg.data, from));
       return true;
     }
   }
   return false;
+}
+
+/** Publish from X-Frame itself (shown as "x-frame") to every subscriber. */
+export function shellPublish(name: string, data: unknown) {
+  const t = topic(name);
+  t.last = { data, from: 'x-frame' };
+  t.publishers.add('x-frame');
+  t.count++;
+  for (const win of t.subscribers) send(win, name, data, 'x-frame');
+}
+
+/** X-Frame's own listener on a topic (experiments' publishes only). */
+export function shellSubscribe(name: string, fn: (data: unknown, from: string) => void) {
+  let set = shellListeners.get(name);
+  if (!set) shellListeners.set(name, (set = new Set()));
+  set.add(fn);
+}
+
+/** Whether any experiment on screen listens to a topic. */
+export function hasSubscribers(name: string) {
+  return (topics.get(name)?.subscribers.size ?? 0) > 0;
+}
+
+/** The last value published on a topic, if any. */
+export function lastValue(name: string) {
+  return topics.get(name)?.last?.data;
 }
 
 /** Forget everything a frame subscribed to, e.g. before it reloads or is removed. */

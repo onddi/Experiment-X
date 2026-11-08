@@ -212,8 +212,12 @@ each 0–1, once per frame alongside `audio.spectrum`.
 { playing: boolean, time: number, duration: number, title?: string }   // seconds
 ```
 
-`hold?: boolean` asks the other layers to freeze while `playing` is false (the audio
-timeline's "Pause other layers with the music"; the particle field follows it).
+**`play`**: shared play/pause for everything on screen, `{ playing: boolean }`.
+Publish it when the user presses play or pause in your experiment, and subscribe to
+follow everyone else's. Only publish on a change (keep the last value you sent or got),
+so following a message doesn't send it back. X-Frame shows a ⏸/▶ button in the toolbar
+while any experiment listens, and publishes on it too. The audio timeline (switch
+"Play and pause together with other layers") and the particle field (Space, ⏸) use it.
 
 **`pointer`**: `{ type: 'down' | 'move', x, y }` (0–1 of the viewport), published by
 the layer that gets the mouse (the particle field does) so layers without it can still

@@ -1,6 +1,6 @@
 import './shell.css';
 import { experiments, type Experiment } from './experiments.ts';
-import { busStats, dropFrame, dropPublisher, handleBusMessage, setSlugResolver } from './bus.ts';
+import { busStats, dropFrame, dropPublisher, handleBusMessage, hasSubscribers, lastValue, setSlugResolver, shellPublish, shellSubscribe } from './bus.ts';
 import {
   BLENDS, PLACEMENTS, inputLayer, layout, newLayer, parseHash, toHash,
   type Layer, type Placement, type View,
@@ -498,6 +498,25 @@ list.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('a') && isSmallScreen()) setSidebarCollapsed(true);
 });
 $('reload').addEventListener('click', reloadAll);
+
+// Shared play/pause ('play' topic): one button for every experiment that hooks in.
+// It shows only while someone listens, and follows whoever pressed play or pause last.
+const playAll = $('play-all');
+function syncPlayAll() {
+  const listening = hasSubscribers('play');
+  playAll.hidden = !listening;
+  const playing = (lastValue('play') as { playing?: boolean } | undefined)?.playing ?? true;
+  playAll.textContent = playing ? '⏸' : '▶';
+  playAll.title = playing ? 'Pause everything' : 'Play everything';
+  playAll.setAttribute('aria-label', playAll.title);
+}
+playAll.addEventListener('click', () => {
+  const playing = (lastValue('play') as { playing?: boolean } | undefined)?.playing ?? true;
+  shellPublish('play', { playing: !playing });
+  syncPlayAll();
+});
+shellSubscribe('play', syncPlayAll);
+window.setInterval(syncPlayAll, 1000);
 layersBtn.addEventListener('click', () => openPanel(!!panel.hidden));
 $('sidebar-close').addEventListener('click', () => setSidebarCollapsed(true));
 $('sidebar-open').addEventListener('click', () => setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed')));
