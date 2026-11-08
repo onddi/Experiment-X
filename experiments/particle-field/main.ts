@@ -13,7 +13,7 @@ type Shape = 'none' | 'text' | 'image' | 'grid' | 'sunflower' | 'ring';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
-type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'glyphs' | 'links';
+type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links';
 type KickAction = 'pulse' | 'wave' | 'both' | 'none';
 type SnareAction = 'swirl' | 'wave' | 'flash' | 'none';
 type HatAction = 'sparkle' | 'none';
@@ -93,6 +93,7 @@ interface Settings {
   force: number;
   render: Render;
   linkDist: number;
+  ribbonLen: number;
   trail: number;
   glow: boolean;
   palette: Palette;
@@ -256,6 +257,7 @@ const DEFAULTS: Settings = {
   force: 0.6,
   render: 'dots',
   linkDist: 70,
+  ribbonLen: 14,
   trail: 0.75,
   glow: false,
   palette: 'aurora',
@@ -713,6 +715,7 @@ function flowAngle(x: number, y: number) {
 
 function step(dt: number) {
   updateFlowFreqs();
+  recordHistory();
   t += dt / 60;
   const { radius, force, pointerMode, friction, jitter, flow, speed } = settings;
   const r2 = radius * radius;
@@ -1126,6 +1129,85 @@ function swarmForces() {
     swy[i] = ay;
   }
   return true;
+}
+
+// --- ribbon history -----------------------------------------------------------
+// A ring buffer of recent positions per particle, only kept while a ribbon
+// style is in use. Slot `histHead` is the newest for every particle.
+
+let hist = new Float32Array(0);
+let histLen = 0;
+let histHead = 0;
+let histCap = 0;
+
+function usesRibbons() {
+  return settings.render === 'ribbons' || (settings.render === 'mixed' && mixStyles().includes('ribbons'));
+}
+
+function recordHistory() {
+  if (!usesRibbons()) {
+    histLen = 0;
+    return;
+  }
+  const L = settings.ribbonLen;
+  if (histLen !== L || histCap < cap) {
+    histLen = L;
+    histCap = cap;
+    hist = new Float32Array(cap * L * 2);
+    for (let i = 0; i < n; i++)
+      for (let k = 0; k < L; k++) {
+        hist[(i * L + k) * 2] = px[i];
+        hist[(i * L + k) * 2 + 1] = py[i];
+      }
+  }
+  histHead = (histHead + 1) % L;
+  for (let i = 0; i < n; i++) {
+    const o = (i * L + histHead) * 2;
+    hist[o] = px[i];
+    hist[o + 1] = py[i];
+  }
+}
+
+// Ribbons: a smooth curve through each particle's recent positions, drawn in
+// three passes that get thinner and fainter towards the tail.
+function drawRibbons(list: number[], k: number, s: number) {
+  const L = histLen;
+  if (!L) return;
+  ctx.strokeStyle = shades[k];
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const PASSES = 3;
+  const per = Math.ceil((L - 1) / PASSES);
+  const a0 = ctx.globalAlpha;
+  for (let pass = 0; pass < PASSES; pass++) {
+    const from = pass * per;
+    const to = Math.min(L - 1, from + per);
+    if (from >= to) break;
+    ctx.lineWidth = Math.max(0.5, s * (1 - pass * 0.3));
+    ctx.globalAlpha = a0 * (1 - pass * 0.3);
+    ctx.beginPath();
+    for (const i of list) {
+      const base = i * L;
+      let slot = (histHead - from + L) % L;
+      let x0 = hist[(base + slot) * 2];
+      let y0 = hist[(base + slot) * 2 + 1];
+      ctx.moveTo(x0, y0);
+      for (let q = from + 1; q <= to; q++) {
+        slot = (histHead - q + L) % L;
+        const x1 = hist[(base + slot) * 2];
+        const y1 = hist[(base + slot) * 2 + 1];
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        // A big jump means a wrap or a respawn: break the ribbon there.
+        if (dx * dx + dy * dy > 2500) break;
+        ctx.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+        x0 = x1;
+        y0 = y1;
+      }
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = a0;
 }
 
 // --- shape (home positions) ------------------------------------------------------
@@ -1721,6 +1803,8 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     }
   } else if (style === 'glyphs') {
     drawGlyphs(list, k, s);
+  } else if (style === 'ribbons') {
+    drawRibbons(list, k, s);
   } else if (style === 'streaks') {
     ctx.strokeStyle = shades[k];
     ctx.lineWidth = s;
@@ -1747,7 +1831,7 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
 
 const MIXABLE: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
-  ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['glyphs', 'Glyphs'],
+  ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
 ];
 
 function mixStyles(): Render[] {
@@ -2061,7 +2145,7 @@ const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attr
 const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
 const RENDERS: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
-  ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['glyphs', 'Glyphs'],
+  ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
   ['links', 'Constellation'], ['mixed', 'Mixed'],
 ];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['audio', 'Music energy']];
@@ -2277,10 +2361,12 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct, show: ft },
 
   { kind: 'section', id: 'look', label: 'Style', open: true,
-    lock: ['render', 'mixStyles', 'linkDist', 'trail', 'glow', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
+    lock: ['render', 'mixStyles', 'linkDist', 'ribbonLen', 'trail', 'glow', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
     summary: () => label(RENDERS, settings.render) },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
+  { kind: 'range', key: 'ribbonLen', label: 'Ribbon length', min: 4, max: 40, step: 1, format: (v) => `${v} steps`, show: () => usesRibbons() },
+  { kind: 'note', text: 'Ribbons draw their own trails, so they look cleanest with Trails near 0.', show: () => usesRibbons() && settings.trail > 0.3 },
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
@@ -2338,6 +2424,7 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Pulse rings', { count: 3000, size: 1.4, render: 'streaks', emitter: 'ring', emitMode: 'burst', burstEvery: 1.6, burstSize: 0.3, emitSize: 60, emitOut: true, launchSpeed: 3, launchSpread: 0, lifespan: 3, lifeFade: 'out', flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.02, jitter: 0, palette: 'neon', colorBy: 'age', glow: true, pointerMode: 'vortex', radius: 200, force: 0.6 }],
   ['Hello', { count: 4000, size: 1.4, render: 'dots', shape: 'text', shapeText: 'HELLO', shapeSize: 0.8, homeStrength: 1, shapeCycle: 10, flow: 0.6, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.3, trail: 0.75, friction: 0.04, jitter: 0.02, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Starlings', { count: 700, size: 2, render: 'arrows', flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, trail: 0.55, friction: 0.01, jitter: 0.06, palette: 'ice', colorBy: 'direction', glow: false, pointerMode: 'repel', radius: 160, force: 1, click: 'shockwave' }],
+  ['Silk ribbons', { count: 600, size: 1.6, render: 'ribbons', ribbonLen: 24, flow: 1, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, trail: 0, friction: 0.05, jitter: 0.01, palette: 'tealorange', colorBy: 'direction', glow: true, pointerMode: 'vortex', radius: 200, force: 0.7, click: 'ripple' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
@@ -2815,7 +2902,7 @@ function shuffle() {
     force: rand(0.3, 1.4, 0.05),
     click: pick(['gather', 'emit', 'ripple', 'implode', 'shockwave'] as const),
     clickForce: rand(0.6, 1.6, 0.1),
-    render: pick(['dots', 'circles', 'glow', 'bokeh', 'rings', 'sparkles', 'arrows', 'streaks', 'streaks', 'comets', 'glyphs', 'links', 'mixed'] as const),
+    render: pick(['dots', 'circles', 'glow', 'bokeh', 'rings', 'sparkles', 'arrows', 'streaks', 'streaks', 'comets', 'ribbons', 'glyphs', 'links', 'mixed'] as const),
     mixStyles: MIXABLE.map(([k]) => k).sort(() => Math.random() - 0.5).slice(0, 3 + ((Math.random() * 3) | 0)).sort((a, b) => MIXABLE.findIndex(([k]) => k === a) - MIXABLE.findIndex(([k]) => k === b)).join(','),
     linkDist: rand(50, 100, 5),
     trail: rand(0.5, 0.95, 0.01),
