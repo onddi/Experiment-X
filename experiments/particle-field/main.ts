@@ -5,7 +5,7 @@ import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
-type Render = 'dots' | 'streaks' | 'links';
+type Render = 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'glyphs' | 'links';
 type KickAction = 'pulse' | 'wave' | 'both' | 'none';
 type SnareAction = 'swirl' | 'wave' | 'flash' | 'none';
 type HatAction = 'sparkle' | 'none';
@@ -611,6 +611,7 @@ const SHADES = 64;
 let shades: string[] = [];
 
 function buildShades() {
+  spriteCache.clear();
   const stops = PALETTES[settings.palette].stops;
   shades = [];
   for (let k = 0; k < SHADES; k++) {
@@ -689,6 +690,89 @@ function audioSizeBoost() {
   return b;
 }
 
+// --- sprites -----------------------------------------------------------------
+
+type SpriteStyle = 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles';
+// scale: drawn size relative to the Size setting; alpha: overall opacity.
+const SPRITES: Record<SpriteStyle, { scale: number; alpha: number }> = {
+  circles: { scale: 1.4, alpha: 1 },
+  glow: { scale: 6, alpha: 1 },
+  bokeh: { scale: 10, alpha: 0.35 },
+  rings: { scale: 4, alpha: 0.9 },
+  sparkles: { scale: 6, alpha: 1 },
+};
+const GLYPHS = '01アイウエオカキクケコサシスセソ+×*·<>/\\';
+const SPRITE_PX = 48;
+const spriteCache = new Map<string, HTMLCanvasElement>();
+
+function spriteFor(style: SpriteStyle, k: number) {
+  const key = `${style}:${k}`;
+  let c = spriteCache.get(key);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = SPRITE_PX;
+  const g = c.getContext('2d')!;
+  const m = SPRITE_PX / 2;
+  const col = shades[k];
+  if (style === 'circles') {
+    g.fillStyle = col;
+    g.beginPath();
+    g.arc(m, m, m - 1, 0, Math.PI * 2);
+    g.fill();
+  } else if (style === 'glow' || style === 'bokeh') {
+    const grad = g.createRadialGradient(m, m, 0, m, m, m);
+    if (style === 'glow') {
+      grad.addColorStop(0, '#fff');
+      grad.addColorStop(0.12, col);
+      grad.addColorStop(0.35, withAlpha(col, 0.35));
+      grad.addColorStop(1, withAlpha(col, 0));
+    } else {
+      // Bokeh: a soft disc with a slightly brighter rim, like an
+      // out-of-focus light.
+      grad.addColorStop(0, withAlpha(col, 0.5));
+      grad.addColorStop(0.8, withAlpha(col, 0.6));
+      grad.addColorStop(0.92, withAlpha(col, 0.9));
+      grad.addColorStop(1, withAlpha(col, 0));
+    }
+    g.fillStyle = grad;
+    g.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+  } else if (style === 'rings') {
+    g.strokeStyle = col;
+    g.lineWidth = SPRITE_PX * 0.08;
+    g.beginPath();
+    g.arc(m, m, m * 0.8, 0, Math.PI * 2);
+    g.stroke();
+  } else {
+    // Sparkle: a four-point star with a soft halo.
+    const grad = g.createRadialGradient(m, m, 0, m, m, m * 0.5);
+    grad.addColorStop(0, withAlpha(col, 0.6));
+    grad.addColorStop(1, withAlpha(col, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+    g.fillStyle = col;
+    g.beginPath();
+    const r1 = m;
+    const r2 = m * 0.12;
+    for (let p = 0; p < 8; p++) {
+      const a = (p * Math.PI) / 4 - Math.PI / 2;
+      const r = p % 2 ? r2 : r1;
+      g.lineTo(m + Math.cos(a) * r, m + Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#fff';
+    g.beginPath();
+    g.arc(m, m, m * 0.08, 0, Math.PI * 2);
+    g.fill();
+  }
+  spriteCache.set(key, c);
+  return c;
+}
+
+function withAlpha(hsl: string, a: number) {
+  return hsl.replace(')', ` / ${a})`);
+}
+
 // Buckets let us draw every particle of one colour in a single path.
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
@@ -710,10 +794,61 @@ function draw() {
   if (settings.render === 'links') drawLinks();
 
   const s = settings.size * audioSizeBoost();
+  const style = settings.render;
+  const sprite = SPRITES[style as SpriteStyle];
   for (let k = 0; k < SHADES; k++) {
     const list = buckets[k];
     if (!list.length) continue;
-    if (settings.render === 'streaks') {
+    if (sprite) {
+      // Pre-rendered shapes, stamped with drawImage: much faster than a path
+      // per particle for soft or curved shapes.
+      const img = spriteFor(style as SpriteStyle, k);
+      const d = s * sprite.scale;
+      ctx.globalAlpha = sprite.alpha;
+      for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      ctx.globalAlpha = 1;
+    } else if (style === 'arrows') {
+      // Small triangles pointing where each particle is heading.
+      ctx.fillStyle = shades[k];
+      ctx.beginPath();
+      const L = s * 2.2;
+      for (const i of list) {
+        const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+        const ux = vx[i] / v;
+        const uy = vy[i] / v;
+        ctx.moveTo(px[i] + ux * L, py[i] + uy * L);
+        ctx.lineTo(px[i] - ux * L * 0.6 - uy * L * 0.55, py[i] - uy * L * 0.6 + ux * L * 0.55);
+        ctx.lineTo(px[i] - ux * L * 0.6 + uy * L * 0.55, py[i] - uy * L * 0.6 - ux * L * 0.55);
+        ctx.closePath();
+      }
+      ctx.fill();
+    } else if (style === 'comets') {
+      // A thin tapering tail plus a bright head.
+      ctx.strokeStyle = shades[k];
+      ctx.lineWidth = Math.max(0.5, s * 0.5);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      for (const i of list) {
+        ctx.moveTo(px[i] - vx[i] * 9, py[i] - vy[i] * 9);
+        ctx.lineTo(px[i], py[i]);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      const img = spriteFor('glow', k);
+      const d = s * 3;
+      for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    } else if (style === 'glyphs') {
+      ctx.fillStyle = shades[k];
+      ctx.font = `${Math.max(7, s * 5).toFixed(1)}px ui-monospace, Menlo, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const i of list) {
+        // Each particle keeps its glyph, with an occasional flicker.
+        const g = (tone[i] * GLYPHS.length + (Math.random() < 0.01 ? 1 : 0)) | 0;
+        ctx.fillText(GLYPHS[g % GLYPHS.length], px[i], py[i]);
+      }
+    } else if (style === 'streaks') {
       ctx.strokeStyle = shades[k];
       ctx.lineWidth = s;
       ctx.lineCap = 'round';
@@ -853,7 +988,11 @@ const label = (options: [string, string][], v: unknown) => options.find(([k]) =>
 
 const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']];
 const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
-const RENDERS: [string, string][] = [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']];
+const RENDERS: [string, string][] = [
+  ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
+  ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['glyphs', 'Glyphs'],
+  ['links', 'Constellation'],
+];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['audio', 'Music energy']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
@@ -962,6 +1101,9 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Neon storm', { count: 4000, size: 1.2, render: 'streaks', flow: 1.6, flowScale: 0.012, flowSpeed: 1, trail: 0.7, friction: 0.05, jitter: 0.05, speed: 1.6, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.2, click: 'shockwave' }],
   ['Dusk', { count: 2200, size: 1.3, render: 'streaks', flow: 0.7, flowScale: 0.004, flowSpeed: 0.25, trail: 0.92, friction: 0.05, jitter: 0.02, palette: 'sunset', colorBy: 'vertical', glow: true, pointerMode: 'vortex', radius: 160, force: 0.7 }],
   ['Heat', { count: 3000, size: 1.6, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5, click: 'implode' }],
+  ['Fireflies', { count: 400, size: 1.6, render: 'glow', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0.6, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather' }],
+  ['Bokeh', { count: 250, size: 3, render: 'bokeh', flow: 0.2, flowScale: 0.002, flowSpeed: 0.08, trail: 0, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
+  ['Glyph drift', { count: 900, size: 2.4, render: 'glyphs', flow: 0, trail: 0.85, friction: 0.02, jitter: 0, speed: 1, palette: 'toxic', colorBy: 'vertical', glow: false, pointerMode: 'repel', radius: 120, force: 0.6, click: 'ripple' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
@@ -1261,7 +1403,7 @@ function shuffle() {
     click: pick(['gather', 'emit', 'ripple', 'implode', 'shockwave'] as const),
     radius: rand(80, 260, 5),
     force: rand(0.3, 1.4, 0.05),
-    render: pick(['dots', 'streaks', 'streaks', 'links'] as const),
+    render: pick(['dots', 'circles', 'glow', 'bokeh', 'rings', 'sparkles', 'arrows', 'streaks', 'streaks', 'comets', 'glyphs', 'links'] as const),
     linkDist: rand(50, 100, 5),
     trail: rand(0.5, 0.95, 0.01),
     glow: Math.random() < 0.6,
