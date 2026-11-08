@@ -70,6 +70,8 @@ interface Settings {
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
+  entrance: 'drift' | 'formed' | 'centre' | 'sweep' | 'rain' | 'edges' | 'scatter';
+  entranceTime: number;
   emitter: Emitter;
   emitMode: EmitMode;
   emitX: number;
@@ -259,6 +261,8 @@ const DEFAULTS: Settings = {
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
+  entrance: 'drift',
+  entranceTime: 2.5,
   emitter: 'none',
   emitMode: 'steady',
   emitX: 0.5,
@@ -1057,6 +1061,14 @@ function step(dt: number) {
     homeK = settings.homeStrength * 0.004 * formed;
   }
   const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
+  // While an entrance plays, particles follow their gliding spot closely, then
+  // the grip eases off over a second to the normal spring.
+  let entK = 0;
+  if (entrance) {
+    const left = entrance.start + entrance.dur + 1200 - performance.now();
+    if (left <= 0 || settings.shape === 'none') entrance = null;
+    else entK = Math.min(1, left / 1200);
+  }
   runEmitter(dt, on && A.beat);
   const swarm = swarmForces();
   const depthOn = settings.depth > 0;
@@ -1104,6 +1116,10 @@ function step(dt: number) {
       // settles instead of wobbling forever.
       ax += (hx[i] - px[i]) * homeK - vx[i] * homeDamp;
       ay += (hy[i] - py[i]) * homeK - vy[i] * homeDamp;
+    }
+    if (entK > 0) {
+      ax += ((hx[i] - px[i]) * 0.06 - vx[i] * 0.4) * entK;
+      ay += ((hy[i] - py[i]) * 0.06 - vy[i] * 0.4) * entK;
     }
     if (windX !== 0 || windY !== 0) {
       ax += windX;
@@ -1708,6 +1724,83 @@ function buildShape() {
     hx[owner[t]] = tx[t];
     hy[owner[t]] = ty[t];
   }
+}
+
+// --- entrance ------------------------------------------------------------------
+// How a shape forms when the page opens (or on Play entrance): every particle
+// starts somewhere tidy and its spot glides from there to the shape, some
+// later than others, so the word builds up instead of swarming in.
+let entrance: { start: number; dur: number } | null = null;
+function playEntrance() {
+  const S = settings;
+  if (S.shape === 'none' || S.emitter !== 'none' || S.entrance === 'scatter') return;
+  if (S.shape === 'image' && !shapeImage) return;
+  buildShape();
+  const cx = w / 2;
+  const cy = h / 2;
+  const R = Math.hypot(cx, cy);
+  const sx = new Float32Array(n);
+  const sy = new Float32Array(n);
+  const dl = new Float32Array(n);
+  const rand01 = Math.random;
+  for (let i = 0; i < n; i++) {
+    const tx = hx[i];
+    const ty = hy[i];
+    let x = tx;
+    let y = ty;
+    let d = 0;
+    switch (S.entrance) {
+      case 'formed':
+        x = tx + (rand01() - 0.5) * 6;
+        y = ty + (rand01() - 0.5) * 6;
+        break;
+      case 'drift':
+        x = rand01() * w;
+        y = rand01() * h;
+        d = rand01() * 0.35;
+        break;
+      case 'centre': {
+        const a = rand01() * Math.PI * 2;
+        const r = rand01() * 14;
+        x = cx + Math.cos(a) * r;
+        y = cy + Math.sin(a) * r;
+        d = (Math.hypot(tx - cx, ty - cy) / R) * 0.6;
+        break;
+      }
+      case 'sweep':
+        x = rand01() * 8;
+        y = ty + (rand01() - 0.5) * 40;
+        d = (tx / w) * 0.7;
+        break;
+      case 'rain':
+        x = tx + (rand01() - 0.5) * 20;
+        y = rand01() * 8;
+        d = (1 - ty / h) * 0.45 + rand01() * 0.2;
+        break;
+      case 'edges': {
+        const m = Math.min(tx, w - tx, ty, h - ty);
+        if (m === tx) x = 1;
+        else if (m === w - tx) x = w - 1;
+        else if (m === ty) y = 1;
+        else y = h - 1;
+        d = rand01() * 0.4;
+        break;
+      }
+    }
+    sx[i] = px[i] = ox[i] = Math.min(w - 1, Math.max(0, x));
+    sy[i] = py[i] = oy[i] = Math.min(h - 1, Math.max(0, y));
+    vx[i] = vy[i] = 0;
+    dl[i] = d;
+  }
+  const now = performance.now();
+  if (S.entrance === 'formed') {
+    homeGlide = null;
+    entrance = { start: now, dur: 0 };
+    return;
+  }
+  const dur = S.entranceTime * 1000;
+  homeGlide = { fx: sx, fy: sy, tx: hx.slice(0, n), ty: hy.slice(0, n), start: now, dur, dl };
+  entrance = { start: now, dur };
 }
 
 // Pairs each particle with a target spot so the total travel is small:
@@ -2903,6 +2996,15 @@ const isGlyphs = () => settings.render === 'glyphs' || (settings.render === 'mix
 const hasFlow = () => settings.flow > 0;
 const hasEmitter = () => settings.emitter !== 'none';
 const hasShape = () => settings.shape !== 'none';
+const ENTRANCES: [string, string][] = [
+  ['drift', 'Drift in from all around'],
+  ['formed', 'Already formed'],
+  ['centre', 'Bloom from the centre'],
+  ['sweep', 'Sweep in from the left'],
+  ['rain', 'Fall from the top'],
+  ['edges', 'Fly in from the edges'],
+  ['scatter', 'Scattered (free spring)'],
+];
 const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['image', 'An image'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
@@ -3071,7 +3173,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'shapeCycle'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -3080,6 +3182,10 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
+  { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: hasShape },
+  { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
+  { kind: 'buttons', buttons: [['Play entrance', () => playEntrance()]], show: () => hasShape() && settings.entrance !== 'scatter' },
+  { kind: 'note', text: 'How the shape forms when the page opens. Scattered is the old free-for-all.', show: hasShape },
   { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
   { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
@@ -3252,7 +3358,7 @@ let pendingLook: { target: Settings; since: number } | null = null;
 // Set while morphTo applies a shape change; homeGlide then moves each
 // particle's target from where it was to its new spot.
 let glideHomes: { ms: number; fromFree: boolean } | null = null;
-let homeGlide: { fx: Float32Array; fy: Float32Array; tx: Float32Array; ty: Float32Array; start: number; dur: number } | null = null;
+let homeGlide: { fx: Float32Array; fy: Float32Array; tx: Float32Array; ty: Float32Array; start: number; dur: number; dl?: Float32Array } | null = null;
 
 function morphTo(target: Settings) {
   const dur = settings.morph * 1000;
@@ -3410,11 +3516,15 @@ function tickMorph(now: number, beat: boolean) {
   if (homeGlide) {
     const hg = homeGlide;
     const u = Math.min(1, (now - hg.start) / hg.dur);
-    const e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
+    const ease = (v: number) => (v < 0.5 ? 2 * v * v : 1 - (-2 * v + 2) ** 2 / 2);
+    const e = ease(u);
     const len = Math.min(n, hg.fx.length);
+    const dl = hg.dl;
     for (let i = 0; i < len; i++) {
-      hx[i] = hg.fx[i] + (hg.tx[i] - hg.fx[i]) * e;
-      hy[i] = hg.fy[i] + (hg.ty[i] - hg.fy[i]) * e;
+      // Each particle can start late (an entrance), then catches up by the end.
+      const ei = dl ? ease(Math.min(1, Math.max(0, (u - dl[i]) / Math.max(0.05, 1 - dl[i])))) : e;
+      hx[i] = hg.fx[i] + (hg.tx[i] - hg.fx[i]) * ei;
+      hy[i] = hg.fy[i] + (hg.ty[i] - hg.fy[i]) * ei;
     }
     if (u >= 1) homeGlide = null;
   }
@@ -4562,5 +4672,6 @@ renderControls();
 resize();
 refresh();
 presetFromUrl(true);
+playEntrance();
 window.addEventListener('hashchange', () => presetFromUrl(false));
 requestAnimationFrame(frame);
