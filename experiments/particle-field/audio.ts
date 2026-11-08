@@ -5,7 +5,10 @@
 // web player), or a local audio file. Each frame we read the spectrum and
 // boil it down to a few 0..1 signals the simulation can use.
 
-export type AudioSource = 'off' | 'mic' | 'tab' | 'file';
+export type AudioSource = 'off' | 'mic' | 'tab' | 'file' | 'feed';
+
+/** One frame of the X-Frame `audio.spectrum` topic: what an AnalyserNode gives. */
+export type SpectrumFrame = { bins: Uint8Array; sampleRate: number; fftSize: number };
 
 // Detector tuning per style of music. Cooldowns stop one hit triggering
 // twice; sensitivity is how many standard deviations above normal a
@@ -115,6 +118,9 @@ export class AudioInput {
   private stream: MediaStream | null = null;
   private element: HTMLAudioElement | null = null;
   private freq = new Uint8Array(0);
+  // 'feed' source: spectrum frames from another experiment via X-Frame.
+  private feedFrame: SpectrumFrame | null = null;
+  private unsubscribe: (() => void) | null = null;
   // Running peaks per band act as automatic gain, so quiet and loud
   // sources both use the full 0..1 range.
   private peaks = { bass: 0.2, mid: 0.2, treble: 0.2, level: 0.2, sub: 0.2 };
@@ -130,7 +136,15 @@ export class AudioInput {
   private lastBeatIdx = 0;
   private kicksInBar = 0;
 
-  async start(source: Exclude<AudioSource, 'off'>, file?: File) {
+  /** Listen to spectrum frames from elsewhere (no AudioContext, nothing plays here). */
+  startFeed(subscribe: (onFrame: (f: SpectrumFrame) => void) => () => void) {
+    this.stop();
+    this.source = 'feed';
+    this.unsubscribe = subscribe((f) => (this.feedFrame = f));
+    this.onChange('Listening to the player in X-Frame');
+  }
+
+  async start(source: Exclude<AudioSource, 'off' | 'feed'>, file?: File) {
     this.stop();
     try {
       this.ctx = new AudioContext();
@@ -193,6 +207,9 @@ export class AudioInput {
     }
     this.node?.disconnect();
     void this.ctx?.close();
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    this.feedFrame = null;
     this.ctx = this.analyser = this.node = this.stream = this.element = null;
     this.source = 'off';
     this.levels = { ...ZERO };
@@ -208,10 +225,18 @@ export class AudioInput {
     const a = this.analyser;
     const L = this.levels;
     L.beat = L.snare = L.hat = L.drop = L.bar = false;
-    if (!a || !this.ctx) return;
-    a.getByteFrequencyData(this.freq);
-
-    const hzPerBin = this.ctx.sampleRate / a.fftSize;
+    let hzPerBin: number;
+    if (this.source === 'feed') {
+      // Same analysis on bins someone else measured. All-zero bins = paused.
+      const f = this.feedFrame;
+      if (!f || !f.bins.length) return;
+      this.freq = f.bins as Uint8Array<ArrayBuffer>;
+      hzPerBin = f.sampleRate / f.fftSize;
+    } else {
+      if (!a || !this.ctx) return;
+      a.getByteFrequencyData(this.freq);
+      hzPerBin = this.ctx.sampleRate / a.fftSize;
+    }
     const band = ([lo, hi]: readonly [number, number]) => {
       const from = Math.max(1, Math.floor(lo / hzPerBin));
       const to = Math.min(this.freq.length - 1, Math.ceil(hi / hzPerBin));

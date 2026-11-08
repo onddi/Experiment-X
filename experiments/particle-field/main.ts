@@ -1,5 +1,6 @@
 import './style.css';
-import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
+import { AudioInput, tabAudioSupported, type Genre, type SpectrumFrame } from './audio.ts';
+import { xframe } from './xframe.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -533,9 +534,18 @@ function resize() {
   clear();
 }
 
+// Stacked in X-Frame: the canvas stays transparent and trails fade out instead
+// of being painted over with the background.
+let seeThrough = false;
+
 function clear() {
   const [r, g, b] = bgNow();
   ctx.globalCompositeOperation = 'source-over';
+  if (seeThrough) {
+    ctx.clearRect(0, 0, w, h);
+    document.body.style.background = 'transparent';
+    return;
+  }
   ctx.fillStyle = `rgb(${r} ${g} ${b})`;
   ctx.fillRect(0, 0, w, h);
   document.body.style.background = `rgb(${r} ${g} ${b})`;
@@ -2586,10 +2596,11 @@ let spinY = new Float32Array(0);
 
 function draw() {
   const [r, g, b] = bgNow();
-  if (palMix) document.body.style.background = `rgb(${r} ${g} ${b})`;
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = `rgb(${r} ${g} ${b} / ${(1 - settings.trail * 0.97).toFixed(3)})`;
+  if (palMix && !seeThrough) document.body.style.background = `rgb(${r} ${g} ${b})`;
+  ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
+  ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${(1 - settings.trail * 0.97).toFixed(3)})` : `rgb(${r} ${g} ${b} / ${(1 - settings.trail * 0.97).toFixed(3)})`;
   ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = 'source-over';
   const light = r * 0.3 + g * 0.59 + b * 0.11 > 140;
   drawObstacles(1 - settings.trail * 0.97, light);
   ctx.globalCompositeOperation = settings.glow ? (light ? 'multiply' : 'lighter') : 'source-over';
@@ -3000,7 +3011,7 @@ const GENRES: [string, string][] = [['general', 'Any'], ['hiphop', 'Rap / drill'
 const ft = () => true;
 const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick === 'both';
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
-const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
+const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file', feed: 'X-Frame player' } as const;
 
 const isGlyphs = () => settings.render === 'glyphs' || (settings.render === 'mixed' && settings.mixStyles.split(',').includes('glyphs'));
 const hasFlow = () => settings.flow > 0;
@@ -4084,6 +4095,32 @@ setInterval(() => {
   if (el) el.textContent = `${n.toLocaleString()} particles · ${paused ? 'paused' : `${Math.round(fps)} fps`}${renderScale < 1 ? ` · ${Math.round(renderScale * 100)}% resolution` : ''}`;
 }, 500);
 
+// --- X-Frame -------------------------------------------------------------------
+// Inside X-Frame, another experiment (the audio timeline player) can publish
+// its spectrum on 'audio.spectrum'. The 'feed' source runs the usual band,
+// beat and genre analysis on those bins: no permission, and the sound plays
+// once, from the player. It switches on by itself when a feed starts, unless
+// you pressed Stop.
+let feedDeclined = false;
+function startFeed() {
+  feedDeclined = false;
+  audio.startFeed((onFrame) => xframe.subscribe('audio.spectrum', (d: SpectrumFrame) => onFrame(d)));
+}
+if (xframe.inFrame) {
+  xframe.subscribe('audio.spectrum', (d: SpectrumFrame) => {
+    if (audio.source === 'off' && !feedDeclined && d?.bins?.some((v) => v > 0)) startFeed();
+  });
+  // Stacked over another experiment: no page background, so the layer below
+  // shows through; without mouse input the controls go away too.
+  xframe.onLayer((layer) => {
+    seeThrough = layer.role === 'stacked';
+    document.body.classList.toggle('see-through', seeThrough);
+    document.body.classList.toggle('no-input', !layer.input);
+    if (!layer.input && !panel.classList.contains('collapsed')) toggle.click();
+    clear();
+  });
+}
+
 // Source buttons, status line and a live bass / mid / treble meter.
 function renderAudio() {
   const wrap = document.createElement('div');
@@ -4093,6 +4130,7 @@ function renderAudio() {
       <button type="button" data-src="mic">Mic</button>
       <button type="button" data-src="tab">Share tab</button>
       <button type="button" data-src="file">File</button>
+      <button type="button" data-src="feed" hidden>From X-Frame</button>
       <button type="button" data-src="off">Stop</button>
     </div>
     <input type="file" accept="audio/*" hidden />
@@ -4116,6 +4154,7 @@ function renderAudio() {
     mic: 'Turn the music up a bit. Headphones won’t reach the mic.',
     tab: 'Keep the shared tab playing. Stop sharing from the browser bar or press Stop.',
     file: 'The file loops until you press Stop.',
+    feed: 'Follows the audio player shown alongside in X-Frame. Play and pause there.',
   };
 
   const sync = () => {
@@ -4131,10 +4170,14 @@ function renderAudio() {
   };
 
   if (!tabAudioSupported()) wrap.querySelector<HTMLButtonElement>('[data-src=tab]')!.hidden = true;
+  wrap.querySelector<HTMLButtonElement>('[data-src=feed]')!.hidden = !xframe.inFrame;
   for (const b of buttons) {
     b.addEventListener('click', () => {
       const src = b.dataset.src!;
-      if (src === 'off') audio.stop();
+      if (src === 'off') {
+        audio.stop();
+        feedDeclined = true;
+      } else if (src === 'feed') startFeed();
       else if (src === 'file') fileInput.click();
       else {
         status.textContent = src === 'mic' ? 'Asking for the microphone…' : 'Pick a tab to share…';

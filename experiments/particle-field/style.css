@@ -551,3 +551,7 @@ button:hover, select:hover { border-color: #3c3f46; }
 .typing input::placeholder { color: rgb(255 255 255 / 0.4); }
 .typing input::selection { background: rgb(143 179 255 / 0.45); }
 .typing span { color: rgb(255 255 255 / 0.5); font-size: 11px; }
+
+/* X-Frame: stacked over another experiment, or a layer without mouse input. */
+body.see-through, body.see-through #app { background: transparent !important; }
+body.no-input .panel, body.no-input .fab, body.no-input .hint { display: none !important; }
