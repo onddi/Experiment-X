@@ -13,7 +13,7 @@ type SubAction = 'size' | 'flow' | 'speed' | 'none';
 type WaveAt = 'centre' | 'pointer' | 'random' | 'orbit' | 'mirror' | 'corners';
 type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' | 'sweep' | 'mix' | 'random' | 'none';
 type ColorBy = 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
-type Palette = keyof typeof PALETTES;
+type Palette = keyof typeof PALETTES | 'custom';
 type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
 type GlyphPick = 'random' | 'speed' | 'heading' | 'sequence';
 type GlyphChange = 'fixed' | 'flicker' | 'beat';
@@ -59,6 +59,8 @@ interface Settings {
   glow: boolean;
   palette: Palette;
   colorBy: ColorBy;
+  customColors: string;
+  customBg: string;
   mixStyles: string;
   gravity: number;
   glyphSet: GlyphSet;
@@ -119,8 +121,48 @@ const PALETTES = {
   neon: { label: 'Neon', bg: [6, 4, 10], stops: [[300, 100, 62], [240, 100, 66], [180, 100, 55], [300, 100, 62]], cyclic: true },
   mono: { label: 'Mono', bg: [8, 8, 8], stops: [[0, 0, 35], [0, 0, 65], [0, 0, 95]] },
   rainbow: { label: 'Rainbow', bg: [6, 6, 8], stops: [[0, 90, 62], [120, 90, 58], [240, 90, 66], [360, 90, 62]], cyclic: true },
+  cosmic: { label: 'Cosmic', bg: [4, 3, 14], stops: [[250, 70, 35], [275, 75, 55], [320, 85, 68], [200, 90, 80]] },
+  cyber: { label: 'Cyberpunk', bg: [10, 4, 16], stops: [[320, 100, 60], [285, 90, 62], [190, 100, 55], [55, 100, 60]] },
+  tealorange: { label: 'Teal & orange', bg: [6, 10, 12], stops: [[185, 80, 45], [190, 60, 70], [30, 70, 75], [25, 95, 58]] },
+  crimson: { label: 'Crimson', bg: [10, 3, 5], stops: [[345, 80, 30], [350, 85, 45], [0, 90, 58], [10, 100, 72]] },
+  lavender: { label: 'Lavender', bg: [12, 10, 18], stops: [[260, 50, 60], [275, 55, 72], [300, 45, 82], [230, 50, 85]] },
+  pastel: { label: 'Pastel', bg: [16, 16, 22], stops: [[350, 80, 82], [40, 85, 80], [150, 55, 78], [210, 75, 80], [270, 65, 82]], cyclic: false },
+  desert: { label: 'Desert', bg: [16, 11, 8], stops: [[15, 45, 40], [25, 55, 55], [35, 60, 68], [45, 50, 82]] },
+  paper: { label: 'Ink on paper', bg: [242, 238, 228], stops: [[220, 30, 12], [220, 25, 25], [215, 20, 38]] },
+  blueprint: { label: 'Blueprint', bg: [18, 52, 110], stops: [[205, 60, 70], [200, 70, 85], [195, 40, 96]] },
+  risograph: { label: 'Risograph', bg: [245, 240, 230], stops: [[335, 85, 55], [210, 80, 45], [45, 95, 52]] },
 } satisfies Record<string, PaletteDef>;
 
+
+// The current palette, including a custom one built from colour pickers.
+function pal(): PaletteDef {
+  if (settings.palette !== 'custom') return PALETTES[settings.palette];
+  return {
+    label: 'Custom',
+    bg: hexToRgb(settings.customBg),
+    stops: settings.customColors.split(',').filter(Boolean).map((hex) => rgbToHsl(hexToRgb(hex))),
+  };
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  const v = m ? parseInt(m[1], 16) : 0;
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+function rgbToHsl([r, g, b]: [number, number, number]): [number, number, number] {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l * 100];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s * 100, l * 100];
+}
 
 const DEFAULTS: Settings = {
   count: 1200,
@@ -142,6 +184,8 @@ const DEFAULTS: Settings = {
   glow: false,
   palette: 'aurora',
   colorBy: 'palette',
+  customColors: '#2b6cff,#9b5cff,#ff4fa3',
+  customBg: '#07070c',
   mixStyles: 'circles,glow,sparkles,rings,glyphs,comets',
   gravity: 0,
   glyphSet: 'katakana',
@@ -178,7 +222,7 @@ const DEFAULTS: Settings = {
 
 const STORAGE_KEY = 'particle-field:settings';
 const settings: Settings = { ...DEFAULTS, ...load() };
-if (!(settings.palette in PALETTES)) settings.palette = DEFAULTS.palette;
+if (settings.palette !== 'custom' && !(settings.palette in PALETTES)) settings.palette = DEFAULTS.palette;
 // Older saves used 'none' as a beat wave; that is now 'Kick does: Pulse'.
 if ((settings.audioBeat as string) === 'none') settings.audioBeat = 'ripple';
 
@@ -279,7 +323,7 @@ function resize() {
 }
 
 function clear() {
-  const [r, g, b] = PALETTES[settings.palette].bg;
+  const [r, g, b] = pal().bg;
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = `rgb(${r} ${g} ${b})`;
   ctx.fillRect(0, 0, w, h);
@@ -691,7 +735,7 @@ let shades: string[] = [];
 
 function buildShades() {
   spriteCache.clear();
-  const stops = PALETTES[settings.palette].stops;
+  const stops = pal().stops;
   shades = [];
   for (let k = 0; k < SHADES; k++) {
     const u = (k / (SHADES - 1)) * (stops.length - 1);
@@ -706,7 +750,7 @@ function buildShades() {
 // Folds a cyclic 0..1 value so non-cyclic palettes go calm → hot → calm
 // instead of jumping from one end to the other.
 function loop(u: number) {
-  return (PALETTES[settings.palette] as PaletteDef).cyclic ? u : 1 - Math.abs(u * 2 - 1);
+  return pal().cyclic ? u : 1 - Math.abs(u * 2 - 1);
 }
 
 // Speed is normalised by the field's own average, so "fast" means fast
@@ -1010,11 +1054,12 @@ function styleHash(i: number) {
 }
 
 function draw() {
-  const [r, g, b] = PALETTES[settings.palette].bg;
+  const [r, g, b] = pal().bg;
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = `rgb(${r} ${g} ${b} / ${(1 - settings.trail * 0.97).toFixed(3)})`;
   ctx.fillRect(0, 0, w, h);
-  ctx.globalCompositeOperation = settings.glow ? 'lighter' : 'source-over';
+  const light = r * 0.3 + g * 0.59 + b * 0.11 > 140;
+  ctx.globalCompositeOperation = settings.glow ? (light ? 'multiply' : 'lighter') : 'source-over';
 
   if (settings.colorBy === 'speed' || (settings.render === 'glyphs' && settings.glyphPick === 'speed')) {
     let sum = 0;
@@ -1145,7 +1190,7 @@ function drawLinks() {
     }
   }
 
-  const stops = PALETTES[settings.palette].stops;
+  const stops = pal().stops;
   const [hh, ss, ll] = stops[Math.floor(stops.length / 2)];
   ctx.lineWidth = 0.8;
   for (let l = 0; l < LINK_LEVELS; l++) {
@@ -1225,6 +1270,8 @@ type ControlBody =
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
   | { kind: 'choice'; key: keyof Settings; label: string; options: [string, string][] }
+  | { kind: 'color'; key: keyof Settings; label: string }
+  | { kind: 'colors'; key: keyof Settings; label: string }
   | { kind: 'multi'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'text'; key: keyof Settings; label: string; placeholder?: string }
   | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean }
@@ -1393,9 +1440,11 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
   { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
 
-  { kind: 'section', id: 'colour', label: 'Colour', open: true, lock: ['palette', 'colorBy'],
-    summary: () => `${(PALETTES[settings.palette] as PaletteDef).label}, ${label(COLOR_BY, settings.colorBy)}` },
-  { kind: 'select', key: 'palette', label: 'Palette', options: Object.entries(PALETTES).map(([k, p]) => [k, p.label]) },
+  { kind: 'section', id: 'colour', label: 'Colour', open: true, lock: ['palette', 'colorBy', 'customColors', 'customBg'],
+    summary: () => `${pal().label}, ${label(COLOR_BY, settings.colorBy)}` },
+  { kind: 'select', key: 'palette', label: 'Palette', options: [...Object.entries(PALETTES).map(([k, p]) => [k, p.label] as [string, string]), ['custom', 'Custom…']] },
+  { kind: 'colors', key: 'customColors', label: 'Colours (calm → hot)', show: () => settings.palette === 'custom' },
+  { kind: 'color', key: 'customBg', label: 'Background', show: () => settings.palette === 'custom' },
   { kind: 'swatch' },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
@@ -1457,7 +1506,7 @@ function changed(keys: Set<keyof Settings>) {
     ensureCount();
   }
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
-  if (keys.has('palette')) {
+  if (keys.has('palette') || keys.has('customColors') || keys.has('customBg')) {
     buildShades();
     clear();
   }
@@ -1581,7 +1630,7 @@ function renderControls() {
       sw.className = 'swatch';
       body.append(sw);
       refreshers.push(() => {
-        const p = PALETTES[settings.palette] as PaletteDef;
+        const p = pal();
         const cols = p.stops.map(([hh, ss, ll]) => `hsl(${hh} ${ss}% ${ll}%)`).join(', ');
         sw.style.background = `linear-gradient(90deg, ${cols})`;
       });
@@ -1605,7 +1654,7 @@ function renderControls() {
     }
 
     // A label around chip buttons would forward clicks to the first chip.
-    const row = document.createElement(ctl.kind === 'multi' || ctl.kind === 'choice' ? 'div' : 'label');
+    const row = document.createElement(ctl.kind === 'multi' || ctl.kind === 'choice' || ctl.kind === 'colors' ? 'div' : 'label');
     row.className = `row ${ctl.kind}`;
     row.dataset.key = ctl.key;
     const name = document.createElement('span');
@@ -1631,6 +1680,47 @@ function renderControls() {
       select.addEventListener('change', () => set(k, select.value as never));
       row.append(select);
       refreshers.push(() => (select.value = String(settings[k])));
+    } else if (ctl.kind === 'color') {
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.addEventListener('input', () => set(k, input.value as never));
+      row.append(input);
+      refreshers.push(() => (input.value = String(settings[k])));
+    } else if (ctl.kind === 'colors') {
+      // 2-5 colour swatches, stored as a comma-separated hex list.
+      row.classList.add('stack');
+      const wrap = document.createElement('div');
+      wrap.className = 'swatches';
+      row.append(wrap);
+      const list = () => String(settings[k]).split(',').filter(Boolean);
+      const draw = () => {
+        wrap.innerHTML = '';
+        list().forEach((hex, idx) => {
+          const input = document.createElement('input');
+          input.type = 'color';
+          input.value = hex;
+          input.addEventListener('input', () => {
+            const l = list();
+            l[idx] = input.value;
+            set(k, l.join(',') as never);
+          });
+          wrap.append(input);
+        });
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.textContent = '+';
+        add.title = 'Add a colour';
+        add.disabled = list().length >= 5;
+        add.addEventListener('click', () => { set(k, [...list(), list().at(-1) ?? '#ffffff'].join(',') as never); draw(); });
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '−';
+        rm.title = 'Remove the last colour';
+        rm.disabled = list().length <= 2;
+        rm.addEventListener('click', () => { set(k, list().slice(0, -1).join(',') as never); draw(); });
+        wrap.append(add, rm);
+      };
+      draw();
     } else if (ctl.kind === 'choice') {
       // Single-choice chips.
       row.classList.add('stack', 'bare');
