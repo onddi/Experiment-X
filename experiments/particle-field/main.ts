@@ -248,7 +248,7 @@ const app = document.getElementById('app')!;
 app.innerHTML = `
   <main class="stage" id="stage">
     <canvas id="c"></canvas>
-    <button class="fab-shuffle" id="fab-shuffle" type="button" title="Shuffle (keeps locked sections)" aria-label="Shuffle"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></button>
+    <div class="fab" id="fab" aria-label="Quick actions"></div>
     <p class="hint" id="hint">Move through the field · click and hold</p>
   </main>
   <aside class="panel" id="panel">
@@ -1515,7 +1515,7 @@ const PRESETS: [string, Partial<Settings>][] = [
 
 const controls = document.getElementById('controls')!;
 const refreshers: (() => void)[] = [];
-let pauseButton: HTMLButtonElement | null = null;
+const pauseButtons: HTMLButtonElement[] = [];
 
 function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   if (settings[k] === v) return;
@@ -1688,8 +1688,8 @@ function renderControls() {
         b.setAttribute('aria-label', title.replace(/ \(.*\)$/, ''));
         b.innerHTML = icon;
         b.addEventListener('click', fn);
-        if (fn === togglePause) pauseButton = b;
-        if (fn === toggleGather) gatherButton = b;
+        if (fn === togglePause) pauseButtons.push(b);
+        if (fn === toggleGather) gatherButtons.push(b);
         row.append(b);
       }
       body.append(row);
@@ -1932,19 +1932,19 @@ function renderAudio() {
 
 function togglePause() {
   paused = !paused;
-  if (pauseButton) {
-    pauseButton.innerHTML = paused ? ICONS.play : ICONS.pause;
-    pauseButton.title = paused ? 'Play (Space)' : 'Pause (Space)';
-    pauseButton.setAttribute('aria-label', paused ? 'Play' : 'Pause');
-    pauseButton.classList.toggle('on', paused);
+  for (const b of pauseButtons) {
+    b.innerHTML = paused ? ICONS.play : ICONS.pause;
+    b.title = paused ? 'Play (Space)' : 'Pause (Space)';
+    b.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+    b.classList.toggle('on', paused);
   }
 }
 
 let gatherAll = false;
-let gatherButton: HTMLButtonElement | null = null;
+const gatherButtons: HTMLButtonElement[] = [];
 function toggleGather() {
   gatherAll = !gatherAll;
-  gatherButton?.classList.toggle('on', gatherAll);
+  for (const b of gatherButtons) b.classList.toggle('on', gatherAll);
 }
 
 function scatter() {
@@ -2127,7 +2127,28 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'h') toggle.click();
 });
 
-document.getElementById('fab-shuffle')!.addEventListener('click', shuffle);
+// Mobile quick actions, bottom right while the drawer is closed. Shuffle sits
+// at the bottom, nearest the thumb.
+{
+  const fab = document.getElementById('fab')!;
+  const quick: [string, string, () => void][] = [
+    ['Pause', ICONS.pause, togglePause],
+    ['Gather', ICONS.gather, toggleGather],
+    ['Scatter', ICONS.scatter, scatter],
+    ['Shuffle (keeps locked sections)', ICONS.shuffle, shuffle],
+  ];
+  for (const [title, icon, fn] of quick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = title;
+    b.setAttribute('aria-label', title.replace(/ \(.*\)$/, ''));
+    b.innerHTML = icon;
+    b.addEventListener('click', fn);
+    if (fn === togglePause) pauseButtons.push(b);
+    if (fn === toggleGather) gatherButtons.push(b);
+    fab.append(b);
+  }
+}
 document.body.classList.add('panel-open');
 new ResizeObserver(() => resize()).observe(canvas);
 if (window.innerWidth < 720) toggle.click();

@@ -299,12 +299,17 @@ button:hover, select:hover { border-color: #3c3f46; }
 }
 
 /* Small shuffle button for touch screens, bottom-right of the field. */
-.fab-shuffle {
+.fab {
   position: absolute;
   right: 14px;
   bottom: calc(14px + env(safe-area-inset-bottom));
   z-index: 5;
   display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+.fab button {
+  display: grid;
   width: 40px;
   height: 40px;
   padding: 0;
@@ -317,11 +322,12 @@ button:hover, select:hover { border-color: #3c3f46; }
   -webkit-backdrop-filter: blur(6px);
   touch-action: manipulation;
 }
-.fab-shuffle:active { transform: scale(0.92); color: #fff; }
+.fab button:active { transform: scale(0.92); color: #fff; }
+.fab button.on { color: var(--accent); border-color: color-mix(in oklch, var(--accent) 50%, transparent); }
 @media (hover: none), (max-width: 720px) {
-  .fab-shuffle { display: grid; }
-  body.panel-open .fab-shuffle { display: none; }
-  /* Keep the hint clear of the button. */
+  .fab { display: flex; }
+  body.panel-open .fab { display: none; }
+  /* Keep the hint clear of the buttons. */
   .hint { padding: 0 64px; line-height: 1.5; }
 }
 
