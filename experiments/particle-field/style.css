@@ -87,7 +87,10 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-act
   border-radius: 10px;
 }
 .group[hidden] { display: none; }
+.group-top { display: flex; align-items: center; }
 .group-head {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   display: flex;
   align-items: center;
@@ -252,3 +255,41 @@ button:hover, select:hover { border-color: #3c3f46; }
 .chips button.on { border-color: var(--accent); color: var(--accent); }
 
 .row.bare .name { display: none; }
+
+/* Section lock: Shuffle leaves locked sections alone. */
+.lock {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-right: 8px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  opacity: 0.55;
+}
+.lock .shackle { transform: translate(2.5px, 0); }
+.lock:hover { opacity: 1; border-color: var(--line); }
+.lock.on { opacity: 1; color: var(--accent); }
+.lock.on .shackle { transform: none; }
+.group.locked { border-color: color-mix(in oklch, var(--accent) 45%, var(--line)); }
+
+/* Own presets. */
+.mypresets h3 { margin-top: 14px; }
+.mine { display: flex; }
+.mine button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 6px 0 0 6px; }
+.mine .del { border-left: none; border-radius: 0 6px 6px 0; padding: 4px 7px; color: var(--muted); }
+.mine .del:hover { color: oklch(75% 0.15 25); }
+.save { display: flex; gap: 6px; margin-top: 10px; }
+.save input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: #22242a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+}

@@ -1149,7 +1149,8 @@ function frame(now: number) {
 
 type Control = ControlBody & { show?: () => boolean };
 type ControlBody =
-  | { kind: 'section'; id: string; label: string; open?: boolean; summary?: () => string }
+  | { kind: 'section'; id: string; label: string; open?: boolean; summary?: () => string; lock?: (keyof Settings)[] }
+  | { kind: 'mypresets' }
   | { kind: 'sub'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
@@ -1237,8 +1238,9 @@ const hasClick = () => settings.click !== 'none';
 const CONTROLS: Control[] = [
   { kind: 'section', id: 'presets', label: 'Presets', open: true },
   { kind: 'buttons', buttons: [] }, // filled with presets below
+  { kind: 'mypresets' },
 
-  { kind: 'section', id: 'particles', label: 'Particles', open: true,
+  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
@@ -1247,19 +1249,19 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
   { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
 
-  { kind: 'section', id: 'flow', label: 'Flow',
+  { kind: 'section', id: 'flow', label: 'Flow', lock: ['flow', 'flowScale', 'flowSpeed'],
     summary: () => (hasFlow() ? `strength ${settings.flow.toFixed(2)}` : 'off') },
   { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
   { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1), show: hasFlow },
   { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasFlow },
 
-  { kind: 'section', id: 'pointer', label: 'Pointer',
+  { kind: 'section', id: 'pointer', label: 'Pointer', lock: ['pointerMode', 'radius', 'force'],
     summary: () => label(POINTER_MODES, settings.pointerMode) + (hasPointer() ? `, ${settings.radius}px` : '') },
   { kind: 'select', key: 'pointerMode', label: 'On hover', options: POINTER_MODES },
   { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px`, show: hasPointer },
   { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasPointer },
 
-  { kind: 'section', id: 'click', label: 'Click', summary: () => label(CLICK_MODES, settings.click) },
+  { kind: 'section', id: 'click', label: 'Click', lock: ['click', 'clickForce'], summary: () => label(CLICK_MODES, settings.click) },
   { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
   { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
 
@@ -1304,8 +1306,9 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct, show: ft },
   { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct, show: ft },
 
-  { kind: 'section', id: 'look', label: 'Look', open: true,
-    summary: () => `${label(RENDERS, settings.render)}, ${(PALETTES[settings.palette] as PaletteDef).label}` },
+  { kind: 'section', id: 'look', label: 'Style', open: true,
+    lock: ['render', 'mixStyles', 'linkDist', 'trail', 'glow', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
+    summary: () => label(RENDERS, settings.render) },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
@@ -1320,7 +1323,9 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'glyphFont', label: 'Font', options: [['mono', 'Monospace'], ['serif', 'Serif'], ['sans', 'Sans'], ['bold', 'Heavy']], show: isGlyphs },
   { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
   { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
-  { kind: 'sub', label: 'Colour' },
+
+  { kind: 'section', id: 'colour', label: 'Colour', open: true, lock: ['palette', 'colorBy'],
+    summary: () => `${(PALETTES[settings.palette] as PaletteDef).label}, ${label(COLOR_BY, settings.colorBy)}` },
   { kind: 'select', key: 'palette', label: 'Palette', options: Object.entries(PALETTES).map(([k, p]) => [k, p.label]) },
   { kind: 'swatch' },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
@@ -1426,7 +1431,33 @@ function renderControls() {
       body.className = 'group-body';
       body.id = `group-${ctl.id}`;
       head.setAttribute('aria-controls', body.id);
-      section.append(head, body);
+      const top = document.createElement('div');
+      top.className = 'group-top';
+      top.append(head);
+      if (ctl.lock) {
+        // Locked sections keep their settings when you press Shuffle.
+        const lockBtn = document.createElement('button');
+        lockBtn.type = 'button';
+        lockBtn.className = 'lock';
+        lockBtn.innerHTML = LOCK_SVG;
+        const id = ctl.id;
+        const sync = () => {
+          const on = locks.has(id);
+          lockBtn.classList.toggle('on', on);
+          lockBtn.title = on ? 'Locked: Shuffle keeps these settings' : 'Lock so Shuffle keeps these settings';
+          lockBtn.setAttribute('aria-pressed', String(on));
+          section.classList.toggle('locked', on);
+        };
+        lockBtn.addEventListener('click', () => {
+          if (locks.has(id)) locks.delete(id);
+          else locks.add(id);
+          saveLocks();
+          sync();
+        });
+        sync();
+        top.append(lockBtn);
+      }
+      section.append(top, body);
       controls.append(section);
 
       const setOpen = (open: boolean) => {
@@ -1446,6 +1477,11 @@ function renderControls() {
       });
       if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
       if (ctl.show) conditional.push([section, ctl.show]);
+      continue;
+    }
+
+    if (ctl.kind === 'mypresets') {
+      body.append(renderMyPresets());
       continue;
     }
 
@@ -1696,26 +1732,137 @@ function pick<T>(xs: readonly T[]): T {
 }
 
 function shuffle() {
-  apply({
+  const r: Partial<Settings> = {
     count: rand(600, 4000, 100),
     size: rand(0.8, 2.6, 0.1),
     speed: rand(0.6, 2, 0.1),
     friction: rand(0.02, 0.08, 0.005),
     jitter: rand(0, 0.15, 0.01),
+    gravity: Math.random() < 0.15 ? rand(-0.4, 0.6, 0.05) : 0,
     flow: rand(0.2, 1.6, 0.05),
     flowScale: rand(0.002, 0.012, 0.0005),
     flowSpeed: rand(0.05, 1, 0.05),
     pointerMode: pick(['repel', 'attract', 'vortex'] as const),
-    click: pick(['gather', 'emit', 'ripple', 'implode', 'shockwave'] as const),
     radius: rand(80, 260, 5),
     force: rand(0.3, 1.4, 0.05),
+    click: pick(['gather', 'emit', 'ripple', 'implode', 'shockwave'] as const),
+    clickForce: rand(0.6, 1.6, 0.1),
     render: pick(['dots', 'circles', 'glow', 'bokeh', 'rings', 'sparkles', 'arrows', 'streaks', 'streaks', 'comets', 'glyphs', 'links', 'mixed'] as const),
+    mixStyles: MIXABLE.map(([k]) => k).sort(() => Math.random() - 0.5).slice(0, 3 + ((Math.random() * 3) | 0)).sort((a, b) => MIXABLE.findIndex(([k]) => k === a) - MIXABLE.findIndex(([k]) => k === b)).join(','),
     linkDist: rand(50, 100, 5),
     trail: rand(0.5, 0.95, 0.01),
     glow: Math.random() < 0.6,
+    glyphSet: pick(Object.keys(GLYPH_SETS) as GlyphSet[]),
+    glyphPick: pick(['random', 'random', 'speed', 'heading'] as const),
+    glyphChange: pick(['fixed', 'flicker', 'flicker'] as const),
+    glyphRate: rand(0.005, 0.04, 0.005),
+    glyphFont: pick(['mono', 'serif', 'sans', 'bold'] as const),
+    glyphScale: rand(0.8, 1.6, 0.1),
+    glyphRotate: pick(['none', 'none', 'heading', 'spin'] as const),
     palette: pick(Object.keys(PALETTES) as Palette[]),
     colorBy: pick(['palette', 'speed', 'direction', 'pointer', 'cycle', 'horizontal', 'radial'] as const),
-  });
+  };
+  // Only unlocked sections change; anything a section has that we don't
+  // randomise goes back to its default.
+  const keys = new Set<keyof Settings>();
+  for (const ctl of CONTROLS) {
+    if (ctl.kind !== 'section' || !ctl.lock || locks.has(ctl.id)) continue;
+    for (const k of ctl.lock) {
+      (settings as unknown as Record<string, unknown>)[k] = k in r ? r[k] : DEFAULTS[k];
+      keys.add(k);
+    }
+  }
+  if (keys.size) changed(keys);
+}
+
+// --- locks & own presets -------------------------------------------------------
+
+const LOCK_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path class="shackle" d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+const LOCKS_KEY = 'particle-field:locks';
+const locks = new Set<string>(readJson<string[]>(LOCKS_KEY, []));
+function saveLocks() {
+  writeJson(LOCKS_KEY, [...locks]);
+}
+
+const MY_PRESETS_KEY = 'particle-field:my-presets';
+type MyPreset = { name: string; settings: Partial<Settings> };
+let myPresets: MyPreset[] = readJson<MyPreset[]>(MY_PRESETS_KEY, []);
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writeJson(key: string, v: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+// Saved presets store the whole look and motion plus the audio reaction.
+function snapshot(): Partial<Settings> {
+  const { audioFineTune: _skip, ...rest } = settings;
+  return { ...rest };
+}
+
+function renderMyPresets() {
+  const wrap = document.createElement('div');
+  wrap.className = 'mypresets';
+  const draw = () => {
+    wrap.innerHTML = '';
+    if (myPresets.length) {
+      const h = document.createElement('h3');
+      h.textContent = 'My presets';
+      const list = document.createElement('div');
+      list.className = 'buttons';
+      myPresets.forEach((p, idx) => {
+        const item = document.createElement('div');
+        item.className = 'mine';
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = p.name;
+        b.title = 'Load this preset';
+        b.addEventListener('click', () => {
+          Object.assign(settings, DEFAULTS, p.settings);
+          changed(new Set(Object.keys(DEFAULTS) as (keyof Settings)[]));
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'del';
+        del.textContent = '×';
+        del.title = `Delete “${p.name}”`;
+        del.addEventListener('click', () => {
+          if (!confirm(`Delete the preset “${p.name}”?`)) return;
+          myPresets.splice(idx, 1);
+          writeJson(MY_PRESETS_KEY, myPresets);
+          draw();
+        });
+        item.append(b, del);
+        list.append(item);
+      });
+      wrap.append(h, list);
+    }
+    const form = document.createElement('form');
+    form.className = 'save';
+    form.innerHTML = '<input type="text" maxlength="40" placeholder="Name this look…" aria-label="Preset name" /><button type="submit">Save</button>';
+    const input = form.querySelector('input')!;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = input.value.trim() || `My look ${myPresets.length + 1}`;
+      const existing = myPresets.findIndex((p) => p.name === name);
+      if (existing >= 0) myPresets[existing].settings = snapshot();
+      else myPresets.push({ name, settings: snapshot() });
+      writeJson(MY_PRESETS_KEY, myPresets);
+      draw();
+    });
+    wrap.append(form);
+  };
+  draw();
+  return wrap;
 }
 
 function reset() {
