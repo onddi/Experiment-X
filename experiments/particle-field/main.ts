@@ -577,8 +577,10 @@ function frame(now: number) {
 
 // --- controls ----------------------------------------------------------------
 
-type Control =
-  | { kind: 'section'; label: string }
+type Control = ControlBody & { show?: () => boolean };
+type ControlBody =
+  | { kind: 'section'; id: string; label: string; open?: boolean; summary?: () => string }
+  | { kind: 'sub'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
@@ -586,36 +588,57 @@ type Control =
   | { kind: 'swatch' };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+const label = (options: [string, string][], v: unknown) => options.find(([k]) => k === v)?.[1] ?? '';
+
+const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']];
+const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
+const RENDERS: [string, string][] = [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow']];
+
+const hasFlow = () => settings.flow > 0;
+const hasPointer = () => settings.pointerMode !== 'none';
+const hasClick = () => settings.click !== 'none';
 
 const CONTROLS: Control[] = [
-  { kind: 'section', label: 'Presets' },
+  { kind: 'section', id: 'presets', label: 'Presets', open: true },
   { kind: 'buttons', buttons: [] }, // filled with presets below
-  { kind: 'section', label: 'Particles' },
+
+  { kind: 'section', id: 'particles', label: 'Particles', open: true,
+    summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
-  { kind: 'section', label: 'Flow' },
-  { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2) },
-  { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1) },
-  { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2) },
-  { kind: 'section', label: 'Pointer' },
-  { kind: 'select', key: 'pointerMode', label: 'Mode', options: [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']] },
-  { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px` },
-  { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2) },
-  { kind: 'section', label: 'Click' },
-  { kind: 'select', key: 'click', label: 'On click', options: [['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']] },
-  { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
-  { kind: 'section', label: 'Look' },
-  { kind: 'select', key: 'render', label: 'Style', options: [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']] },
-  { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px` },
+
+  { kind: 'section', id: 'flow', label: 'Flow',
+    summary: () => (hasFlow() ? `strength ${settings.flow.toFixed(2)}` : 'off') },
+  { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
+  { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1), show: hasFlow },
+  { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasFlow },
+
+  { kind: 'section', id: 'pointer', label: 'Pointer',
+    summary: () => label(POINTER_MODES, settings.pointerMode) + (hasPointer() ? `, ${settings.radius}px` : '') },
+  { kind: 'select', key: 'pointerMode', label: 'On hover', options: POINTER_MODES },
+  { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px`, show: hasPointer },
+  { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasPointer },
+
+  { kind: 'section', id: 'click', label: 'Click', summary: () => label(CLICK_MODES, settings.click) },
+  { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
+  { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
+
+  { kind: 'section', id: 'look', label: 'Look', open: true,
+    summary: () => `${label(RENDERS, settings.render)}, ${(PALETTES[settings.palette] as PaletteDef).label}` },
+  { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
+  { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
+  { kind: 'toggle', key: 'glow', label: 'Additive glow' },
+  { kind: 'sub', label: 'Colour' },
   { kind: 'select', key: 'palette', label: 'Palette', options: Object.entries(PALETTES).map(([k, p]) => [k, p.label]) },
   { kind: 'swatch' },
-  { kind: 'select', key: 'colorBy', label: 'Colour by', options: [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow']] },
-  { kind: 'toggle', key: 'glow', label: 'Additive glow' },
-  { kind: 'section', label: 'Actions' },
+  { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
+
+  { kind: 'section', id: 'actions', label: 'Actions', open: true },
   {
     kind: 'buttons',
     buttons: [
@@ -668,40 +691,81 @@ function changed(keys: Set<keyof Settings>) {
   refresh();
 }
 
+const conditional: [HTMLElement, () => boolean][] = [];
+
 function refresh() {
   for (const r of refreshers) r();
-  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="linkDist"]')) {
-    el.classList.toggle('disabled', settings.render !== 'links');
-  }
-  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="radius"], [data-key="force"]')) {
-    el.classList.toggle('disabled', settings.pointerMode === 'none');
-  }
-  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="clickForce"]')) {
-    el.classList.toggle('disabled', settings.click === 'none');
-  }
-  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="flowScale"], [data-key="flowSpeed"]')) {
-    el.classList.toggle('disabled', settings.flow === 0);
+  for (const [el, show] of conditional) el.hidden = !show();
+}
+
+const COLLAPSE_KEY = 'particle-field:collapsed';
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '{}');
+  } catch {
+    return {};
   }
 }
 
 function renderControls() {
+  const collapsed = loadCollapsed();
+  let body: HTMLElement = controls;
+
   for (const ctl of CONTROLS) {
     if (ctl.kind === 'section') {
-      const h2 = document.createElement('h2');
-      h2.textContent = ctl.label;
-      controls.append(h2);
+      // Each section is a card with a clickable header that folds it away.
+      const section = document.createElement('section');
+      section.className = 'group';
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'group-head';
+      head.innerHTML = `<span class="chev" aria-hidden="true"></span><span class="group-title"></span><span class="group-summary"></span>`;
+      head.querySelector('.group-title')!.textContent = ctl.label;
+      const summary = head.querySelector<HTMLElement>('.group-summary')!;
+      body = document.createElement('div');
+      body.className = 'group-body';
+      body.id = `group-${ctl.id}`;
+      head.setAttribute('aria-controls', body.id);
+      section.append(head, body);
+      controls.append(section);
+
+      const setOpen = (open: boolean) => {
+        section.classList.toggle('closed', !open);
+        head.setAttribute('aria-expanded', String(open));
+      };
+      setOpen(!(collapsed[ctl.id] ?? !ctl.open));
+      head.addEventListener('click', () => {
+        const open = section.classList.contains('closed');
+        setOpen(open);
+        collapsed[ctl.id] = !open;
+        try {
+          localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed));
+        } catch {
+          /* not persisted */
+        }
+      });
+      if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
+      if (ctl.show) conditional.push([section, ctl.show]);
+      continue;
+    }
+
+    if (ctl.kind === 'sub') {
+      const h = document.createElement('h3');
+      h.textContent = ctl.label;
+      body.append(h);
+      if (ctl.show) conditional.push([h, ctl.show]);
       continue;
     }
 
     if (ctl.kind === 'swatch') {
       const sw = document.createElement('div');
       sw.className = 'swatch';
-      controls.append(sw);
+      body.append(sw);
       refreshers.push(() => {
         const p = PALETTES[settings.palette] as PaletteDef;
         const cols = p.stops.map(([hh, ss, ll]) => `hsl(${hh} ${ss}% ${ll}%)`).join(', ');
         sw.style.background = `linear-gradient(90deg, ${cols})`;
-        sw.style.outlineColor = `rgb(${p.bg.join(' ')})`;
       });
       continue;
     }
@@ -709,14 +773,15 @@ function renderControls() {
     if (ctl.kind === 'buttons') {
       const row = document.createElement('div');
       row.className = 'buttons';
-      for (const [label, fn] of ctl.buttons) {
+      for (const [text, fn] of ctl.buttons) {
         const b = document.createElement('button');
-        b.textContent = label;
+        b.type = 'button';
+        b.textContent = text;
         b.addEventListener('click', fn);
-        if (label === 'Pause') pauseButton = b;
+        if (text === 'Pause') pauseButton = b;
         row.append(b);
       }
-      controls.append(row);
+      body.append(row);
       continue;
     }
 
@@ -742,7 +807,7 @@ function renderControls() {
       });
     } else if (ctl.kind === 'select') {
       const select = document.createElement('select');
-      for (const [value, label] of ctl.options) select.add(new Option(label, value));
+      for (const [value, text] of ctl.options) select.add(new Option(text, value));
       select.addEventListener('change', () => set(k, select.value as never));
       row.append(select);
       refreshers.push(() => (select.value = String(settings[k])));
@@ -753,7 +818,8 @@ function renderControls() {
       row.prepend(input);
       refreshers.push(() => (input.checked = Boolean(settings[k])));
     }
-    controls.append(row);
+    body.append(row);
+    if (ctl.show) conditional.push([row, ctl.show]);
   }
 
   const stats = document.createElement('p');
