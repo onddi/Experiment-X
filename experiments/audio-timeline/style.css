@@ -462,3 +462,28 @@ body.skinned #live { opacity: 0.35; }
 }
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }
+
+/* Button: one play button in the middle that fades away while playing. */
+.group[hidden] { display: none; }
+.bt-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 88px;
+  height: 88px;
+  transform: translate(-50%, -50%);
+  border-radius: 50% !important;
+  background: rgb(14 15 22 / 0.45) !important;
+  border: 1px solid rgb(255 255 255 / 0.22) !important;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transition: opacity 0.6s;
+}
+.bt-play svg { width: 34px; height: 34px; }
+.skin-layer.awake .bt-play { opacity: 1; transition-duration: 0.2s; }
+.skin-layer:not(.awake) .bt-play { pointer-events: none; }
+@media (max-width: 720px) {
+  .bt-play { width: 64px; height: 64px; }
+  .bt-play svg { width: 26px; height: 26px; }
+}

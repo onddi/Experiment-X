@@ -35,6 +35,7 @@ interface Settings {
   smoothing: number;
   rate: number;
   skin: Skin;
+  holdLayers: boolean;
 }
 const DEFAULTS: Settings = {
   style: 'spectral',
@@ -47,6 +48,7 @@ const DEFAULTS: Settings = {
   smoothing: 0.6,
   rate: 1,
   skin: 'classic',
+  holdLayers: false,
 };
 const STORAGE_KEY = 'audio-timeline:settings';
 const COLLAPSE_KEY = 'audio-timeline:collapsed';
@@ -162,7 +164,7 @@ function group(id: string, title: string) {
   });
   section.append(head, body);
   controls.append(section);
-  return { body, summary: head.querySelector<HTMLElement>('.group-summary')! };
+  return { section, body, summary: head.querySelector<HTMLElement>('.group-summary')! };
 }
 
 function chips<T extends string | number>(parent: HTMLElement, options: [T, string][], get: () => T, set: (v: T) => void) {
@@ -311,6 +313,8 @@ function publishTransport() {
     time: audio.currentTime || 0,
     duration: track?.duration ?? 0,
     title: trackName ? trackName.replace(/\.[a-z0-9]+$/i, '') : undefined,
+    // Ask the other layers to freeze while the music is paused.
+    hold: settings.holdLayers,
   });
 }
 for (const ev of ['play', 'pause', 'ended', 'seeked', 'ratechange', 'loadedmetadata']) audio.addEventListener(ev, publishTransport);
@@ -799,6 +803,7 @@ function drawOverview() {
 
 // --- live view ---------------------------------------------------------------
 
+let liveDrawn = true;
 const LIVE_BANDS = 72;
 const liveVals = new Float32Array(LIVE_BANDS);
 const livePeaks = new Float32Array(LIVE_BANDS);
@@ -824,6 +829,13 @@ function liveBands(sampleRate: number) {
 }
 
 function drawLive() {
+  // The lighter layouts have no live view: the screen is for the layout (and whatever is underneath).
+  if (skins.skin !== 'classic') {
+    if (liveDrawn) liveS.g.clearRect(0, 0, liveS.w, liveS.h);
+    liveDrawn = false;
+    return;
+  }
+  liveDrawn = true;
   const { g, w, h, dpr } = liveS;
   const hue = settings.hue;
   const mode = settings.live;
@@ -846,8 +858,6 @@ function drawLive() {
   }
 
   if (mode === 'off') return;
-  // Layered under/over another experiment with a light layout: that experiment is the visual.
-  if (skins.skin !== 'classic' && document.body.classList.contains('see-through')) return;
 
   if (mode === 'spectrum') {
     const pad = 24 * dpr;
@@ -981,6 +991,16 @@ function refreshPanel() {
     save();
     refreshPanel();
   });
+  const syncHue = rangeRow(body, 'Colour', 0, 360, 1, () => settings.hue, (v) => {
+    settings.hue = v;
+    applyHue();
+    save();
+  }, (v) => `${Math.round(v)}°`);
+  toggleRow(body, 'Pause other layers with the music', () => settings.holdLayers, (v) => {
+    settings.holdLayers = v;
+    save();
+    publishTransport();
+  });
   const about = note(body, '');
   const ABOUT: Record<Skin, string> = {
     classic: 'The full deck: live view on top, zoomable timeline and overview below.',
@@ -988,8 +1008,10 @@ function refreshPanel() {
     horizon: 'The whole song as a band of dots along the bottom; the dots near the playhead pulse.',
     ring: 'The song wrapped into a circle. Drag the ring to scrub.',
     ghost: 'A hairline progress bar and big type. Controls fade in when you move the pointer.',
+    button: 'Just a play button. It fades away while the music plays; move the pointer or tap to bring it back.',
   };
   refreshers.push(() => {
+    syncHue();
     summary.textContent = SKINS.find(([k]) => k === settings.skin)![1];
     about.textContent = ABOUT[settings.skin];
   });
@@ -1028,7 +1050,8 @@ function refreshPanel() {
 }
 
 {
-  const { body, summary } = group('timeline', 'Timeline');
+  const { section, body, summary } = group('timeline', 'Timeline');
+  refreshers.push(() => (section.hidden = settings.skin !== 'classic'));
   const syncStyle = chips(body, STYLES, () => settings.style, (s) => {
     settings.style = s;
     save();
@@ -1050,23 +1073,18 @@ function refreshPanel() {
     followPaused = false;
     save();
   });
-  const syncHue = rangeRow(body, 'Colour', 0, 360, 1, () => settings.hue, (v) => {
-    settings.hue = v;
-    applyHue();
-    save();
-  }, (v) => `${Math.round(v)}°`);
   note(body, 'Click or drag to jump. Scroll or pinch to zoom, shift-scroll to pan. Drag the box in the strip below to move around.');
   refreshers.push(() => {
     syncStyle();
     syncZoom();
-    syncHue();
     styleNote.textContent = ABOUT[settings.style];
     summary.textContent = STYLES.find(([s]) => s === settings.style)![1];
   });
 }
 
 {
-  const { body, summary } = group('live', 'Live view');
+  const { section, body, summary } = group('live', 'Live view');
+  refreshers.push(() => (section.hidden = settings.skin !== 'classic'));
   chips(body, LIVES, () => settings.live, (m) => {
     settings.live = m;
     liveS.g.clearRect(0, 0, liveS.w, liveS.h);

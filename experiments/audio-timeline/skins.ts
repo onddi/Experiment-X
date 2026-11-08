@@ -6,19 +6,21 @@
 //   horizon  the whole song as a band of dots along the bottom edge
 //   ring     the song wrapped into a circle; drag the ring to scrub
 //   ghost    a hairline progress bar and big type; controls fade in on use
+//   button   just a play button in the middle that fades away while playing
 //
 // Each layout draws its timeline on one shared overlay canvas and uses
 // plain DOM for buttons and hit areas.
 
 import type { TrackAnalysis } from './analysis.ts';
 
-export type Skin = 'classic' | 'capsule' | 'horizon' | 'ring' | 'ghost';
+export type Skin = 'classic' | 'capsule' | 'horizon' | 'ring' | 'ghost' | 'button';
 export const SKINS: [Skin, string][] = [
   ['classic', 'Classic'],
   ['capsule', 'Capsule'],
   ['horizon', 'Horizon'],
   ['ring', 'Ring'],
   ['ghost', 'Ghost'],
+  ['button', 'Button'],
 ];
 
 export interface PlayerApi {
@@ -116,6 +118,10 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
       <div class="ring-vol"><button class="sk-mute" data-act="mute" aria-label="Mute"></button><input class="sk-vol" type="range" min="0" max="1" step="0.01" aria-label="Volume" /></div>
     </div>
 
+    <div class="sk sk-button">
+      <button class="sk-play bt-play" data-act="toggle" aria-label="Play"></button>
+    </div>
+
     <div class="sk sk-ghost">
       <div class="gh-bar" data-seek="ghost" role="slider" aria-label="Position" tabindex="0"><i class="gh-fill"></i><i class="gh-knob"></i></div>
       <div class="gh-text"><span data-text="clock2"></span><b data-text="title"></b></div>
@@ -197,8 +203,10 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
   // Ghost: controls show while you use it, then fade away.
   let awakeUntil = 0;
   const wake = () => (awakeUntil = performance.now() + 2500);
-  root.addEventListener('pointermove', wake);
-  root.addEventListener('pointerdown', wake);
+  // On window: the layer itself lets the pointer through to the page below.
+  window.addEventListener('pointermove', wake);
+  window.addEventListener('pointerdown', wake);
+  window.addEventListener('keydown', wake);
   root.addEventListener('focusin', wake);
 
   // --- text & state that changes over time -------------------------------------
@@ -248,8 +256,8 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
       const f = d ? t / d : 0;
       q('.gh-fill').style.transform = `scaleX(${f})`;
       q('.gh-knob').style.left = `${f * 100}%`;
-      root.classList.toggle('awake', !playing || now < awakeUntil || dragging !== null);
     }
+    root.classList.toggle('awake', !playing || now < awakeUntil || dragging !== null);
     for (const el of all('[data-seek]')) {
       el.setAttribute('aria-valuemin', '0');
       el.setAttribute('aria-valuemax', String(Math.round(d)));

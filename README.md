@@ -212,6 +212,9 @@ each 0–1, once per frame alongside `audio.spectrum`.
 { playing: boolean, time: number, duration: number, title?: string }   // seconds
 ```
 
+`hold?: boolean` asks the other layers to freeze while `playing` is false (the audio
+timeline's "Pause other layers with the music"; the particle field follows it).
+
 **`transport.command`**: requests to whoever publishes `transport`:
 
 ```ts

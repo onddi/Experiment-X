@@ -2812,10 +2812,12 @@ function frame(now: number) {
   const dt = Math.min(3, (now - last) / (1000 / 60));
   last = now;
   fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
-  if (!paused) adaptQuality(dt);
+  // Frozen by the user (Space) or by the audio player pausing with "hold" on.
+  const frozen = paused || musicHold;
+  if (!frozen) adaptQuality(dt);
   audio.genre = settings.audioGenre;
   audio.update(now);
-  if (!paused) {
+  if (!frozen) {
     updateGlyphs();
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
@@ -4219,11 +4221,17 @@ setInterval(() => {
 // once, from the player. It switches on by itself when a feed starts, unless
 // you pressed Stop.
 let feedDeclined = false;
+// The player can ask layers to freeze while its music is paused
+// ('transport' with hold: true). Separate from the Space pause.
+let musicHold = false;
 function startFeed() {
   feedDeclined = false;
   audio.startFeed((onFrame) => xframe.subscribe('audio.spectrum', (d: SpectrumFrame) => onFrame(d)));
 }
 if (xframe.inFrame) {
+  xframe.subscribe('transport', (t: { playing?: boolean; hold?: boolean }) => {
+    musicHold = !!t?.hold && !t.playing;
+  });
   xframe.subscribe('audio.spectrum', (d: SpectrumFrame) => {
     if (audio.source === 'off' && !feedDeclined && d?.bins?.some((v) => v > 0)) startFeed();
   });
