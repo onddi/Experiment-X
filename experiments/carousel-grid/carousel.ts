@@ -39,6 +39,8 @@ export class Carousel {
 
   /** Set by the grid; called whenever this carousel moves. */
   onMove: ((c: Carousel) => void) | null = null;
+  /** Set by the grid; called on a click/tap (or Enter) that didn't drag. */
+  onTap: ((c: Carousel) => void) | null = null;
   /** Set by the grid; lets a drag on this carousel drive others. */
   linked: () => Carousel[] = () => [];
 
@@ -105,6 +107,11 @@ export class Carousel {
       }
     }
     return null;
+  }
+
+  /** Element of the item currently closest to centre. */
+  get currentEl(): HTMLElement {
+    return this.itemEls[this.index];
   }
 
   get index() {
@@ -272,6 +279,9 @@ export class Carousel {
   private bindPointer() {
     let pointerId = -1;
     let startCoord = 0;
+    let startX = 0;
+    let startY = 0;
+    let moved = 0;
     let startPos = 0;
     let size = 1;
     let samples: { t: number; p: number }[] = [];
@@ -288,6 +298,9 @@ export class Carousel {
       size = (this.axis === 'x' ? rect.width : rect.height) || 1;
       this.stop();
       startCoord = coord(e);
+      startX = e.clientX;
+      startY = e.clientY;
+      moved = 0;
       startPos = this.pos;
       samples = [{ t: e.timeStamp, p: this.pos }];
       followers = this.linked().map((c) => {
@@ -298,6 +311,7 @@ export class Carousel {
 
     this.el.addEventListener('pointermove', (e) => {
       if (e.pointerId !== pointerId) return;
+      moved = Math.max(moved, Math.hypot(e.clientX - startX, e.clientY - startY));
       // Dragging left/up moves to the next item.
       this.pos = startPos - (coord(e) - startCoord) / size;
       this.render();
@@ -326,6 +340,8 @@ export class Carousel {
       const jump = (this.target ?? target) - Math.round(startPos);
       for (const f of followers) f.c.goTo(Math.round(f.start) + jump, v);
       followers = [];
+      // A press that barely moved is a tap, not a drag.
+      if (e.type === 'pointerup' && moved < 6 && Math.abs(v) < 0.5) this.onTap?.(this);
     };
     this.el.addEventListener('pointerup', end);
     this.el.addEventListener('pointercancel', end);
@@ -335,7 +351,8 @@ export class Carousel {
     this.el.addEventListener('keydown', (e) => {
       const next = this.axis === 'x' ? 'ArrowRight' : 'ArrowDown';
       const prev = this.axis === 'x' ? 'ArrowLeft' : 'ArrowUp';
-      if (e.key === next) this.step(1);
+      if (e.key === 'Enter' || e.key === ' ') this.onTap?.(this);
+      else if (e.key === next) this.step(1);
       else if (e.key === prev) this.step(-1);
       else return;
       e.preventDefault();

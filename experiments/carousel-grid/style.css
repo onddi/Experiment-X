@@ -369,3 +369,16 @@ button:hover, select:hover { border-color: #3c3f46; }
   }
   .panel.collapsed { box-shadow: none; }
 }
+
+/* --- full-screen viewer ------------------------------------------------------ */
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  cursor: zoom-out;
+  backface-visibility: hidden;
+}
+.viewer .item { border-radius: 0; will-change: auto; }
+.viewer .item.img span { font-size: calc(var(--cell) * 0.09 * var(--font-scale, 1)); }

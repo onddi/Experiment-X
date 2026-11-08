@@ -2,6 +2,7 @@ import './style.css';
 import { Carousel, type Axis, type CarouselItem, type Effect } from './carousel.ts';
 import { randomWord } from './words.ts';
 import { STYLES, themeFor } from './themes.ts';
+import { OPEN_TRANSITIONS, Viewer, type OpenTransition } from './viewer.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -15,6 +16,8 @@ interface Settings {
   fill: boolean;
   hero: boolean;
   heroRows: number;
+  openWith: OpenTransition | 'off';
+  openDuration: number;
   heroPlace: 'top' | 'left';
   heroCols: number;
   heroCustom: boolean;
@@ -63,6 +66,8 @@ const DEFAULTS: Settings = {
   fill: false,
   hero: false,
   heroRows: 1,
+  openWith: 'zoom',
+  openDuration: 500,
   heroPlace: 'top',
   heroCols: 1,
   heroCustom: false,
@@ -300,6 +305,15 @@ app.innerHTML = `
 `;
 
 const stage = document.getElementById('stage')!;
+const viewer = new Viewer(app, () => ({
+  transition: settings.openWith === 'off' ? 'zoom' : settings.openWith,
+  duration: settings.openDuration,
+  radius: settings.radius,
+}));
+/** Click on a cell: show its current item full screen. */
+const openCell = (c: Carousel) => {
+  if (settings.openWith !== 'off') viewer.open(c.currentEl, c.el);
+};
 const grid = document.getElementById('grid')!;
 let cells: { r: number; c: number; carousel: Carousel }[] = [];
 
@@ -316,6 +330,7 @@ function build() {
     carousel.el.classList.add('hero');
     carousel.jumpTo(Math.min(prev.get(`${HERO},${HERO}`) ?? 0, o.items - 1));
     carousel.linked = () => linkedTo(HERO, HERO);
+    carousel.onTap = openCell;
     // When the main row lands on a new element, send the grid to it.
     const groupCount = () => (settings.surface === 'colors' ? 4 : theme().groups.length);
     let lastGroup = carousel.index % groupCount();
@@ -352,6 +367,7 @@ function build() {
       carousel.jumpTo(Math.min(start, settings.items - 1));
       carousel.linked = () => linkedTo(r, c);
       carousel.onMove = queueSeedUpdate;
+      carousel.onTap = openCell;
       grid.append(carousel.el);
       cells.push({ r, c, carousel });
     }
@@ -383,7 +399,8 @@ function physics() {
 }
 
 function applyStyle() {
-  const s = grid.style;
+  // Set on #app so the full-screen viewer shares the grid's image grading.
+  const s = app.style;
   s.setProperty('--gap', `${settings.gap}px`);
   s.setProperty('--radius', `${settings.radius}px`);
   s.setProperty('--font-scale', String(settings.fontSize / 100));
@@ -528,6 +545,9 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'heroTension', label: 'Snap tension', min: 20, max: 600, step: 5, show: ownHero },
   { kind: 'range', key: 'heroFlick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2), show: ownHero },
 
+  { kind: 'section', id: 'open', label: 'Full screen', summary: () => label(OPEN_TRANSITIONS, settings.openWith) },
+  { kind: 'select', key: 'openWith', label: 'Click a cell to open', options: OPEN_TRANSITIONS },
+  { kind: 'range', key: 'openDuration', label: 'Duration', min: 150, max: 1500, step: 50, format: (v) => `${v} ms`, show: () => settings.openWith !== 'off' },
   { kind: 'section', id: 'feel', label: 'Feel', summary: () => `tension ${settings.tension}` },
   { kind: 'range', key: 'tension', label: 'Snap tension', min: 20, max: 600, step: 5 },
   { kind: 'range', key: 'flick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },
