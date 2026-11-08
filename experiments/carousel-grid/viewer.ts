@@ -58,6 +58,11 @@ interface ViewTransitionLike {
 }
 type StartViewTransition = (update: () => void) => ViewTransitionLike;
 
+// Last kind of input, so focus is only restored for keyboard users.
+let lastInputWasKey = false;
+addEventListener('keydown', () => (lastInputWasKey = true), { capture: true });
+addEventListener('pointerdown', () => (lastInputWasKey = false), { capture: true });
+
 export class Viewer {
   readonly el: HTMLElement;
   private readonly css: HTMLStyleElement;
@@ -75,6 +80,8 @@ export class Viewer {
   onHandover: ((slot: HTMLElement) => void) | null = null;
   /** Called when closing starts after a hand-over: tear that visualisation down. */
   onRelease: (() => void) | null = null;
+  /** Whether the open came from the keyboard (Enter/Space on a focused cell). */
+  private byKeyboard = false;
   /** Set by a press that starts on the open viewer; only such a press closes it. */
   private armed = false;
 
@@ -152,6 +159,9 @@ export class Viewer {
     this.slot.replaceChildren();
     this.el.replaceChildren(clone, this.fade, this.slot);
     this.armed = false;
+    // Only hand focus back to the cell on close when it was opened from the
+    // keyboard. After a tap, Safari would draw the focus ring around it.
+    this.byKeyboard = lastInputWasKey;
     from.blur();
     this.run(false, () => {
       this.el.hidden = false;
@@ -227,7 +237,7 @@ export class Viewer {
       update();
       if (closing) {
         this.el.replaceChildren();
-        source.focus({ preventScroll: true });
+        if (this.byKeyboard) source.focus({ preventScroll: true });
       } else this.afterOpen();
       return;
     }
@@ -261,7 +271,7 @@ export class Viewer {
       if (endedOpen) this.afterOpen();
       else {
         this.el.replaceChildren();
-        source.focus({ preventScroll: true });
+        if (this.byKeyboard) source.focus({ preventScroll: true });
       }
     });
   }
