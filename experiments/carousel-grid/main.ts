@@ -659,6 +659,8 @@ function applySeed(text: string) {
 }
 
 let seedInput: HTMLInputElement | null = null;
+/** True while the box holds text the user typed or pasted but hasn't applied. */
+let seedEdited = false;
 let seedQueued = false;
 
 /** Keep the seed box in step with the carousels (at most once a frame). */
@@ -667,7 +669,8 @@ function queueSeedUpdate() {
   seedQueued = true;
   requestAnimationFrame(() => {
     seedQueued = false;
-    if (seedInput && document.activeElement !== seedInput) seedInput.value = currentSeed();
+    // Never overwrite a seed the user is editing or about to apply.
+    if (seedInput && !seedEdited && document.activeElement !== seedInput) seedInput.value = currentSeed();
   });
 }
 
@@ -690,11 +693,13 @@ function renderSeed(body: HTMLElement) {
   };
   const apply = () => {
     if (applySeed(input.value)) {
+      seedEdited = false;
       say('Applied');
       input.blur();
     } else say('Use letters F, W, E and A');
   };
   wrap.querySelector('[data-act="copy"]')!.addEventListener('click', async () => {
+    seedEdited = false;
     input.value = currentSeed();
     try {
       await navigator.clipboard.writeText(input.value);
@@ -706,7 +711,16 @@ function renderSeed(body: HTMLElement) {
   });
   wrap.querySelector('[data-act="apply"]')!.addEventListener('click', apply);
   input.addEventListener('keydown', (e) => e.key === 'Enter' && apply());
-  input.addEventListener('blur', () => queueSeedUpdate());
+  input.addEventListener('input', () => {
+    seedEdited = true;
+    status.textContent = 'Press Apply to use this seed';
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    seedEdited = false;
+    input.value = currentSeed();
+    status.textContent = '';
+  });
   seedInput = input;
   body.append(wrap);
 }
