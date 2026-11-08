@@ -4989,11 +4989,11 @@ function explode() {
       d = 1;
     }
     const near = Math.max(0.15, 1 - d / reach);
-    const sp = (6 + Math.random() ** 0.6 * 22) * k * near;
+    const sp = (2.5 + Math.random() ** 0.6 * 9) * k * near;
     vx[i] += (dx / d) * sp;
     vy[i] += (dy / d) * sp;
   }
-  blastUntil = performance.now() + 1400;
+  blastUntil = performance.now() + 1800;
   addWave('shockwave', cx, cy);
 }
 
