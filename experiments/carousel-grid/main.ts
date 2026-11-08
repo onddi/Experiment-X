@@ -607,11 +607,11 @@ function loadCollapsed(): Record<string, boolean> {
 // --- seed --------------------------------------------------------------------
 //
 // A seed lists the element each carousel shows: the main row, a slash, then
-// the grid cells in reading order, one letter per element (F W E A), e.g.
-// "F/WEAFWEAFWEAF". Applying a seed fills cells from the first one; extra
+// the grid cells in reading order, one letter per element (S fire, J water, V earth, H air), e.g.
+// "S/JVHSJVHSJVHS". Applying a seed fills cells from the first one; extra
 // letters are ignored and cells beyond the seed keep what they show.
 
-const SEED_LETTERS = 'FWEA'; // same order as the theme groups
+const SEED_LETTERS = 'SJVH'; // same order as the theme groups
 
 function currentSeed() {
   if (!isImages()) return '';
@@ -622,7 +622,7 @@ function currentSeed() {
 }
 
 function parseSeed(text: string): { hero: number | null; grid: number[] } | null {
-  const clean = text.toUpperCase().replace(/[^FWEA/-]/g, '');
+  const clean = text.toUpperCase().replace(/[^SJVH/-]/g, '');
   if (!clean) return null;
   const toGroups = (s: string) => [...s].filter((ch) => ch !== '-').map((ch) => SEED_LETTERS.indexOf(ch));
   if (clean.includes('/')) {
@@ -678,7 +678,7 @@ function renderSeed(body: HTMLElement) {
   const wrap = document.createElement('div');
   wrap.className = 'seed';
   wrap.innerHTML = `
-    <p class="hint">Main row / grid cells, one letter each: F fire, W water, E earth, A air.</p>
+    <p class="hint">Main row / grid cells, one letter each: S fire, J water, V earth, H air.</p>
     <input class="seed-input" spellcheck="false" autocomplete="off" aria-label="Seed" />
     <div class="buttons">
       <button type="button" data-act="copy">Copy</button>
@@ -696,7 +696,7 @@ function renderSeed(body: HTMLElement) {
       seedEdited = false;
       say('Applied');
       input.blur();
-    } else say('Use letters F, W, E and A');
+    } else say('Use letters S, J, V and H');
   };
   wrap.querySelector('[data-act="copy"]')!.addEventListener('click', async () => {
     seedEdited = false;
