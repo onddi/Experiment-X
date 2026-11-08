@@ -6,7 +6,9 @@ import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type LifeSize = 'none' | 'grow' | 'shrink' | 'swell';
 type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
-type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex';
+type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex' | 'emitter';
+type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointer';
+type EmitMode = 'steady' | 'burst' | 'beat';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
@@ -54,6 +56,16 @@ interface Settings {
   flowScale: number;
   flowSpeed: number;
   flowType: FlowType;
+  emitter: Emitter;
+  emitMode: EmitMode;
+  emitX: number;
+  emitY: number;
+  emitSize: number;
+  emitAngle: number;
+  emitRate: number;
+  burstEvery: number;
+  burstSize: number;
+  emitOut: boolean;
   wind: number;
   windDir: number;
   wells: string;
@@ -193,6 +205,16 @@ const DEFAULTS: Settings = {
   jitter: 0.05,
   flow: 0.3,
   flowType: 'waves',
+  emitter: 'none',
+  emitMode: 'steady',
+  emitX: 0.5,
+  emitY: 0.5,
+  emitSize: 120,
+  emitAngle: 0,
+  emitRate: 0.15,
+  burstEvery: 2,
+  burstSize: 0.25,
+  emitOut: true,
   wind: 0,
   windDir: 0,
   wells: '',
@@ -317,6 +339,7 @@ let age = new Float32Array(0); // frames since (re)spawn, for fading in and out
 let span = new Float32Array(0); // this particle's lifetime in frames (Lifespan setting)
 let rnd = new Float32Array(0); // a random 0..1 drawn at birth (size variety)
 let psz = new Float32Array(0); // per-particle size multiplier, worked out each frame
+let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
 const FADE_IN = 45;
@@ -337,10 +360,13 @@ function ensureCount() {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead].map(grow);
     cap = want;
   }
-  for (let i = n; i < want; i++) spawn(i, Math.random() * w, Math.random() * h);
+  for (let i = n; i < want; i++) {
+    spawn(i, Math.random() * w, Math.random() * h);
+    dead[i] = settings.emitter !== 'none' ? 1 : 0;
+  }
   n = want;
 }
 
@@ -374,6 +400,7 @@ function rebirth(i: number) {
 }
 
 function fadeOf(i: number) {
+  if (dead[i]) return 0;
   const flash = span[i] > 0 && settings.lifeFade === 'flash';
   let a = age[i] < FADE_IN && !flash ? age[i] / FADE_IN : 1;
   if (span[i] > 0) {
@@ -497,6 +524,13 @@ function setWells(list: Well[]) {
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
+  if (settings.placeWell === 'emitter') {
+    settings.emitX = e.offsetX / w;
+    settings.emitY = e.offsetY / h;
+    changed(new Set(['emitX', 'emitY']));
+    hint.classList.add('gone');
+    return;
+  }
   if (settings.placeWell !== 'off') {
     toggleWell(e.offsetX, e.offsetY, settings.placeWell);
     hint.classList.add('gone');
@@ -739,11 +773,17 @@ function step(dt: number) {
   const wellsNow = wellList().map((p) => ({ x: p.x * w, y: p.y * h, kind: p.kind }));
   const wellF = settings.wellForce * 0.12;
   const wellReach = settings.wellRange;
+  const emitting = settings.emitter !== 'none';
+  runEmitter(dt, on && A.beat);
   for (let i = 0; i < n; i++) {
+    if (dead[i]) continue;
     age[i] += dt;
     if (lifeOn && (span[i] <= 0 || age[i] >= span[i])) {
       // End of life (or lifespan just switched on): start again somewhere new.
-      if (span[i] > 0) {
+      if (span[i] > 0 && emitting) {
+        dead[i] = 1; // wait for the emitter
+        continue;
+      } else if (span[i] > 0) {
         px[i] = ox[i] = Math.random() * w;
         py[i] = oy[i] = Math.random() * h;
         rebirth(i);
@@ -923,7 +963,12 @@ function step(dt: number) {
 
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
       const edges = settings.edges;
-      if (edges === 'bounce') {
+      if (emitting) {
+        // Emitted particles leave for good and wait to be emitted again.
+        dead[i] = 1;
+        px[i] = ox[i] = Math.min(w - 1, Math.max(0, px[i]));
+        py[i] = oy[i] = Math.min(h - 1, Math.max(0, py[i]));
+      } else if (edges === 'bounce') {
         if (px[i] < 0 || px[i] >= w) vx[i] = -vx[i];
         if (py[i] < 0 || py[i] >= h) vy[i] = -vy[i];
         px[i] = Math.min(w - 0.5, Math.max(0, px[i]));
@@ -939,6 +984,128 @@ function step(dt: number) {
       }
     }
   }
+}
+
+// --- emitter -------------------------------------------------------------------
+
+let emitAcc = 0;
+let burstClock = 0;
+let emitNext = 0;
+
+// Put particle i on the emitter shape and give it a starting velocity.
+function emitOne(i: number) {
+  const S = settings;
+  const ex = S.emitX * w;
+  const ey = S.emitY * h;
+  const R = S.emitSize;
+  let x = ex;
+  let y = ey;
+  let nx = 0; // outward direction
+  let ny = 0;
+  const a = Math.random() * Math.PI * 2;
+  switch (S.emitter) {
+    case 'point':
+      nx = Math.cos(a);
+      ny = Math.sin(a);
+      x += nx * 2;
+      y += ny * 2;
+      break;
+    case 'pointer': {
+      const on = pointer.x > -1e3;
+      x = on ? pointer.x : w / 2;
+      y = on ? pointer.y : h / 2;
+      nx = Math.cos(a);
+      ny = Math.sin(a);
+      break;
+    }
+    case 'line': {
+      const la = (S.emitAngle / 180) * Math.PI;
+      const u = (Math.random() - 0.5) * 2 * R;
+      x += Math.cos(la) * u;
+      y += Math.sin(la) * u;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      nx = -Math.sin(la) * side;
+      ny = Math.cos(la) * side;
+      break;
+    }
+    case 'circle':
+    case 'ring': {
+      const rr = S.emitter === 'ring' ? R : R * Math.sqrt(Math.random());
+      nx = Math.cos(a);
+      ny = Math.sin(a);
+      x += nx * rr;
+      y += ny * rr;
+      break;
+    }
+    case 'edges': {
+      const side = (Math.random() * 4) | 0;
+      x = side === 0 ? 0 : side === 1 ? w - 0.5 : Math.random() * w;
+      y = side === 2 ? 0 : side === 3 ? h - 0.5 : Math.random() * h;
+      nx = side === 0 ? 1 : side === 1 ? -1 : 0;
+      ny = side === 2 ? 1 : side === 3 ? -1 : 0;
+      break;
+    }
+  }
+  px[i] = ox[i] = x;
+  py[i] = oy[i] = y;
+  dead[i] = 0;
+  rebirth(i);
+  age[i] = FADE_IN * 0.7; // born visible
+  launch(i);
+  if (S.emitOut) {
+    const sp = (S.launchSpeed > 0 ? S.launchSpeed : 1.5) * (0.6 + Math.random() * 0.8);
+    const spread = (Math.min(S.launchSpread, 180) / 360) * Math.PI * 2 * (Math.random() - 0.5);
+    const c = Math.cos(spread);
+    const sn = Math.sin(spread);
+    vx[i] = (nx * c - ny * sn) * sp;
+    vy[i] = (nx * sn + ny * c) * sp;
+  }
+}
+
+function emitMany(k: number) {
+  if (n === 0) return;
+  // Prefer particles waiting to be born, then the oldest by turn.
+  for (let j = 0; j < k; j++) {
+    let i = -1;
+    for (let tries = 0; tries < n; tries++) {
+      const c = emitNext++ % n;
+      if (dead[c]) {
+        i = c;
+        break;
+      }
+      if (tries > 64) {
+        i = c;
+        break;
+      }
+    }
+    if (i < 0) i = emitNext++ % n;
+    emitOne(i);
+  }
+}
+
+function runEmitter(dt: number, beat: boolean) {
+  const S = settings;
+  if (S.emitter === 'none') return;
+  if (S.emitMode === 'steady') {
+    emitAcc += n * S.emitRate * (dt / 60);
+    const k = Math.floor(emitAcc);
+    emitAcc -= k;
+    emitMany(k);
+  } else if (S.emitMode === 'burst') {
+    burstClock += dt / 60;
+    if (burstClock >= S.burstEvery) {
+      burstClock = 0;
+      emitMany(Math.round(n * S.burstSize));
+    }
+  } else if (beat) emitMany(Math.round(n * S.burstSize));
+}
+
+// Switching the emitter on empties the screen so it fills from the emitter;
+// switching it off scatters everyone back.
+function emitterChanged() {
+  if (settings.emitter !== 'none') for (let i = 0; i < n; i++) dead[i] = 1;
+  else for (let i = 0; i < n; i++) if (dead[i]) spawn(i, Math.random() * w, Math.random() * h), (dead[i] = 0);
+  burstClock = settings.burstEvery; // first burst right away
 }
 
 function enterFromEdge(i: number) {
@@ -982,6 +1149,7 @@ function emit(dt: number) {
     vx[i] = Math.cos(a) * v;
     vy[i] = Math.sin(a) * v;
     rebirth(i);
+    dead[i] = 0;
     age[i] = FADE_IN; // a fountain shows at once
   }
 }
@@ -1484,6 +1652,7 @@ function drawLinks() {
   }
   linkCount.fill(0, 0, n);
   for (let i = 0; i < n; i++) {
+    if (dead[i]) continue;
     const key = ((py[i] / d) | 0) * cols + ((px[i] / d) | 0);
     cellNext[i] = cellHead[key];
     cellHead[key] = i;
@@ -1496,7 +1665,7 @@ function drawLinks() {
 
   let budget = budget0;
   for (let i = 0; i < n && budget > 0; i++) {
-    if (linkCount[i] >= MAX_LINKS) continue;
+    if (linkCount[i] >= MAX_LINKS || dead[i]) continue;
     const cx = (px[i] / d) | 0;
     const cy = (py[i] / d) | 0;
     // Half-neighbourhood (this cell, right, and the row below) so each pair
@@ -1690,6 +1859,9 @@ const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: '
 
 const isGlyphs = () => settings.render === 'glyphs' || (settings.render === 'mixed' && settings.mixStyles.split(',').includes('glyphs'));
 const hasFlow = () => settings.flow > 0;
+const hasEmitter = () => settings.emitter !== 'none';
+const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
+const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
 const hasPointer = () => settings.pointerMode !== 'none';
 const hasClick = () => settings.click !== 'none';
 
@@ -1730,7 +1902,22 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'launchSpeed', label: 'Launch speed', min: 0, max: 6, step: 0.1, format: (v) => (v === 0 ? 'still' : v.toFixed(1)) },
   { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
   { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
-  { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and (soon) from emitters.' },
+  { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
+
+  { kind: 'section', id: 'emitter', label: 'Emitter', lock: ['emitter', 'emitMode', 'emitX', 'emitY', 'emitSize', 'emitAngle', 'emitRate', 'burstEvery', 'burstSize', 'emitOut'],
+    summary: () => (settings.emitter === 'none' ? 'whole screen' : `${label(EMITTERS, settings.emitter)}, ${label(EMIT_MODES, settings.emitMode).toLowerCase()}`) },
+  { kind: 'select', key: 'emitter', label: 'Born from', options: EMITTERS },
+  { kind: 'select', key: 'emitMode', label: 'Release', options: EMIT_MODES, show: hasEmitter },
+  { kind: 'range', key: 'emitRate', label: 'Rate', min: 0.02, max: 1, step: 0.01, format: (v) => `${Math.round(v * 100)}% / s`, show: () => hasEmitter() && settings.emitMode === 'steady' },
+  { kind: 'range', key: 'burstEvery', label: 'Burst every', min: 0.3, max: 8, step: 0.1, format: (v) => `${v.toFixed(1)}s`, show: () => hasEmitter() && settings.emitMode === 'burst' },
+  { kind: 'range', key: 'burstSize', label: 'Burst size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && settings.emitMode !== 'steady' },
+  { kind: 'note', text: 'Bursts on each kick drum; turn on Audio first.', show: () => hasEmitter() && settings.emitMode === 'beat' && audio.source === 'off' },
+  { kind: 'range', key: 'emitX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
+  { kind: 'range', key: 'emitY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
+  { kind: 'range', key: 'emitSize', label: 'Size', min: 10, max: 600, step: 5, format: (v) => `${v}px`, show: () => ['line', 'circle', 'ring'].includes(settings.emitter) },
+  { kind: 'range', key: 'emitAngle', label: 'Line angle', min: 0, max: 179, step: 1, format: (v) => `${v}°`, show: () => settings.emitter === 'line' },
+  { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
+  { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
   { kind: 'section', id: 'flow', label: 'Flow', lock: ['flow', 'flowType', 'flowScale', 'flowSpeed'],
     summary: () => (hasFlow() ? `strength ${settings.flow.toFixed(2)}` : 'off') },
@@ -1743,7 +1930,7 @@ const CONTROLS: Control[] = [
     summary: () => [settings.wind > 0 ? `wind ${settings.wind.toFixed(2)}` : '', wellList().length ? `${wellList().length} point${wellList().length > 1 ? 's' : ''}` : ''].filter(Boolean).join(', ') || 'none' },
   { kind: 'range', key: 'wind', label: 'Wind', min: 0, max: 1, step: 0.02, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
   { kind: 'range', key: 'windDir', label: 'Wind direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.wind > 0 },
-  { kind: 'select', key: 'placeWell', label: 'Click places', options: [['off', 'Nothing (normal click)'], ['attract', 'Attractor'], ['repel', 'Repeller'], ['vortex', 'Vortex']] },
+  { kind: 'select', key: 'placeWell', label: 'Click places', options: [['off', 'Nothing (normal click)'], ['attract', 'Attractor'], ['repel', 'Repeller'], ['vortex', 'Vortex'], ['emitter', 'Emitter position']] },
   { kind: 'note', text: 'Click the field to drop a point, click a point again to remove it.', show: () => settings.placeWell !== 'off' },
   { kind: 'range', key: 'wellForce', label: 'Point strength', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
   { kind: 'range', key: 'wellRange', label: 'Point reach', min: 50, max: 600, step: 10, format: (v) => `${v}px`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
@@ -1859,6 +2046,8 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Comet shower', { count: 600, size: 2, render: 'comets', flow: 0.9, flowScale: 0.003, flowSpeed: 0.3, speed: 1.8, trail: 0.5, friction: 0.02, jitter: 0.02, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 200, force: 0.8, click: 'shockwave' }],
   ['Galaxy', { count: 3000, size: 1.4, render: 'sparkles', flow: 0.2, flowScale: 0.003, flowSpeed: 0.1, trail: 0.8, friction: 0.03, jitter: 0.02, palette: 'cosmic', colorBy: 'pointer', glow: true, pointerMode: 'vortex', radius: 320, force: 0.9, click: 'gather' }],
   ['Bubbles', { count: 260, size: 5.5, render: 'rings', gravity: -0.15, flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0, friction: 0.05, jitter: 0.04, palette: 'pastel', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 0.5, click: 'emit' }],
+  ['Campfire', { count: 2500, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.4, flowType: 'curl', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
+  ['Pulse rings', { count: 3000, size: 1.4, render: 'streaks', emitter: 'ring', emitMode: 'burst', burstEvery: 1.6, burstSize: 0.3, emitSize: 60, emitOut: true, launchSpeed: 3, launchSpread: 0, lifespan: 3, lifeFade: 'out', flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.02, jitter: 0, palette: 'neon', colorBy: 'age', glow: true, pointerMode: 'vortex', radius: 200, force: 0.6 }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
@@ -1882,6 +2071,7 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   changed(new Set(Object.keys(DEFAULTS) as (keyof Settings)[]));
 }
 
+let prevEmitter: Emitter = settings.emitter;
 function changed(keys: Set<keyof Settings>) {
   save();
   if (keys.has('count')) {
@@ -1889,6 +2079,10 @@ function changed(keys: Set<keyof Settings>) {
     ensureCount();
   }
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
+  if (keys.has('emitter') && settings.emitter !== prevEmitter) {
+    prevEmitter = settings.emitter;
+    emitterChanged();
+  }
   if (keys.has('palette') || keys.has('customColors') || keys.has('customBg')) {
     buildShades();
     clear();
