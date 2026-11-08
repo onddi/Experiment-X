@@ -63,6 +63,7 @@ function show(exp: Experiment | undefined) {
     renderList(search.value);
     return;
   }
+  removeHandover();
   current = exp;
   empty.hidden = true;
   frame.hidden = false;
@@ -118,11 +119,84 @@ $('reload').addEventListener('click', () => current && (frame.src = current.url)
 $('sidebar-close').addEventListener('click', () => setSidebarCollapsed(true));
 $('sidebar-open').addEventListener('click', () => setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed')));
 
+// --- hand-over ---------------------------------------------------------------
+// An experiment can hand the screen to another one, e.g. the carousel grid
+// opening a cell into a different visualisation. The shell is in charge: it
+// loads the next experiment in its own iframe over the current one, and gives
+// the screen back when that is closed. Messages (postMessage, same origin):
+//   experiment → shell  { type: 'xp:list' }             ask which experiments exist
+//   shell → experiment  { type: 'xp:list', experiments: [{ slug, title }] }
+//   experiment → shell  { type: 'xp:handover', slug }   show <slug> on top of me
+//   shell → experiment  { type: 'xp:release' }          it was closed: take over again
+
+let handover: HTMLDivElement | null = null;
+
+function tellFrame(msg: unknown) {
+  frame.contentWindow?.postMessage(msg, location.origin);
+}
+
+function handOver(slug: string) {
+  const exp = experiments.find((e) => e.slug === slug);
+  if (!exp || exp.slug === current?.slug) return;
+  removeHandover();
+  const box = document.createElement('div');
+  box.className = 'handover';
+  box.style.top = `${frame.offsetTop}px`;
+  const inner = document.createElement('iframe');
+  inner.className = 'handover__frame';
+  inner.title = exp.title;
+  inner.src = exp.url;
+  // Fade in only once it has loaded, so the hand-over stays black until then.
+  inner.addEventListener('load', () => box.classList.add('handover--ready'), { once: true });
+  const back = document.createElement('button');
+  back.className = 'icon-btn handover__close';
+  back.title = 'Back';
+  back.setAttribute('aria-label', 'Back');
+  back.textContent = '\u2715';
+  back.addEventListener('click', releaseHandover);
+  box.append(inner, back);
+  frame.parentElement!.append(box);
+  handover = box;
+  inner.focus();
+}
+
+/** Fade the handed-over experiment out to black, then give the screen back. */
+function releaseHandover() {
+  const box = handover;
+  if (!box) return;
+  handover = null;
+  box.classList.remove('handover--ready');
+  setTimeout(() => {
+    box.remove();
+    tellFrame({ type: 'xp:release' });
+    frame.focus();
+  }, 400);
+}
+
+function removeHandover() {
+  handover?.remove();
+  handover = null;
+}
+
+window.addEventListener('message', (e) => {
+  if (e.source !== frame.contentWindow || e.origin !== location.origin) return;
+  const msg = e.data as { type?: string; slug?: string } | null;
+  if (msg?.type === 'xp:list') {
+    tellFrame({
+      type: 'xp:list',
+      experiments: experiments.map(({ slug, title }) => ({ slug, title })),
+    });
+  } else if (msg?.type === 'xp:handover' && typeof msg.slug === 'string') {
+    handOver(msg.slug);
+  }
+});
+
 window.addEventListener('hashchange', route);
 window.addEventListener('keydown', (e) => {
   if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === '[') step(-1);
   else if (e.key === ']') step(1);
+  else if (e.key === 'Escape' && handover) releaseHandover();
   else if (e.key === '\\') setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed'));
 });
 

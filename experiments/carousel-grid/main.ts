@@ -27,6 +27,7 @@ interface Settings {
   openCorner: number;
   openRecede: number;
   openFade: number;
+  openTarget: string;
   heroPlace: 'top' | 'left';
   heroCols: number;
   heroCustom: boolean;
@@ -86,6 +87,7 @@ const DEFAULTS: Settings = {
   openCorner: 0,
   openRecede: 0,
   openFade: 800,
+  openTarget: '',
   heroPlace: 'top',
   heroCols: 1,
   heroCustom: false,
@@ -342,7 +344,36 @@ const viewer = new Viewer(app, () => ({
 // so it costs nothing while whatever takes over is on screen.
 viewer.onHandover = () => {
   stage.style.visibility = 'hidden';
+  // In the Experiment-X shell, ask it to show the chosen experiment on top.
+  if (inShell && settings.openTarget) parent.postMessage({ type: 'xp:handover', slug: settings.openTarget }, location.origin);
 };
+
+// --- hand-over to other experiments -----------------------------------------
+// The shell (the page listing all experiments) runs the next visualisation in
+// its own iframe over this one; see src/shell/main.ts for the messages. Run on
+// its own page, the grid just stays on black.
+const inShell = window.parent !== window;
+const TARGETS: [string, string][] = [['', 'Nothing (stay black)']];
+if (inShell) {
+  window.addEventListener('message', (e) => {
+    if (e.source !== parent || e.origin !== location.origin) return;
+    const msg = e.data as { type?: string; experiments?: { slug: string; title: string }[] } | null;
+    if (msg?.type === 'xp:list' && Array.isArray(msg.experiments)) {
+      TARGETS.splice(1, Infinity, ...msg.experiments
+        .filter((x) => x.slug !== 'carousel-grid')
+        .map((x): [string, string] => [x.slug, x.title]));
+      // The panel is already built: refill that one select in place.
+      const select = document.querySelector<HTMLSelectElement>('label.row[data-key=openTarget] select, .row[data-key=openTarget] select');
+      if (select) {
+        select.replaceChildren(...TARGETS.map(([value, text]) => new Option(text, value)));
+        select.value = settings.openTarget;
+      }
+    } else if (msg?.type === 'xp:release') {
+      viewer.close();
+    }
+  });
+  parent.postMessage({ type: 'xp:list' }, location.origin);
+}
 viewer.onRelease = () => {
   stage.style.visibility = '';
 };
@@ -600,6 +631,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'openCorner', label: 'Keep corners round for', min: 0, max: 0.95, step: 0.05, format: (v) => (v ? `${Math.round(v * 100)}% of the zoom` : 'off'), show: () => opening() && settings.openWith === 'zoom' },
   { kind: 'range', key: 'openRecede', label: 'Grid sinks back', min: 0, max: 1, step: 0.05, format: (v) => (v ? v.toFixed(2) : 'off'), show: opening },
   { kind: 'range', key: 'openFade', label: 'Then fade to black', min: 0, max: 3000, step: 100, format: (v) => (v ? `${v} ms` : 'off'), show: opening },
+  { kind: 'select', key: 'openTarget', label: 'Then open', options: TARGETS, show: () => opening() && settings.openFade > 0 && inShell },
   { kind: 'section', id: 'feel', label: 'Feel', summary: () => `tension ${settings.tension}` },
   { kind: 'range', key: 'tension', label: 'Snap tension', min: 20, max: 600, step: 5 },
   { kind: 'range', key: 'flick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },

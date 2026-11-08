@@ -81,3 +81,20 @@ Other experiments are unaffected because each one is a separate page and bundle.
 - `vite.config.ts` adds every `experiments/*/index.html` as a separate build input, so
   each experiment is its own page in `dist/experiments/<slug>/`, and can also be
   opened on its own (the ↗ button in the toolbar).
+
+## Hand-over between experiments
+
+An experiment can hand the screen to another one, e.g. the carousel grid opening a
+cell into a different visualisation. The shell is in charge: it loads the next
+experiment in a second iframe over the current one, fades it in once it has loaded,
+and shows a ✕ (or takes Escape) to go back. Experiments still never import each
+other; they only exchange `postMessage`s with the shell (same origin):
+
+| direction           | message                                              |
+| ------------------- | ---------------------------------------------------- |
+| experiment → shell  | `{ type: 'xp:list' }` asks which experiments exist   |
+| shell → experiment  | `{ type: 'xp:list', experiments: [{ slug, title }] }` |
+| experiment → shell  | `{ type: 'xp:handover', slug }` show `slug` on top    |
+| shell → experiment  | `{ type: 'xp:release' }` it was closed, take over again |
+
+Opened on its own page (no shell), an experiment simply gets no answer.
