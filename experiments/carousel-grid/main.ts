@@ -47,6 +47,7 @@ interface Settings {
   gradeHue: number;
   vignette: number;
   labels: boolean;
+  imageMode: 'per-cell' | 'cycle';
 }
 
 const DEFAULTS: Settings = {
@@ -88,6 +89,7 @@ const DEFAULTS: Settings = {
   gradeHue: 45,
   vignette: 0.35,
   labels: false,
+  imageMode: 'per-cell',
 };
 
 const STORAGE_KEY = 'carousel-grid:settings';
@@ -118,7 +120,7 @@ const STRUCTURAL = new Set<keyof Settings>([
 // The optional main carousel sits above the grid as row -1 and spans every column.
 const HERO = -1;
 const COLOR = new Set<keyof Settings>([
-  'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels',
+  'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels', 'imageMode',
 ]);
 
 // --- content -----------------------------------------------------------------
@@ -161,6 +163,16 @@ function carouselOpts(r: number) {
   };
 }
 
+// Changing the seed reshuffles which photo each cell picks in cycle mode.
+let imageSeed = 1;
+
+/** Small deterministic hash so picks stay put until the seed changes. */
+function hash(...xs: number[]) {
+  let h = 2166136261 ^ imageSeed;
+  for (const x of xs) h = Math.imul(h ^ (x + 0x9e3779b9), 16777619);
+  return (h ^ (h >>> 15)) >>> 0;
+}
+
 function imageItemsFor(r: number, c: number): CarouselItem[] {
   const theme = THEMES[settings.surface];
   const groups = theme.groups;
@@ -174,6 +186,13 @@ function imageItemsFor(r: number, c: number): CarouselItem[] {
       // The main carousel steps through the groups: one item per element.
       g = i % groups.length;
       n = Math.floor(i / groups.length);
+    } else if (settings.imageMode === 'cycle') {
+      // Every cell steps through the groups in the same order, so cells that
+      // sit on the same index show the same element and the grid matches.
+      // Each cell gets a shuffled photo of that element; the 3/2 column/row
+      // steps keep neighbours (also diagonal) from repeating the same photo.
+      g = i % groups.length;
+      n = hash(g) + c * 3 + r * 2 + Math.floor(i / groups.length);
     } else {
       // Neighbours (left/right and up/down) always get different groups, and
       // cells of the same group start at different photos.
@@ -436,6 +455,10 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gradeHue', label: 'Harmony tint', min: 0, max: 360, step: 1, format: (v) => `${v}°`, show: isImages },
   { kind: 'range', key: 'evenExposure', label: 'Even out exposure', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
   { kind: 'range', key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
+  {
+    kind: 'select', key: 'imageMode', label: 'Elements',
+    options: [['per-cell', 'One per cell'], ['cycle', 'Every cell cycles all four']], show: isImages,
+  },
   { kind: 'toggle', key: 'labels', label: 'Element labels', show: isImages },
   { kind: 'sub', label: 'Colors', show: isColors },
   { kind: 'select', key: 'colorMode', label: 'Palette', options: [['golden', 'Golden-angle spread'], ['random', 'Random hues']], show: isColors },
@@ -449,7 +472,9 @@ const CONTROLS: Control[] = [
     buttons: [
       ['New words', () => { words.clear(); recolor(); }, isColors],
       ['New colors', () => { randomHues.clear(); set('colorMode', 'random'); }, isColors],
+      ['New images', () => { imageSeed++; recolor(); }, () => isImages() && settings.imageMode === 'cycle'],
       ['Scramble', scramble],
+      ['Match grid', matchAll],
       ['Reset', reset],
     ],
   },
@@ -623,6 +648,21 @@ function updateStats() {
   if (!el) return;
   const n = settings.rows * settings.cols + (settings.hero ? 1 : 0);
   el.textContent = `${n} carousel${n === 1 ? '' : 's'} · ${n * settings.items} items. Drag a cell, or focus it and use the arrow keys.`;
+}
+
+/** Send every grid carousel to the index of the first one, so all show the same element. */
+function matchAll() {
+  const grid = cells.filter((x) => x.r !== HERO);
+  if (!grid.length) return;
+  const target = Math.round(grid[0].carousel.pos);
+  for (const x of grid) {
+    const p = x.carousel.pos;
+    // Shortest way round when looping.
+    const n = x.carousel.count;
+    let t = target;
+    if (settings.loop) t = p + ((((target - p) % n) + n * 1.5) % n) - n / 2;
+    x.carousel.goTo(Math.round(t), 0);
+  }
 }
 
 function scramble() {
