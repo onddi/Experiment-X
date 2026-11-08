@@ -4515,7 +4515,8 @@ function toggleDebug() {
 }
 document.body.classList.add('panel-open');
 new ResizeObserver(() => resize()).observe(canvas);
-if (window.innerWidth < 720) toggle.click();
+// Open with the panel closed, so the field gets the whole screen (H or ⟨ opens it).
+toggle.click();
 
 buildShades();
 buildGlyphs();
