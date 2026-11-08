@@ -1,11 +1,18 @@
 import './shell.css';
 import { experiments, type Experiment } from './experiments.ts';
+import { busStats, dropFrame, dropPublisher, handleBusMessage, setSlugResolver } from './bus.ts';
+import {
+  BLENDS, PLACEMENTS, inputLayer, layout, newLayer, parseHash, toHash,
+  type Layer, type Placement, type View,
+} from './view.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const list = $<HTMLUListElement>('exp-list');
 const search = $<HTMLInputElement>('search');
-const frame = $<HTMLIFrameElement>('frame');
+const stack = $<HTMLDivElement>('layers');
+const panel = $<HTMLElement>('layers-panel');
+const layersBtn = $<HTMLButtonElement>('layers-btn');
 const empty = $<HTMLDivElement>('empty');
 const currentTitle = $<HTMLDivElement>('current-title');
 const openTab = $<HTMLAnchorElement>('open-tab');
@@ -13,16 +20,19 @@ const shellEl = document.querySelector<HTMLDivElement>('.shell')!;
 
 const SIDEBAR_KEY = 'experiment-x:sidebar-collapsed';
 const isSmallScreen = () => matchMedia('(max-width: 720px)').matches;
+const bySlug = (slug: string) => experiments.find((e) => e.slug === slug);
 
-let current: Experiment | undefined;
+/** What's on screen: the base experiment plus any layers. */
+let view: View = { layers: [], input: -1 };
+/** One iframe per layer, keyed by slug (an experiment appears at most once). */
+const frames = new Map<string, HTMLIFrameElement>();
 
-function slugFromHash(): string | undefined {
-  const match = location.hash.match(/^#\/([^/?#]+)/);
-  return match ? decodeURIComponent(match[1]) : undefined;
-}
+// --- sidebar -----------------------------------------------------------------
 
 function renderList(filter = '') {
   const q = filter.trim().toLowerCase();
+  const base = view.layers[0]?.slug;
+  const shown = new Set(view.layers.map((l) => l.slug));
   list.replaceChildren(
     ...experiments
       .filter((exp) =>
@@ -31,10 +41,12 @@ function renderList(filter = '') {
       )
       .map((exp) => {
         const li = document.createElement('li');
+        li.className = 'exp-item';
         const a = document.createElement('a');
         a.href = `#/${encodeURIComponent(exp.slug)}`;
         a.className = 'exp-link';
-        if (exp.slug === current?.slug) a.setAttribute('aria-current', 'page');
+        if (exp.slug === base) a.setAttribute('aria-current', 'page');
+        else if (shown.has(exp.slug)) a.classList.add('exp-link--layer');
 
         const title = document.createElement('span');
         title.className = 'exp-link__title';
@@ -48,50 +60,422 @@ function renderList(filter = '') {
           a.append(desc);
         }
         li.append(a);
+
+        if (!shown.has(exp.slug) && base) {
+          const add = document.createElement('button');
+          add.className = 'icon-btn exp-item__add';
+          add.textContent = '+';
+          add.title = `Add ${exp.title} as a layer`;
+          add.setAttribute('aria-label', add.title);
+          add.addEventListener('click', () => addLayer(exp.slug));
+          li.append(add);
+        }
         return li;
       }),
   );
 }
 
-function show(exp: Experiment | undefined) {
-  if (!exp) {
-    current = undefined;
-    frame.hidden = true;
-    empty.hidden = false;
-    currentTitle.textContent = '—';
-    document.title = 'X-Frame';
-    renderList(search.value);
-    return;
-  }
-  removeHandover();
-  current = exp;
-  empty.hidden = true;
-  frame.hidden = false;
-  // Swapping the src gives the experiment a brand new document and JS realm,
-  // so nothing from the previous experiment survives the switch.
-  frame.src = exp.url;
+// --- layers ------------------------------------------------------------------
+
+/** Tell an experiment how it's being shown, so it can e.g. drop its background when stacked. */
+function tellLayer(frame: HTMLIFrameElement) {
+  const i = view.layers.findIndex((l) => frames.get(l.slug) === frame);
+  if (i < 0) return;
+  const l = view.layers[i];
+  frame.contentWindow?.postMessage(
+    {
+      type: 'xp:layer',
+      role: i === 0 ? 'base' : l.placement === 'full' ? 'stacked' : 'docked',
+      placement: i === 0 ? 'full' : l.placement,
+      index: i,
+      count: view.layers.length,
+      input: i === inputLayer(view) || (i > 0 && l.placement !== 'full'),
+    },
+    location.origin,
+  );
+}
+
+function createFrame(exp: Experiment) {
+  const frame = document.createElement('iframe');
+  frame.className = 'layer';
   frame.title = exp.title;
-  currentTitle.textContent = exp.title;
-  openTab.href = exp.url;
-  document.title = `${exp.title} · X-Frame`;
+  frame.src = exp.url;
+  frame.addEventListener('load', () => tellLayer(frame));
+  stack.append(frame);
+  return frame;
+}
+
+function removeFrame(slug: string) {
+  const frame = frames.get(slug);
+  if (!frame) return;
+  dropFrame(frame.contentWindow);
+  dropPublisher(slug);
+  frame.remove();
+  frames.delete(slug);
+}
+
+/** Make the iframes match `view`, reusing the ones that are already running. */
+function applyView() {
+  const wanted = new Set(view.layers.map((l) => l.slug));
+  for (const slug of [...frames.keys()]) if (!wanted.has(slug)) removeFrame(slug);
+
+  const rects = layout(view);
+  const input = inputLayer(view);
+  view.layers.forEach((l, i) => {
+    let frame = frames.get(l.slug);
+    if (!frame) {
+      frame = createFrame(bySlug(l.slug)!);
+      frames.set(l.slug, frame);
+    }
+    const r = rects[i];
+    const docked = i > 0 && l.placement !== 'full';
+    Object.assign(frame.style, {
+      left: `${r.left}%`,
+      top: `${r.top}%`,
+      width: `${r.width}%`,
+      height: `${r.height}%`,
+      zIndex: String(i + (docked ? 100 : 0)),
+      mixBlendMode: i === 0 ? '' : l.blend,
+      opacity: i === 0 ? '' : String(l.opacity / 100),
+      pointerEvents: docked || i === input ? '' : 'none',
+    });
+    frame.classList.toggle('layer--base', i === 0);
+    frame.classList.toggle('layer--stacked', i > 0 && !docked);
+    frame.classList.toggle('layer--docked', docked);
+    tellLayer(frame);
+  });
+
+  const exps = view.layers.map((l) => bySlug(l.slug)!);
+  empty.hidden = exps.length > 0;
+  stack.hidden = exps.length === 0;
+  layersBtn.hidden = exps.length === 0;
+  const title = exps.map((e) => e.title).join(' + ');
+  currentTitle.textContent = title || '—';
+  document.title = title ? `${title} · X-Frame` : 'X-Frame';
+  if (exps[0]) openTab.href = exps[0].url;
   renderList(search.value);
+  renderPanel();
+}
+
+/** Change the view in place: no reloads, and the URL follows along. */
+function updateView(change: (v: View) => void) {
+  change(view);
+  history.replaceState(null, '', toHash(view));
+  applyView();
+}
+
+function addLayer(slug: string, placement: Placement = 'full') {
+  if (view.layers.some((l) => l.slug === slug) || !bySlug(slug)) return;
+  updateView((v) => {
+    v.layers.push(newLayer(slug, placement));
+    v.input = -1; // the new layer is on top: give it the mouse
+  });
+  openPanel(true);
+}
+
+function removeLayer(i: number) {
+  if (i <= 0) return;
+  updateView((v) => {
+    v.layers.splice(i, 1);
+    v.input = -1;
+  });
+}
+
+function moveLayer(i: number, delta: number) {
+  const j = i + delta;
+  if (i <= 0 || j <= 0 || j >= view.layers.length) return;
+  updateView((v) => {
+    [v.layers[i], v.layers[j]] = [v.layers[j], v.layers[i]];
+    if (v.input === i) v.input = j;
+    else if (v.input === j) v.input = i;
+  });
 }
 
 function route() {
-  const slug = slugFromHash();
-  const exp = experiments.find((e) => e.slug === slug) ?? experiments[0];
-  if (exp && exp.slug !== slug) {
-    history.replaceState(null, '', `#/${encodeURIComponent(exp.slug)}`);
-  }
-  if (exp?.slug !== current?.slug || !exp) show(exp);
+  const parsed = parseHash(location.hash);
+  const seen = new Set<string>();
+  const layers = (parsed?.layers ?? []).filter((l) => bySlug(l.slug) && !seen.has(l.slug) && seen.add(l.slug));
+  if (!layers.length && experiments[0]) layers.push({ ...newLayer(experiments[0].slug), blend: 'normal' });
+  view = { layers, input: parsed?.input ?? -1 };
+  const hash = layers.length ? toHash(view) : '';
+  if (hash && hash !== location.hash) history.replaceState(null, '', hash);
+  removeHandover();
+  applyView();
 }
 
 function step(delta: number) {
   if (!experiments.length) return;
-  const i = current ? experiments.indexOf(current) : -1;
+  const i = experiments.findIndex((e) => e.slug === view.layers[0]?.slug);
   const next = experiments[(i + delta + experiments.length) % experiments.length];
   location.hash = `#/${encodeURIComponent(next.slug)}`;
 }
+
+function reloadAll() {
+  for (const frame of frames.values()) {
+    dropFrame(frame.contentWindow);
+    frame.src = frame.src;
+  }
+}
+
+// --- layers panel ------------------------------------------------------------
+
+let panelTimer = 0;
+
+function openPanel(open: boolean) {
+  panel.hidden = !open;
+  layersBtn.setAttribute('aria-expanded', String(open));
+  clearInterval(panelTimer);
+  if (open) {
+    renderPanel();
+    // Keep the feed rates fresh while the panel is open.
+    panelTimer = window.setInterval(renderFeeds, 1000);
+  }
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...children: (Node | string)[]) {
+  const node = document.createElement(tag);
+  const { class: cls, ...rest } = props;
+  if (cls) node.className = cls;
+  Object.assign(node, rest);
+  node.append(...children);
+  return node;
+}
+
+function select<T extends string>(options: [T, string][], value: T, onChange: (v: T) => void, label: string) {
+  const s = el('select', { class: 'panel__select', title: label });
+  s.setAttribute('aria-label', label);
+  s.append(...options.map(([v, text]) => new Option(text, v, false, v === value)));
+  s.addEventListener('change', () => onChange(s.value as T));
+  return s;
+}
+
+function slider(value: number, min: number, max: number, onInput: (v: number) => void, label: string) {
+  const input = el('input', { type: 'range', min: String(min), max: String(max), value: String(value), class: 'panel__range' });
+  input.setAttribute('aria-label', label);
+  const out = el('span', { class: 'panel__value' }, `${value}%`);
+  input.addEventListener('input', () => {
+    out.textContent = `${input.value}%`;
+    onInput(Number(input.value));
+  });
+  return el('label', { class: 'panel__field' }, el('span', {}, label), input, out);
+}
+
+function layerRow(l: Layer, i: number) {
+  const exp = bySlug(l.slug)!;
+  const isBase = i === 0;
+  const head = el('div', { class: 'panel__layer-head' }, el('strong', {}, exp.title));
+  if (isBase) {
+    head.append(el('span', { class: 'panel__tag' }, 'base'));
+  } else {
+    const btn = (text: string, title: string, fn: () => void, disabled = false) => {
+      const b = el('button', { class: 'icon-btn icon-btn--sm', textContent: text, title, disabled });
+      b.setAttribute('aria-label', title);
+      b.addEventListener('click', fn);
+      return b;
+    };
+    head.append(
+      btn('↑', 'Move up', () => moveLayer(i, 1), i === view.layers.length - 1),
+      btn('↓', 'Move down', () => moveLayer(i, -1), i === 1),
+      btn('✕', 'Remove layer', () => removeLayer(i)),
+    );
+  }
+  const row = el('li', { class: 'panel__layer' }, head);
+  const docked = !isBase && l.placement !== 'full';
+
+  if (!isBase) {
+    // Changes that move or resize the frame re-render the panel; sliders just restyle.
+    const set = (fn: (layer: Layer) => void, rerender = true) => {
+      fn(view.layers[i]);
+      history.replaceState(null, '', toHash(view));
+      if (rerender) applyView();
+      else applyStyleOnly(i);
+    };
+    row.append(
+      el('div', { class: 'panel__grid' },
+        select(PLACEMENTS, l.placement, (p) => set((x) => {
+          x.placement = p;
+          if (p !== 'full' && x.blend === 'screen') x.blend = 'normal';
+        }), 'Placement'),
+        select(BLENDS.map((b): [string, string] => [b, b === 'normal' ? 'No blending' : b]), l.blend, (b) => set((x) => { x.blend = b; }), 'Blend mode'),
+      ),
+      slider(l.opacity, 0, 100, (v) => set((x) => { x.opacity = v; }, false), 'Opacity'),
+    );
+    if (docked) row.append(slider(l.size, 10, 80, (v) => set((x) => { x.size = v; }, false), 'Size'));
+  }
+  if (isBase || !docked) {
+    const radio = el('input', { type: 'radio', name: 'xf-input', checked: inputLayer(view) === i });
+    radio.addEventListener('change', () => updateView((v) => { v.input = i; }));
+    row.append(el('label', { class: 'panel__check' }, radio, 'Gets the mouse'));
+  } else {
+    row.append(el('p', { class: 'panel__hint' }, 'Docked strips always get the mouse.'));
+  }
+  return row;
+}
+
+/** Restyle one layer without rebuilding the panel (keeps a dragged slider alive). */
+function applyStyleOnly(i: number) {
+  const l = view.layers[i];
+  const frame = frames.get(l.slug);
+  if (!frame) return;
+  const r = layout(view);
+  view.layers.forEach((layer, k) => {
+    const f = frames.get(layer.slug);
+    if (!f) return;
+    Object.assign(f.style, { left: `${r[k].left}%`, top: `${r[k].top}%`, width: `${r[k].width}%`, height: `${r[k].height}%` });
+  });
+  frame.style.opacity = String(l.opacity / 100);
+}
+
+function matchHint(exp: Experiment): string {
+  // Suggest layers that can talk to what's already on screen.
+  const onScreen = view.layers.map((l) => bySlug(l.slug)!);
+  const feeds = new Set<string>();
+  for (const other of onScreen) {
+    for (const t of exp.accepts ?? []) if (other.provides?.includes(t)) feeds.add(t);
+    for (const t of exp.provides ?? []) if (other.accepts?.includes(t)) feeds.add(t);
+  }
+  return feeds.size ? ` (shares ${[...feeds].join(', ')})` : '';
+}
+
+const feedsBox = el('div', { class: 'panel__feeds' });
+
+function renderFeeds() {
+  if (panel.hidden) return;
+  const stats = busStats();
+  const name = (slug: string) => bySlug(slug)?.title ?? slug;
+  feedsBox.replaceChildren(
+    ...(stats.length
+      ? stats.map((s) =>
+          el('div', { class: 'panel__feed' },
+            el('code', {}, s.topic),
+            el('span', {},
+              `${s.publishers.map(name).join(', ') || 'nobody yet'} → ${s.subscribers.map(name).join(', ') || 'nobody yet'}`),
+            el('span', { class: 'panel__value' }, s.rate >= 1 ? `${Math.round(s.rate)}/s` : s.rate > 0 ? '<1/s' : 'idle'),
+          ))
+      : [el('p', { class: 'panel__hint' }, 'No feeds yet. Experiments publish and subscribe to topics through X-Frame; see "Data bus" in the README.')]),
+  );
+}
+
+function renderPanel() {
+  if (panel.hidden) return;
+  const close = el('button', { class: 'icon-btn icon-btn--sm', textContent: '✕', title: 'Close' });
+  close.setAttribute('aria-label', 'Close');
+  close.addEventListener('click', () => openPanel(false));
+
+  const available = experiments.filter((e) => !view.layers.some((l) => l.slug === e.slug));
+  const add = el('select', { class: 'panel__select' });
+  add.setAttribute('aria-label', 'Add a layer');
+  add.append(new Option('Add a layer…', ''), ...available.map((e) => new Option(e.title + matchHint(e), e.slug)));
+  add.addEventListener('change', () => add.value && addLayer(add.value));
+
+  // Top-most layer first, like a layers list in a design tool.
+  const rows = view.layers.map((l, i) => layerRow(l, i)).reverse();
+  panel.replaceChildren(
+    el('header', { class: 'panel__head' }, el('h2', {}, 'Layers'), close),
+    el('ul', { class: 'panel__layers' }, ...rows),
+    available.length ? add : '',
+    el('h2', { class: 'panel__sub' }, 'Feeds'),
+    feedsBox,
+  );
+  renderFeeds();
+}
+
+// --- hand-over ---------------------------------------------------------------
+// An experiment can hand the screen to another one, e.g. the carousel grid
+// opening a cell into a different visualisation. X-Frame is in charge: it
+// loads the next experiment in its own iframe over everything, and gives the
+// screen back to the experiment that asked when that is closed.
+//   experiment → X-Frame  { type: 'xp:list' }             ask which experiments exist
+//   X-Frame → experiment  { type: 'xp:list', experiments: [{ slug, title, provides, accepts }] }
+//   experiment → X-Frame  { type: 'xp:handover', slug, params? }
+//                                                       show <slug> on top of me; params
+//                                                       (strings) go on its URL query
+//   X-Frame → experiment  { type: 'xp:release' }          it was closed: take over again
+
+let handover: { box: HTMLDivElement; frame: HTMLIFrameElement; slug: string; from: Window } | null = null;
+
+function handOver(slug: string, params: Record<string, string>, from: Window) {
+  const exp = bySlug(slug);
+  if (!exp || frames.has(slug)) return;
+  removeHandover();
+  const box = el('div', { class: 'handover' });
+  box.style.top = `${stack.offsetTop}px`;
+  const inner = el('iframe', { class: 'handover__frame', title: exp.title });
+  const query = new URLSearchParams(params).toString();
+  inner.src = query ? `${exp.url}${exp.url.includes('?') ? '&' : '?'}${query}` : exp.url;
+  // Fade in only once it has loaded, so the hand-over stays black until then.
+  inner.addEventListener('load', () => box.classList.add('handover--ready'), { once: true });
+  const back = el('button', { class: 'icon-btn handover__close', title: 'Back', textContent: '✕' });
+  back.setAttribute('aria-label', 'Back');
+  back.addEventListener('click', releaseHandover);
+  box.append(inner, back);
+  stack.parentElement!.append(box);
+  handover = { box, frame: inner, slug, from };
+  inner.focus();
+}
+
+/** Fade the handed-over experiment out to black, then give the screen back. */
+function releaseHandover() {
+  const h = handover;
+  if (!h) return;
+  handover = null;
+  h.box.classList.remove('handover--ready');
+  setTimeout(() => {
+    dropFrame(h.frame.contentWindow);
+    dropPublisher(h.slug);
+    h.box.remove();
+    h.from.postMessage({ type: 'xp:release' }, location.origin);
+    h.from.focus();
+  }, 400);
+}
+
+function removeHandover() {
+  if (!handover) return;
+  dropFrame(handover.frame.contentWindow);
+  dropPublisher(handover.slug);
+  handover.box.remove();
+  handover = null;
+}
+
+// --- messages from experiments -------------------------------------------------
+
+function slugOf(win: Window): string | undefined {
+  for (const [slug, frame] of frames) if (frame.contentWindow === win) return slug;
+  if (handover?.frame.contentWindow === win) return handover.slug;
+  return undefined;
+}
+setSlugResolver(slugOf);
+
+window.addEventListener('message', (e) => {
+  const source = e.source as Window | null;
+  if (!source || e.origin !== location.origin) return;
+  const slug = slugOf(source);
+  if (!slug) return;
+  const msg = e.data as { type?: string; slug?: string; params?: unknown; topic?: unknown; data?: unknown } | null;
+  if (!msg || typeof msg.type !== 'string') return;
+
+  if (handleBusMessage(source, msg)) return;
+  if (msg.type === 'xp:hello') {
+    const frame = frames.get(slug);
+    if (frame) tellLayer(frame);
+  } else if (msg.type === 'xp:list') {
+    source.postMessage(
+      {
+        type: 'xp:list',
+        experiments: experiments.map(({ slug, title, provides = [], accepts = [] }) => ({ slug, title, provides, accepts })),
+      },
+      location.origin,
+    );
+  } else if (msg.type === 'xp:handover' && typeof msg.slug === 'string') {
+    const params: Record<string, string> = {};
+    if (msg.params && typeof msg.params === 'object') {
+      for (const [k, v] of Object.entries(msg.params)) if (typeof v === 'string' || typeof v === 'number') params[k] = String(v);
+    }
+    handOver(msg.slug, params, source);
+  }
+});
+
+// --- wire up -----------------------------------------------------------------
 
 function setSidebarCollapsed(collapsed: boolean) {
   shellEl.classList.toggle('shell--collapsed', collapsed);
@@ -108,95 +492,15 @@ function isTyping(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 }
 
-// --- wire up -----------------------------------------------------------------
-
 search.addEventListener('input', () => renderList(search.value));
 list.addEventListener('click', (e) => {
   // On small screens the list overlays the stage, so close it after picking.
   if ((e.target as HTMLElement).closest('a') && isSmallScreen()) setSidebarCollapsed(true);
 });
-$('reload').addEventListener('click', () => current && (frame.src = current.url));
+$('reload').addEventListener('click', reloadAll);
+layersBtn.addEventListener('click', () => openPanel(!!panel.hidden));
 $('sidebar-close').addEventListener('click', () => setSidebarCollapsed(true));
 $('sidebar-open').addEventListener('click', () => setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed')));
-
-// --- hand-over ---------------------------------------------------------------
-// An experiment can hand the screen to another one, e.g. the carousel grid
-// opening a cell into a different visualisation. X-Frame is in charge: it
-// loads the next experiment in its own iframe over the current one, and gives
-// the screen back when that is closed. Messages (postMessage, same origin):
-//   experiment → X-Frame  { type: 'xp:list' }             ask which experiments exist
-//   X-Frame → experiment  { type: 'xp:list', experiments: [{ slug, title }] }
-//   experiment → X-Frame  { type: 'xp:handover', slug, params? }
-//                                                       show <slug> on top of me; params
-//                                                       (strings) go on its URL query
-//   X-Frame → experiment  { type: 'xp:release' }          it was closed: take over again
-
-let handover: HTMLDivElement | null = null;
-
-function tellFrame(msg: unknown) {
-  frame.contentWindow?.postMessage(msg, location.origin);
-}
-
-function handOver(slug: string, params: Record<string, string> = {}) {
-  const exp = experiments.find((e) => e.slug === slug);
-  if (!exp || exp.slug === current?.slug) return;
-  removeHandover();
-  const box = document.createElement('div');
-  box.className = 'handover';
-  box.style.top = `${frame.offsetTop}px`;
-  const inner = document.createElement('iframe');
-  inner.className = 'handover__frame';
-  inner.title = exp.title;
-  const query = new URLSearchParams(params).toString();
-  inner.src = query ? `${exp.url}${exp.url.includes('?') ? '&' : '?'}${query}` : exp.url;
-  // Fade in only once it has loaded, so the hand-over stays black until then.
-  inner.addEventListener('load', () => box.classList.add('handover--ready'), { once: true });
-  const back = document.createElement('button');
-  back.className = 'icon-btn handover__close';
-  back.title = 'Back';
-  back.setAttribute('aria-label', 'Back');
-  back.textContent = '\u2715';
-  back.addEventListener('click', releaseHandover);
-  box.append(inner, back);
-  frame.parentElement!.append(box);
-  handover = box;
-  inner.focus();
-}
-
-/** Fade the handed-over experiment out to black, then give the screen back. */
-function releaseHandover() {
-  const box = handover;
-  if (!box) return;
-  handover = null;
-  box.classList.remove('handover--ready');
-  setTimeout(() => {
-    box.remove();
-    tellFrame({ type: 'xp:release' });
-    frame.focus();
-  }, 400);
-}
-
-function removeHandover() {
-  handover?.remove();
-  handover = null;
-}
-
-window.addEventListener('message', (e) => {
-  if (e.source !== frame.contentWindow || e.origin !== location.origin) return;
-  const msg = e.data as { type?: string; slug?: string; params?: unknown } | null;
-  if (msg?.type === 'xp:list') {
-    tellFrame({
-      type: 'xp:list',
-      experiments: experiments.map(({ slug, title }) => ({ slug, title })),
-    });
-  } else if (msg?.type === 'xp:handover' && typeof msg.slug === 'string') {
-    const params: Record<string, string> = {};
-    if (msg.params && typeof msg.params === 'object') {
-      for (const [k, v] of Object.entries(msg.params)) if (typeof v === 'string' || typeof v === 'number') params[k] = String(v);
-    }
-    handOver(msg.slug, params);
-  }
-});
 
 window.addEventListener('hashchange', route);
 window.addEventListener('keydown', (e) => {
@@ -204,12 +508,13 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '[') step(-1);
   else if (e.key === ']') step(1);
   else if (e.key === 'Escape' && handover) releaseHandover();
+  else if (e.key === 'Escape' && !panel.hidden) openPanel(false);
   else if (e.key === '\\') setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed'));
 });
 
 if (isSmallScreen()) {
   // Opened on a deep link: show the experiment, not the list.
-  if (slugFromHash()) shellEl.classList.add('shell--collapsed');
+  if (location.hash.startsWith('#/')) shellEl.classList.add('shell--collapsed');
 } else {
   try {
     if (localStorage.getItem(SIDEBAR_KEY) === '1') shellEl.classList.add('shell--collapsed');

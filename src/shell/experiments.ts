@@ -20,6 +20,10 @@ export interface ExperimentMeta {
   tags?: string[];
   /** Set to true to hide an experiment from the list without deleting it. */
   hidden?: boolean;
+  /** Data-bus topics this experiment publishes, e.g. ["audio.spectrum", "transport"]. */
+  provides?: string[];
+  /** Data-bus topics this experiment can use, e.g. ["audio.spectrum"]. */
+  accepts?: string[];
 }
 
 export interface Experiment extends ExperimentMeta {

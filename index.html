@@ -25,10 +25,12 @@
         <div class="toolbar">
           <button class="icon-btn" id="sidebar-open" aria-label="Show list" title="Show list">&#9776;</button>
           <div class="toolbar__title" id="current-title">—</div>
+          <button class="icon-btn" id="layers-btn" aria-label="Layers and feeds" title="Layers and feeds" aria-expanded="false" aria-controls="layers-panel">&#x29C9;</button>
           <button class="icon-btn" id="reload" aria-label="Reload experiment" title="Reload experiment">&#8635;</button>
           <a class="icon-btn" id="open-tab" target="_blank" rel="noopener" aria-label="Open in new tab" title="Open in new tab">&#8599;</a>
         </div>
-        <iframe class="frame" id="frame" title="Experiment"></iframe>
+        <div class="layers" id="layers"></div>
+        <section class="panel" id="layers-panel" aria-label="Layers and feeds" hidden></section>
         <div class="empty" id="empty" hidden>
           <p>No experiments yet.</p>
           <p>Run <code>npm run new my-idea</code> to create one.</p>
