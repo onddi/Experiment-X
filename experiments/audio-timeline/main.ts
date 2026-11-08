@@ -2,6 +2,7 @@ import './style.css';
 import { analyse, type TrackAnalysis } from './analysis.ts';
 import { AudioFeed, BandMeter } from './feed.ts';
 import { renderDemo, toWav } from './demo.ts';
+import { xframe } from './xframe.ts';
 
 type Style = 'waveform' | 'bars' | 'spectral' | 'spectrogram';
 type Live = 'spectrum' | 'radial' | 'scope' | 'off';
@@ -291,6 +292,67 @@ audio.addEventListener('play', syncPlayButton);
 audio.addEventListener('pause', syncPlayButton);
 audio.addEventListener('ended', syncPlayButton);
 
+// --- X-Frame data bus ----------------------------------------------------------
+// Other experiments on screen (e.g. the particle field) get the spectrum and
+// playback state, and can drive playback with transport.command.
+
+function publishTransport() {
+  xframe.publish('transport', {
+    playing: !audio.paused,
+    time: audio.currentTime || 0,
+    duration: track?.duration ?? 0,
+    title: trackName ? trackName.replace(/\.[a-z0-9]+$/i, '') : undefined,
+  });
+}
+for (const ev of ['play', 'pause', 'ended', 'seeked', 'ratechange', 'loadedmetadata']) audio.addEventListener(ev, publishTransport);
+
+xframe.subscribe('transport.command', (cmd: { action?: string; time?: number }) => {
+  if (!cmd || !track) return;
+  if (cmd.action === 'toggle' || (cmd.action === 'play' && audio.paused) || (cmd.action === 'pause' && !audio.paused)) void togglePlay();
+  else if (cmd.action === 'seek' && typeof cmd.time === 'number' && Number.isFinite(cmd.time)) {
+    followPaused = false;
+    seek(cmd.time);
+  }
+});
+
+// See-through when stacked over another experiment, so it shows underneath.
+xframe.onLayer((layer) => {
+  document.body.classList.toggle('see-through', layer.role === 'stacked');
+});
+
+let busWasPlaying = false;
+let lastTransport = 0;
+function publishBus(now: number, playing: boolean) {
+  if (!xframe.inFrame || !analyser) return;
+  if (playing) {
+    xframe.publish('audio.spectrum', {
+      bins,
+      sampleRate: actx!.sampleRate,
+      fftSize: analyser.fftSize,
+      smoothing: analyser.smoothingTimeConstant,
+      minDecibels: analyser.minDecibels,
+      maxDecibels: analyser.maxDecibels,
+    });
+    xframe.publish('audio.levels', { level: meter.level, bass: meter.bass, mid: meter.mid, treble: meter.treble });
+    if (now - lastTransport > 250) {
+      lastTransport = now;
+      publishTransport();
+    }
+  } else if (busWasPlaying) {
+    // One silent frame so listeners fall quiet.
+    xframe.publish('audio.spectrum', {
+      bins: new Uint8Array(analyser.frequencyBinCount),
+      sampleRate: actx!.sampleRate,
+      fftSize: analyser.fftSize,
+      smoothing: analyser.smoothingTimeConstant,
+      minDecibels: analyser.minDecibels,
+      maxDecibels: analyser.maxDecibels,
+    });
+    xframe.publish('audio.levels', { level: 0, bass: 0, mid: 0, treble: 0 });
+  }
+  busWasPlaying = playing;
+}
+
 // --- loading -----------------------------------------------------------------
 
 function busy(text: string | null, progress = 0) {
@@ -324,6 +386,7 @@ async function load(blob: Blob, name: string, decoded?: AudioBuffer) {
     $('track-sub').textContent = `${fmtTime(result.duration)} · ${(result.sampleRate / 1000).toFixed(1)} kHz · ${result.channels === 1 ? 'mono' : result.channels === 2 ? 'stereo' : `${result.channels} ch`}`;
     $('dur').textContent = ` / ${fmtTime(result.duration)}`;
     refreshPanel();
+    publishTransport();
     feed.publishTrack({ name, duration: result.duration, peakRate: result.peakRate, peaks: result.rms, analysis: result });
     busy(null);
   } catch (err) {
@@ -758,16 +821,20 @@ function drawLive() {
 
   if (mode === 'scope') {
     // Afterglow: fade the last frame rather than clearing it.
-    g.fillStyle = 'rgb(7 7 12 / 0.28)';
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = 'rgb(0 0 0 / 0.28)';
     g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over';
   } else g.clearRect(0, 0, w, h);
 
-  // A soft glow that breathes with the bass.
-  const glow = g.createRadialGradient(w / 2, h * 0.55, 0, w / 2, h * 0.55, Math.max(w, h) * 0.7);
-  glow.addColorStop(0, `oklch(45% 0.12 ${hue} / ${0.08 + meter.bass * 0.22})`);
-  glow.addColorStop(1, 'transparent');
-  g.fillStyle = glow;
-  g.fillRect(0, 0, w, h);
+  // A soft glow that breathes with the bass (not when see-through over another layer).
+  if (!document.body.classList.contains('see-through')) {
+    const glow = g.createRadialGradient(w / 2, h * 0.55, 0, w / 2, h * 0.55, Math.max(w, h) * 0.7);
+    glow.addColorStop(0, `oklch(45% 0.12 ${hue} / ${0.08 + meter.bass * 0.22})`);
+    glow.addColorStop(1, 'transparent');
+    g.fillStyle = glow;
+    g.fillRect(0, 0, w, h);
+  }
 
   if (mode === 'off') return;
 
@@ -955,7 +1022,7 @@ const feedMeters: Record<'level' | 'bass' | 'mid' | 'treble', HTMLElement> = {} 
 let feedReadout: HTMLElement;
 {
   const { body } = group('feed', 'Data feed');
-  note(body, 'What the player shares every frame: the playhead, play state, 2048 frequency bins, the waveform and band levels. Other experiments will be able to listen in through X-Frame.');
+  note(body, 'What the player shares every frame: the playhead, play state, 2048 frequency bins and band levels. In X-Frame they go out on the data bus (audio.spectrum, audio.levels, transport), so a layer like the particle field can react to the song.');
   const m = document.createElement('div');
   m.className = 'meter';
   for (const k of ['level', 'bass', 'mid', 'treble'] as const) {
@@ -1157,6 +1224,7 @@ function frame(now: number) {
   drawOverview();
   $('cur').textContent = fmtTime(playhead);
 
+  publishBus(now, playing);
   feed.publish({
     at: now,
     time: playhead,

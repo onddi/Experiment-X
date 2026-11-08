@@ -303,3 +303,7 @@ button:hover, select:hover { border-color: #3c3f46; }
   .timeline { height: 120px; }
   .track-name { font-size: 18px; }
 }
+
+/* Stacked over another experiment in X-Frame: let it show through. */
+body.see-through { background: transparent; }
+body.see-through .deck { background: rgb(7 7 12 / 0.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }

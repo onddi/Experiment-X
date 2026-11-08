@@ -2,5 +2,18 @@
   "title": "Audio timeline",
   "description": "Load a track and see it as a waveform, bars, spectral colour or spectrogram; scrub, zoom and play it with a live spectrum on top.",
   "created": "2026-11-08",
-  "tags": ["audio", "canvas", "player", "visualisation"]
+  "tags": [
+    "audio",
+    "canvas",
+    "player",
+    "visualisation"
+  ],
+  "provides": [
+    "audio.spectrum",
+    "audio.levels",
+    "transport"
+  ],
+  "accepts": [
+    "transport.command"
+  ]
 }
