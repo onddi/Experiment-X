@@ -161,7 +161,7 @@ kbd {
 
 /* Layers: one iframe per experiment, positioned by main.ts (see view.ts). */
 .layers { flex: 1; position: relative; min-height: 0; overflow: hidden; background: #000; isolation: isolate; }
-.layer { position: absolute; display: block; border: 0; }
+.layer { position: absolute; display: block; border: 0; transition: opacity 0.3s ease; }
 .layer--base { background: #fff; }
 /* "normal" lets a stacked experiment without a background show what's below. */
 .layer--stacked { background: transparent; color-scheme: normal; }

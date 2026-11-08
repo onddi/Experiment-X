@@ -137,7 +137,7 @@ function applyView() {
       height: `${r.height}%`,
       zIndex: String(i + (docked ? 100 : 0)),
       mixBlendMode: i === 0 ? '' : l.blend,
-      opacity: i === 0 ? '' : String(l.opacity / 100),
+      opacity: layerOpacity(i),
       pointerEvents: docked || i === input ? '' : 'none',
     });
     frame.classList.toggle('layer--base', i === 0);
@@ -159,6 +159,16 @@ function applyView() {
   renderPanel();
 }
 
+/** How much stacked layers above the one with the mouse fade back, so its controls are readable. */
+const FADE_ABOVE_INPUT = 0.2;
+
+function layerOpacity(i: number): string {
+  if (i === 0) return '';
+  const l = view.layers[i];
+  const above = l.placement === 'full' && i > inputLayer(view);
+  return String((l.opacity / 100) * (above ? FADE_ABOVE_INPUT : 1));
+}
+
 /** Change the view in place: no reloads, and the URL follows along. */
 function updateView(change: (v: View) => void) {
   change(view);
@@ -178,7 +188,7 @@ function renderMouseBtn() {
   if (mouseBtn.hidden) return;
   const title = bySlug(view.layers[inputLayer(view)].slug)?.title ?? '';
   mouseBtn.textContent = title;
-  mouseBtn.title = `Mouse goes to ${title}. Tap to switch (L)`;
+  mouseBtn.title = `Mouse goes to ${title}; layers above it fade back. Tap to switch (L)`;
   mouseBtn.setAttribute('aria-label', mouseBtn.title);
 }
 
@@ -348,7 +358,7 @@ function applyStyleOnly(i: number) {
     if (!f) return;
     Object.assign(f.style, { left: `${r[k].left}%`, top: `${r[k].top}%`, width: `${r[k].width}%`, height: `${r[k].height}%` });
   });
-  frame.style.opacity = String(l.opacity / 100);
+  frame.style.opacity = layerOpacity(i);
 }
 
 function matchHint(exp: Experiment): string {

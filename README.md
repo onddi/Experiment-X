@@ -117,7 +117,9 @@ is unchanged. Per layer you can set:
 - **Blend mode** and **opacity** for stacked layers. `screen` is a good default
   for visuals on a dark background: black disappears, light adds up.
 - **Gets the mouse**: only one stacked layer (or the base) gets pointer input;
-  docked strips always do.
+  docked strips always do. Stacked layers above the one with the mouse fade back
+  to 20% so its controls stay readable. The chip in the toolbar names the layer
+  with the mouse; tap it (or press **L**) to pass the mouse to the next one.
 
 The whole setup is in the URL, so it can be bookmarked or shared:
 
