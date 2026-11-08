@@ -4,6 +4,8 @@ import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 // --- settings ----------------------------------------------------------------
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
+type LifeSize = 'none' | 'grow' | 'shrink' | 'swell';
+type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
@@ -14,7 +16,7 @@ type HatAction = 'sparkle' | 'none';
 type SubAction = 'size' | 'flow' | 'speed' | 'none';
 type WaveAt = 'centre' | 'pointer' | 'random' | 'orbit' | 'mirror' | 'corners';
 type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' | 'sweep' | 'mix' | 'random' | 'none';
-type ColorBy = 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
+type ColorBy = 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES | 'custom';
 type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
 type GlyphPick = 'random' | 'speed' | 'heading' | 'sequence';
@@ -68,6 +70,8 @@ interface Settings {
   gravity: number;
   lifespan: number;
   sizeVar: number;
+  lifeSize: LifeSize;
+  lifeFade: LifeFade;
   launchSpeed: number;
   launchDir: number;
   launchSpread: number;
@@ -200,6 +204,8 @@ const DEFAULTS: Settings = {
   gravity: 0,
   lifespan: 0,
   sizeVar: 0,
+  lifeSize: 'none',
+  lifeFade: 'edges',
   launchSpeed: 0,
   launchDir: 270,
   launchSpread: 360,
@@ -353,8 +359,16 @@ function rebirth(i: number) {
 }
 
 function fadeOf(i: number) {
-  let a = age[i] < FADE_IN ? age[i] / FADE_IN : 1;
-  if (span[i] > 0) a = Math.min(a, (span[i] - age[i]) / FADE_OUT);
+  const flash = span[i] > 0 && settings.lifeFade === 'flash';
+  let a = age[i] < FADE_IN && !flash ? age[i] / FADE_IN : 1;
+  if (span[i] > 0) {
+    a = Math.min(a, (span[i] - age[i]) / FADE_OUT);
+    const lt = age[i] / span[i];
+    const f = settings.lifeFade;
+    if (f === 'out') a = Math.min(a, 1 - lt);
+    else if (f === 'swell') a = Math.min(a, Math.sin(Math.PI * Math.min(1, lt)));
+    else if (f === 'flash') a = Math.min(a, lt < 0.05 ? 1 : 0.3 + 0.7 * Math.exp(-(lt - 0.05) * 8));
+  }
   return a;
 }
 
@@ -956,6 +970,10 @@ function shadeIndex(i: number) {
       // the colour of wherever they are, so the flow shows through the bands.
       u = loop((px[i] / w * 0.9 + py[i] / h * 0.4 + tone[i] * 0.08 + t * 0.06) % 1);
       break;
+    case 'age':
+      // Young particles at the calm end, old ones at the hot end.
+      u = span[i] > 0 ? Math.min(1, age[i] / span[i]) : tone[i];
+      break;
     case 'audio':
       // Calm colours in quiet passages, the hot end of the palette on loud ones.
       u = Math.min(1, tone[i] * 0.3 + audio.levels.level * 0.85);
@@ -1235,15 +1253,21 @@ function styleHash(i: number) {
 let uniformSize = true;
 function updateSizes() {
   const sv = settings.sizeVar;
-  uniformSize = sv <= 0;
+  const ls = settings.lifespan > 0 ? settings.lifeSize : 'none';
+  uniformSize = sv <= 0 && ls === 'none';
   if (uniformSize) return;
   for (let i = 0; i < n; i++) {
     const u = rnd[i] * 2 - 1;
-    psz[i] = Math.exp(u * Math.abs(u) * sv * 1.2);
+    let z = sv > 0 ? Math.exp(u * Math.abs(u) * sv * 1.2) : 1;
+    if (ls !== 'none' && span[i] > 0) {
+      const lt = Math.min(1, age[i] / span[i]);
+      z *= ls === 'grow' ? 0.3 + lt * 1.4 : ls === 'shrink' ? 1.7 - lt * 1.4 : 0.3 + Math.sin(Math.PI * lt) * 1.4;
+    }
+    psz[i] = z;
   }
 }
 
-const FADE_LEVELS = 4;
+const FADE_LEVELS = 6;
 const fadeBuckets: number[][][] = Array.from({ length: FADE_LEVELS }, () => Array.from({ length: SHADES }, () => []));
 
 function drawBuckets(bks: number[][], s: number) {
@@ -1499,7 +1523,7 @@ const RENDERS: [string, string][] = [
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['glyphs', 'Glyphs'],
   ['links', 'Constellation'], ['mixed', 'Mixed'],
 ];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['audio', 'Music energy']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['audio', 'Music energy']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 // Vibes: how the music moves the particles. They only set the reaction
@@ -1588,9 +1612,12 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'edges', label: 'Off-screen', options: [['wrap', 'Wrap to the other side'], ['enter', 'Re-enter with the flow'], ['bounce', 'Bounce off the edges']] },
   { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
 
-  { kind: 'section', id: 'life', label: 'Birth & life', lock: ['lifespan', 'sizeVar', 'launchSpeed', 'launchDir', 'launchSpread'],
+  { kind: 'section', id: 'life', label: 'Birth & life', lock: ['lifespan', 'lifeSize', 'lifeFade', 'sizeVar', 'launchSpeed', 'launchDir', 'launchSpread'],
     summary: () => [settings.lifespan > 0 ? `~${settings.lifespan}s life` : 'endless', settings.sizeVar > 0 ? 'mixed sizes' : '', settings.launchSpeed > 0 ? 'launched' : ''].filter(Boolean).join(', ') },
   { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
+  { kind: 'select', key: 'lifeSize', label: 'Size over life', options: [['none', 'Stays the same'], ['grow', 'Grows'], ['shrink', 'Shrinks'], ['swell', 'Swells then shrinks']], show: () => settings.lifespan > 0 },
+  { kind: 'select', key: 'lifeFade', label: 'Fade over life', options: [['edges', 'Quick fade in and out'], ['out', 'Bright at birth, fades out'], ['swell', 'Slow fade in and out'], ['flash', 'Flash at birth']], show: () => settings.lifespan > 0 },
+  { kind: 'note', text: 'Tip: set Colour by → Age to shift colour from birth (calm end) to old age (hot end).', show: () => settings.lifespan > 0 && settings.colorBy !== 'age' },
   { kind: 'range', key: 'sizeVar', label: 'Size variety', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'all same' : pct(v)) },
   { kind: 'range', key: 'launchSpeed', label: 'Launch speed', min: 0, max: 6, step: 0.1, format: (v) => (v === 0 ? 'still' : v.toFixed(1)) },
   { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
@@ -1702,8 +1729,8 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Neon storm', { count: 4000, size: 1.2, render: 'streaks', flow: 1.6, flowScale: 0.012, flowSpeed: 1, trail: 0.7, friction: 0.05, jitter: 0.05, speed: 1.6, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.2, click: 'shockwave' }],
   ['Dusk', { count: 2200, size: 1.3, render: 'streaks', flow: 0.7, flowScale: 0.004, flowSpeed: 0.25, trail: 0.92, friction: 0.05, jitter: 0.02, palette: 'sunset', colorBy: 'vertical', glow: true, pointerMode: 'vortex', radius: 160, force: 0.7 }],
   ['Heat', { count: 3500, size: 2, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5, click: 'implode' }],
-  ['Fireflies', { lifespan: 5, count: 400, size: 1.6, render: 'glow', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0.6, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather' }],
-  ['Bokeh', { lifespan: 9, count: 250, size: 3, render: 'bokeh', flow: 0.2, flowScale: 0.002, flowSpeed: 0.08, trail: 0, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
+  ['Fireflies', { lifespan: 5, lifeFade: 'swell', count: 400, size: 1.6, render: 'glow', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0.6, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather' }],
+  ['Bokeh', { lifespan: 9, lifeFade: 'swell', lifeSize: 'grow', sizeVar: 0.5, count: 250, size: 3, render: 'bokeh', flow: 0.2, flowScale: 0.002, flowSpeed: 0.08, trail: 0, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
   ['Confetti', { count: 700, size: 3.2, render: 'mixed', mixStyles: 'circles,sparkles,rings,arrows,glyphs', glyphSet: 'shapes', flow: 0.3, flowScale: 0.004, flowSpeed: 0.3, gravity: 0.15, trail: 0, friction: 0.04, jitter: 0.06, palette: 'risograph', colorBy: 'palette', glow: false, pointerMode: 'vortex', radius: 180, force: 0.7, click: 'emit' }],
   ['Digital rain', { count: 900, size: 2.4, render: 'glyphs', glyphSet: 'katakana', glyphPick: 'random', glyphChange: 'flicker', glyphRate: 0.02, glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', gravity: 1, flow: 0, trail: 0.88, friction: 0.03, jitter: 0, speed: 1, palette: 'toxic', colorBy: 'speed', glow: false, pointerMode: 'repel', radius: 120, force: 0.6, click: 'ripple' }],
   ['ASCII', { count: 2500, size: 2, render: 'glyphs', glyphSet: 'density', glyphPick: 'speed', glyphChange: 'fixed', glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', flow: 0.8, flowScale: 0.004, flowSpeed: 0.3, trail: 0, friction: 0.05, jitter: 0.02, palette: 'mono', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 180, force: 0.8, click: 'gather' }],
