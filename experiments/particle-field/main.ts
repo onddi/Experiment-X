@@ -4317,10 +4317,7 @@ toggle.addEventListener('click', () => {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (typing) {
-    typingKey(e);
-    return;
-  }
+  if (typing) return;
   if (e.key === 'Enter') {
     e.preventDefault();
     startTyping();
@@ -4364,20 +4361,46 @@ window.addEventListener('keyup', (e) => {
 // Particles spell what you type, each letter growing out of the last word.
 let typing: { shape: Settings['shape']; text: string; buf: string } | null = null;
 
+// The bar is a real text field, so selecting, arrow keys, paste and the
+// usual shortcuts (Option/Ctrl+Backspace for a word, Cmd+Backspace for the
+// line, Cmd+A) all work like anywhere else.
 function typingBar() {
   let el = document.getElementById('typing');
   if (!el) {
     el = document.createElement('div');
     el.id = 'typing';
     el.className = 'typing';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 24;
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.placeholder = 'Type a word';
+    input.setAttribute('aria-label', 'Type a word for the particles');
+    const tip = document.createElement('span');
+    tip.textContent = 'Enter keeps · Esc cancels';
+    el.append(input, tip);
+    input.addEventListener('input', () => {
+      if (!typing) return;
+      typing.buf = input.value;
+      showTyped();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        stopTyping(e.key === 'Enter');
+      }
+    });
+    // Clicking away keeps the word, like Enter.
+    input.addEventListener('blur', () => stopTyping(true));
     document.getElementById('stage')!.append(el);
   }
   return el;
 }
+const typingInput = () => typingBar().querySelector('input')!;
 
 function showTyped() {
   if (!typing) return;
-  typingBar().textContent = `${typing.buf}▍   Enter keeps · Esc cancels`;
   const t = typing.buf.trim() ? typing.buf : ' ';
   const keys = new Set<keyof Settings>(['shapeText']);
   const wasFree = settings.shape !== 'text';
@@ -4394,7 +4417,9 @@ function showTyped() {
 function startTyping() {
   typing = { shape: settings.shape, text: settings.shapeText, buf: '' };
   typingBar().classList.add('on');
-  typingBar().textContent = '▍   Type a word · Enter keeps · Esc cancels';
+  const input = typingInput();
+  input.value = '';
+  input.focus();
 }
 
 function stopTyping(keep: boolean) {
@@ -4402,29 +4427,13 @@ function stopTyping(keep: boolean) {
   const t = typing;
   typing = null;
   typingBar().classList.remove('on');
+  typingInput().blur();
   if (!keep || !t.buf.trim()) {
     settings.shape = t.shape;
     settings.shapeText = t.text;
     changed(new Set<keyof Settings>(['shape', 'shapeText']));
   }
   showToast(keep && t.buf.trim() ? `“${t.buf.trim()}”` : 'Typing off');
-}
-
-function typingKey(e: KeyboardEvent) {
-  if (!typing) return;
-  if (e.key === 'Enter' || e.key === 'Escape') {
-    e.preventDefault();
-    stopTyping(e.key === 'Enter');
-    return;
-  }
-  if (e.key === 'Backspace') {
-    e.preventDefault();
-    typing.buf = typing.buf.slice(0, -1);
-  } else if (e.key.length === 1 && typing.buf.length < 24) {
-    e.preventDefault();
-    typing.buf += e.key;
-  } else return;
-  showTyped();
 }
 
 // --- debug overlay (I) ------------------------------------------------------------

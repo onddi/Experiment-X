@@ -530,5 +530,21 @@ button:hover, select:hover { border-color: #3c3f46; }
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-.typing.on { opacity: 1; transform: translate(-50%, 0); }
+.typing.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.typing input {
+  width: 16ch;
+  background: none;
+  border: 0;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  caret-color: #8fb3ff;
+}
+.typing input::placeholder { color: rgb(255 255 255 / 0.4); }
+.typing input::selection { background: rgb(143 179 255 / 0.45); }
+.typing span { color: rgb(255 255 255 / 0.5); font-size: 11px; }
