@@ -265,7 +265,7 @@ function spawn(i: number, x: number, y: number) {
 }
 
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2) * renderScale);
   w = canvas.clientWidth;
   h = canvas.clientHeight;
   canvas.width = Math.round(w * dpr);
@@ -1071,58 +1071,94 @@ function draw() {
   }
 }
 
-// Spatial hash: only compare particles in neighbouring cells.
-const LINK_LEVELS = 4;
-const linkPaths: Path2D[] = [];
-const cellHead = new Map<number, number>();
+// Spatial grid: only compare particles in neighbouring cells. Heads and
+// next-pointers live in typed arrays (no Map), and each particle draws at
+// most MAX_LINKS lines, so dense clumps don't explode into thousands of
+// overlapping strokes.
+const LINK_LEVELS = 3;
+const MAX_LINKS = 4;
+let cellHead = new Int32Array(0);
 let cellNext = new Int32Array(0);
+let linkCount = new Uint8Array(0);
+// Total line budget per frame, adjusted to keep the frame rate up.
+let linkBudget = 4000;
+const segs: Float32Array[] = Array.from({ length: LINK_LEVELS }, () => new Float32Array(0));
+const segN = new Int32Array(LINK_LEVELS);
 
 function drawLinks() {
   const d = settings.linkDist;
   const d2max = d * d;
-  const cols = Math.ceil(w / d) + 1;
-  if (cellNext.length < n) cellNext = new Int32Array(cap);
-  cellHead.clear();
+  const cols = Math.ceil(w / d) + 2;
+  const rows = Math.ceil(h / d) + 2;
+  if (cellHead.length < cols * rows) cellHead = new Int32Array(cols * rows);
+  cellHead.fill(-1);
+  if (cellNext.length < cap) {
+    cellNext = new Int32Array(cap);
+    linkCount = new Uint8Array(cap);
+  }
+  linkCount.fill(0, 0, n);
   for (let i = 0; i < n; i++) {
     const key = ((py[i] / d) | 0) * cols + ((px[i] / d) | 0);
-    cellNext[i] = cellHead.get(key) ?? -1;
-    cellHead.set(key, i);
+    cellNext[i] = cellHead[key];
+    cellHead[key] = i;
   }
-  for (let l = 0; l < LINK_LEVELS; l++) linkPaths[l] = new Path2D();
+  const budget0 = Math.round(linkBudget);
+  for (let l = 0; l < LINK_LEVELS; l++) {
+    if (segs[l].length < budget0 * 4) segs[l] = new Float32Array(budget0 * 4);
+    segN[l] = 0;
+  }
 
-  // Cap total segments so dense fields stay interactive.
-  let budget = 12000;
+  let budget = budget0;
   for (let i = 0; i < n && budget > 0; i++) {
+    if (linkCount[i] >= MAX_LINKS) continue;
     const cx = (px[i] / d) | 0;
     const cy = (py[i] / d) | 0;
-    for (let oy2 = 0; oy2 <= 1; oy2++) {
-      for (let ox2 = -1; ox2 <= 1; ox2++) {
-        if (oy2 === 0 && ox2 < 0) continue; // half-neighbourhood: each pair once
-        let j = cellHead.get((cy + oy2) * cols + (cx + ox2)) ?? -1;
-        while (j !== -1) {
-          if (j > i || oy2 > 0 || ox2 > 0) {
-            const dx = px[j] - px[i];
-            const dy = py[j] - py[i];
-            const dd = dx * dx + dy * dy;
-            if (dd < d2max && j !== i) {
-              const level = Math.min(LINK_LEVELS - 1, ((1 - Math.sqrt(dd) / d) * LINK_LEVELS) | 0);
-              linkPaths[level].moveTo(px[i], py[i]);
-              linkPaths[level].lineTo(px[j], py[j]);
-              budget--;
-            }
+    // Half-neighbourhood (this cell, right, and the row below) so each pair
+    // is visited once.
+    for (let q = 0; q < 5 && linkCount[i] < MAX_LINKS; q++) {
+      const ox2 = q === 0 ? 0 : q === 1 ? 1 : q - 3; // 0, 1, -1, 0, 1
+      const oy2 = q < 2 ? 0 : 1;
+      const gx = cx + ox2;
+      if (gx < 0 || gx >= cols) continue;
+      let j = cellHead[(cy + oy2) * cols + gx];
+      while (j !== -1 && linkCount[i] < MAX_LINKS) {
+        if ((q > 0 || j > i) && linkCount[j] < MAX_LINKS) {
+          const dx = px[j] - px[i];
+          const dy = py[j] - py[i];
+          const dd = dx * dx + dy * dy;
+          if (dd < d2max) {
+            const level = Math.min(LINK_LEVELS - 1, ((1 - Math.sqrt(dd) / d) * LINK_LEVELS) | 0);
+            const o = segN[level] * 4;
+            const sg = segs[level];
+            sg[o] = px[i];
+            sg[o + 1] = py[i];
+            sg[o + 2] = px[j];
+            sg[o + 3] = py[j];
+            segN[level]++;
+            linkCount[i]++;
+            linkCount[j]++;
+            if (--budget <= 0) break;
           }
-          j = cellNext[j];
         }
+        j = cellNext[j];
       }
     }
   }
 
   const stops = PALETTES[settings.palette].stops;
   const [hh, ss, ll] = stops[Math.floor(stops.length / 2)];
-  ctx.lineWidth = 0.7;
+  ctx.lineWidth = 0.8;
   for (let l = 0; l < LINK_LEVELS; l++) {
-    ctx.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / ${(((l + 1) / LINK_LEVELS) * 0.35).toFixed(3)})`;
-    ctx.stroke(linkPaths[l]);
+    const m = segN[l];
+    if (!m) continue;
+    const sg = segs[l];
+    ctx.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / ${(((l + 1) / LINK_LEVELS) * 0.4).toFixed(3)})`;
+    ctx.beginPath();
+    for (let k = 0; k < m * 4; k += 4) {
+      ctx.moveTo(sg[k], sg[k + 1]);
+      ctx.lineTo(sg[k + 2], sg[k + 3]);
+    }
+    ctx.stroke();
   }
 }
 
@@ -1136,6 +1172,7 @@ function frame(now: number) {
   const dt = Math.min(3, (now - last) / (1000 / 60));
   last = now;
   fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
+  if (!paused) adaptQuality(dt);
   audio.genre = settings.audioGenre;
   audio.update(now);
   if (!paused) {
@@ -1144,6 +1181,37 @@ function frame(now: number) {
     draw();
   }
   requestAnimationFrame(frame);
+}
+
+// Auto quality: slow devices (phones especially) get fewer constellation
+// lines and, if that isn't enough, a lower canvas resolution. Fast ones
+// climb back up.
+let renderScale = 1;
+let slowFrames = 0;
+let fastFrames = 0;
+
+function adaptQuality(dt: number) {
+  if (settings.render === 'links') {
+    if (dt > 1.3) linkBudget = Math.max(400, linkBudget * 0.92);
+    else if (dt < 1.1) linkBudget = Math.min(6000, linkBudget * 1.02);
+  }
+  if (dt > 1.4) {
+    slowFrames++;
+    fastFrames = 0;
+  } else if (dt < 1.1) {
+    fastFrames++;
+    slowFrames = Math.max(0, slowFrames - 1);
+  }
+  // ~2 s mostly slow → drop resolution a step; ~6 s smooth → raise it.
+  if (slowFrames > 60 && renderScale > 0.5) {
+    renderScale = Math.max(0.5, renderScale - 0.25);
+    slowFrames = 0;
+    resize();
+  } else if (fastFrames > 360 && renderScale < 1) {
+    renderScale = Math.min(1, renderScale + 0.25);
+    fastFrames = 0;
+    resize();
+  }
 }
 
 // --- controls ----------------------------------------------------------------
@@ -1632,7 +1700,7 @@ function renderControls() {
 const statsEl = () => document.getElementById('stats');
 setInterval(() => {
   const el = statsEl();
-  if (el) el.textContent = `${n.toLocaleString()} particles · ${paused ? 'paused' : `${Math.round(fps)} fps`}`;
+  if (el) el.textContent = `${n.toLocaleString()} particles · ${paused ? 'paused' : `${Math.round(fps)} fps`}${renderScale < 1 ? ` · ${Math.round(renderScale * 100)}% resolution` : ''}`;
 }, 500);
 
 // Source buttons, status line and a live bass / mid / treble meter.
