@@ -9,6 +9,7 @@ type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
 type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex' | 'emitter';
 type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointer';
 type EmitMode = 'steady' | 'burst' | 'beat';
+type Shape = 'none' | 'text' | 'image' | 'grid' | 'sunflower' | 'ring';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
@@ -56,6 +57,11 @@ interface Settings {
   flowScale: number;
   flowSpeed: number;
   flowType: FlowType;
+  shape: Shape;
+  shapeText: string;
+  shapeSize: number;
+  homeStrength: number;
+  shapeCycle: number;
   emitter: Emitter;
   emitMode: EmitMode;
   emitX: number;
@@ -205,6 +211,11 @@ const DEFAULTS: Settings = {
   jitter: 0.05,
   flow: 0.3,
   flowType: 'waves',
+  shape: 'none',
+  shapeText: 'HELLO',
+  shapeSize: 0.8,
+  homeStrength: 1,
+  shapeCycle: 0,
   emitter: 'none',
   emitMode: 'steady',
   emitX: 0.5,
@@ -339,6 +350,8 @@ let age = new Float32Array(0); // frames since (re)spawn, for fading in and out
 let span = new Float32Array(0); // this particle's lifetime in frames (Lifespan setting)
 let rnd = new Float32Array(0); // a random 0..1 drawn at birth (size variety)
 let psz = new Float32Array(0); // per-particle size multiplier, worked out each frame
+let hx = new Float32Array(0); // home position (Shape section)
+let hy = new Float32Array(0);
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
@@ -360,7 +373,7 @@ function ensureCount() {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy].map(grow);
     cap = want;
   }
   for (let i = n; i < want; i++) {
@@ -425,6 +438,7 @@ function resize() {
     if (px[i] > w || py[i] > h) spawn(i, Math.random() * w, Math.random() * h);
   }
   ensureCount();
+  buildShape();
   clear();
 }
 
@@ -774,6 +788,15 @@ function step(dt: number) {
   const wellF = settings.wellForce * 0.12;
   const wellReach = settings.wellRange;
   const emitting = settings.emitter !== 'none';
+  // Form & dissolve: the pull fades out and back in on a cycle.
+  let homeK = 0;
+  if (settings.shape !== 'none') {
+    const cyc = settings.shapeCycle;
+    const phase = cyc > 0 ? (t % cyc) / cyc : 0;
+    const formed = cyc > 0 ? Math.max(0, Math.min(1, Math.cos(phase * Math.PI * 2) * 1.6 + 0.4)) : 1;
+    homeK = settings.homeStrength * 0.004 * formed;
+  }
+  const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
   runEmitter(dt, on && A.beat);
   for (let i = 0; i < n; i++) {
     if (dead[i]) continue;
@@ -810,6 +833,12 @@ function step(dt: number) {
       }
     }
 
+    if (homeK > 0) {
+      // Spring towards the home position, with a little extra damping so it
+      // settles instead of wobbling forever.
+      ax += (hx[i] - px[i]) * homeK - vx[i] * homeDamp;
+      ay += (hy[i] - py[i]) * homeK - vy[i] * homeDamp;
+    }
     if (windX !== 0 || windY !== 0) {
       ax += windX;
       ay += windY;
@@ -983,6 +1012,128 @@ function step(dt: number) {
         py[i] = oy[i] = ((py[i] % h) + h) % h;
       }
     }
+  }
+}
+
+// --- shape (home positions) ------------------------------------------------------
+
+let shapeImage: HTMLImageElement | null = null;
+let shapeKey = '';
+const imageInput = document.createElement('input');
+imageInput.type = 'file';
+imageInput.accept = 'image/*';
+imageInput.addEventListener('change', () => {
+  const f = imageInput.files?.[0];
+  if (!f) return;
+  const img = new Image();
+  img.onload = () => {
+    shapeImage = img;
+    shapeKey = '';
+    buildShape();
+  };
+  img.src = URL.createObjectURL(f);
+});
+
+// Sample the lit pixels of an offscreen drawing, then give every particle one
+// of them (spread evenly, so each part of the shape gets its share).
+function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number) => boolean): [number, number][] {
+  const step = 2;
+  const W = Math.max(1, Math.round(w / step));
+  const H = Math.max(1, Math.round(h / step));
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  if (!draw(g, W, H)) return [];
+  const data = g.getImageData(0, 0, W, H).data;
+  const pts: [number, number][] = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) if (data[(y * W + x) * 4 + 3] > 128) pts.push([x * step, y * step]);
+  return pts;
+}
+
+function buildShape() {
+  const S = settings;
+  const key = [S.shape, S.shapeText, S.shapeSize, w, h, n, shapeImage?.src ?? ''].join('|');
+  if (S.shape === 'none' || key === shapeKey) return;
+  shapeKey = key;
+  const cx = w / 2;
+  const cy = h / 2;
+  const R = (Math.min(w, h) / 2) * S.shapeSize;
+  if (S.shape === 'grid' || S.shape === 'sunflower' || S.shape === 'ring') {
+    const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
+    const rows = Math.max(1, Math.ceil(n / cols));
+    for (let i = 0; i < n; i++) {
+      if (S.shape === 'grid') {
+        const gw = w * S.shapeSize;
+        const gh = h * S.shapeSize;
+        hx[i] = cx - gw / 2 + ((i % cols) + 0.5) * (gw / cols);
+        hy[i] = cy - gh / 2 + (Math.floor(i / cols) + 0.5) * (gh / rows);
+      } else if (S.shape === 'sunflower') {
+        // Golden-angle spiral: an even, organic-looking disc.
+        const r = R * Math.sqrt((i + 0.5) / n);
+        const a = i * 2.39996;
+        hx[i] = cx + Math.cos(a) * r;
+        hy[i] = cy + Math.sin(a) * r;
+      } else {
+        const a = (i / n) * Math.PI * 2;
+        const r = R * (0.97 + Math.random() * 0.06);
+        hx[i] = cx + Math.cos(a) * r;
+        hy[i] = cy + Math.sin(a) * r;
+      }
+    }
+    return;
+  }
+  const pts = sampleTargets((g, W, H) => {
+    if (S.shape === 'text') {
+      const text = S.shapeText.trim() || ' ';
+      g.fillStyle = '#fff';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      let size = H * 0.5;
+      g.font = `800 ${size}px system-ui, sans-serif`;
+      const tw = g.measureText(text).width;
+      size *= Math.min(1, (W * S.shapeSize) / Math.max(1, tw));
+      size = Math.min(size, H * 0.7 * S.shapeSize + 4);
+      g.font = `800 ${size}px system-ui, sans-serif`;
+      g.fillText(text, W / 2, H / 2);
+      return true;
+    }
+    if (!shapeImage) return false;
+    // Fit the image, then keep only pixels that differ from its corner colour.
+    const sc = Math.min((W * S.shapeSize) / shapeImage.width, (H * S.shapeSize) / shapeImage.height);
+    const iw = Math.max(1, Math.round(shapeImage.width * sc));
+    const ih = Math.max(1, Math.round(shapeImage.height * sc));
+    const ix = Math.round((W - iw) / 2);
+    const iy = Math.round((H - ih) / 2);
+    g.drawImage(shapeImage, ix, iy, iw, ih);
+    const img = g.getImageData(ix, iy, iw, ih);
+    const d = img.data;
+    const [br, bg, bb, ba] = [d[0], d[1], d[2], d[3]];
+    for (let k = 0; k < d.length; k += 4) {
+      const diff = Math.abs(d[k] - br) + Math.abs(d[k + 1] - bg) + Math.abs(d[k + 2] - bb) + Math.abs(d[k + 3] - ba);
+      d[k + 3] = diff > 90 && d[k + 3] > 60 ? 255 : 0;
+    }
+    g.clearRect(0, 0, W, H);
+    g.putImageData(img, ix, iy);
+    return true;
+  });
+  if (!pts.length) {
+    for (let i = 0; i < n; i++) {
+      hx[i] = px[i];
+      hy[i] = py[i];
+    }
+    return;
+  }
+  // Shuffle so neighbouring particles don't all map to one area.
+  for (let k = pts.length - 1; k > 0; k--) {
+    const j = (Math.random() * (k + 1)) | 0;
+    [pts[k], pts[j]] = [pts[j], pts[k]];
+  }
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pts[i % pts.length];
+    hx[i] = x + (Math.random() - 0.5) * 2;
+    hy[i] = y + (Math.random() - 0.5) * 2;
   }
 }
 
@@ -1860,6 +2011,8 @@ const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: '
 const isGlyphs = () => settings.render === 'glyphs' || (settings.render === 'mixed' && settings.mixStyles.split(',').includes('glyphs'));
 const hasFlow = () => settings.flow > 0;
 const hasEmitter = () => settings.emitter !== 'none';
+const hasShape = () => settings.shape !== 'none';
+const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['image', 'An image'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
 const hasPointer = () => settings.pointerMode !== 'none';
@@ -1903,6 +2056,17 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
   { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
   { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
+
+  { kind: 'section', id: 'shape', label: 'Shape', lock: ['shape', 'shapeText', 'shapeSize', 'homeStrength', 'shapeCycle'],
+    summary: () => (settings.shape === 'none' ? 'free' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
+  { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
+  { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
+  { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'note', text: 'The image is used for this session only (it isn’t saved). Particles fill whatever differs from its corner colour.', show: () => settings.shape === 'image' },
+  { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
+  { kind: 'range', key: 'homeStrength', label: 'Pull home', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasShape },
+  { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
+  { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
 
   { kind: 'section', id: 'emitter', label: 'Emitter', lock: ['emitter', 'emitMode', 'emitX', 'emitY', 'emitSize', 'emitAngle', 'emitRate', 'burstEvery', 'burstSize', 'emitOut'],
     summary: () => (settings.emitter === 'none' ? 'whole screen' : `${label(EMITTERS, settings.emitter)}, ${label(EMIT_MODES, settings.emitMode).toLowerCase()}`) },
@@ -2048,6 +2212,7 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Bubbles', { count: 260, size: 5.5, render: 'rings', gravity: -0.15, flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0, friction: 0.05, jitter: 0.04, palette: 'pastel', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 0.5, click: 'emit' }],
   ['Campfire', { count: 2500, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.4, flowType: 'curl', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
   ['Pulse rings', { count: 3000, size: 1.4, render: 'streaks', emitter: 'ring', emitMode: 'burst', burstEvery: 1.6, burstSize: 0.3, emitSize: 60, emitOut: true, launchSpeed: 3, launchSpread: 0, lifespan: 3, lifeFade: 'out', flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.02, jitter: 0, palette: 'neon', colorBy: 'age', glow: true, pointerMode: 'vortex', radius: 200, force: 0.6 }],
+  ['Hello', { count: 4000, size: 1.4, render: 'dots', shape: 'text', shapeText: 'HELLO', shapeSize: 0.8, homeStrength: 1, shapeCycle: 10, flow: 0.6, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.3, trail: 0.75, friction: 0.04, jitter: 0.02, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
@@ -2079,6 +2244,7 @@ function changed(keys: Set<keyof Settings>) {
     ensureCount();
   }
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
+  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeSize') || keys.has('count')) buildShape();
   if (keys.has('emitter') && settings.emitter !== prevEmitter) {
     prevEmitter = settings.emitter;
     emitterChanged();
