@@ -57,6 +57,13 @@ interface Settings {
   flowScale: number;
   flowSpeed: number;
   flowType: FlowType;
+  flock: number;
+  flockSep: number;
+  flockAlign: number;
+  flockCohesion: number;
+  flockRange: number;
+  space: number;
+  spaceDist: number;
   shape: Shape;
   shapeText: string;
   shapeSize: number;
@@ -211,6 +218,13 @@ const DEFAULTS: Settings = {
   jitter: 0.05,
   flow: 0.3,
   flowType: 'waves',
+  flock: 0,
+  flockSep: 1,
+  flockAlign: 1,
+  flockCohesion: 1,
+  flockRange: 40,
+  space: 0,
+  spaceDist: 12,
   shape: 'none',
   shapeText: 'HELLO',
   shapeSize: 0.8,
@@ -798,6 +812,7 @@ function step(dt: number) {
   }
   const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
   runEmitter(dt, on && A.beat);
+  const swarm = swarmForces();
   for (let i = 0; i < n; i++) {
     if (dead[i]) continue;
     age[i] += dt;
@@ -833,6 +848,10 @@ function step(dt: number) {
       }
     }
 
+    if (swarm) {
+      ax += swx[i];
+      ay += swy[i];
+    }
     if (homeK > 0) {
       // Spring towards the home position, with a little extra damping so it
       // settles instead of wobbling forever.
@@ -1013,6 +1032,100 @@ function step(dt: number) {
       }
     }
   }
+}
+
+// --- swarm: flocking and personal space -------------------------------------
+// Neighbours come from a grid with cell size = the larger of the two ranges,
+// checking at most SWARM_K neighbours each, so the cost stays linear.
+
+const SWARM_K = 14;
+let sHead = new Int32Array(0);
+let sNext = new Int32Array(0);
+let swx = new Float32Array(0); // swarm acceleration, worked out before the move
+let swy = new Float32Array(0);
+
+function swarmForces() {
+  const S = settings;
+  const fl = S.flock;
+  const sp = S.space;
+  if (fl <= 0 && sp <= 0) return false;
+  if (swx.length < n) {
+    swx = new Float32Array(cap);
+    swy = new Float32Array(cap);
+    sNext = new Int32Array(cap);
+  }
+  const range = Math.max(fl > 0 ? S.flockRange : 0, sp > 0 ? S.spaceDist : 0);
+  const cols = Math.ceil(w / range) + 1;
+  const rows = Math.ceil(h / range) + 1;
+  if (sHead.length < cols * rows) sHead = new Int32Array(cols * rows);
+  sHead.fill(-1, 0, cols * rows);
+  for (let i = 0; i < n; i++) {
+    if (dead[i]) continue;
+    const cx = Math.min(cols - 1, Math.max(0, (px[i] / range) | 0));
+    const cy = Math.min(rows - 1, Math.max(0, (py[i] / range) | 0));
+    const key = cy * cols + cx;
+    sNext[i] = sHead[key];
+    sHead[key] = i;
+  }
+  const fr2 = S.flockRange * S.flockRange;
+  const sd = S.spaceDist;
+  const sd2 = sd * sd;
+  const sepD2 = fr2 * 0.12;
+  for (let i = 0; i < n; i++) {
+    swx[i] = swy[i] = 0;
+    if (dead[i]) continue;
+    const cx = Math.min(cols - 1, Math.max(0, (px[i] / range) | 0));
+    const cy = Math.min(rows - 1, Math.max(0, (py[i] / range) | 0));
+    let cnt = 0;
+    let avx = 0, avy = 0, mx = 0, my = 0, sx = 0, sy = 0, rx = 0, ry = 0;
+    for (let oy2 = -1; oy2 <= 1 && cnt < SWARM_K; oy2++) {
+      const yy = cy + oy2;
+      if (yy < 0 || yy >= rows) continue;
+      for (let ox2 = -1; ox2 <= 1 && cnt < SWARM_K; ox2++) {
+        const xx = cx + ox2;
+        if (xx < 0 || xx >= cols) continue;
+        for (let j = sHead[yy * cols + xx]; j >= 0 && cnt < SWARM_K; j = sNext[j]) {
+          if (j === i) continue;
+          const dx = px[j] - px[i];
+          const dy = py[j] - py[i];
+          const d2 = dx * dx + dy * dy;
+          if (sp > 0 && d2 < sd2 && d2 > 0.01) {
+            const d = Math.sqrt(d2);
+            const f = (1 - d / sd) / d;
+            rx -= dx * f;
+            ry -= dy * f;
+          }
+          if (fl > 0 && d2 < fr2) {
+            cnt++;
+            avx += vx[j];
+            avy += vy[j];
+            mx += dx;
+            my += dy;
+            if (d2 < sepD2 && d2 > 0.01) {
+              sx -= dx / d2;
+              sy -= dy / d2;
+            }
+          }
+        }
+      }
+    }
+    let ax = rx * sp * 0.3;
+    let ay = ry * sp * 0.3;
+    if (fl > 0) {
+      if (cnt > 0) {
+        ax += ((avx / cnt - vx[i]) * 0.05 * S.flockAlign + (mx / cnt) * 0.0015 * S.flockCohesion + sx * 1.5 * S.flockSep) * fl;
+        ay += ((avy / cnt - vy[i]) * 0.05 * S.flockAlign + (my / cnt) * 0.0015 * S.flockCohesion + sy * 1.5 * S.flockSep) * fl;
+      }
+      // Boids keep cruising: ease every bird towards a steady speed.
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      const k = ((1.6 - v) / v) * 0.03 * fl;
+      ax += vx[i] * k;
+      ay += vy[i] * k;
+    }
+    swx[i] = ax;
+    swy[i] = ay;
+  }
+  return true;
 }
 
 // --- shape (home positions) ------------------------------------------------------
@@ -2057,6 +2170,17 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
   { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
 
+  { kind: 'section', id: 'swarm', label: 'Swarm', lock: ['flock', 'flockSep', 'flockAlign', 'flockCohesion', 'flockRange', 'space', 'spaceDist'],
+    summary: () => [settings.flock > 0 ? 'flocking' : '', settings.space > 0 ? 'spaced' : ''].filter(Boolean).join(', ') || 'off' },
+  { kind: 'range', key: 'flock', label: 'Flocking', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'flockAlign', label: 'Follow neighbours', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
+  { kind: 'range', key: 'flockCohesion', label: 'Stay together', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
+  { kind: 'range', key: 'flockSep', label: 'Avoid crowding', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
+  { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
+  { kind: 'range', key: 'space', label: 'Personal space', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
+  { kind: 'note', text: 'Flocking works best with little or no Flow, and Pixels, Arrows or Comets.', show: () => settings.flock > 0 },
+
   { kind: 'section', id: 'shape', label: 'Shape', lock: ['shape', 'shapeText', 'shapeSize', 'homeStrength', 'shapeCycle'],
     summary: () => (settings.shape === 'none' ? 'free' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -2213,6 +2337,7 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Campfire', { count: 2500, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.4, flowType: 'curl', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
   ['Pulse rings', { count: 3000, size: 1.4, render: 'streaks', emitter: 'ring', emitMode: 'burst', burstEvery: 1.6, burstSize: 0.3, emitSize: 60, emitOut: true, launchSpeed: 3, launchSpread: 0, lifespan: 3, lifeFade: 'out', flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.02, jitter: 0, palette: 'neon', colorBy: 'age', glow: true, pointerMode: 'vortex', radius: 200, force: 0.6 }],
   ['Hello', { count: 4000, size: 1.4, render: 'dots', shape: 'text', shapeText: 'HELLO', shapeSize: 0.8, homeStrength: 1, shapeCycle: 10, flow: 0.6, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.3, trail: 0.75, friction: 0.04, jitter: 0.02, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
+  ['Starlings', { count: 700, size: 2, render: 'arrows', flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, trail: 0.55, friction: 0.01, jitter: 0.06, palette: 'ice', colorBy: 'direction', glow: false, pointerMode: 'repel', radius: 160, force: 1, click: 'shockwave' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
