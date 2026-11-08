@@ -6,6 +6,7 @@ import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type LifeSize = 'none' | 'grow' | 'shrink' | 'swell';
 type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
+type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
@@ -53,6 +54,13 @@ interface Settings {
   flowScale: number;
   flowSpeed: number;
   flowType: FlowType;
+  wind: number;
+  windDir: number;
+  wells: string;
+  wellForce: number;
+  wellRange: number;
+  placeWell: PlaceWell;
+  showWells: boolean;
   pointerMode: PointerMode;
   click: ClickMode;
   clickForce: number;
@@ -185,6 +193,13 @@ const DEFAULTS: Settings = {
   jitter: 0.05,
   flow: 0.3,
   flowType: 'waves',
+  wind: 0,
+  windDir: 0,
+  wells: '',
+  wellForce: 1,
+  wellRange: 200,
+  placeWell: 'off',
+  showWells: true,
   flowScale: 0.004,
   flowSpeed: 0.2,
   pointerMode: 'repel',
@@ -452,8 +467,41 @@ for (const type of ['touchstart', 'touchend'] as const) {
 document.addEventListener('dblclick', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
+// Placed force points, stored in settings.wells as "x,y,kind;..." with x and
+// y as fractions of the screen, so they survive resizes and saved presets.
+type Well = { x: number; y: number; kind: 'attract' | 'repel' | 'vortex' };
+let wellCache = { src: '\u0000', list: [] as Well[] };
+function wellList(): Well[] {
+  if (wellCache.src !== settings.wells) {
+    const list = settings.wells
+      .split(';')
+      .map((p) => p.split(','))
+      .filter((p) => p.length === 3 && ['attract', 'repel', 'vortex'].includes(p[2]))
+      .map(([x, y, kind]) => ({ x: +x, y: +y, kind: kind as Well['kind'] }));
+    wellCache = { src: settings.wells, list };
+  }
+  return wellCache.list;
+}
+
+function toggleWell(x: number, y: number, kind: Well['kind']) {
+  const list = wellList();
+  const hit = list.findIndex((p) => Math.hypot(p.x * w - x, p.y * h - y) < 22);
+  const next = hit >= 0 ? list.filter((_, k) => k !== hit) : [...list, { x: x / w, y: y / h, kind }].slice(-12);
+  setWells(next);
+}
+
+function setWells(list: Well[]) {
+  settings.wells = list.map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)},${p.kind}`).join(';');
+  changed(new Set(['wells']));
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
+  if (settings.placeWell !== 'off') {
+    toggleWell(e.offsetX, e.offsetY, settings.placeWell);
+    hint.classList.add('gone');
+    return;
+  }
   pointer.x = e.offsetX;
   pointer.y = e.offsetY;
   pointer.active = e.pointerType === 'mouse';
@@ -685,6 +733,12 @@ function step(dt: number) {
   for (let k = waves.length - 1; k >= 0; k--) if (waves[k].life <= 0) waves.splice(k, 1);
 
   const lifeOn = settings.lifespan > 0;
+  const windA = (settings.windDir / 180) * Math.PI;
+  const windX = Math.cos(windA) * settings.wind * 0.05;
+  const windY = Math.sin(windA) * settings.wind * 0.05;
+  const wellsNow = wellList().map((p) => ({ x: p.x * w, y: p.y * h, kind: p.kind }));
+  const wellF = settings.wellForce * 0.12;
+  const wellReach = settings.wellRange;
   for (let i = 0; i < n; i++) {
     age[i] += dt;
     if (lifeOn && (span[i] <= 0 || age[i] >= span[i])) {
@@ -713,6 +767,33 @@ function step(dt: number) {
       } else {
         ax += fvx * flowNow * 0.05;
         ay += fvy * flowNow * 0.05;
+      }
+    }
+
+    if (windX !== 0 || windY !== 0) {
+      ax += windX;
+      ay += windY;
+    }
+    for (const wl of wellsNow) {
+      const dx = px[i] - wl.x;
+      const dy = py[i] - wl.y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      if (d > wellReach * 3) continue;
+      // Smooth falloff over the reach, softened at the core so nothing
+      // collapses to a single point.
+      const f = wellF * Math.exp(-d / wellReach) * Math.min(1, d / 18);
+      const nx = dx / d;
+      const ny = dy / d;
+      if (wl.kind === 'attract') {
+        ax -= nx * f;
+        ay -= ny * f;
+      } else if (wl.kind === 'repel') {
+        ax += nx * f;
+        ay += ny * f;
+      } else {
+        // Vortex: mostly spin, with a little pull so particles orbit.
+        ax += (-ny - nx * 0.25) * f;
+        ay += (nx - ny * 0.25) * f;
       }
     }
 
@@ -1287,6 +1368,32 @@ function drawBuckets(bks: number[][], s: number) {
   }
 }
 
+function drawWellMarkers(light: boolean) {
+  const list = wellList();
+  if (!list.length) return;
+  ctx.strokeStyle = light ? 'rgb(0 0 0 / 0.35)' : 'rgb(255 255 255 / 0.35)';
+  ctx.lineWidth = 1.2;
+  for (const p of list) {
+    const x = p.x * w;
+    const y = p.y * h;
+    ctx.beginPath();
+    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    // Attractor: arrows in. Repeller: arrows out. Vortex: a curl.
+    if (p.kind === 'vortex') {
+      ctx.moveTo(x + 4, y);
+      ctx.arc(x, y, 4, 0, Math.PI * 1.5);
+    } else {
+      const [a, b2] = p.kind === 'attract' ? [3, 7] : [7, 3];
+      for (let k = 0; k < 4; k++) {
+        const an = (k * Math.PI) / 2 + Math.PI / 4;
+        ctx.moveTo(x + Math.cos(an) * b2 * 1.4, y + Math.sin(an) * b2 * 1.4);
+        ctx.lineTo(x + Math.cos(an) * a * 1.4, y + Math.sin(an) * a * 1.4);
+      }
+    }
+    ctx.stroke();
+  }
+}
+
 function draw() {
   const [r, g, b] = pal().bg;
   ctx.globalCompositeOperation = 'source-over';
@@ -1322,6 +1429,7 @@ function draw() {
 
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
+  if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
   for (const wv of waves) {
     if (wv.life <= 0 || !wv.ring) continue;
     const a = Math.min(1, wv.life) * (wv.kind === 'ripple' || wv.kind === 'twist' ? 0.12 : 0.22);
@@ -1630,6 +1738,17 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'flowType', label: 'Type', options: [['waves', 'Currents (gathers into streams)'], ['curl', 'Smoke (curl noise, stays spread)']], show: hasFlow },
   { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1), show: hasFlow },
   { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasFlow },
+
+  { kind: 'section', id: 'forces', label: 'Forces', lock: ['wind', 'windDir', 'wells', 'wellForce', 'wellRange'],
+    summary: () => [settings.wind > 0 ? `wind ${settings.wind.toFixed(2)}` : '', wellList().length ? `${wellList().length} point${wellList().length > 1 ? 's' : ''}` : ''].filter(Boolean).join(', ') || 'none' },
+  { kind: 'range', key: 'wind', label: 'Wind', min: 0, max: 1, step: 0.02, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
+  { kind: 'range', key: 'windDir', label: 'Wind direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.wind > 0 },
+  { kind: 'select', key: 'placeWell', label: 'Click places', options: [['off', 'Nothing (normal click)'], ['attract', 'Attractor'], ['repel', 'Repeller'], ['vortex', 'Vortex']] },
+  { kind: 'note', text: 'Click the field to drop a point, click a point again to remove it.', show: () => settings.placeWell !== 'off' },
+  { kind: 'range', key: 'wellForce', label: 'Point strength', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
+  { kind: 'range', key: 'wellRange', label: 'Point reach', min: 50, max: 600, step: 10, format: (v) => `${v}px`, show: () => wellList().length > 0 || settings.placeWell !== 'off' },
+  { kind: 'toggle', key: 'showWells', label: 'Show the points', show: () => wellList().length > 0 },
+  { kind: 'buttons', buttons: [['Remove all points', () => setWells([])]], show: () => wellList().length > 0 },
 
   { kind: 'section', id: 'pointer', label: 'Pointer', lock: ['pointerMode', 'radius', 'force'],
     summary: () => label(POINTER_MODES, settings.pointerMode) + (hasPointer() ? `, ${settings.radius}px` : '') },
