@@ -48,6 +48,7 @@ interface Settings {
   vignette: number;
   labels: boolean;
   imageMode: 'per-cell' | 'cycle';
+  heroDrives: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -90,6 +91,7 @@ const DEFAULTS: Settings = {
   vignette: 0.35,
   labels: false,
   imageMode: 'per-cell',
+  heroDrives: true,
 };
 
 const STORAGE_KEY = 'carousel-grid:settings';
@@ -120,7 +122,7 @@ const STRUCTURAL = new Set<keyof Settings>([
 // The optional main carousel sits above the grid as row -1 and spans every column.
 const HERO = -1;
 const COLOR = new Set<keyof Settings>([
-  'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels', 'imageMode',
+  'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels', 'imageMode', 'heroDrives',
 ]);
 
 // --- content -----------------------------------------------------------------
@@ -154,7 +156,10 @@ function hueFor(k: string, globalIndex: number) {
 function carouselOpts(r: number) {
   const own = r === HERO && settings.heroCustom;
   return {
-    items: own ? settings.heroItems : settings.items,
+    // Cycling cells need at least one item per element.
+    items: own ? settings.heroItems : r !== HERO && settings.surface !== 'colors' && cycling()
+      ? Math.max(settings.items, THEMES[settings.surface].groups.length)
+      : settings.items,
     effect: own ? settings.heroEffect : settings.effect,
     loop: own ? settings.heroLoop : settings.loop,
     physics: own
@@ -162,6 +167,12 @@ function carouselOpts(r: number) {
       : { tension: settings.tension, flick: settings.flick },
   };
 }
+
+/** Main row drives the grid: only on image surfaces with the main row shown. */
+const heroDrives = () => settings.surface !== 'colors' && settings.hero && settings.heroDrives;
+
+/** Cells step through every element (needed when the main row drives them). */
+const cycling = () => settings.imageMode === 'cycle' || heroDrives();
 
 // Changing the seed reshuffles which photo each cell picks in cycle mode.
 let imageSeed = 1;
@@ -186,7 +197,7 @@ function imageItemsFor(r: number, c: number): CarouselItem[] {
       // The main carousel steps through the groups: one item per element.
       g = i % groups.length;
       n = Math.floor(i / groups.length);
-    } else if (settings.imageMode === 'cycle') {
+    } else if (cycling()) {
       // Every cell steps through the groups in the same order, so cells that
       // sit on the same index show the same element and the grid matches.
       // Each cell gets a shuffled photo of that element; the 3/2 column/row
@@ -276,6 +287,15 @@ function build() {
     carousel.el.classList.add('hero');
     carousel.jumpTo(Math.min(prev.get(`${HERO},${HERO}`) ?? 0, o.items - 1));
     carousel.linked = () => linkedTo(HERO, HERO);
+    // When the main row lands on a new element, send the grid to it.
+    let lastGroup = -1;
+    carousel.onMove = (c) => {
+      if (!heroDrives()) return;
+      const g = c.index % THEMES[settings.surface].groups.length;
+      if (g === lastGroup) return;
+      lastGroup = g;
+      driveGridTo(g);
+    };
     grid.append(carousel.el);
     cells.push({ r: HERO, c: HERO, carousel });
   }
@@ -292,6 +312,7 @@ function build() {
   applyStyle();
   layout();
   updateStats();
+  syncToHero();
 }
 
 function linkedTo(r: number, c: number) {
@@ -337,8 +358,16 @@ function applyStyle() {
   hero?.carousel.el.style.setProperty('grid-row', `span ${settings.heroRows}`);
 }
 
+/** Line the grid up with the main row's element straight away. */
+function syncToHero() {
+  const hero = cells.find((x) => x.r === HERO);
+  if (!hero || !heroDrives()) return;
+  driveGridTo(hero.carousel.index % THEMES[settings.surface].groups.length, true);
+}
+
 function recolor() {
   for (const x of cells) x.carousel.setItems(itemsFor(x.r, x.c));
+  syncToHero();
 }
 
 /** Fit rows × cols cells of the chosen aspect ratio inside the stage. */
@@ -456,8 +485,12 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'evenExposure', label: 'Even out exposure', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
   { kind: 'range', key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
   {
-    kind: 'select', key: 'imageMode', label: 'Elements',
-    options: [['per-cell', 'One per cell'], ['cycle', 'Every cell cycles all four']], show: isImages,
+    kind: 'toggle', key: 'heroDrives', label: 'Main row switches the grid’s element',
+    show: () => isImages() && settings.hero,
+  },
+  {
+    kind: 'select', key: 'imageMode', label: 'Elements', show: () => isImages() && !heroDrives(),
+    options: [['per-cell', 'One per cell'], ['cycle', 'Every cell cycles all four']],
   },
   { kind: 'toggle', key: 'labels', label: 'Element labels', show: isImages },
   { kind: 'sub', label: 'Colors', show: isColors },
@@ -472,7 +505,7 @@ const CONTROLS: Control[] = [
     buttons: [
       ['New words', () => { words.clear(); recolor(); }, isColors],
       ['New colors', () => { randomHues.clear(); set('colorMode', 'random'); }, isColors],
-      ['New images', () => { imageSeed++; recolor(); }, () => isImages() && settings.imageMode === 'cycle'],
+      ['New images', () => { imageSeed++; recolor(); }, () => isImages() && cycling()],
       ['Scramble', scramble],
       ['Match grid', matchAll],
       ['Reset', reset],
@@ -648,6 +681,29 @@ function updateStats() {
   if (!el) return;
   const n = settings.rows * settings.cols + (settings.hero ? 1 : 0);
   el.textContent = `${n} carousel${n === 1 ? '' : 's'} · ${n * settings.items} items. Drag a cell, or focus it and use the arrow keys.`;
+}
+
+/**
+ * Move every grid cell to its nearest item showing group g. Cells ripple out
+ * from the top-left so the change reads as a wave rather than a jump.
+ */
+function driveGridTo(g: number, instant = false) {
+  const n = THEMES[settings.surface].groups.length;
+  for (const x of cells) {
+    if (x.r === HERO) continue;
+    const car = x.carousel;
+    const base = Math.round(car.pos);
+    let best: number | null = null;
+    for (let t = base - n; t <= base + n; t++) {
+      if (((t % n) + n) % n !== g) continue;
+      if (!settings.loop && (t < 0 || t > car.count - 1)) continue;
+      if (best === null || Math.abs(t - car.pos) < Math.abs(best - car.pos)) best = t;
+    }
+    if (best === null || best === base) continue;
+    const target = best;
+    if (instant) car.jumpTo(target);
+    else setTimeout(() => car.goTo(target, 0), (x.r + x.c) * 45);
+  }
 }
 
 /** Send every grid carousel to the index of the first one, so all show the same element. */
