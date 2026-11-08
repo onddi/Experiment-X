@@ -283,7 +283,9 @@ button:hover, select:hover { border-color: #3c3f46; }
 /* Own presets. */
 .mypresets h3 { margin-top: 14px; }
 .mine { display: flex; }
-.mine button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 6px 0 0 6px; }
+.mine > button:not(.del) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 0; border-left: none; }
+.mine .keysel { width: 34px; padding: 0 2px; border-radius: 6px 0 0 6px; text-align: center; font: 12px ui-monospace, Menlo, monospace; color: var(--muted); appearance: none; -webkit-appearance: none; }
+.mine .keysel:not([value='']) { color: var(--accent); }
 .mine .del { border-left: none; border-radius: 0 6px 6px 0; padding: 4px 7px; color: var(--muted); }
 .mine .del:hover { color: oklch(75% 0.15 25); }
 .save { display: flex; gap: 6px; margin-top: 10px; }
@@ -352,3 +354,25 @@ button:hover, select:hover { border-color: #3c3f46; }
 .icon-buttons button.on { border-color: var(--accent); color: var(--accent); }
 .group.fixed .group-head:hover { background: none; }
 .group.fixed .group-head:disabled { opacity: 1; }
+
+/* Shows which preset a key played. */
+.toast {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  z-index: 6;
+  transform: translate(-50%, -6px);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(20 21 26 / 0.7);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  color: rgb(255 255 255 / 0.85);
+  font: 12px ui-monospace, Menlo, monospace;
+  white-space: pre;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }

@@ -95,6 +95,8 @@ interface Settings {
   render: Render;
   linkDist: number;
   ribbonLen: number;
+  morph: number;
+  beatSnap: boolean;
   depth: number;
   depthParallax: number;
   trail: number;
@@ -262,6 +264,8 @@ const DEFAULTS: Settings = {
   render: 'dots',
   linkDist: 70,
   ribbonLen: 14,
+  morph: 1,
+  beatSnap: false,
   depth: 0,
   depthParallax: 0.5,
   trail: 0.75,
@@ -471,7 +475,7 @@ function resize() {
 }
 
 function clear() {
-  const [r, g, b] = pal().bg;
+  const [r, g, b] = bgNow();
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = `rgb(${r} ${g} ${b})`;
   ctx.fillRect(0, 0, w, h);
@@ -1591,19 +1595,34 @@ function emit(dt: number) {
 const SHADES = 64;
 let shades: string[] = [];
 
+let shadeRgb: Rgb[] = [];
+
+function hslToRgb(h: number, s: number, l: number): Rgb {
+  s /= 100;
+  l /= 100;
+  const k = (n2: number) => (n2 + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n2: number) => l - a * Math.max(-1, Math.min(k(n2) - 3, Math.min(9 - k(n2), 1)));
+  return [f(0) * 255, f(8) * 255, f(4) * 255];
+}
+
 function buildShades() {
   spriteCache.clear();
   scaledCache.clear();
   const stops = pal().stops;
-  shades = [];
+  const target: Rgb[] = [];
   for (let k = 0; k < SHADES; k++) {
     const u = (k / (SHADES - 1)) * (stops.length - 1);
     const a = stops[Math.floor(u)];
     const b = stops[Math.min(stops.length - 1, Math.floor(u) + 1)];
     const f = u - Math.floor(u);
     const mix = (i: number) => a[i] + (b[i] - a[i]) * f;
-    shades.push(`hsl(${mix(0).toFixed(1)} ${mix(1).toFixed(1)}% ${mix(2).toFixed(1)}%)`);
+    target.push(hslToRgb(mix(0), mix(1), mix(2)));
   }
+  // While crossfading, blend from the old palette's colours.
+  const u = palMix ? Math.min(1, (performance.now() - palMix.start) / palMix.dur) : 1;
+  shadeRgb = target.map((c, k) => (palMix && palMix.from[k] ? (c.map((v, i) => palMix!.from[k][i] + (v - palMix!.from[k][i]) * u) as Rgb) : c));
+  shades = shadeRgb.map(([r, g, b]) => `rgb(${r.toFixed(0)} ${g.toFixed(0)} ${b.toFixed(0)})`);
 }
 
 // Folds a cyclic 0..1 value so non-cyclic palettes go calm → hot → calm
@@ -2041,7 +2060,8 @@ let camY = 0;
 let parAmt = 0;
 
 function draw() {
-  const [r, g, b] = pal().bg;
+  const [r, g, b] = bgNow();
+  if (palMix) document.body.style.background = `rgb(${r} ${g} ${b})`;
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = `rgb(${r} ${g} ${b} / ${(1 - settings.trail * 0.97).toFixed(3)})`;
   ctx.fillRect(0, 0, w, h);
@@ -2231,6 +2251,7 @@ function frame(now: number) {
   audio.update(now);
   if (!paused) {
     updateGlyphs();
+    tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     step(dt);
     draw();
   }
@@ -2382,6 +2403,12 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'presets', label: 'Presets', open: true },
   { kind: 'buttons', buttons: [] }, // filled with presets below
   { kind: 'mypresets' },
+
+  { kind: 'section', id: 'play', label: 'Play with keys', open: true, summary: () => `${settings.morph > 0 ? `${settings.morph.toFixed(1)}s morph` : 'instant'}${settings.beatSnap ? ', on the beat' : ''}` },
+  { kind: 'note', text: 'Keys 1–9 and 0 play your own presets: pick a key next to a preset under My presets, or press Shift + a number to save the current look to it.' },
+  { kind: 'range', key: 'morph', label: 'Morph time', min: 0, max: 4, step: 0.1, format: (v) => (v === 0 ? 'instant' : `${v.toFixed(1)}s`) },
+  { kind: 'toggle', key: 'beatSnap', label: 'Switch on the next kick drum' },
+  { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
 
   { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity', 'edges'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
@@ -2598,14 +2625,99 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
 // Visual presets, shuffle and reset keep the audio settings you've tuned.
 const audioSettings = (): Partial<Settings> =>
   Object.fromEntries(Object.entries(settings).filter(([k]) => k.startsWith('audio')));
+// How you play (morph time, beat snap) isn't part of a look either.
+const playSettings = (): Partial<Settings> => ({ morph: settings.morph, beatSnap: settings.beatSnap });
 
+// Presets go through here: they glide over (Morph) and can wait for the beat.
 function apply(p: Partial<Settings>, keepAudio = true) {
-  Object.assign(settings, DEFAULTS, keepAudio ? audioSettings() : {}, p);
-  changed(new Set(Object.keys(DEFAULTS) as (keyof Settings)[]));
+  const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings() } as Settings;
+  if (settings.beatSnap && audio.source !== 'off') {
+    pendingLook = { target, since: performance.now() };
+    return;
+  }
+  morphTo(target);
+}
+
+// --- morphing between looks ---------------------------------------------------
+// Numbers glide from the old look to the new over `morph` seconds and the
+// palette crossfades; everything else (style, modes) switches at once. The
+// particles keep their positions, so they move into the new behaviour.
+
+type Rgb = [number, number, number];
+let morphState: { from: Record<string, number>; to: Record<string, number>; start: number; dur: number } | null = null;
+let palMix: { from: Rgb[]; fromBg: Rgb; start: number; dur: number; tick: number } | null = null;
+let pendingLook: { target: Settings; since: number } | null = null;
+
+function morphTo(target: Settings) {
+  const dur = settings.morph * 1000;
+  if (dur <= 0) {
+    morphState = null;
+    palMix = null;
+    Object.assign(settings, target);
+    changed(new Set(Object.keys(DEFAULTS) as (keyof Settings)[]));
+    return;
+  }
+  const now = performance.now();
+  const S = settings as unknown as Record<string, unknown>;
+  const T = target as unknown as Record<string, unknown>;
+  const from: Record<string, number> = {};
+  const to: Record<string, number> = {};
+  const instant = new Set<keyof Settings>();
+  for (const k of Object.keys(DEFAULTS) as (keyof Settings)[]) {
+    if (typeof T[k] === 'number' && typeof S[k] === 'number') {
+      if (T[k] !== S[k]) {
+        from[k] = S[k] as number;
+        to[k] = T[k] as number;
+      }
+    } else if (S[k] !== T[k]) instant.add(k);
+  }
+  const palChanged = instant.has('palette') || instant.has('customColors') || instant.has('customBg');
+  if (palChanged) palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur, tick: 0 };
+  for (const k of instant) S[k] = T[k];
+  morphState = Object.keys(to).length ? { from, to, start: now, dur } : null;
+  if (instant.size) changed(instant, palChanged);
+}
+
+function tickMorph(now: number, beat: boolean) {
+  if (pendingLook && (beat || now - pendingLook.since > 2500 || !settings.beatSnap || audio.source === 'off')) {
+    const t2 = pendingLook.target;
+    pendingLook = null;
+    morphTo(t2);
+  }
+  if (palMix) {
+    const u = Math.min(1, (now - palMix.start) / palMix.dur);
+    if (u >= 1) {
+      palMix = null;
+      buildShades();
+    } else if (palMix.tick++ % 4 === 0) buildShades();
+  }
+  if (!morphState) return;
+  const m = morphState;
+  const u = Math.min(1, (now - m.start) / m.dur);
+  const e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2; // ease in-out
+  const S = settings as unknown as Record<string, number>;
+  for (const k in m.to) S[k] = m.from[k] + (m.to[k] - m.from[k]) * e;
+  if ('count' in m.to) {
+    S.count = Math.round(S.count / 10) * 10;
+    n = Math.min(n, settings.count);
+    ensureCount();
+  }
+  if (u >= 1) {
+    morphState = null;
+    changed(new Set(Object.keys(m.to) as (keyof Settings)[]));
+  }
+}
+
+// The background, blended while a palette crossfades.
+function bgNow(): Rgb {
+  const bg = pal().bg as Rgb;
+  if (!palMix) return bg;
+  const u = Math.min(1, (performance.now() - palMix.start) / palMix.dur);
+  return [0, 1, 2].map((c) => palMix!.fromBg[c] + (bg[c] - palMix!.fromBg[c]) * u) as Rgb;
 }
 
 let prevEmitter: Emitter = settings.emitter;
-function changed(keys: Set<keyof Settings>) {
+function changed(keys: Set<keyof Settings>, morphing = false) {
   save();
   if (keys.has('count')) {
     n = Math.min(n, settings.count);
@@ -2619,7 +2731,7 @@ function changed(keys: Set<keyof Settings>) {
   }
   if (keys.has('palette') || keys.has('customColors') || keys.has('customBg')) {
     buildShades();
-    clear();
+    if (!morphing) clear();
   }
   refresh();
 }
@@ -2919,7 +3031,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: Space pause · G gather · S scatter · R shuffle · H hide panel.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · G gather · S scatter · R shuffle · H hide panel.';
   controls.append(keys);
 }
 
@@ -3096,7 +3208,7 @@ function saveLocks() {
 }
 
 const MY_PRESETS_KEY = 'particle-field:my-presets';
-type MyPreset = { name: string; settings: Partial<Settings> };
+type MyPreset = { name: string; settings: Partial<Settings>; key?: string };
 let myPresets: MyPreset[] = readJson<MyPreset[]>(MY_PRESETS_KEY, []);
 
 function readJson<T>(key: string, fallback: T): T {
@@ -3137,9 +3249,19 @@ function renderMyPresets() {
         b.type = 'button';
         b.textContent = p.name;
         b.title = 'Load this preset';
-        b.addEventListener('click', () => {
-          Object.assign(settings, DEFAULTS, p.settings);
-          changed(new Set(Object.keys(DEFAULTS) as (keyof Settings)[]));
+        b.addEventListener('click', () => playMine(p));
+        // Which number key plays it.
+        const key = document.createElement('select');
+        key.className = 'keysel';
+        key.title = 'Number key that plays this preset';
+        key.innerHTML = ['<option value="">⌨</option>', ...KEY_ORDER.map((d) => `<option value="${d}">${d}</option>`)].join('');
+        key.value = p.key ?? '';
+        key.addEventListener('change', () => {
+          for (const o of myPresets) if (o !== p && o.key === key.value) delete o.key;
+          if (key.value) p.key = key.value;
+          else delete p.key;
+          writeJson(MY_PRESETS_KEY, myPresets);
+          draw();
         });
         const del = document.createElement('button');
         del.type = 'button';
@@ -3152,7 +3274,7 @@ function renderMyPresets() {
           writeJson(MY_PRESETS_KEY, myPresets);
           draw();
         });
-        item.append(b, del);
+        item.append(key, b, del);
         list.append(item);
       });
       wrap.append(h, list);
@@ -3173,7 +3295,50 @@ function renderMyPresets() {
     wrap.append(form);
   };
   draw();
+  redrawMine = draw;
   return wrap;
+}
+
+const KEY_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+let redrawMine = () => {};
+
+function playMine(p: MyPreset) {
+  apply(p.settings, false);
+  showToast(`${p.key ? p.key + '  ' : ''}${p.name}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
+}
+
+// Number keys play own presets; Shift + number saves the current look there.
+function numberKey(d: string, save: boolean) {
+  if (save) {
+    let p = myPresets.find((o) => o.key === d);
+    if (p) p.settings = snapshot();
+    else {
+      p = { name: `Key ${d}`, settings: snapshot(), key: d };
+      myPresets.push(p);
+    }
+    writeJson(MY_PRESETS_KEY, myPresets);
+    redrawMine();
+    showToast(`Saved to ${d}: ${p.name}`);
+    return;
+  }
+  const p = myPresets.find((o) => o.key === d);
+  if (p) playMine(p);
+  else showToast(`Nothing on ${d} yet. Shift+${d} saves the current look there.`);
+}
+
+let toastTimer = 0;
+function showToast(text: string) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    document.querySelector('.stage')!.append(el);
+  }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => el!.classList.remove('show'), 1600);
 }
 
 function reset() {
@@ -3198,6 +3363,12 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
+  const digit = /^Digit(\d)$/.exec(e.code) ?? /^Numpad(\d)$/.exec(e.code);
+  if (digit) {
+    e.preventDefault();
+    numberKey(digit[1], e.shiftKey);
+    return;
+  }
   if (k === ' ') {
     e.preventDefault();
     togglePause();
