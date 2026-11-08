@@ -1,13 +1,17 @@
 import './style.css';
-import { AudioInput, tabAudioSupported } from './audio.ts';
+import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 
 // --- settings ----------------------------------------------------------------
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
 type Render = 'dots' | 'streaks' | 'links';
-type WaveAt = 'centre' | 'pointer' | 'random';
-type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'none';
+type KickAction = 'pulse' | 'wave' | 'both' | 'none';
+type SnareAction = 'swirl' | 'wave' | 'flash' | 'none';
+type HatAction = 'sparkle' | 'none';
+type SubAction = 'size' | 'flow' | 'speed' | 'none';
+type WaveAt = 'centre' | 'pointer' | 'random' | 'orbit' | 'mirror' | 'corners';
+type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' | 'sweep' | 'mix' | 'random' | 'none';
 type ColorBy = 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES;
 
@@ -36,6 +40,19 @@ interface Settings {
   audioPulse: number;
   audioBeat: BeatAction;
   audioWaveAt: WaveAt;
+  audioWaveEvery: number;
+  audioWaveSpeed: number;
+  audioWaveReach: number;
+  audioWaveForce: number;
+  audioWaveWidth: number;
+  audioWaveAccent: boolean;
+  audioGenre: Genre;
+  audioKick: KickAction;
+  audioSnare: SnareAction;
+  audioHats: HatAction;
+  audioHits: number;
+  audioSub: SubAction;
+  audioSubAmt: number;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -92,11 +109,26 @@ const DEFAULTS: Settings = {
   audioPulse: 0.6,
   audioBeat: 'ripple',
   audioWaveAt: 'centre',
+  audioWaveEvery: 1,
+  audioWaveSpeed: 1,
+  audioWaveReach: 1,
+  audioWaveForce: 1,
+  audioWaveWidth: 1,
+  audioWaveAccent: true,
+  audioGenre: 'general',
+  audioKick: 'pulse',
+  audioSnare: 'wave',
+  audioHats: 'none',
+  audioHits: 0.6,
+  audioSub: 'size',
+  audioSubAmt: 0.5,
 };
 
 const STORAGE_KEY = 'particle-field:settings';
 const settings: Settings = { ...DEFAULTS, ...load() };
 if (!(settings.palette in PALETTES)) settings.palette = DEFAULTS.palette;
+// Older saves used 'none' as a beat wave; that is now 'Kick does: Pulse'.
+if ((settings.audioBeat as string) === 'none') settings.audioBeat = 'ripple';
 
 function load(): Partial<Settings> {
   try {
@@ -203,8 +235,35 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 
 // Rings travel out (shockwave, ripple) or in (implode) from a click.
-type WaveKind = 'shockwave' | 'ripple' | 'implode';
-const waves: { kind: WaveKind; x: number; y: number; r: number; life: number }[] = [];
+// Waves come from clicks and from audio hits.
+//   ripple    ring that makes particles bob and settle
+//   shockwave ring that pushes outward
+//   implode   ring that contracts and pulls inward
+//   twist     ring that spins particles as it passes
+//   star      shockwave that only pushes along a few spokes
+//   sweep     a straight line that sweeps across the screen
+type WaveKind = 'shockwave' | 'ripple' | 'implode' | 'twist' | 'star' | 'sweep';
+interface Wave {
+  kind: WaveKind;
+  x: number;
+  y: number;
+  r: number; // radius, or position along the axis for a sweep
+  life: number;
+  speed: number; // multiplies how fast the ring travels
+  decay: number; // multiplies how fast it fades (lower = travels further)
+  force: number;
+  width: number; // band width in px
+  dir: number; // twist / sweep direction (±1)
+  angle: number; // star rotation, or sweep axis (0 = horizontal travel)
+}
+const waves: Wave[] = [];
+
+function addWave(kind: WaveKind, x: number, y: number, o: Partial<Wave> = {}) {
+  const wv: Wave = { kind, x, y, r: 0, life: 1, speed: 1, decay: 1, force: 1, width: kind === 'ripple' ? 50 : 40, dir: 1, angle: 0, ...o };
+  if (kind === 'implode') wv.r = implodeStart();
+  if (kind === 'sweep') wv.r = wv.dir > 0 ? 0 : wv.angle === 0 ? w : h;
+  waves.push(wv);
+}
 
 canvas.addEventListener('pointermove', (e) => {
   pointer.x = e.offsetX;
@@ -223,8 +282,7 @@ canvas.addEventListener('pointerdown', (e) => {
   pointer.active = e.pointerType === 'mouse';
   pointer.down = true;
   const c = settings.click;
-  if (c === 'shockwave' || c === 'ripple') waves.push({ kind: c, x: e.offsetX, y: e.offsetY, r: 0, life: 1 });
-  if (c === 'implode') waves.push({ kind: c, x: e.offsetX, y: e.offsetY, r: implodeStart(), life: 1 });
+  if (c === 'shockwave' || c === 'ripple' || c === 'implode') addWave(c, e.offsetX, e.offsetY, { force: settings.clickForce });
   hint.classList.add('gone');
 });
 const release = (e: PointerEvent) => {
@@ -245,7 +303,66 @@ function implodeStart() {
 // --- audio -------------------------------------------------------------------
 
 const audio = new AudioInput();
+if (import.meta.env.DEV) (window as unknown as { particleAudio: AudioInput }).particleAudio = audio;
 let lastPulse = 0;
+let lastSnare = 0;
+let swirlDir = 1;
+
+// Beat waves: which kind, where, and how often, with a few ways to vary
+// them so a long track doesn't repeat the same ring every kick.
+const MIX: WaveKind[] = ['ripple', 'twist', 'shockwave', 'star', 'ripple', 'sweep'];
+let beatCount = 0;
+
+function beatWave(strength: number) {
+  const S = settings;
+  beatCount++;
+  if ((beatCount - 1) % S.audioWaveEvery !== 0) return;
+  const k = Math.floor((beatCount - 1) / S.audioWaveEvery); // nth wave fired
+  const kind: WaveKind = S.audioBeat === 'mix' ? MIX[k % MIX.length] : S.audioBeat === 'random' ? MIX[(Math.random() * MIX.length) | 0] : (S.audioBeat as WaveKind);
+  // Louder kicks travel further when accents are on.
+  const accent = S.audioWaveAccent ? 0.35 + strength * 0.65 : 0.8;
+  const base: Partial<Wave> = {
+    life: accent,
+    speed: S.audioWaveSpeed,
+    decay: 1 / S.audioWaveReach,
+    force: S.audioWaveForce,
+    width: 40 * S.audioWaveWidth,
+    dir: k % 2 ? -1 : 1,
+    angle: kind === 'sweep' ? (k >> 1) % 2 : Math.random() * Math.PI,
+  };
+  const spots = waveSpots(k);
+  for (const [x, y] of spots) addWave(kind, x, y, base);
+}
+
+function waveSpots(k: number): [number, number][] {
+  const cx = w / 2;
+  const cy = h / 2;
+  const R = Math.min(w, h) * 0.28;
+  switch (settings.audioWaveAt) {
+    case 'pointer':
+      return pointer.active ? [[pointer.x, pointer.y]] : [[cx, cy]];
+    case 'random':
+      return [[w * (0.2 + Math.random() * 0.6), h * (0.2 + Math.random() * 0.6)]];
+    case 'orbit': {
+      // Steps around the centre, one eighth of a turn per wave.
+      const a = (k * Math.PI) / 4;
+      return [[cx + Math.cos(a) * R, cy + Math.sin(a) * R]];
+    }
+    case 'mirror': {
+      const a = (k * Math.PI) / 5;
+      const dx = Math.cos(a) * R;
+      const dy = Math.sin(a) * R;
+      return [[cx + dx, cy + dy], [cx - dx, cy - dy]];
+    }
+    case 'corners': {
+      const m = 0.18;
+      const c: [number, number][] = [[w * m, h * m], [w * (1 - m), h * m], [w * (1 - m), h * (1 - m)], [w * m, h * (1 - m)]];
+      return [c[k % 4]];
+    }
+    default:
+      return [[cx, cy]];
+  }
+}
 
 // --- simulation --------------------------------------------------------------
 
@@ -269,11 +386,15 @@ function step(dt: number) {
   for (const wv of waves) {
     if (wv.kind === 'implode') {
       // Contract to the centre, then fade once it arrives.
-      wv.r = Math.max(0, wv.r - 7 * dt);
-      wv.life = Math.min(1, wv.r / 60 + 0.05) - (wv.r === 0 ? 1 : 0);
+      wv.r = Math.max(0, wv.r - 7 * wv.speed * dt);
+      wv.life = Math.min(wv.life, wv.r / 60 + 0.05) - (wv.r === 0 ? 1 : 0);
+    } else if (wv.kind === 'sweep') {
+      wv.r += 16 * wv.speed * wv.dir * dt;
+      wv.life -= 0.008 * wv.decay * dt;
+      if (wv.r < -100 || wv.r > Math.max(w, h) + 100) wv.life = 0;
     } else {
-      wv.r += (wv.kind === 'ripple' ? 14 : 9) * dt;
-      wv.life -= (wv.kind === 'ripple' ? 0.015 : 0.025) * dt;
+      wv.r += (wv.kind === 'ripple' || wv.kind === 'twist' ? 14 : 9) * wv.speed * dt;
+      wv.life -= (wv.kind === 'ripple' || wv.kind === 'twist' ? 0.015 : 0.025) * wv.decay * dt;
     }
   }
   const cf = settings.clickForce;
@@ -283,29 +404,48 @@ function step(dt: number) {
   // Hover behaviour pauses while gathering so the two don't fight.
   const usePointer = pointer.active && pointerMode !== 'none' && !gathering;
 
-  // Audio: loudness speeds everything up, mids stir the flow, treble adds
-  // sparkle, and a bass kick pushes the field out from the centre before it
-  // eases back.
+  // Audio. Each detected element drives its own effect:
+  //   kick  → field pulse (expand, ease back) and/or a wave
+  //   snare → swirl, a ripple, or a size flash
+  //   hats  → sparkle (small kicks to a few particles)
+  //   sub   → 808 / sub-bass swell on size, flow or speed
+  //   energy (how far the music is above its recent average) → speed, flow
   const A = audio.levels;
   const on = audio.source !== 'off';
-  const { audioSpeed, audioFlow, audioPulse } = settings;
-  // Motion follows changes in the music (lift), with only a little of the
-  // absolute loudness, so steady passages settle and hits stand out.
-  const speedNow = on ? speed * (1 + (A.liftLevel * 1.2 + A.level * 0.25) * audioSpeed) : speed;
-  const flowNow = on ? flow * (1 + A.liftMid * 2 * audioFlow) : flow;
+  const S = settings;
+  const sub2 = on ? A.sub * A.sub * S.audioSubAmt : 0; // squared: swells, not a constant
+  let speedNow = on ? speed * (1 + (A.liftLevel * 1.2 + A.level * 0.25) * S.audioSpeed) : speed;
+  let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow) : flow;
+  if (S.audioSub === 'speed') speedNow *= 1 + sub2 * 1.2;
+  if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
   const jitterNow = jitter;
-  // Bass pulse: an outward shove while the beat envelope rises and a gentle
-  // pull back while it decays, so the field breathes in place.
-  const dPulse = on ? A.pulse - lastPulse : 0;
+
+  const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
+  const kickWave = on && (S.audioKick === 'wave' || S.audioKick === 'both');
+  // Pulse: an outward shove while the kick envelope rises and a gentle pull
+  // back while it decays, so the field breathes in place.
+  const dPulse = kickPulse ? A.pulse - lastPulse : 0;
   lastPulse = A.pulse;
-  const kick = dPulse * (dPulse > 0 ? 3 : 2.5) * audioPulse;
-  if (on && A.beat && settings.audioBeat !== 'none') {
-    const kind = settings.audioBeat;
-    const at = settings.audioWaveAt;
-    const usePtr = at === 'pointer' && pointer.active;
-    const x = usePtr ? pointer.x : at === 'random' ? w * (0.2 + Math.random() * 0.6) : w / 2;
-    const y = usePtr ? pointer.y : at === 'random' ? h * (0.2 + Math.random() * 0.6) : h / 2;
-    waves.push({ kind, x, y, r: kind === 'implode' ? implodeStart() : 0, life: 0.4 + A.pulse * 0.6 });
+  const kick = dPulse * (dPulse > 0 ? 3 : 2.5) * S.audioPulse;
+  if (kickWave && A.beat && S.audioBeat !== 'none') beatWave(A.pulse);
+
+  // Snare swirl: a twist on each hit, alternating direction.
+  const dSnare = on ? Math.max(0, A.snareEnv - lastSnare) : 0;
+  lastSnare = A.snareEnv;
+  if (on && A.snare) swirlDir = -swirlDir;
+  const swirl = S.audioSnare === 'swirl' ? dSnare * 2.2 * S.audioHits * swirlDir : 0;
+  if (on && A.snare && S.audioSnare === 'wave') {
+    addWave('ripple', w * (0.15 + Math.random() * 0.7), h * (0.15 + Math.random() * 0.7), { life: 0.3 + 0.5 * S.audioHits });
+  }
+  // Hat sparkle: nudge a few random particles.
+  if (on && A.hat && S.audioHats === 'sparkle') {
+    const m = Math.ceil(n * 0.05);
+    for (let q = 0; q < m; q++) {
+      const i = (Math.random() * n) | 0;
+      const a = Math.random() * Math.PI * 2;
+      vx[i] += Math.cos(a) * 1.4 * S.audioHits;
+      vy[i] += Math.sin(a) * 1.4 * S.audioHits;
+    }
   }
   const cx = w / 2;
   const cy = h / 2;
@@ -329,6 +469,15 @@ function step(dt: number) {
       const k = kick * Math.min(1, d / (Math.min(w, h) * 0.5));
       ax += (dx / d) * k;
       ay += (dy / d) * k;
+    }
+
+    if (swirl !== 0) {
+      const dx = px[i] - cx;
+      const dy = py[i] - cy;
+      const d = Math.sqrt(dx * dx + dy * dy) + 1;
+      const k = swirl * Math.min(1, d / (Math.min(w, h) * 0.4));
+      ax += (-dy / d) * k;
+      ay += (dx / d) * k;
     }
 
     if (usePointer) {
@@ -372,25 +521,48 @@ function step(dt: number) {
     }
 
     for (const wv of waves) {
+      const band = wv.width;
+      if (wv.kind === 'sweep') {
+        // A line across the screen pushing particles along its travel.
+        const along = wv.angle === 0 ? px[i] : py[i];
+        const off = along - wv.r;
+        if (Math.abs(off) < band) {
+          const f = (1 - Math.abs(off) / band) * wv.life * 1.6 * wv.force * wv.dir;
+          if (wv.angle === 0) ax += f;
+          else ay += f;
+        }
+        continue;
+      }
       const dx = px[i] - wv.x;
       const dy = py[i] - wv.y;
       const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
       const off = d - wv.r;
-      const band = wv.kind === 'ripple' ? 50 : 40;
       if (Math.abs(off) < band) {
+        const nx = dx / d;
+        const ny = dy / d;
+        const edge = 1 - Math.abs(off) / band;
         let f: number;
         if (wv.kind === 'ripple') {
           // Push ahead of the ring, pull behind it: particles bob as it
           // passes and settle back near where they were.
           f = Math.sin((off / band) * Math.PI) * wv.life * 0.9;
         } else if (wv.kind === 'implode') {
-          f = -(1 - Math.abs(off) / band) * wv.life * 1.4;
+          f = -edge * wv.life * 1.4;
+        } else if (wv.kind === 'twist') {
+          const t2 = edge * wv.life * 1.6 * wv.force * wv.dir;
+          ax += -ny * t2;
+          ay += nx * t2;
+          continue;
+        } else if (wv.kind === 'star') {
+          // Six spokes: only push where the angle lines up with one.
+          const m = Math.max(0, Math.cos(3 * (Math.atan2(dy, dx) - wv.angle)));
+          f = edge * wv.life * 3 * m ** 6;
         } else {
-          f = (1 - Math.abs(off) / band) * wv.life * 2.2;
+          f = edge * wv.life * 2.2;
         }
-        f *= cf;
-        ax += (dx / d) * f;
-        ay += (dy / d) * f;
+        f *= wv.force;
+        ax += nx * f;
+        ay += ny * f;
       }
     }
 
@@ -506,6 +678,17 @@ function shadeIndex(i: number) {
   return Math.max(0, Math.min(SHADES - 1, (u * SHADES) | 0));
 }
 
+function audioSizeBoost() {
+  if (audio.source === 'off') return 1;
+  const L = audio.levels;
+  const S = settings;
+  let b = 1;
+  if (S.audioKick === 'pulse' || S.audioKick === 'both') b += L.pulse * 0.7 * S.audioPulse;
+  if (S.audioSnare === 'flash') b += L.snareEnv * 1.5 * S.audioHits;
+  if (S.audioSub === 'size') b += L.sub * L.sub * 1.2 * S.audioSubAmt;
+  return b;
+}
+
 // Buckets let us draw every particle of one colour in a single path.
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
@@ -526,7 +709,7 @@ function draw() {
 
   if (settings.render === 'links') drawLinks();
 
-  const s = settings.size * (1 + (audio.source === 'off' ? 0 : audio.levels.pulse * 0.7 * settings.audioPulse));
+  const s = settings.size * audioSizeBoost();
   for (let k = 0; k < SHADES; k++) {
     const list = buckets[k];
     if (!list.length) continue;
@@ -553,11 +736,27 @@ function draw() {
   ctx.globalCompositeOperation = 'source-over';
   for (const wv of waves) {
     if (wv.life <= 0) continue;
-    const a = wv.life * (wv.kind === 'ripple' ? 0.12 : 0.25);
+    const a = Math.min(1, wv.life) * (wv.kind === 'ripple' || wv.kind === 'twist' ? 0.12 : 0.22);
     ctx.strokeStyle = `rgb(255 255 255 / ${a.toFixed(3)})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(wv.x, wv.y, wv.r, 0, Math.PI * 2);
+    if (wv.kind === 'sweep') {
+      if (wv.angle === 0) {
+        ctx.moveTo(wv.r, 0);
+        ctx.lineTo(wv.r, h);
+      } else {
+        ctx.moveTo(0, wv.r);
+        ctx.lineTo(w, wv.r);
+      }
+    } else if (wv.kind === 'star') {
+      for (let k = 0; k < 6; k++) {
+        const an = wv.angle + (k * Math.PI) / 3;
+        ctx.moveTo(wv.x + Math.cos(an) * Math.max(0, wv.r - 30), wv.y + Math.sin(an) * Math.max(0, wv.r - 30));
+        ctx.lineTo(wv.x + Math.cos(an) * wv.r, wv.y + Math.sin(an) * wv.r);
+      }
+    } else {
+      ctx.arc(wv.x, wv.y, Math.max(0, wv.r), 0, Math.PI * 2);
+    }
     ctx.stroke();
   }
 }
@@ -627,6 +826,7 @@ function frame(now: number) {
   const dt = Math.min(3, (now - last) / (1000 / 60));
   last = now;
   fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
+  audio.genre = settings.audioGenre;
   audio.update(now);
   if (!paused) {
     step(dt);
@@ -656,12 +856,20 @@ const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', '
 const RENDERS: [string, string][] = [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['audio', 'Music energy']];
 
-const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['shockwave', 'Shockwave'], ['implode', 'Implode'], ['none', 'Off']];
+const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
+// Genre presets set how hits are detected and what each one does. They
+// only touch audio settings.
 const AUDIO_PRESETS: [string, Partial<Settings>][] = [
-  ['Breathe', { audioSpeed: 0.2, audioFlow: 0.4, audioPulse: 0.9, audioBeat: 'none' }],
-  ['Pulse', { audioSpeed: 0.4, audioFlow: 0.5, audioPulse: 0.6, audioBeat: 'ripple', audioWaveAt: 'centre' }],
-  ['Club', { audioSpeed: 0.9, audioFlow: 1, audioPulse: 1.2, audioBeat: 'shockwave', audioWaveAt: 'random' }],
+  ['Rap', { audioGenre: 'hiphop', audioKick: 'pulse', audioPulse: 0.8, audioSnare: 'wave', audioHats: 'none', audioHits: 0.6, audioSub: 'size', audioSubAmt: 0.7, audioSpeed: 0.3, audioFlow: 0.4 }],
+  ['Drill', { audioGenre: 'hiphop', audioKick: 'pulse', audioPulse: 0.6, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.3, audioFlow: 0.3 }],
+  ['Drum & bass', { audioGenre: 'dnb', audioKick: 'pulse', audioPulse: 0.5, audioSnare: 'wave', audioHats: 'sparkle', audioHits: 0.5, audioSub: 'speed', audioSubAmt: 0.6, audioSpeed: 0.5, audioFlow: 0.8 }],
+  ['Afro', { audioGenre: 'afro', audioKick: 'pulse', audioPulse: 0.6, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.4, audioSub: 'flow', audioSubAmt: 0.5, audioSpeed: 0.3, audioFlow: 0.6 }],
+  ['Techno', { audioGenre: 'techno', audioKick: 'both', audioPulse: 0.7, audioBeat: 'mix', audioWaveAt: 'orbit', audioWaveEvery: 1, audioWaveReach: 0.8, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.4, audioSub: 'none', audioSpeed: 0.2, audioFlow: 0.3 }],
+  ['Breathe', { audioGenre: 'general', audioKick: 'pulse', audioPulse: 0.9, audioSnare: 'none', audioHats: 'none', audioSub: 'size', audioSubAmt: 0.4, audioSpeed: 0.15, audioFlow: 0.3 }],
 ];
+const GENRES: [string, string][] = [['general', 'Any music'], ['hiphop', 'Rap / trap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afrobeats / amapiano'], ['techno', 'Techno / house']];
+const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick === 'both';
+const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
 
 const hasFlow = () => settings.flow > 0;
@@ -696,14 +904,31 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
   { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
 
-  { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] },
+  { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : `, ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
   { kind: 'audio' },
   { kind: 'buttons', buttons: AUDIO_PRESETS.map(([name, p]) => [name, () => { Object.assign(settings, p); changed(new Set(Object.keys(p) as (keyof Settings)[])); }]) },
+  { kind: 'select', key: 'audioGenre', label: 'Tuned for', options: GENRES },
+  { kind: 'sub', label: 'Kick' },
+  { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['none', 'Nothing']] },
+  { kind: 'range', key: 'audioPulse', label: 'Pulse strength', min: 0, max: 2, step: 0.05, format: pct, show: kickPulse },
+  { kind: 'select', key: 'audioBeat', label: 'Wave type', options: BEAT_ACTIONS, show: kickWave },
+  { kind: 'select', key: 'audioWaveAt', label: 'Waves from', options: [['centre', 'Centre'], ['orbit', 'Orbit the centre'], ['mirror', 'Mirrored pair'], ['corners', 'Corners in turn'], ['pointer', 'Pointer'], ['random', 'Random spot']], show: () => kickWave() && settings.audioBeat !== 'sweep' },
+  { kind: 'range', key: 'audioWaveEvery', label: 'Every', min: 1, max: 8, step: 1, format: (v) => (v === 1 ? 'kick' : `${v} kicks`), show: kickWave },
+  { kind: 'range', key: 'audioWaveForce', label: 'Wave strength', min: 0.1, max: 3, step: 0.05, format: pct, show: kickWave },
+  { kind: 'range', key: 'audioWaveSpeed', label: 'Wave speed', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: kickWave },
+  { kind: 'range', key: 'audioWaveReach', label: 'Wave reach', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: kickWave },
+  { kind: 'range', key: 'audioWaveWidth', label: 'Wave width', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: kickWave },
+  { kind: 'toggle', key: 'audioWaveAccent', label: 'Louder kicks make bigger waves', show: kickWave },
+  { kind: 'sub', label: 'Snare, clap & hi-hats' },
+  { kind: 'select', key: 'audioSnare', label: 'Snare does', options: [['swirl', 'Swirl'], ['wave', 'Ripple'], ['flash', 'Flash'], ['none', 'Nothing']] },
+  { kind: 'select', key: 'audioHats', label: 'Hi-hats do', options: [['sparkle', 'Sparkle'], ['none', 'Nothing']] },
+  { kind: 'range', key: 'audioHits', label: 'Hit strength', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.audioSnare !== 'none' || settings.audioHats !== 'none' },
+  { kind: 'sub', label: '808 & sub bass' },
+  { kind: 'select', key: 'audioSub', label: 'Sub swells', options: [['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed'], ['none', 'Nothing']] },
+  { kind: 'range', key: 'audioSubAmt', label: 'Sub strength', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.audioSub !== 'none' },
+  { kind: 'sub', label: 'Overall energy' },
   { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct },
   { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct },
-  { kind: 'range', key: 'audioPulse', label: 'Bass pulse', min: 0, max: 2, step: 0.05, format: pct },
-  { kind: 'select', key: 'audioBeat', label: 'Beat waves', options: BEAT_ACTIONS },
-  { kind: 'select', key: 'audioWaveAt', label: 'Waves from', options: [['centre', 'Centre'], ['pointer', 'Pointer'], ['random', 'Random spot']], show: () => settings.audioBeat !== 'none' },
 
   { kind: 'section', id: 'look', label: 'Look', open: true,
     summary: () => `${label(RENDERS, settings.render)}, ${(PALETTES[settings.palette] as PaletteDef).label}` },
@@ -937,13 +1162,19 @@ function renderAudio() {
       <button type="button" data-src="off">Stop</button>
     </div>
     <input type="file" accept="audio/*" hidden />
-    <div class="meter" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="meter" aria-hidden="true">
+      <span>Sub</span><i></i><span>Bass</span><i></i><span>Mid</span><i></i><span>High</span><i></i>
+    </div>
+    <div class="hits" aria-hidden="true"><b>Kick</b><b>Snare</b><b>Hat</b><em></em></div>
     <p class="audio-status">Off</p>
     <p class="audio-help"></p>`;
   const fileInput = wrap.querySelector<HTMLInputElement>('input[type=file]')!;
   const status = wrap.querySelector<HTMLElement>('.audio-status')!;
   const help = wrap.querySelector<HTMLElement>('.audio-help')!;
   const bars = [...wrap.querySelectorAll<HTMLElement>('.meter i')];
+  const hits = [...wrap.querySelectorAll<HTMLElement>('.hits b')];
+  const bpmEl = wrap.querySelector<HTMLElement>('.hits em')!;
+  let hatGlow = 0;
   const buttons = [...wrap.querySelectorAll<HTMLButtonElement>('[data-src]')];
 
   const HELP: Record<string, string> = {
@@ -985,8 +1216,12 @@ function renderAudio() {
 
   const tick = () => {
     const L = audio.levels;
-    [L.bass, L.mid, L.treble].forEach((v, k) => (bars[k].style.transform = `scaleX(${v.toFixed(3)})`));
+    [L.sub, L.bass, L.mid, L.treble].forEach((v, k) => (bars[k].style.transform = `scaleX(${v.toFixed(3)})`));
     wrap.classList.toggle('beat', L.beat);
+    // Hit lights stay lit briefly so single-frame hits are visible.
+    [L.pulse, L.snareEnv, L.hat ? 1 : hatGlow * 0.8].forEach((v, k) => (hits[k].style.opacity = String(0.25 + 0.75 * Math.min(1, v))));
+    hatGlow = L.hat ? 1 : hatGlow * 0.8;
+    bpmEl.textContent = audio.source !== 'off' && L.bpm ? `${L.bpm} BPM` : '';
     requestAnimationFrame(tick);
   };
   tick();

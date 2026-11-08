@@ -7,6 +7,32 @@
 
 export type AudioSource = 'off' | 'mic' | 'tab' | 'file';
 
+// Detector tuning per style of music. Cooldowns stop one hit triggering
+// twice; sensitivity is how many standard deviations above normal a
+// band's jump must be to count as a hit (lower = more hits).
+export type Genre = 'general' | 'hiphop' | 'dnb' | 'afro' | 'techno';
+
+interface Tuning {
+  kick: [number, number]; // Hz range for the kick
+  cooldown: { kick: number; snare: number; hat: number }; // ms
+  sensitivity: number;
+  bpm: [number, number]; // range the tempo estimate is folded into
+}
+
+export const TUNING: Record<Genre, Tuning> = {
+  // A bit of everything.
+  general: { kick: [45, 130], cooldown: { kick: 250, snare: 200, hat: 90 }, sensitivity: 2, bpm: [80, 160] },
+  // Rap, trap, drill: long 808s carry the low end, so the kick band skips
+  // the deepest sub and the 808 is tracked separately. Half-time snares.
+  hiphop: { kick: [50, 120], cooldown: { kick: 180, snare: 280, hat: 70 }, sensitivity: 2.2, bpm: [60, 160] },
+  // Drum & bass: fast broken beats around 170-175 BPM, so short cooldowns.
+  dnb: { kick: [45, 120], cooldown: { kick: 140, snare: 170, hat: 60 }, sensitivity: 1.8, bpm: [160, 180] },
+  // Afrobeats / amapiano: log drums sit higher, percussion is busy.
+  afro: { kick: [50, 180], cooldown: { kick: 200, snare: 150, hat: 80 }, sensitivity: 1.9, bpm: [95, 125] },
+  // Techno: four-on-the-floor, so one kick per beat at 120-150 BPM.
+  techno: { kick: [40, 110], cooldown: { kick: 320, snare: 300, hat: 100 }, sensitivity: 2, bpm: [118, 150] },
+};
+
 export interface AudioLevels {
   // Smoothed loudness per band, auto-gained to 0..1. Good for meters and
   // colour, but a typical song sits high here most of the time.
@@ -14,23 +40,59 @@ export interface AudioLevels {
   bass: number;
   mid: number;
   treble: number;
+  // Sustained sub-bass (808s, reese bass, sub lines), auto-gained, with a
+  // slow release so it reads as a swell rather than flicker.
+  sub: number;
   // How far each band is above its own average of the last few seconds,
   // 0..1. Zero in a steady section, high on hits, drops and builds. This
   // is what motion should follow, so it reacts to the music's changes.
   liftLevel: number;
   liftMid: number;
-  // Beat envelope: jumps on a detected kick (by its strength) and decays
+  // Hit envelopes: jump on a detected hit (by its strength) and decay
   // smoothly, so effects get a clean, predictable shape.
-  pulse: number;
-  beat: boolean; // true on the frame a kick is detected
+  pulse: number; // kick
+  snareEnv: number;
+  // True on the frame a hit is detected.
+  beat: boolean; // kick
+  snare: boolean;
+  hat: boolean;
+  bpm: number; // 0 until there are enough kicks to estimate
 }
 
-const ZERO: AudioLevels = { level: 0, bass: 0, mid: 0, treble: 0, liftLevel: 0, liftMid: 0, pulse: 0, beat: false };
+const ZERO: AudioLevels = {
+  level: 0, bass: 0, mid: 0, treble: 0, sub: 0, liftLevel: 0, liftMid: 0,
+  pulse: 0, snareEnv: 0, beat: false, snare: false, hat: false, bpm: 0,
+};
 
-const BANDS = { bass: [25, 160], mid: [160, 2000], treble: [2000, 9000] } as const;
+const BANDS = { bass: [25, 160], mid: [160, 2000], treble: [2000, 9000], sub: [28, 60], snare: [1500, 5000], hat: [7000, 14000] } as const;
+
+// Onset detector for one band: spectral flux (how much the band rose
+// since the last frame) compared with an adaptive mean + k·std threshold.
+class Onset {
+  private prev = 0;
+  private mean = 0;
+  private variance = 0;
+  private last = -1e9;
+
+  /** Returns hit strength 0..1, or 0 for no hit. */
+  test(value: number, now: number, k: number, cooldown: number, floor: number) {
+    const flux = Math.max(0, value - this.prev);
+    this.prev = value;
+    const dev = flux - this.mean;
+    this.mean += dev * 0.05;
+    this.variance = this.variance * 0.95 + dev * dev * 0.05;
+    const threshold = this.mean + k * Math.sqrt(this.variance) + 0.008;
+    if (flux > threshold && value > floor && now - this.last > cooldown) {
+      this.last = now;
+      return Math.min(1, 0.45 + flux / (threshold * 2.5));
+    }
+    return 0;
+  }
+}
 
 export class AudioInput {
   source: AudioSource = 'off';
+  genre: Genre = 'general';
   levels: AudioLevels = { ...ZERO };
   onChange: (status: string) => void = () => {};
 
@@ -42,12 +104,10 @@ export class AudioInput {
   private freq = new Uint8Array(0);
   // Running peaks per band act as automatic gain, so quiet and loud
   // sources both use the full 0..1 range.
-  private peaks = { bass: 0.2, mid: 0.2, treble: 0.2, level: 0.2 };
+  private peaks = { bass: 0.2, mid: 0.2, treble: 0.2, level: 0.2, sub: 0.2 };
   private avg = { level: 0, mid: 0 };
-  private prevBass = 0;
-  private fluxMean = 0;
-  private fluxVar = 0;
-  private lastBeat = 0;
+  private onsets = { kick: new Onset(), snare: new Onset(), hat: new Onset() };
+  private kickTimes: number[] = []; // kick and snare hit times, for tempo
 
   async start(source: Exclude<AudioSource, 'off'>, file?: File) {
     this.stop();
@@ -55,8 +115,10 @@ export class AudioInput {
       this.ctx = new AudioContext();
       await this.ctx.resume();
       this.analyser = this.ctx.createAnalyser();
-      this.analyser.fftSize = 2048;
-      this.analyser.smoothingTimeConstant = 0.55;
+      // 4096 points gives ~11 Hz bins, fine enough to separate sub from kick.
+      this.analyser.fftSize = 4096;
+      // Light smoothing: onsets need sharp edges; envelopes smooth later.
+      this.analyser.smoothingTimeConstant = 0.3;
       this.freq = new Uint8Array(this.analyser.frequencyBinCount);
 
       // Raw signal: the voice processing browsers apply to mics by
@@ -113,6 +175,7 @@ export class AudioInput {
     this.ctx = this.analyser = this.node = this.stream = this.element = null;
     this.source = 'off';
     this.levels = { ...ZERO };
+    this.kickTimes = [];
     if (wasOn) this.onChange('Off');
   }
 
@@ -120,7 +183,7 @@ export class AudioInput {
   update(now: number) {
     const a = this.analyser;
     const L = this.levels;
-    L.beat = false;
+    L.beat = L.snare = L.hat = false;
     if (!a || !this.ctx) return;
     a.getByteFrequencyData(this.freq);
 
@@ -133,15 +196,18 @@ export class AudioInput {
       return sum / ((to - from + 1) * 255);
     };
 
-    const raw = { bass: band(BANDS.bass), mid: band(BANDS.mid), treble: band(BANDS.treble), level: 0 };
+    const raw = {
+      bass: band(BANDS.bass), mid: band(BANDS.mid), treble: band(BANDS.treble), sub: band(BANDS.sub), level: 0,
+    };
     raw.level = raw.bass * 0.5 + raw.mid * 0.35 + raw.treble * 0.15;
 
-    for (const k of ['bass', 'mid', 'treble', 'level'] as const) {
+    for (const k of ['bass', 'mid', 'treble', 'level', 'sub'] as const) {
       // Peaks rise instantly and fall slowly; a floor keeps silence silent.
       this.peaks[k] = Math.max(raw[k], this.peaks[k] * 0.999, 0.08);
       const v = Math.min(1, raw[k] / this.peaks[k]);
-      // Quick attack, gentle release.
-      L[k] = v > L[k] ? L[k] * 0.4 + v * 0.6 : L[k] * 0.92 + v * 0.08;
+      // Quick attack, gentle release (slower still for the sub swell).
+      const release = k === 'sub' ? 0.96 : 0.92;
+      L[k] = v > L[k] ? L[k] * 0.4 + v * 0.6 : L[k] * release + v * (1 - release);
     }
 
     // Lift: the band relative to its ~3 second average.
@@ -152,23 +218,61 @@ export class AudioInput {
       L[key] = L[key] * 0.85 + lift * 0.15;
     }
 
-    // Kick detection by spectral flux: how much the bass rose since last
-    // frame, compared with how much it usually moves (mean + 2 std devs
-    // over roughly the last second).
-    const flux = Math.max(0, raw.bass - this.prevBass);
-    this.prevBass = raw.bass;
-    const dev = flux - this.fluxMean;
-    this.fluxMean += dev * 0.05;
-    this.fluxVar = this.fluxVar * 0.95 + dev * dev * 0.05;
-    const threshold = this.fluxMean + 2 * Math.sqrt(this.fluxVar) + 0.01;
-    if (flux > threshold && raw.bass > 0.1 && now - this.lastBeat > 260) {
-      L.beat = true;
-      this.lastBeat = now;
-      L.pulse = Math.max(L.pulse, Math.min(1, 0.5 + flux / (threshold * 2)));
-    } else {
-      L.pulse *= 0.9;
+    // Hits per band.
+    const tu = TUNING[this.genre];
+    const kick = this.onsets.kick.test(band(tu.kick), now, tu.sensitivity, tu.cooldown.kick, 0.1);
+    // Snares and claps are loudest in 1.5-5 kHz; hats spill into that band
+    // too but are stronger above 7 kHz, so subtract some of the hat band.
+    const hatSig = band(BANDS.hat);
+    const snareSig = Math.max(0, band(BANDS.snare) - hatSig * 0.8);
+    const snare = this.onsets.snare.test(snareSig, now, tu.sensitivity * 1.1, tu.cooldown.snare, 0.03);
+    const hat = this.onsets.hat.test(hatSig, now, tu.sensitivity * 0.9, tu.cooldown.hat, 0.005);
+
+    L.beat = kick > 0;
+    L.snare = snare > 0;
+    L.hat = hat > 0;
+    L.pulse = kick > 0 ? Math.max(L.pulse, kick) : L.pulse * 0.9;
+    L.snareEnv = snare > 0 ? Math.max(L.snareEnv, snare) : L.snareEnv * 0.88;
+
+    if (kick > 0 || snare > 0) {
+      this.kickTimes.push(now);
+      while (this.kickTimes.length && now - this.kickTimes[0] > 8000) this.kickTimes.shift();
+      L.bpm = estimateBpm(this.kickTimes, tu.bpm);
     }
   }
+}
+
+// Tempo by comb matching: for each candidate BPM in the genre's range,
+// score how well the gaps between all recent hit pairs land on whole (or
+// half) beats. Works with syncopated drill/breakbeat kicks, where the
+// plain median gap would be off.
+function estimateBpm(times: number[], [lo, hi]: [number, number]) {
+  if (times.length < 8) return 0;
+  const t = times.map((x) => x / 1000);
+  let best = 0;
+  let bestScore = -1;
+  for (let bpm = lo; bpm <= hi; bpm += 0.5) {
+    const P = 60 / bpm;
+    let score = 0;
+    let pairs = 0;
+    for (let i = 0; i < t.length; i++) {
+      for (let j = i + 1; j < t.length; j++) {
+        const d = t[j] - t[i];
+        if (d > 4) break;
+        const x = d / P;
+        const f = x - Math.round(x);
+        const g = 2 * x - Math.round(2 * x);
+        score += Math.exp(-(f * f) / 0.0128) + 0.5 * Math.exp(-(g * g) / 0.0128);
+        pairs++;
+      }
+    }
+    score /= pairs || 1;
+    if (score > bestScore + 1e-6) {
+      bestScore = score;
+      best = bpm;
+    }
+  }
+  return Math.round(best);
 }
 
 export const tabAudioSupported = () => typeof navigator.mediaDevices?.getDisplayMedia === 'function';
