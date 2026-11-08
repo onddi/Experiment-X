@@ -1188,15 +1188,18 @@ function drawRibbons(list: number[], k: number, s: number) {
   ctx.strokeStyle = shades[k];
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  const PASSES = 3;
+  const PASSES = 2;
+  // Stroking cost grows with segments, so long ribbons skip points: at most
+  // about 8 segments each, whatever the length.
+  const stride = Math.max(1, Math.round(L / 9));
   const per = Math.ceil((L - 1) / PASSES);
   const a0 = ctx.globalAlpha;
   for (let pass = 0; pass < PASSES; pass++) {
     const from = pass * per;
     const to = Math.min(L - 1, from + per);
     if (from >= to) break;
-    ctx.lineWidth = Math.max(0.5, s * (1 - pass * 0.3));
-    ctx.globalAlpha = a0 * (1 - pass * 0.3);
+    ctx.lineWidth = Math.max(0.5, s * (1 - pass * 0.45));
+    ctx.globalAlpha = a0 * (1 - pass * 0.45);
     ctx.beginPath();
     for (const i of list) {
       const base = i * L;
@@ -1208,14 +1211,14 @@ function drawRibbons(list: number[], k: number, s: number) {
       let x0 = hist[(base + slot) * 2] + offx;
       let y0 = hist[(base + slot) * 2 + 1] + offy;
       ctx.moveTo(x0, y0);
-      for (let q = from + 1; q <= to; q++) {
+      for (let q = Math.min(to, from + stride); q <= to; q = q === to ? to + 1 : Math.min(to, q + stride)) {
         slot = (histHead - q + L) % L;
         const x1 = hist[(base + slot) * 2] + offx;
         const y1 = hist[(base + slot) * 2 + 1] + offy;
         const dx = x1 - x0;
         const dy = y1 - y0;
         // A big jump means a wrap or a respawn: break the ribbon there.
-        if (dx * dx + dy * dy > 2500) break;
+        if (dx * dx + dy * dy > 2500 * stride * stride) break;
         ctx.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
         x0 = x1;
         y0 = y1;
@@ -1888,6 +1891,8 @@ function updateSizes() {
 const FADE_LEVELS = 6;
 const fadeBuckets: number[][][] = Array.from({ length: FADE_LEVELS }, () => Array.from({ length: SHADES }, () => []));
 
+const ribbonMerge: number[] = [];
+
 function drawBuckets(bks: number[][], s: number) {
   if (settings.render === 'mixed') {
     // Each particle keeps one style from the mix, picked by its index.
@@ -1899,6 +1904,15 @@ function drawBuckets(bks: number[][], s: number) {
       for (const p of parts) p.length = 0;
       for (const i of list) parts[(styleHash(i) * mix.length) | 0].push(i);
       mix.forEach((st, m) => parts[m].length && drawStyle(st, parts[m], k, s));
+    }
+  } else if (settings.render === 'ribbons') {
+    // Each ribbon pass is a separate stroke, so merge colour buckets into
+    // groups of four to keep the number of strokes down.
+    for (let k = 0; k < SHADES; k += 4) {
+      const merged = ribbonMerge;
+      merged.length = 0;
+      for (let q = k; q < k + 4; q++) for (const i of bks[q]) merged.push(i);
+      if (merged.length) drawRibbons(merged, k + 2, s);
     }
   } else {
     for (let k = 0; k < SHADES; k++) if (bks[k].length) drawStyle(settings.render, bks[k], k, s);
@@ -2469,12 +2483,12 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Comet shower', { count: 600, size: 2, render: 'comets', flow: 0.9, flowScale: 0.003, flowSpeed: 0.3, speed: 1.8, trail: 0.5, friction: 0.02, jitter: 0.02, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 200, force: 0.8, click: 'shockwave' }],
   ['Galaxy', { count: 3000, size: 1.4, render: 'sparkles', flow: 0.2, flowScale: 0.003, flowSpeed: 0.1, trail: 0.8, friction: 0.03, jitter: 0.02, palette: 'cosmic', colorBy: 'pointer', glow: true, pointerMode: 'vortex', radius: 320, force: 0.9, click: 'gather' }],
   ['Bubbles', { count: 260, size: 5.5, render: 'rings', gravity: -0.15, flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0, friction: 0.05, jitter: 0.04, palette: 'pastel', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 0.5, click: 'emit' }],
-  ['Campfire', { count: 2500, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.4, flowType: 'curl', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
+  ['Campfire', { count: 1800, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.4, flowType: 'curl', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
   ['Pulse rings', { count: 3000, size: 1.4, render: 'streaks', emitter: 'ring', emitMode: 'burst', burstEvery: 1.6, burstSize: 0.3, emitSize: 60, emitOut: true, launchSpeed: 3, launchSpread: 0, lifespan: 3, lifeFade: 'out', flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.02, jitter: 0, palette: 'neon', colorBy: 'age', glow: true, pointerMode: 'vortex', radius: 200, force: 0.6 }],
   ['Hello', { count: 4000, size: 1.4, render: 'dots', shape: 'text', shapeText: 'HELLO', shapeSize: 0.8, homeStrength: 1, shapeCycle: 10, flow: 0.6, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.3, trail: 0.75, friction: 0.04, jitter: 0.02, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Starlings', { count: 700, size: 2, render: 'arrows', flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, trail: 0.55, friction: 0.01, jitter: 0.06, palette: 'ice', colorBy: 'direction', glow: false, pointerMode: 'repel', radius: 160, force: 1, click: 'shockwave' }],
   ['Silk ribbons', { count: 600, size: 1.6, render: 'ribbons', ribbonLen: 24, flow: 1, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, trail: 0, friction: 0.05, jitter: 0.01, palette: 'tealorange', colorBy: 'direction', glow: true, pointerMode: 'vortex', radius: 200, force: 0.7, click: 'ripple' }],
-  ['Deep space', { count: 3000, size: 2, render: 'glow', depth: 1, depthParallax: 0.8, flow: 0.2, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.1, speed: 0.8, trail: 0.3, friction: 0.03, jitter: 0.01, wind: 0.15, windDir: 180, palette: 'cosmic', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 160, force: 0.5, click: 'ripple' }],
+  ['Deep space', { count: 2000, size: 2, render: 'glow', depth: 1, depthParallax: 0.8, flow: 0.2, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.1, speed: 0.8, trail: 0.3, friction: 0.03, jitter: 0.01, wind: 0.15, windDir: 180, palette: 'cosmic', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 160, force: 0.5, click: 'ripple' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
