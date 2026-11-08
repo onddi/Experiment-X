@@ -97,6 +97,7 @@ interface Settings {
   ribbonLen: number;
   morph: number;
   beatSnap: boolean;
+  shuffleCards: boolean;
   depth: number;
   depthParallax: number;
   trail: number;
@@ -279,6 +280,7 @@ const DEFAULTS: Settings = {
   ribbonLen: 14,
   morph: 1,
   beatSnap: false,
+  shuffleCards: false,
   depth: 0,
   depthParallax: 0.5,
   trail: 0.75,
@@ -2733,11 +2735,12 @@ const CONTROLS: Control[] = [
 
   // How switching between looks feels. Not part of any look: presets keep these.
   { kind: 'section', id: 'transitions', label: 'Transitions', tab: 'look',
-    summary: () => [settings.morph > 0 ? `${settings.morph.toFixed(1)}s morph` : 'instant', `snap ${settings.homeStrength.toFixed(1)}×`, settings.beatSnap ? 'on the beat' : ''].filter(Boolean).join(' · ') },
+    summary: () => [settings.morph > 0 ? `${settings.morph.toFixed(1)}s morph` : 'instant', `snap ${settings.homeStrength.toFixed(1)}×`, settings.beatSnap ? 'on the beat' : '', settings.shuffleCards ? 'wild shuffle' : ''].filter(Boolean).join(' · ') },
   { kind: 'range', key: 'morph', label: 'Morph time', min: 0, max: 4, step: 0.1, format: (v) => (v === 0 ? 'instant' : `${v.toFixed(1)}s`) },
   { kind: 'range', key: 'homeStrength', label: 'Snap to shape', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'beatSnap', label: 'Switch on the next kick drum' },
-  { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Presets don\'t change these.' },
+  { kind: 'toggle', key: 'shuffleCards', label: 'Shuffle also switches cards on and off' },
+  { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Presets don\'t change these.' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
@@ -2958,7 +2961,7 @@ const CONTROLS: Control[] = [
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
       ['Scatter (S)', ICONS.scatter, scatter],
       ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle],
-      ['Reset to defaults', ICONS.reset, reset],
+      ['Reset to defaults and clear locks', ICONS.reset, reset],
     ],
   },
 ];
@@ -3012,6 +3015,7 @@ const MUSIC_KEYS = ['audioVibeLook', 'audioDrop', 'audioDropBuild', 'audioVj', '
 const playSettings = (): Partial<Settings> => ({
   morph: settings.morph,
   beatSnap: settings.beatSnap,
+  shuffleCards: settings.shuffleCards,
   homeStrength: settings.homeStrength,
   ...Object.fromEntries(MUSIC_KEYS.map((k) => [k, settings[k]])),
 });
@@ -3315,6 +3319,7 @@ function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
 
 const COLLAPSE_KEY = 'particle-field:folded';
 
+const lockSyncs: (() => void)[] = [];
 function renderControls() {
   let collapsed: Record<string, boolean> = {};
   try {
@@ -3389,6 +3394,7 @@ function renderControls() {
           syncTabDots();
         });
         sync();
+        lockSyncs.push(sync);
         top.append(lockBtn);
       }
       if (ctl.power) {
@@ -3721,7 +3727,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · A gather · S scatter · D shuffle · H hide panel · I debug info.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · A gather · S scatter · D shuffle · Enter type a word · H hide panel · I debug info. Hold a number key to play it only while held.';
   controls.append(keys);
 }
 
@@ -3842,6 +3848,13 @@ function pick<T>(xs: readonly T[]): T {
 }
 
 function shuffle() {
+  // Wild shuffle: each unlocked card with an on/off switch flips a coin first.
+  if (settings.shuffleCards) {
+    for (const ctl of CONTROLS) {
+      if (ctl.kind !== 'section' || !ctl.power || locks.has(ctl.id) || ctl.tab === 'sound') continue;
+      setPower(ctl, Math.random() < (ctl.id === 'shape' ? 0.3 : 0.5));
+    }
+  }
   const r: Partial<Settings> = {
     count: rand(600, 4000, 100),
     size: rand(0.8, 2.6, 0.1),
@@ -4065,8 +4078,16 @@ function showToast(text: string) {
   toastTimer = window.setTimeout(() => el!.classList.remove('show'), 1600);
 }
 
+// Reset is a clean slate: default settings and no locked cards, so the
+// next Shuffle can roll every card.
 function reset() {
+  const had = locks.size;
+  locks.clear();
+  saveLocks();
+  for (const f of lockSyncs) f();
+  syncTabDots();
   apply({}, false);
+  showToast(had ? 'Reset, locks cleared' : 'Reset');
 }
 
 // --- panel toggle & keys -----------------------------------------------------
@@ -4086,10 +4107,22 @@ toggle.addEventListener('click', () => {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (typing) {
+    typingKey(e);
+    return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    startTyping();
+    return;
+  }
   const k = e.key.toLowerCase();
   const digit = /^Digit(\d)$/.exec(e.code) ?? /^Numpad(\d)$/.exec(e.code);
   if (digit) {
     e.preventDefault();
+    if (e.repeat) return;
+    // Remember the look before, so holding the key can come back to it.
+    if (!e.shiftKey && myPresets.some((o) => o.key === digit[1])) held = { code: e.code, prev: snapshot(), at: performance.now() };
     numberKey(digit[1], e.shiftKey);
     return;
   }
@@ -4104,6 +4137,85 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'h') toggle.click();
   else if (k === 'i') toggleDebug();
 });
+
+// Holding a number key plays its preset only while held: let go after
+// more than half a second and the previous look comes back.
+let held: { code: string; prev: Partial<Settings>; at: number } | null = null;
+window.addEventListener('keyup', (e) => {
+  if (!held || e.code !== held.code) return;
+  if (performance.now() - held.at > 450) {
+    apply(held.prev, false);
+    showToast('Back');
+  }
+  held = null;
+});
+
+// --- typing mode (Enter) -----------------------------------------------------------
+// Particles spell what you type, each letter growing out of the last word.
+let typing: { shape: Settings['shape']; text: string; buf: string } | null = null;
+
+function typingBar() {
+  let el = document.getElementById('typing');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'typing';
+    el.className = 'typing';
+    document.getElementById('stage')!.append(el);
+  }
+  return el;
+}
+
+function showTyped() {
+  if (!typing) return;
+  typingBar().textContent = `${typing.buf}▍   Enter keeps · Esc cancels`;
+  const t = typing.buf.trim() ? typing.buf : ' ';
+  const keys = new Set<keyof Settings>(['shapeText']);
+  const wasFree = settings.shape !== 'text';
+  if (wasFree) {
+    settings.shape = 'text';
+    keys.add('shape');
+  }
+  settings.shapeText = t;
+  if (settings.morph > 0) glideHomes = { ms: settings.morph * 1000, fromFree: wasFree };
+  changed(keys);
+  glideHomes = null;
+}
+
+function startTyping() {
+  typing = { shape: settings.shape, text: settings.shapeText, buf: '' };
+  typingBar().classList.add('on');
+  typingBar().textContent = '▍   Type a word · Enter keeps · Esc cancels';
+}
+
+function stopTyping(keep: boolean) {
+  if (!typing) return;
+  const t = typing;
+  typing = null;
+  typingBar().classList.remove('on');
+  if (!keep || !t.buf.trim()) {
+    settings.shape = t.shape;
+    settings.shapeText = t.text;
+    changed(new Set<keyof Settings>(['shape', 'shapeText']));
+  }
+  showToast(keep && t.buf.trim() ? `“${t.buf.trim()}”` : 'Typing off');
+}
+
+function typingKey(e: KeyboardEvent) {
+  if (!typing) return;
+  if (e.key === 'Enter' || e.key === 'Escape') {
+    e.preventDefault();
+    stopTyping(e.key === 'Enter');
+    return;
+  }
+  if (e.key === 'Backspace') {
+    e.preventDefault();
+    typing.buf = typing.buf.slice(0, -1);
+  } else if (e.key.length === 1 && typing.buf.length < 24) {
+    e.preventDefault();
+    typing.buf += e.key;
+  } else return;
+  showTyped();
+}
 
 // --- debug overlay (I) ------------------------------------------------------------
 // Where the time goes and which costly settings are on, to find out why a

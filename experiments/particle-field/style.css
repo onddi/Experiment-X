@@ -512,3 +512,23 @@ button:hover, select:hover { border-color: #3c3f46; }
   white-space: pre-wrap;
   pointer-events: none;
 }
+
+/* Typing mode: what you type, bottom centre. */
+.typing {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  z-index: 6;
+  transform: translate(-50%, 6px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgb(20 21 26 / 0.75);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  color: #fff;
+  font: 13px ui-monospace, Menlo, monospace;
+  white-space: pre;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.typing.on { opacity: 1; transform: translate(-50%, 0); }
