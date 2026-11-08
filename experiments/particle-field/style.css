@@ -478,6 +478,9 @@ button:hover, select:hover { border-color: #3c3f46; }
 /* My presets: one compact row each. */
 .mine-list { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
 .mine-list .mine { min-width: 0; }
+.mine.cur > button:not(.del) { color: var(--accent); border-color: color-mix(in oklch, var(--accent) 55%, transparent); }
+.update-mine { width: 100%; margin-top: 8px; padding: 7px 10px; border-radius: 7px; border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent); background: color-mix(in oklch, var(--accent) 14%, transparent); color: var(--text, inherit); font: inherit; font-size: 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.update-mine:hover { background: color-mix(in oklch, var(--accent) 24%, transparent); }
 .mypresets > span:empty { display: none; }
 
 /* Folding cards from their header. */

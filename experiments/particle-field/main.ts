@@ -3338,6 +3338,10 @@ const playSettings = (): Partial<Settings> => ({
 
 // Presets go through here: they glide over (Morph) and can wait for the beat.
 function apply(p: Partial<Settings>, keepAudio = true) {
+  if (currentMine) {
+    currentMine = null;
+    redrawMine();
+  }
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings() } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
     pendingLook = { target, since: performance.now() };
@@ -4243,6 +4247,15 @@ function saveLocks() {
 const MY_PRESETS_KEY = 'particle-field:my-presets';
 type MyPreset = { name: string; settings: Partial<Settings>; key?: string };
 let myPresets: MyPreset[] = readJson<MyPreset[]>(MY_PRESETS_KEY, []);
+// The preset of yours you played last, so Update can save over it in one tap.
+let currentMine: MyPreset | null = null;
+function updateMine(p: MyPreset) {
+  p.settings = snapshot();
+  writeJson(MY_PRESETS_KEY, myPresets);
+  currentMine = p;
+  redrawMine();
+  showToast(`Updated ${p.key ? p.key + '  ' : ''}${p.name}`);
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -4261,7 +4274,8 @@ function writeJson(key: string, v: unknown) {
 
 // Saved presets store the whole look and motion plus the audio reaction.
 function snapshot(): Partial<Settings> {
-  const { audioFineTune: _skip, ...rest } = settings;
+  // Mid-morph, save where the look is heading, not the halfway values.
+  const { audioFineTune: _skip, ...rest } = { ...settings, ...(morphState?.to ?? {}) } as Settings;
   return { ...rest };
 }
 
@@ -4276,7 +4290,7 @@ function renderMyPresets() {
       list.className = 'mine-list';
       myPresets.forEach((p, idx) => {
         const item = document.createElement('div');
-        item.className = 'mine';
+        item.className = p === currentMine ? 'mine cur' : 'mine';
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = p.name;
@@ -4322,6 +4336,16 @@ function renderMyPresets() {
       });
       wrap.append(h, list);
     }
+    if (currentMine && myPresets.includes(currentMine)) {
+      const cur = currentMine;
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'update-mine';
+      up.textContent = `Save changes to ${cur.key ? cur.key + ' · ' : ''}${cur.name}`;
+      up.title = cur.key ? `Saves the current look over this preset (Shift+${cur.key} does the same)` : 'Saves the current look over this preset';
+      up.addEventListener('click', () => updateMine(cur));
+      wrap.append(up);
+    }
     const form = document.createElement('form');
     form.className = 'save';
     form.innerHTML = '<input type="text" maxlength="8000" placeholder="Name this look…" aria-label="Preset name" /><button type="submit">Save</button>';
@@ -4346,6 +4370,7 @@ function renderMyPresets() {
       const existing = myPresets.findIndex((p) => p.name === name);
       if (existing >= 0) myPresets[existing].settings = snapshot();
       else myPresets.push({ name, settings: snapshot() });
+      currentMine = myPresets[existing >= 0 ? existing : myPresets.length - 1];
       writeJson(MY_PRESETS_KEY, myPresets);
       draw();
     });
@@ -4380,6 +4405,10 @@ function presetFromUrl(first: boolean) {
     settings.morph = morph;
     settings.beatSnap = beatSnap;
   } else apply(p, false);
+  if (mine) {
+    currentMine = mine;
+    redrawMine();
+  }
   showToast(mine ? `${mine.key ? mine.key + '  ' : ''}${mine.name}` : built![0]);
 }
 
@@ -4388,6 +4417,8 @@ let redrawMine = () => {};
 
 function playMine(p: MyPreset) {
   apply(p.settings, false);
+  currentMine = p;
+  redrawMine();
   showToast(`${p.key ? p.key + '  ' : ''}${p.name}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
 }
 
@@ -4401,6 +4432,7 @@ function numberKey(d: string, save: boolean) {
       myPresets.push(p);
     }
     writeJson(MY_PRESETS_KEY, myPresets);
+    currentMine = p;
     redrawMine();
     showToast(`Saved to ${d}: ${p.name}`);
     return;
