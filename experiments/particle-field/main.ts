@@ -452,8 +452,18 @@ function ensureCount() {
     [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz].map(grow);
     cap = want;
   }
+  // With a shape on, newcomers appear beside an existing particle, so they
+  // join the formation instead of flying in from anywhere on screen.
+  const near = settings.shape !== 'none' && n > 0 ? n : 0;
   for (let i = n; i < want; i++) {
-    spawn(i, Math.random() * w, Math.random() * h);
+    if (near) {
+      const j = (Math.random() * near) | 0;
+      spawn(i, px[j] + (Math.random() - 0.5) * 6, py[j] + (Math.random() - 0.5) * 6);
+      // Share its spot until the shape is rebuilt, or the spring would pull
+      // the newcomer to the corner (an unset home is 0, 0).
+      hx[i] = hx[j];
+      hy[i] = hy[j];
+    } else spawn(i, Math.random() * w, Math.random() * h);
     dead[i] = settings.emitter !== 'none' ? 1 : 0;
   }
   n = want;
