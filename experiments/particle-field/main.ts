@@ -3252,7 +3252,15 @@ function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
   changed(new Set(Object.keys(patch) as (keyof Settings)[]));
 }
 
+const COLLAPSE_KEY = 'particle-field:folded';
+
 function renderControls() {
+  let collapsed: Record<string, boolean> = {};
+  try {
+    collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '{}');
+  } catch {
+    /* defaults */
+  }
   let moreOpen: Record<string, boolean> = {};
   try {
     moreOpen = JSON.parse(localStorage.getItem(MORE_KEY) ?? '{}');
@@ -3283,9 +3291,11 @@ function renderControls() {
     if (ctl.kind === 'section') {
       const section = document.createElement('section');
       section.className = 'group';
-      const head = document.createElement('div');
+      // The header folds the card away; folded cards stay folded next time.
+      const head = document.createElement('button');
+      head.type = 'button';
       head.className = 'group-head';
-      head.innerHTML = `<span class="group-title"></span><span class="group-summary"></span>`;
+      head.innerHTML = `<span class="chev" aria-hidden="true"></span><span class="group-title"></span><span class="group-summary"></span>`;
       head.querySelector('.group-title')!.textContent = ctl.label;
       const summary = head.querySelector<HTMLElement>('.group-summary')!;
       body = document.createElement('div');
@@ -3353,6 +3363,26 @@ function renderControls() {
       }
       controls.append(section);
       sectionTabs.push([section, ctl.tab ?? 'look']);
+      {
+        const id = ctl.id;
+        head.setAttribute('aria-controls', body.id);
+        const setOpen = (open: boolean) => {
+          section.classList.toggle('closed', !open);
+          head.setAttribute('aria-expanded', String(open));
+        };
+        setOpen(!collapsed[id]);
+        head.addEventListener('click', () => {
+          const open = section.classList.contains('closed');
+          setOpen(open);
+          if (open) delete collapsed[id];
+          else collapsed[id] = true;
+          try {
+            localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed));
+          } catch {
+            /* not persisted */
+          }
+        });
+      }
       if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
       if (ctl.show) conditional.push([section, ctl.show]);
       continue;
