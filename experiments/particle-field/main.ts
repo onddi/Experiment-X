@@ -170,7 +170,30 @@ interface Settings {
   audioHueAmt: number;
   audioBright: number;
   audioCam: number;
-  audioSpin: 'off' | 'sway' | 'turn';
+  audioSpin: 'off' | 'sway' | 'turn' | 'step' | 'rock' | 'energy';
+  audioCuts: 'off' | 'bar' | '2bars' | '4bars' | 'drop';
+  audioDolly: boolean;
+  audioPan: number;
+  audioRoll: number;
+  audioFlip: boolean;
+  audioTunnel: number;
+  audioTunnelTurn: 'none' | 'left' | 'right' | 'rock';
+  audioKaleido: number;
+  audioKaleidoDrop: boolean;
+  audioEcho: number;
+  audioPalEvery: number;
+  audioMonoBuild: boolean;
+  audioBgFlash: number;
+  audioInvert: boolean;
+  audioStutter: boolean;
+  audioGravFlip: boolean;
+  audioTrailEnergy: number;
+  audioSway: number;
+  audioWordsOn: boolean;
+  audioWords: string;
+  audioWordsEvery: 'bar' | '2bars' | '4bars' | 'drop';
+  audioWordPulse: number;
+  audioLetterHop: number;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -365,6 +388,29 @@ const DEFAULTS: Settings = {
   audioBright: 0,
   audioCam: 0,
   audioSpin: 'off',
+  audioCuts: 'off',
+  audioDolly: false,
+  audioPan: 0,
+  audioRoll: 0,
+  audioFlip: false,
+  audioTunnel: 0,
+  audioTunnelTurn: 'none',
+  audioKaleido: 0,
+  audioKaleidoDrop: false,
+  audioEcho: 0,
+  audioPalEvery: 0,
+  audioMonoBuild: false,
+  audioBgFlash: 0,
+  audioInvert: false,
+  audioStutter: false,
+  audioGravFlip: false,
+  audioTrailEnergy: 0,
+  audioSway: 0,
+  audioWordsOn: false,
+  audioWords: '',
+  audioWordsEvery: 'bar',
+  audioWordPulse: 0,
+  audioLetterHop: 0,
 };
 
 const STORAGE_KEY = 'particle-field:settings';
@@ -1103,6 +1149,8 @@ function step(dt: number) {
     homeK = settings.homeStrength * 0.004 * formed;
   }
   const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
+  const cxW = w / 2;
+  const cyH = h / 2;
   // While an entrance plays, particles follow their gliding spot closely, then
   // the grip eases off over a second to the normal spring.
   let entK = 0;
@@ -1151,7 +1199,8 @@ function step(dt: number) {
       launch(i);
     }
     let ax = (Math.random() - 0.5) * jitterNow;
-    let ay = (Math.random() - 0.5) * jitterNow + settings.gravity * 0.05;
+    let ay = (Math.random() - 0.5) * jitterNow + gravNow * 0.05;
+    ax += swayF;
 
     if (flowNow > 0) {
       flowVec(px[i], py[i]);
@@ -1173,8 +1222,16 @@ function step(dt: number) {
     if (homeK > 0) {
       // Spring towards the home position, with a little extra damping so it
       // settles instead of wobbling forever.
-      ax += (hx[i] - px[i]) * homeK - vx[i] * homeDamp;
-      ay += (hy[i] - py[i]) * homeK - vy[i] * homeDamp;
+      // Word pulse scales the target about the centre with the kick.
+      const tx = wordScale === 1 ? hx[i] : cxW + (hx[i] - cxW) * wordScale;
+      const ty = wordScale === 1 ? hy[i] : cyH + (hy[i] - cyH) * wordScale;
+      ax += (tx - px[i]) * homeK - vx[i] * homeDamp;
+      ay += (ty - py[i]) * homeK - vy[i] * homeDamp;
+      // Letter hop: one letter (a slice of the shape) jumps on each kick.
+      if (hopKick > 0.02 && hopMax > hopMin) {
+        const li = Math.min(hopLetters - 1, (((hx[i] - hopMin) / (hopMax - hopMin + 0.01)) * hopLetters) | 0);
+        if (li === hopIdx) ay -= hopKick * settings.audioLetterHop * 1.2;
+      }
     }
     if (entK > 0) {
       ax += ((hx[i] - px[i]) * 0.06 - vx[i] * 0.4) * entK;
@@ -2643,15 +2700,104 @@ let camA = 0;
 let spinX = new Float32Array(0);
 let spinY = new Float32Array(0);
 
+// Buffers for the view effects (echo, kaleidoscope).
+const echoBuf = document.createElement('canvas');
+const echoCtx = echoBuf.getContext('2d')!;
+const kBuf = document.createElement('canvas');
+const kCtx = kBuf.getContext('2d')!;
+
+// Draw the canvas back onto itself, zoomed and turned about the centre.
+function viewWarp(z: number, rot: number, alpha: number) {
+  const cw = canvas.width;
+  const ch = canvas.height;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = alpha;
+  ctx.globalCompositeOperation = 'copy';
+  ctx.translate(cw / 2, ch / 2);
+  ctx.rotate(rot);
+  ctx.scale(z, z);
+  ctx.drawImage(canvas, -cw / 2, -ch / 2);
+  ctx.restore();
+}
+
+// Kaleidoscope: one wedge of the view, copied and mirrored round the centre.
+// The wedge points along the long side so it has picture all the way out.
+function kaleidoscope(seg: number) {
+  const cw = canvas.width;
+  const ch = canvas.height;
+  if (kBuf.width !== cw || kBuf.height !== ch) {
+    kBuf.width = cw;
+    kBuf.height = ch;
+  }
+  kCtx.globalCompositeOperation = 'copy';
+  kCtx.drawImage(canvas, 0, 0);
+  const sl = (Math.PI * 2) / seg;
+  const base = (ch > cw ? Math.PI / 2 : 0) - sl / 2;
+  const R = Math.hypot(cw, ch);
+  ctx.save();
+  ctx.globalCompositeOperation = 'copy';
+  for (let k = 1; k < seg; k++) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, cw / 2, ch / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, R, base + k * sl, base + (k + 1) * sl);
+    ctx.closePath();
+    ctx.clip();
+    if (k % 2 === 0) ctx.rotate(k * sl);
+    else {
+      ctx.rotate((k + 1) * sl + base);
+      ctx.scale(1, -1);
+      ctx.rotate(-base);
+    }
+    ctx.drawImage(kBuf, -cw / 2, -ch / 2);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function draw() {
   const [r, g, b] = bgNow();
   if (palMix && !seeThrough) document.body.style.background = `rgb(${r} ${g} ${b})`;
+  const light = r * 0.3 + g * 0.59 + b * 0.11 > 140;
+  let fadeA = 1 - trailNow * 0.97;
+  // Feedback tunnel: last frame drawn back slightly bigger (and turned), so
+  // everything streams out of the centre. Needs some trail to show.
+  if (settings.audioTunnel > 0) {
+    viewWarp(tunnelZ, tunnelR, 1);
+    fadeA = Math.min(fadeA, 0.3 - 0.2 * settings.audioTunnel);
+  }
   ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
-  ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${(1 - settings.trail * 0.97).toFixed(3)})` : `rgb(${r} ${g} ${b} / ${(1 - settings.trail * 0.97).toFixed(3)})`;
+  ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${fadeA.toFixed(3)})` : `rgb(${r} ${g} ${b} / ${fadeA.toFixed(3)})`;
   ctx.fillRect(0, 0, w, h);
   ctx.globalCompositeOperation = 'source-over';
-  const light = r * 0.3 + g * 0.59 + b * 0.11 > 140;
-  drawObstacles(1 - settings.trail * 0.97, light);
+  // View echo: a copy of the frame from the last kick, growing and fading.
+  if (echoSnap) {
+    echoSnap = false;
+    if (echoBuf.width !== canvas.width || echoBuf.height !== canvas.height) {
+      echoBuf.width = canvas.width;
+      echoBuf.height = canvas.height;
+    }
+    echoCtx.globalCompositeOperation = 'copy';
+    echoCtx.drawImage(canvas, 0, 0);
+  }
+  if (echoA > 0.01 && echoBuf.width === canvas.width) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = echoA;
+    ctx.globalCompositeOperation = light || seeThrough ? 'source-over' : 'lighter';
+    const cw = canvas.width;
+    const ch = canvas.height;
+    ctx.drawImage(echoBuf, (cw * (1 - echoZ)) / 2, (ch * (1 - echoZ)) / 2, cw * echoZ, ch * echoZ);
+    ctx.restore();
+  }
+  // Background flash on the kick.
+  if (flashA > 0.004 && !seeThrough && !light) {
+    ctx.fillStyle = `rgb(255 255 255 / ${flashA.toFixed(3)})`;
+    ctx.fillRect(0, 0, w, h);
+  }
+  drawObstacles(fadeA, light);
   ctx.globalCompositeOperation = settings.glow ? (light ? 'multiply' : 'lighter') : 'source-over';
 
   if (settings.colorBy === 'speed' || (settings.render === 'glyphs' && settings.glyphPick === 'speed')) {
@@ -2870,10 +3016,15 @@ function frame(now: number) {
     updateGlyphs();
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
+    // Stutter: a split-second freeze frame on each snare.
+    const held = now < stutterUntil;
     const t0 = performance.now();
-    step(dt);
+    if (!held) step(dt);
     const t1 = performance.now();
-    draw();
+    if (!held) {
+      draw();
+      if (kaleidoNow >= 2) kaleidoscope(kaleidoNow);
+    }
     const t2 = performance.now();
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
     drawMs = drawMs * 0.9 + (t2 - t1) * 0.1;
@@ -2966,10 +3117,26 @@ const quiet: Vibe = {
 // A vibe is a full recipe for how the music plays the field: the drums
 // (what each hit does), the music cards (drops, groups, colour, camera)
 // and, optionally, the look. Locked cards keep their own settings.
-type VibeDef = { name: string; about: string; drums: Vibe; cards: Partial<Settings>; look: Partial<Settings> };
-const CARDS_OFF: Partial<Settings> = { audioDrop: 0, audioDropBuild: true, audioBands: 0, audioHue: 'off', audioHueAmt: 30, audioBright: 0, audioCam: 0, audioSpin: 'off' };
-const vibe = (name: string, about: string, drums: Vibe, cards: Partial<Settings>, look: Partial<Settings>): VibeDef => ({
-  name, about, drums: { ...quiet, ...drums }, cards: { ...CARDS_OFF, ...cards }, look,
+type VibeFamily = 'all' | 'chill' | 'groove' | 'hypnotic' | 'peak' | 'glitch' | 'words';
+const VIBE_FAMILIES: [VibeFamily, string][] = [['all', 'All'], ['chill', 'Chill'], ['groove', 'Groove'], ['hypnotic', 'Hypnotic'], ['peak', 'Peak'], ['glitch', 'Glitch'], ['words', 'Words']];
+const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
+let vibeFamily: VibeFamily = (() => {
+  const v = readJson<string>(VIBE_FAMILY_KEY, 'all');
+  return VIBE_FAMILIES.some(([f]) => f === v) ? (v as VibeFamily) : 'all';
+})();
+// `suits`: the preset family this vibe looks best with. With "Vibes also
+// change the look" on, picking it switches to a preset from that family.
+type VibeDef = { name: string; about: string; family: VibeFamily; suits?: Family; drums: Vibe; cards: Partial<Settings>; look: Partial<Settings> };
+const CARDS_OFF: Partial<Settings> = {
+  audioDrop: 0, audioDropBuild: true, audioBands: 0, audioHue: 'off', audioHueAmt: 30, audioBright: 0, audioCam: 0, audioSpin: 'off',
+  audioCuts: 'off', audioDolly: false, audioPan: 0, audioRoll: 0, audioFlip: false,
+  audioTunnel: 0, audioTunnelTurn: 'none', audioKaleido: 0, audioKaleidoDrop: false, audioEcho: 0,
+  audioPalEvery: 0, audioMonoBuild: false, audioBgFlash: 0, audioInvert: false,
+  audioStutter: false, audioGravFlip: false, audioTrailEnergy: 0, audioSway: 0,
+  audioWordsOn: false, audioWordsEvery: 'bar', audioWordPulse: 0, audioLetterHop: 0,
+};
+const vibe = (name: string, about: string, drums: Vibe, cards: Partial<Settings>, look: Partial<Settings>, family: VibeFamily = 'all', suits?: Family): VibeDef => ({
+  name, about, family, suits, drums: { ...quiet, ...drums }, cards: { ...CARDS_OFF, ...cards }, look,
 });
 const VIBES: VibeDef[] = [
   vibe('Breathe', 'Swells with the kick, colours drift', { audioPulse: 0.9, audioSub: 'size', audioSubAmt: 0.4, audioSpeed: 0.15, audioFlow: 0.3 },
@@ -2999,7 +3166,53 @@ const VIBES: VibeDef[] = [
     { audioDrop: 1.8, audioHue: 'drop', audioHueAmt: 90, audioBright: 0.6, audioCam: 1.3, audioBands: 1 }, { render: 'circles', trail: 0.4, flow: 0.4, flowType: 'waves' }),
   vibe('Festival', 'Long build-ups, star bursts at the drop', { audioKick: 'both', audioPulse: 0.9, audioBeat: 'star', audioHats: 'sparkle', audioHits: 0.7, audioSpeed: 0.5 },
     { audioDrop: 2, audioHue: 'drop', audioHueAmt: 120, audioBright: 0.8, audioCam: 1, audioBands: 0.6 }, { render: 'sparkles', trail: 0.75, flow: 0.7, flowType: 'curl' }),
+  // --- Chill ---
+  vibe('Underwater', 'Slow sway, a faint tunnel, drifting blues', { audioPulse: 0.5, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.1, audioFlow: 0.6 },
+    { audioHue: 'drift', audioHueAmt: 10, audioBright: 0.3, audioSway: 0.5, audioPan: 0.5, audioTunnel: 0.2, audioTrailEnergy: 0.3 }, { render: 'bokeh', trail: 0.8, flow: 0.4, flowType: 'curl', palette: 'ocean' }, 'chill', 'currents'),
+  vibe('Night drive', 'Long trails, a slow pan and dolly', { audioPulse: 0.6, audioHats: 'sparkle', audioHits: 0.3, audioSpeed: 0.2 },
+    { audioDrop: 0.5, audioHue: 'drift', audioHueAmt: 15, audioBright: 0.3, audioPan: 0.6, audioDolly: true, audioTrailEnergy: 0.5 }, { render: 'streaks', trail: 0.9, flow: 0.4, flowType: 'curl', palette: 'cyber' }, 'chill', 'space'),
+  // --- Groove ---
+  vibe('Disco', 'Flashing floor, colour every kick, stepping spin', { audioKick: 'both', audioPulse: 0.8, audioBeat: 'ripple', audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.7, audioSpeed: 0.3 },
+    { audioDrop: 1, audioHue: 'beat', audioHueAmt: 40, audioBgFlash: 0.5, audioCam: 0.4, audioSpin: 'step', audioBands: 0.5 }, { render: 'sparkles', trail: 0.4, palette: 'rainbow' }, 'groove', 'patterns'),
+  vibe('House', 'Four to the floor: sway, cuts every 4 bars', { audioPulse: 0.9, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.5, audioSub: 'size', audioSubAmt: 0.6, audioSpeed: 0.3 },
+    { audioDrop: 1, audioHue: 'bar', audioHueAmt: 30, audioBright: 0.4, audioCam: 0.5, audioCuts: '4bars', audioSway: 0.5, audioPalEvery: 16 }, { render: 'circles', trail: 0.5, flow: 0.4, flowType: 'waves' }, 'groove', 'swarms'),
+  vibe('Funk', 'Rolls on the snare, a loose bass sway', { audioKick: 'both', audioPulse: 0.7, audioBeat: 'twist', audioSnare: 'wave', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 0.7, audioSpeed: 0.3 },
+    { audioDrop: 0.8, audioHue: 'bar', audioHueAmt: 50, audioRoll: 0.6, audioSway: 0.8, audioCam: 0.4 }, { render: 'glow', trail: 0.6, flow: 0.5, flowType: 'curl', palette: 'sunset' }, 'groove', 'currents'),
+  // --- Hypnotic ---
+  vibe('Tunnel', 'Everything streams out of the centre', { audioPulse: 0.5, audioSub: 'size', audioSubAmt: 0.5, audioSpeed: 0.2 },
+    { audioDrop: 0.8, audioTunnel: 0.7, audioTunnelTurn: 'rock', audioHue: 'drift', audioHueAmt: 20, audioBright: 0.3 }, { render: 'glow', size: 1.4, sizeVar: 0.3, trail: 0.6, flow: 0.5, flowType: 'curl' }, 'hypnotic', 'space'),
+  vibe('Spiral', 'A turning tunnel through a kaleidoscope', { audioKick: 'both', audioPulse: 0.4, audioBeat: 'twist', audioWaveAt: 'orbit', audioSub: 'flow', audioSubAmt: 0.6, audioSpeed: 0.2 },
+    { audioDrop: 0.6, audioTunnel: 0.5, audioTunnelTurn: 'right', audioSpin: 'turn', audioKaleido: 6, audioHue: 'drift', audioHueAmt: 30 }, { render: 'streaks', trail: 0.7, flow: 0.6, flowType: 'curl' }, 'hypnotic', 'patterns'),
+  vibe('Trance', 'Colour drains in the build, explodes at the drop', { audioPulse: 0.7, audioHats: 'sparkle', audioHits: 0.5, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.3 },
+    { audioDrop: 1.6, audioDolly: true, audioMonoBuild: true, audioHue: 'drop', audioHueAmt: 90, audioBright: 0.6, audioEcho: 0.4, audioCam: 0.6 }, { render: 'glow', trail: 0.85, flow: 0.7, flowType: 'curl' }, 'hypnotic', 'currents'),
+  // --- Peak ---
+  vibe('Techno', 'Hard sweeps, cuts, freeze frames', { audioKick: 'both', audioPulse: 1, audioBeat: 'sweep', audioWaveFeel: 'punchy', audioHats: 'sparkle', audioHits: 0.6, audioSpeed: 0.5 },
+    { audioDrop: 1.4, audioCuts: '2bars', audioCam: 0.9, audioBgFlash: 0.4, audioStutter: true, audioBright: 0.6 }, { render: 'dots', trail: 0.3, flow: 0.3, flowType: 'waves', palette: 'mono' }, 'peak', 'forces'),
+  vibe('Drum & bass', 'Fast cuts every bar, rolling camera', { audioKick: 'both', audioPulse: 1, audioBeat: 'shockwave', audioSnare: 'flash', audioHits: 0.9, audioSub: 'speed', audioSubAmt: 1, audioSpeed: 0.8 },
+    { audioDrop: 1.6, audioCam: 1.1, audioRoll: 0.8, audioCuts: 'bar', audioTrailEnergy: 0.5, audioHue: 'beat', audioHueAmt: 20, audioBright: 0.5 }, { render: 'streaks', trail: 0.6, flow: 0.8, flowType: 'waves' }, 'peak', 'fountains'),
+  vibe('Dubstep', 'Wobble sway, gravity flips, inverted drops', { audioKick: 'both', audioPulse: 1.3, audioBeat: 'implode', audioSnare: 'flash', audioHits: 1, audioSub: 'size', audioSubAmt: 1.4, audioSpeed: 0.5 },
+    { audioDrop: 2, audioSway: 1, audioGravFlip: true, audioInvert: true, audioMonoBuild: true, audioCam: 1.3, audioHue: 'drop', audioHueAmt: 120, audioBright: 0.7 }, { render: 'circles', trail: 0.4, flow: 0.4 }, 'peak', 'forces'),
+  // --- Glitch ---
+  vibe('Datamosh', 'Smeared echoes, cuts and freezes', { audioWaveFeel: 'punchy', audioKick: 'wave', audioBeat: 'sweep', audioSnare: 'flash', audioHits: 1, audioSpeed: 0.4 },
+    { audioDrop: 1, audioEcho: 0.9, audioTunnel: 0.3, audioCuts: 'bar', audioStutter: true, audioHue: 'beat', audioHueAmt: 60, audioCam: 0.8 }, { render: 'dots', trail: 0.5, glow: false }, 'glitch', 'symbols'),
+  vibe('Broken TV', 'Rolls, flips and inverted flashes', { audioPulse: 0.8, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 1, audioSpeed: 0.6 },
+    { audioDrop: 1, audioStutter: true, audioRoll: 1, audioFlip: true, audioInvert: true, audioCam: 1.2, audioHue: 'beat', audioHueAmt: 120, audioBright: 0.8 }, { render: 'dots', trail: 0.2, palette: 'mono' }, 'glitch', 'symbols'),
+  vibe('Strobe', 'White flashes and hard colour jumps', { audioPulse: 1, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 1.2, audioSpeed: 0.5 },
+    { audioDrop: 1.2, audioBgFlash: 1, audioInvert: true, audioCuts: 'bar', audioCam: 1, audioHue: 'beat', audioHueAmt: 180, audioBright: 1 }, { render: 'dots', trail: 0, glow: false }, 'glitch', 'space'),
+  // --- Words ---
+  vibe('Chant', 'A new word every bar, softly pulsing', { audioPulse: 0.6, audioSpeed: 0.2 },
+    { audioDrop: 0.8, audioWordsOn: true, audioWords: 'LOVE, PEACE, UNITY, RESPECT', audioWordsEvery: 'bar', audioWordPulse: 0.4, audioHue: 'bar', audioHueAmt: 40, audioBright: 0.4 }, {}, 'words', 'words'),
+  vibe('Shout', 'Big words punching with the kick', { audioPulse: 1, audioSnare: 'flash', audioHits: 0.8, audioSpeed: 0.3 },
+    { audioDrop: 1.4, audioWordsOn: true, audioWords: 'YES, LOUD, NOW, JUMP', audioWordsEvery: '2bars', audioWordPulse: 1, audioCam: 0.8, audioBgFlash: 0.3 }, {}, 'words', 'words'),
+  vibe('Echo word', 'Letters hop in turn, echoes trail behind', { audioPulse: 0.5, audioSpeed: 0.2 },
+    { audioDrop: 0.8, audioWordsOn: true, audioWords: 'HERE, NOW, ALWAYS', audioWordsEvery: '4bars', audioEcho: 0.8, audioWordPulse: 0.6, audioLetterHop: 0.6, audioHue: 'drift', audioHueAmt: 20 }, {}, 'words', 'words'),
 ];
+for (const [fam, names] of [
+  ['chill', 'Breathe, Ambient, Lo-fi, Minimal'], ['groove', 'Groove, Bounce'], ['hypnotic', 'Hypnotic, Liquid, Kaleido'],
+  ['peak', 'Storm, Rave, Bass face, Festival'], ['glitch', 'Glitch'],
+] as [VibeFamily, string][]) for (const nm of names.split(', ')) VIBES.find((v) => v.name === nm)!.family = fam;
+// Word lists that came with a vibe: another vibe may replace them, yours it keeps.
+const VIBE_WORDS = new Set(VIBES.map((v) => v.cards.audioWords).filter(Boolean));
 
 // May a vibe change this key? Not if the card it belongs to is locked.
 function cardAllows(k: keyof Settings) {
@@ -3009,7 +3222,20 @@ function cardAllows(k: keyof Settings) {
 
 function applyVibe(v: VibeDef) {
   const patch: Partial<Settings> = {};
-  const all = { ...v.drums, ...v.cards, ...(settings.audioVibeLook ? v.look : {}) };
+  let look = settings.audioVibeLook ? v.look : {};
+  // A vibe that suits another preset family brings a preset from it along.
+  if (settings.audioVibeLook && v.suits && lastPresetFamily !== v.suits) {
+    const list = PRESETS.filter(([nm]) => FAMILY_OF[nm] === v.suits);
+    if (list.length) {
+      const [nm, p] = pick(list);
+      lastPresetFamily = v.suits;
+      apply({ ...p, ...v.look });
+      look = {};
+      showToast(`${v.name} · ${nm}`);
+    }
+  }
+  const all = { ...v.drums, ...v.cards, ...look };
+  if (settings.audioWords.trim() && !VIBE_WORDS.has(settings.audioWords)) delete (all as Partial<Settings>).audioWords;
   for (const [k, x] of Object.entries(all) as [keyof Settings, never][]) if (cardAllows(k)) (patch as Record<string, unknown>)[k] = x;
   patch.audioVibe = v.name;
   Object.assign(settings, patch);
@@ -3018,7 +3244,7 @@ function applyVibe(v: VibeDef) {
 
 // Is the vibe still as it was applied (ignoring locked cards and the look)?
 function vibeIntact(v: VibeDef) {
-  return Object.entries({ ...v.drums, ...v.cards }).every(([k, x]) => !cardAllows(k as keyof Settings) || settings[k as keyof Settings] === x);
+  return Object.entries({ ...v.drums, ...v.cards }).every(([k, x]) => k === 'audioWords' || !cardAllows(k as keyof Settings) || settings[k as keyof Settings] === x);
 }
 const currentVibe = () => VIBES.find((v) => v.name === settings.audioVibe);
 function vibeLabel() {
@@ -3038,7 +3264,25 @@ function surpriseVibe() {
     audioHueAmt: rand(10, 120, 5),
     audioBright: pick([0, 0.3, 0.6, 0.9]),
     audioCam: pick([0, 0.4, 0.8, 1.2]),
-    audioSpin: pick(['off', 'off', 'sway', 'turn'] as const),
+    audioSpin: pick(['off', 'off', 'sway', 'turn', 'step', 'rock', 'energy'] as const),
+    audioCuts: pick(['off', 'off', 'bar', '2bars', '4bars', 'drop'] as const),
+    audioDolly: Math.random() < 0.3,
+    audioPan: pick([0, 0, 0.4, 0.8]),
+    audioRoll: pick([0, 0, 0.5, 1]),
+    audioFlip: Math.random() < 0.15,
+    audioTunnel: pick([0, 0, 0, 0.3, 0.6]),
+    audioTunnelTurn: pick(['none', 'left', 'right', 'rock'] as const),
+    audioKaleido: pick([0, 0, 0, 0, 4, 6]),
+    audioKaleidoDrop: Math.random() < 0.2,
+    audioEcho: pick([0, 0, 0, 0.5, 0.8]),
+    audioPalEvery: pick([0, 0, 8, 16]),
+    audioMonoBuild: Math.random() < 0.3,
+    audioBgFlash: pick([0, 0, 0, 0.3, 0.6]),
+    audioInvert: Math.random() < 0.15,
+    audioStutter: Math.random() < 0.2,
+    audioGravFlip: Math.random() < 0.15,
+    audioTrailEnergy: pick([0, 0, 0.4, 0.8]),
+    audioSway: pick([0, 0, 0.5, 1]),
   };
   applyVibe(vibe('Surprise', '', {
     audioKick: kick,
@@ -3092,6 +3336,7 @@ const ICONS = {
   gather: svg('<circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M4 4l4 4M20 4l-4 4M4 20l4-4M20 20l-4-4"/><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/>'),
   clear: svg('<path d="M4 20h16"/><path d="M14.5 4.5l5 5L11 18H6.5L4 15.5z"/><path d="M9.5 9.5l5 5"/>'),
   scatter: svg('<circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>'),
+  explode: svg('<circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5M5 5l3.5 3.5M15.5 15.5L19 19M5 19l3.5-3.5M15.5 8.5L19 5"/>'),
   shuffle: svg('<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>'),
   reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
 };
@@ -3329,20 +3574,76 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioBands', label: 'Separation', min: 0.05, max: 1, step: 0.05, format: pct },
   { kind: 'note', text: 'A third of the particles are bass: big, swell with the bass, thrown by kicks. A third are mids: swirl with snares. The rest are highs: small, sparkle with hats. Try Colour by → Frequency group.' },
 
-  { kind: 'section', id: 'mcolour', label: 'Music colour', tab: 'sound', about: 'Hue shifts on beats or bars, brightness with the energy.', lock: ['audioHue', 'audioHueAmt', 'audioBright'],
-    power: { on: () => settings.audioHue !== 'off' || settings.audioBright > 0, off: { audioHue: 'off', audioBright: 0 }, start: { audioHue: 'bar', audioBright: 0.4 } },
-    summary: () => (settings.audioHue !== 'off' ? `shift ${label([['beat', 'per beat'], ['bar', 'per bar'], ['drift', 'drifting'], ['drop', 'on drops']], settings.audioHue)}` : settings.audioBright > 0 ? 'brightness' : 'off') },
+  { kind: 'section', id: 'mcolour', label: 'Music colour', tab: 'sound', about: 'Hue shifts, new palettes per section, flashes and colour that drains in a build-up.',
+    lock: ['audioHue', 'audioHueAmt', 'audioBright', 'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert'],
+    power: { on: () => settings.audioHue !== 'off' || settings.audioBright > 0 || settings.audioPalEvery > 0 || settings.audioMonoBuild || settings.audioBgFlash > 0 || settings.audioInvert,
+      off: { audioHue: 'off', audioBright: 0, audioPalEvery: 0, audioMonoBuild: false, audioBgFlash: 0, audioInvert: false }, start: { audioHue: 'bar', audioBright: 0.4 } },
+    summary: () => [
+      settings.audioHue !== 'off' ? `shift ${label([['beat', 'per beat'], ['bar', 'per bar'], ['drift', 'drifting'], ['drop', 'on drops']], settings.audioHue)}` : '',
+      settings.audioPalEvery > 0 ? `palette every ${settings.audioPalEvery}` : '',
+      settings.audioMonoBuild ? 'mono build' : '', settings.audioBgFlash > 0 ? 'flash' : '', settings.audioInvert ? 'invert' : '',
+      settings.audioHue === 'off' && settings.audioBright > 0 ? 'brightness' : '',
+    ].filter(Boolean).join(' · ') || 'off' },
   { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
   { kind: 'select', key: 'audioHue', label: 'Shift colours', options: [['off', 'Never'], ['beat', 'Every kick'], ['bar', 'Every bar'], ['drift', 'Drift with the energy'], ['drop', 'Only on drops']] },
   { kind: 'range', key: 'audioHueAmt', label: 'Shift by', min: 5, max: 180, step: 5, format: (v) => `${v}°`, show: () => settings.audioHue !== 'off' },
   { kind: 'range', key: 'audioBright', label: 'Brightness with energy', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioPalEvery', label: 'New palette every', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'never' : `${v} bars`) },
+  { kind: 'range', key: 'audioBgFlash', label: 'Background flash on kicks', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'toggle', key: 'audioMonoBuild', label: 'Colour drains in a build-up, back at the drop' },
+  { kind: 'toggle', key: 'audioInvert', label: 'Invert the colours for a moment at a drop' },
 
-  { kind: 'section', id: 'camera', label: 'Camera', tab: 'sound', about: 'The view punches in on kicks, shakes on hits and can sway or turn.', lock: ['audioCam', 'audioSpin'],
-    power: { on: () => settings.audioCam > 0 || settings.audioSpin !== 'off', off: { audioCam: 0, audioSpin: 'off' }, start: { audioCam: 0.6 } },
-    summary: () => [settings.audioCam > 0 ? `punch ${pct(settings.audioCam)}` : '', settings.audioSpin !== 'off' ? settings.audioSpin : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'section', id: 'camera', label: 'Camera', tab: 'sound', about: 'Punches, shakes, cuts, dollies, pans, rolls and spins in time with the music.',
+    lock: ['audioCam', 'audioSpin', 'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip'],
+    power: { on: () => settings.audioCam > 0 || settings.audioSpin !== 'off' || settings.audioCuts !== 'off' || settings.audioDolly || settings.audioPan > 0 || settings.audioRoll > 0 || settings.audioFlip,
+      off: { audioCam: 0, audioSpin: 'off', audioCuts: 'off', audioDolly: false, audioPan: 0, audioRoll: 0, audioFlip: false }, start: { audioCam: 0.6 } },
+    summary: () => [
+      settings.audioCam > 0 ? `punch ${pct(settings.audioCam)}` : '', settings.audioCuts !== 'off' ? 'cuts' : '', settings.audioDolly ? 'dolly' : '',
+      settings.audioPan > 0 ? 'pan' : '', settings.audioRoll > 0 ? 'roll' : '', settings.audioFlip ? 'flip' : '', settings.audioSpin !== 'off' ? settings.audioSpin : '',
+    ].filter(Boolean).join(' · ') || 'off' },
   { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
   { kind: 'range', key: 'audioCam', label: 'Punch & shake', min: 0, max: 1.5, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'select', key: 'audioSpin', label: 'Spin', options: [['off', 'Still'], ['sway', 'Sway every 4 bars'], ['turn', 'Full turn every 32 bars']] },
+  { kind: 'select', key: 'audioCuts', label: 'Beat cuts', options: [['off', 'Off'], ['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['drop', 'Only on drops']] },
+  { kind: 'select', key: 'audioSpin', label: 'Spin', options: [['off', 'Still'], ['sway', 'Sway every 4 bars'], ['rock', 'Rock to and fro over 8 bars'], ['step', 'Step an eighth turn each bar'], ['turn', 'Full turn every 32 bars'], ['energy', 'Turn faster when it gets loud']] },
+  { kind: 'range', key: 'audioPan', label: 'Pan drift', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioRoll', label: 'Roll on snares', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : `${(v * 5).toFixed(1)}°`) },
+  { kind: 'toggle', key: 'audioDolly', label: 'Dolly in through a build-up, snap back at the drop' },
+  { kind: 'toggle', key: 'audioFlip', label: 'Mirror the view at each drop' },
+
+  { kind: 'section', id: 'viewfx', label: 'View effects', tab: 'sound', about: 'Feedback tunnel, kaleidoscope and echoes of the last kick.',
+    lock: ['audioTunnel', 'audioTunnelTurn', 'audioKaleido', 'audioKaleidoDrop', 'audioEcho'],
+    power: { on: () => settings.audioTunnel > 0 || settings.audioKaleido > 0 || settings.audioKaleidoDrop || settings.audioEcho > 0,
+      off: { audioTunnel: 0, audioKaleido: 0, audioKaleidoDrop: false, audioEcho: 0 }, start: { audioTunnel: 0.5 } },
+    summary: () => [settings.audioTunnel > 0 ? 'tunnel' : '', settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.audioEcho > 0 ? 'echo' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'range', key: 'audioTunnel', label: 'Feedback tunnel', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'select', key: 'audioTunnelTurn', label: 'Tunnel turns', options: [['none', 'Straight'], ['left', 'Left'], ['right', 'Right'], ['rock', 'Rocking']], show: () => settings.audioTunnel > 0 },
+  { kind: 'range', key: 'audioKaleido', label: 'Kaleidoscope', min: 0, max: 8, step: 2, format: (v) => (v === 0 ? 'off' : `${v} sides`) },
+  { kind: 'toggle', key: 'audioKaleidoDrop', label: 'Kaleidoscope for 2 bars at each drop', show: () => settings.audioKaleido === 0 },
+  { kind: 'range', key: 'audioEcho', label: 'Echo of the last kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'note', text: 'The tunnel and kaleidoscope also work without music. The tunnel shortens trails so the streaming shows.' },
+
+  { kind: 'section', id: 'mmotion', label: 'Music motion', tab: 'sound', about: 'Freeze frames on snares, gravity that flips at drops, trails and sway with the bass.',
+    lock: ['audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway'],
+    power: { on: () => settings.audioStutter || settings.audioGravFlip || settings.audioTrailEnergy > 0 || settings.audioSway > 0,
+      off: { audioStutter: false, audioGravFlip: false, audioTrailEnergy: 0, audioSway: 0 }, start: { audioSway: 0.6 } },
+    summary: () => [settings.audioStutter ? 'stutter' : '', settings.audioGravFlip ? 'gravity flip' : '', settings.audioTrailEnergy > 0 ? 'trails' : '', settings.audioSway > 0 ? 'sway' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
+  { kind: 'range', key: 'audioSway', label: 'Sway with the bass', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioTrailEnergy', label: 'Longer trails when loud', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'toggle', key: 'audioStutter', label: 'Freeze for a split second on snares' },
+  { kind: 'toggle', key: 'audioGravFlip', label: 'Gravity flips at each drop' },
+
+  { kind: 'section', id: 'mwords', label: 'Music words', tab: 'sound', about: 'A text pattern that changes word with the music, pulses and hops letter by letter.',
+    lock: ['audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop'],
+    power: { on: () => settings.audioWordsOn || settings.audioWordPulse > 0 || settings.audioLetterHop > 0,
+      off: { audioWordsOn: false, audioWordPulse: 0, audioLetterHop: 0 }, start: { audioWordsOn: true, audioWords: 'LOVE, PEACE, UNITY', audioWordPulse: 0.5 } },
+    summary: () => [settings.audioWordsOn && settings.audioWords.trim() ? 'words' : '', settings.audioWordPulse > 0 ? 'pulse' : '', settings.audioLetterHop > 0 ? 'hop' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'note', text: 'Needs a Text pattern (Shape card on the Motion tab), or a Words preset.', show: () => settings.shape !== 'text' },
+  { kind: 'toggle', key: 'audioWordsOn', label: 'Change word with the music' },
+  { kind: 'text', key: 'audioWords', label: 'Words (comma separated)', placeholder: 'LOVE, PEACE, UNITY', show: () => settings.audioWordsOn },
+  { kind: 'select', key: 'audioWordsEvery', label: 'Next word', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['drop', 'Only on drops']], show: () => settings.audioWordsOn },
+  { kind: 'range', key: 'audioWordPulse', label: 'Word pulses with the kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioLetterHop', label: 'Letters hop in turn', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
 
   { kind: 'section', id: 'actions', label: 'Actions', fixed: true },
   {
@@ -3350,6 +3651,7 @@ const CONTROLS: Control[] = [
     buttons: [
       ['Pause (Space)', ICONS.pause, togglePause],
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
+      ['Explode from the centre (E)', ICONS.explode, explode],
       ['Scatter (S)', ICONS.scatter, scatter],
       ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle],
       ['Reset to defaults and clear locks', ICONS.reset, reset],
@@ -3459,7 +3761,11 @@ let presetFamily: Family = (() => {
 })();
 const familyLabel = (f: Family) => FAMILIES.find(([k]) => k === f)![1];
 
+// Which preset family is showing (null for your own presets).
+let lastPresetFamily: Family | null = null;
+
 function playPreset(name: string, p: Partial<Settings>) {
+  lastPresetFamily = FAMILY_OF[name] ?? null;
   apply(p);
   // The image pattern needs a picture: ask for one (this runs in the click).
   if (p.shape === 'image' && !shapeImage) {
@@ -3526,7 +3832,12 @@ const audioSettings = (): Partial<Settings> =>
 // How you play (morph time, beat snap) isn't part of a look either.
 // The music cards (drops, auto VJ, groups, colour, camera) are your setup
 // too: no look switches them, so auto VJ can't turn itself off.
-const MUSIC_KEYS = ['audioVibeLook', 'audioDrop', 'audioDropBuild', 'audioVj', 'audioVjFrom', 'audioVjDrop', 'audioBands', 'audioHue', 'audioHueAmt', 'audioBright', 'audioCam', 'audioSpin'] as const;
+const MUSIC_KEYS = [
+  'audioVibeLook', 'audioDrop', 'audioDropBuild', 'audioVj', 'audioVjFrom', 'audioVjDrop', 'audioBands', 'audioHue', 'audioHueAmt', 'audioBright', 'audioCam', 'audioSpin',
+  'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip', 'audioTunnel', 'audioTunnelTurn', 'audioKaleido', 'audioKaleidoDrop', 'audioEcho',
+  'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert', 'audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway',
+  'audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop',
+] as const;
 const playSettings = (): Partial<Settings> => ({
   morph: settings.morph,
   beatSnap: settings.beatSnap,
@@ -3613,11 +3924,55 @@ function morphTo(target: Settings) {
 let hueNow = 0;
 let hueTarget = 0;
 let spinT = 0;
+let spinTarget = 0;
 let vjBars = 0;
 let vjIndex = 0;
 let lastVisual = 0;
 let lastFilter = '';
 let lastTransform = '';
+// Bars counted since the music started, for "every N bars" effects.
+let musicBars = 0;
+// Camera parts: a cut framing, a dolly, a slow pan, a roll and a mirror flip.
+let cutZoom = 1;
+let cutX = 0;
+let cutY = 0;
+let dollyNow = 1;
+let panT = 0;
+let rollNow = 0;
+let rollSign = 1;
+let flipS = 1;
+// Motion and view effects read by step() and draw().
+let gravNow = settings.gravity;
+let gravSign = 1;
+let swayF = 0;
+let swayDir = 1;
+let stutterUntil = 0;
+let trailNow = settings.trail;
+let tunnelZ = 1;
+let tunnelR = 0;
+let kaleidoNow = 0;
+let kaleidoUntil = 0;
+let echoA = 0;
+let echoZ = 1;
+let echoSnap = false;
+let flashA = 0;
+let wordScale = 1;
+let hopKick = 0;
+let hopIdx = 0;
+let hopMin = 0;
+let hopMax = 0;
+let hopLetters = 1;
+// Word per bar: the text you had, put back when the words stop.
+let wordsBase: string | null = null;
+let wordsLast = '';
+let wordsIdx = 0;
+
+const everyBars = (e: string) => (e === '4bars' ? 4 : e === '2bars' ? 2 : 1);
+const darkPalettes = () =>
+  (Object.keys(PALETTES) as (keyof typeof PALETTES)[]).filter((k) => {
+    const [r, g, b] = PALETTES[k].bg;
+    return r * 0.3 + g * 0.59 + b * 0.11 < 100;
+  });
 
 function musicVisuals(now: number) {
   const dt = lastVisual ? Math.min(0.1, (now - lastVisual) / 1000) : 0;
@@ -3625,52 +3980,175 @@ function musicVisuals(now: number) {
   const on = audio.source !== 'off';
   const L = audio.levels;
   const S = settings;
+  const barSec = 240 / (L.bpm || 120);
+  if (on && L.bar) musicBars++;
+  const lightBg = (() => {
+    const [r, g, b] = pal().bg;
+    return r * 0.3 + g * 0.59 + b * 0.11 > 140;
+  })();
 
   // Colour: hue steps on beats, bars or drops (or drifts with the energy),
   // brightness and saturation follow the loudness. A CSS filter on the
   // canvas, so it costs nothing per particle.
-  let filter = '';
+  const parts: string[] = [];
   if (on && (S.audioHue !== 'off' || S.audioBright > 0)) {
     if (S.audioHue === 'beat' && L.beat) hueTarget += S.audioHueAmt;
     if (S.audioHue === 'bar' && L.bar) hueTarget += S.audioHueAmt;
     if (S.audioHue === 'drift') hueTarget += S.audioHueAmt * (0.1 + L.level * 0.5) * dt;
     if (S.audioHue !== 'off' && L.drop && S.audioDrop > 0) hueTarget += S.audioHue === 'drop' ? S.audioHueAmt * 3 : 150;
     hueNow += (hueTarget - hueNow) * Math.min(1, dt * 5);
-    const sat = 1 + S.audioBright * L.liftLevel * 0.8;
     // A light background would tint and glow with the filter, so paper-like
     // palettes only get the saturation.
-    const [r, g, b] = pal().bg;
-    if (r * 0.3 + g * 0.59 + b * 0.11 > 140) filter = `saturate(${sat.toFixed(2)})`;
-    else {
+    if (!lightBg) {
       const bright = 1 + S.audioBright * (L.level * 0.5 - 0.15 + L.dropEnv * 0.6);
-      filter = `hue-rotate(${(hueNow % 360).toFixed(1)}deg) brightness(${bright.toFixed(2)}) saturate(${sat.toFixed(2)})`;
+      parts.push(`hue-rotate(${(hueNow % 360).toFixed(1)}deg)`, `brightness(${bright.toFixed(2)})`);
     }
   } else hueNow = hueTarget = 0;
+  if (on) {
+    let sat = 1 + S.audioBright * L.liftLevel * 0.8;
+    // Mono build-up: the colour drains as the tension rises, back at the drop.
+    if (S.audioMonoBuild) sat *= 1 - Math.min(0.92, L.tension * 1.1) * (1 - L.dropEnv);
+    if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
+    if (S.audioInvert && L.dropEnv > 0.55) parts.push('invert(1)');
+  }
+  const filter = parts.join(' ');
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
 
-  // Camera: zoom punch on kicks and drops, shake on snares and drops.
-  let transform = '';
+  // Camera: zoom punch on kicks and drops, shake on snares and drops, plus
+  // cuts, dolly, pan, roll and flip. One CSS transform on the canvas.
+  let tx = 0;
+  let ty = 0;
+  let zoom = 1;
   if (on && S.audioCam > 0) {
     const amt = S.audioCam * S.audioIntensity;
     const shake = (L.snareEnv * 3 + L.dropEnv * 14) * amt;
-    const zoom = (1 + (L.pulse * 0.04 + L.dropEnv * 0.1 + L.tension * 0.03) * amt) * (1 + (2 * shake) / Math.min(w, h));
-    const dx = (Math.random() - 0.5) * 2 * shake;
-    const dy = (Math.random() - 0.5) * 2 * shake;
-    transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${zoom.toFixed(3)})`;
+    zoom = (1 + (L.pulse * 0.04 + L.dropEnv * 0.1 + L.tension * 0.03) * amt) * (1 + (2 * shake) / Math.min(w, h));
+    tx = (Math.random() - 0.5) * 2 * shake;
+    ty = (Math.random() - 0.5) * 2 * shake;
+  }
+  // Beat cuts: a hard change of framing, like a video edit.
+  if (on && S.audioCuts !== 'off') {
+    const cut = S.audioCuts === 'drop' ? L.drop : (L.bar && musicBars % everyBars(S.audioCuts) === 0) || L.drop;
+    if (cut) {
+      const z = pick([1, 1.3, 1.6, 2].filter((v) => v !== cutZoom));
+      cutZoom = z;
+      cutX = (Math.random() - 0.5) * w * (z - 1);
+      cutY = (Math.random() - 0.5) * h * (z - 1);
+    }
+  } else cutZoom = 1;
+  if (cutZoom === 1) cutX = cutY = 0;
+  // Dolly: creeps in through a build-up, snaps back at the drop.
+  const dollyT = on && S.audioDolly ? 1 + L.tension * 0.35 : 1;
+  if (on && S.audioDolly && L.drop) dollyNow = 1;
+  else dollyNow += (dollyT - dollyNow) * Math.min(1, dt * 1.5);
+  // Pan drift: a slow figure-of-eight over 8 bars.
+  let panX = 0;
+  let panY = 0;
+  if (on && S.audioPan > 0) {
+    panT += dt / (8 * barSec);
+    panX = Math.sin(panT * Math.PI * 2) * S.audioPan * w * 0.06;
+    panY = Math.sin(panT * Math.PI * 4) * S.audioPan * h * 0.04;
+  }
+  const panZ = 1 + (2 * Math.max(Math.abs(panX) / w, Math.abs(panY) / h));
+  // Roll: tilts one way on a snare, the other way on the next.
+  if (on && S.audioRoll > 0 && L.snare) rollSign = -rollSign;
+  const rollT = on && S.audioRoll > 0 ? rollSign * S.audioRoll * 5 : 0;
+  rollNow += (rollT - rollNow) * Math.min(1, dt * 10);
+  const rollZ = 1 + Math.abs(Math.sin((rollNow * Math.PI) / 180)) * (Math.max(w, h) / Math.min(w, h));
+  // Flip: mirror the view at each drop.
+  if (on && S.audioFlip && L.drop) flipS = -flipS;
+  if (!on || !S.audioFlip) flipS = 1;
+  const scale = zoom * cutZoom * dollyNow * panZ * rollZ;
+  tx += cutX + panX;
+  ty += cutY + panY;
+  let transform = '';
+  if (Math.abs(scale - 1) > 0.0005 || tx || ty || Math.abs(rollNow) > 0.01 || flipS < 0) {
+    transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${rollNow.toFixed(2)}deg) scale(${(scale * flipS).toFixed(3)}, ${scale.toFixed(3)})`;
   }
   if (transform !== lastTransform) canvas.style.transform = lastTransform = transform;
 
-  // Spin, timed to the bar: a sway over 4 bars or a full turn every 32.
-  const barSec = 240 / (L.bpm || 120);
+  // Spin, timed to the bar.
   if (on && S.audioSpin !== 'off') {
     spinT += dt;
     if (S.audioSpin === 'sway') camA = Math.sin((spinT / (4 * barSec)) * Math.PI * 2) * 0.12;
-    else camA = (camA + (dt * Math.PI * 2) / (32 * barSec)) % (Math.PI * 2);
+    else if (S.audioSpin === 'turn') camA = (camA + (dt * Math.PI * 2) / (32 * barSec)) % (Math.PI * 2);
+    else if (S.audioSpin === 'step') {
+      // An eighth of a turn every bar, eased.
+      if (L.bar) spinTarget += Math.PI / 4;
+      camA += (spinTarget - camA) * Math.min(1, dt * 6);
+    } else if (S.audioSpin === 'rock') camA = Math.sin((spinT / (8 * barSec)) * Math.PI * 2) * (Math.PI / 4);
+    else camA += dt * (0.03 + L.level * 0.9);
+    if (S.audioSpin !== 'step') spinTarget = camA;
   } else if (camA !== 0) {
     // Ease back upright (the short way round).
     const a = Math.atan2(Math.sin(camA), Math.cos(camA));
     camA = Math.abs(a) < 0.002 ? 0 : a * 0.92;
+    spinTarget = camA;
   }
+
+  // Palette per section: a new colour scheme every N bars (crossfaded).
+  if (on && S.audioPalEvery > 0 && L.bar && musicBars % S.audioPalEvery === 0 && cardAllows('palette')) {
+    const list = darkPalettes().filter((k) => k !== S.palette);
+    if (list.length) {
+      palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur: 1500, tick: 0 };
+      S.palette = pick(list);
+      changed(new Set(['palette']), true);
+    }
+  }
+
+  // Motion.
+  if (on && S.audioStutter && L.snare) stutterUntil = now + 90;
+  if (on && S.audioGravFlip) {
+    if (L.drop) gravSign = -gravSign;
+    gravNow = (S.gravity || 0.25) * gravSign;
+  } else {
+    gravSign = 1;
+    gravNow = S.gravity;
+  }
+  if (on && S.audioSway > 0) {
+    if (L.beat) swayDir = -swayDir;
+    swayF = swayDir * Math.max(L.sub, L.bass * 0.7) * S.audioSway * 0.12;
+  } else swayF = 0;
+  trailNow = on && S.audioTrailEnergy > 0 ? Math.min(0.985, S.trail + (1 - S.trail) * S.audioTrailEnergy * Math.min(1, L.level * 1.4)) : S.trail;
+
+  // View effects. The tunnel and kaleidoscope also run without music.
+  if (S.audioTunnel > 0) {
+    const a = S.audioTunnel;
+    tunnelZ = 1 + a * (0.006 + (on ? L.pulse * 0.025 + L.dropEnv * 0.04 : 0.004));
+    const turn = S.audioTunnelTurn;
+    tunnelR = turn === 'none' ? 0 : (turn === 'left' ? -1 : turn === 'right' ? 1 : Math.sin(now / 1000 / (4 * barSec) * Math.PI * 2)) * a * 0.006;
+  } else tunnelZ = 1;
+  if (on && S.audioKaleidoDrop && L.drop) kaleidoUntil = now + 2 * barSec * 1000;
+  kaleidoNow = S.audioKaleido > 0 ? S.audioKaleido : now < kaleidoUntil ? 6 : 0;
+  if (!on || !S.audioKaleidoDrop) kaleidoUntil = 0;
+  if (on && S.audioEcho > 0 && L.beat) {
+    echoSnap = true;
+    echoA = S.audioEcho * 0.5;
+    echoZ = 1;
+  } else {
+    echoA *= 0.9;
+    echoZ += 0.004;
+  }
+  if (!on || S.audioEcho <= 0) echoA = 0;
+  if (on && S.audioBgFlash > 0 && L.beat) flashA = Math.min(0.22, S.audioBgFlash * 0.22 * (0.5 + L.pulse * 0.5));
+  else flashA *= 0.82;
+  if (!on || S.audioBgFlash <= 0) flashA = 0;
+
+  // Words.
+  musicWords(on, L, S);
+  wordScale = on && S.audioWordPulse > 0 ? 1 + L.pulse * S.audioWordPulse * 0.14 + L.dropEnv * S.audioWordPulse * 0.2 : 1;
+  if (on && S.audioLetterHop > 0 && S.shape !== 'none' && L.beat) {
+    hopMin = Infinity;
+    hopMax = -Infinity;
+    for (let i = 0; i < n; i++) {
+      if (hx[i] < hopMin) hopMin = hx[i];
+      if (hx[i] > hopMax) hopMax = hx[i];
+    }
+    hopLetters = S.shape === 'text' ? Math.max(1, S.shapeText.replace(/\s/g, '').length) : 6;
+    hopIdx = (hopIdx + 1) % hopLetters;
+    hopKick = 1;
+  } else hopKick *= 0.8;
+  if (!on || S.audioLetterHop <= 0) hopKick = 0;
 
   // Auto VJ: a new look every few bars, and on drops.
   if (on && S.audioVj > 0) {
@@ -3682,6 +4160,36 @@ function musicVisuals(now: number) {
   } else vjBars = 0;
 }
 
+// Word per bar: the text pattern steps through your list of words.
+function musicWords(on: boolean, L: typeof audio.levels, S: Settings) {
+  const words = S.audioWords.split(',').map((x) => x.trim()).filter(Boolean);
+  const active = on && S.audioWordsOn && words.length > 0 && S.shape === 'text';
+  if (!active) {
+    // Put your own text back, unless something else has changed it since.
+    if (wordsBase !== null && S.shapeText === wordsLast && cardAllows('shapeText')) {
+      const base = wordsBase;
+      wordsBase = null;
+      settings.shapeText = base;
+      glideHomes = { ms: 600, fromFree: false };
+      changed(new Set(['shapeText']));
+      glideHomes = null;
+    } else if (wordsBase !== null && S.shapeText !== wordsLast) wordsBase = null;
+    return;
+  }
+  const fire = S.audioWordsEvery === 'drop' ? L.drop : (L.bar && musicBars % everyBars(S.audioWordsEvery) === 0) || L.drop;
+  if (!fire || !cardAllows('shapeText')) return;
+  if (wordsBase === null || S.shapeText !== wordsLast) wordsBase = S.shapeText;
+  const word = words[wordsIdx++ % words.length];
+  if (word === S.shapeText) return;
+  wordsLast = word;
+  settings.shapeText = word;
+  const barSec = 240 / (L.bpm || 120);
+  glideHomes = { ms: Math.min(700, barSec * 400), fromFree: false };
+  changed(new Set(['shapeText']));
+  glideHomes = null;
+}
+
+let lastVjName = '';
 function vjNext() {
   const S = settings;
   if (S.audioVjFrom === 'shuffle') {
@@ -3695,11 +4203,15 @@ function vjNext() {
     playMine(list[vjIndex++ % list.length]);
     return;
   }
-  let k = (Math.random() * PRESETS.length) | 0;
-  if (k === vjIndex) k = (k + 1) % PRESETS.length;
-  vjIndex = k;
-  apply(PRESETS[k][1]);
-  showToast(PRESETS[k][0]);
+  // Built-in presets: from the family the current vibe suits, if it has one.
+  const fam = currentVibe()?.suits;
+  const pool = fam ? PRESETS.filter(([nm]) => FAMILY_OF[nm] === fam) : PRESETS;
+  let k = (Math.random() * pool.length) | 0;
+  if (pool[k][0] === lastVjName && pool.length > 1) k = (k + 1) % pool.length;
+  lastVjName = pool[k][0];
+  lastPresetFamily = FAMILY_OF[pool[k][0]] ?? null;
+  apply(pool[k][1]);
+  showToast(pool[k][0]);
 }
 
 let intKeys: Set<string> | null = null;
@@ -4012,19 +4524,50 @@ function renderControls() {
 
     if (ctl.kind === 'vibes') {
       // Vibe gallery: name and a one-line description each.
+      // Family chips first (like the preset library), then that family A–Z.
+      const chips = document.createElement('div');
+      chips.className = 'families';
+      chips.setAttribute('role', 'tablist');
       const grid = document.createElement('div');
       grid.className = 'vibes';
-      for (const v of [...VIBES, null]) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.innerHTML = '<b></b><span></span>';
-        b.querySelector('b')!.textContent = v ? v.name : 'Surprise me';
-        b.querySelector('span')!.textContent = v ? v.about : 'A random mix of everything';
-        b.addEventListener('click', () => (v ? applyVibe(v) : surpriseVibe()));
-        if (v) refreshers.push(() => b.classList.toggle('on', settings.audioVibe === v.name && vibeIntact(v)));
-        grid.append(b);
+      const btns: [VibeDef, HTMLButtonElement][] = [];
+      const drawVibes = () => {
+        for (const c of chips.children) c.classList.toggle('on', (c as HTMLElement).dataset.fam === vibeFamily);
+        grid.innerHTML = '';
+        btns.length = 0;
+        const list = VIBES.filter((v) => vibeFamily === 'all' || v.family === vibeFamily).sort((a, b) => a.name.localeCompare(b.name));
+        for (const v of [...list, null]) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.innerHTML = '<b></b><span></span>';
+          b.querySelector('b')!.textContent = v ? v.name : 'Surprise me';
+          b.querySelector('span')!.textContent = v ? v.about : 'A random mix of everything';
+          b.addEventListener('click', () => (v ? applyVibe(v) : surpriseVibe()));
+          if (v) {
+            btns.push([v, b]);
+            b.classList.toggle('on', settings.audioVibe === v.name && vibeIntact(v));
+          }
+          grid.append(b);
+        }
+      };
+      refreshers.push(() => {
+        for (const [v, b] of btns) b.classList.toggle('on', settings.audioVibe === v.name && vibeIntact(v));
+      });
+      for (const [fam, lbl] of VIBE_FAMILIES) {
+        const c = document.createElement('button');
+        c.type = 'button';
+        c.dataset.fam = fam;
+        c.setAttribute('role', 'tab');
+        c.innerHTML = `${lbl} <small>${fam === 'all' ? VIBES.length : VIBES.filter((v) => v.family === fam).length}</small>`;
+        c.addEventListener('click', () => {
+          vibeFamily = fam;
+          writeJson(VIBE_FAMILY_KEY, fam);
+          drawVibes();
+        });
+        chips.append(c);
       }
-      body.append(grid);
+      drawVibes();
+      body.append(chips, grid);
       continue;
     }
 
@@ -4255,7 +4798,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · A gather · S scatter · D shuffle · Enter type a word · H hide panel · I debug info. Hold a number key to play it only while held.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · H hide panel · I debug info. Hold a number key to play it only while held.';
   controls.append(keys);
 }
 
@@ -4415,6 +4958,25 @@ const gatherButtons: HTMLButtonElement[] = [];
 function toggleGather() {
   gatherAll = !gatherAll;
   for (const b of gatherButtons) b.classList.toggle('on', gatherAll);
+}
+
+// Explode: everything bursts out of the centre at uneven speeds, then the
+// look's own forces (shape, flow, wells) take over again.
+function explode() {
+  if (gatherAll) toggleGather();
+  const cx = w / 2;
+  const cy = h / 2;
+  const k = Math.min(w, h) / 800;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 12;
+    const sp = (3 + Math.random() ** 0.7 * 16) * k;
+    px[i] = ox[i] = cx + Math.cos(a) * r;
+    py[i] = oy[i] = cy + Math.sin(a) * r;
+    vx[i] = Math.cos(a) * sp;
+    vy[i] = Math.sin(a) * sp;
+  }
+  addWave('shockwave', cx, cy);
 }
 
 function scatter() {
@@ -4665,6 +5227,7 @@ function presetFromUrl(first: boolean) {
     settings.morph = morph;
     settings.beatSnap = beatSnap;
   } else apply(p, false);
+  lastPresetFamily = built && !mine ? (FAMILY_OF[built[0]] ?? null) : null;
   if (mine) {
     currentMine = mine;
     redrawMine();
@@ -4676,6 +5239,7 @@ const KEY_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 let redrawMine = () => {};
 
 function playMine(p: MyPreset) {
+  lastPresetFamily = null;
   apply(p.settings, false);
   currentMine = p;
   redrawMine();
@@ -4769,6 +5333,7 @@ window.addEventListener('keydown', (e) => {
   // A S D: gather, scatter, shuffle, left to right like the buttons.
   else if (k === 'a' || k === 'g') toggleGather();
   else if (k === 's') scatter();
+  else if (k === 'e') explode();
   else if (k === 'd' || k === 'r') shuffle();
   else if (k === 'h') toggle.click();
   else if (k === 'i') toggleDebug();
@@ -4927,6 +5492,7 @@ function toggleDebug() {
   const quick: [string, string, () => void][] = [
     ['Pause', ICONS.pause, togglePause],
     ['Gather', ICONS.gather, toggleGather],
+    ['Explode', ICONS.explode, explode],
     ['Scatter', ICONS.scatter, scatter],
     ['Shuffle (keeps locked sections)', ICONS.shuffle, shuffle],
   ];
