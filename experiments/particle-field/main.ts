@@ -4237,6 +4237,18 @@ if (xframe.inFrame) {
   });
   // Stacked over another experiment: no page background, so the layer below
   // shows through; without mouse input the controls go away too.
+  // Layers that don't get the mouse can't see taps; tell them where the
+  // pointer is ('pointer' topic, viewport fractions), so e.g. the player's
+  // fading controls can wake up and its buttons still work.
+  let lastMove = 0;
+  const sharePointer = (type: 'down' | 'move') => (e: PointerEvent) => {
+    if (!xframe.layer.input) return;
+    if (type === 'move' && (e.pointerType !== 'mouse' || e.timeStamp - lastMove < 200)) return;
+    if (type === 'move') lastMove = e.timeStamp;
+    xframe.publish('pointer', { type, x: e.clientX / innerWidth, y: e.clientY / innerHeight });
+  };
+  window.addEventListener('pointerdown', sharePointer('down'), true);
+  window.addEventListener('pointermove', sharePointer('move'), true);
   xframe.onLayer((layer) => {
     seeThrough = layer.role === 'stacked';
     document.body.classList.toggle('see-through', seeThrough);

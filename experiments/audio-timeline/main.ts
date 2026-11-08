@@ -332,6 +332,11 @@ xframe.subscribe('transport.command', (cmd: { action?: string; time?: number }) 
 xframe.onLayer((layer) => {
   document.body.classList.toggle('see-through', layer.role === 'stacked');
 });
+// When another layer has the mouse, it shares taps so our controls still respond.
+xframe.subscribe('pointer', (p: { type?: string; x?: number; y?: number }) => {
+  if (xframe.layer.input || typeof p?.x !== 'number' || typeof p?.y !== 'number') return;
+  skins.remotePointer(p.type === 'down' ? 'down' : 'move', p.x, p.y);
+});
 
 let busWasPlaying = false;
 let lastTransport = 0;

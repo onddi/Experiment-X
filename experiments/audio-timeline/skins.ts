@@ -367,6 +367,16 @@ export function createSkins(root: HTMLElement, api: PlayerApi) {
   }
 
   return {
+    /** A pointer event seen by another layer (we don't get the mouse). x, y are 0..1 of the viewport. */
+    remotePointer(type: 'down' | 'move', x: number, y: number) {
+      const wasAwake = root.classList.contains('awake');
+      wake();
+      if (type !== 'down' || skin === 'classic') return;
+      // A tap on one of our (visible) buttons still presses it.
+      const el = document.elementFromPoint(x * innerWidth, y * innerHeight);
+      const btn = el?.closest<HTMLElement>('.sk [data-act]');
+      if (btn && wasAwake) btn.click();
+    },
     get skin() {
       return skin;
     },

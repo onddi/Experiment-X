@@ -215,6 +215,10 @@ each 0–1, once per frame alongside `audio.spectrum`.
 `hold?: boolean` asks the other layers to freeze while `playing` is false (the audio
 timeline's "Pause other layers with the music"; the particle field follows it).
 
+**`pointer`**: `{ type: 'down' | 'move', x, y }` (0–1 of the viewport), published by
+the layer that gets the mouse (the particle field does) so layers without it can still
+react to taps, e.g. the audio timeline's fading controls.
+
 **`transport.command`**: requests to whoever publishes `transport`:
 
 ```ts
