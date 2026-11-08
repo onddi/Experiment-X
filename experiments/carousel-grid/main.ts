@@ -15,6 +15,8 @@ interface Settings {
   fill: boolean;
   hero: boolean;
   heroRows: number;
+  heroPlace: 'top' | 'left';
+  heroCols: number;
   heroCustom: boolean;
   heroDirection: Axis;
   heroEffect: Effect;
@@ -61,6 +63,8 @@ const DEFAULTS: Settings = {
   fill: false,
   hero: false,
   heroRows: 1,
+  heroPlace: 'top',
+  heroCols: 1,
   heroCustom: false,
   heroDirection: 'x',
   heroEffect: 'slide',
@@ -125,7 +129,8 @@ const STRUCTURAL = new Set<keyof Settings>([
   'hero', 'heroCustom', 'heroDirection', 'heroLoop', 'heroItems',
 ]);
 
-// The optional main carousel sits above the grid as row -1 and spans every column.
+// The optional main carousel sits above the grid (spanning every column) or to
+// its left (spanning every row), as row -1.
 const HERO = -1;
 const COLOR = new Set<keyof Settings>([
   'hueShift', 'chroma', 'lightness', 'colorMode', 'surface', 'evenExposure', 'labels', 'imageMode', 'heroDrives', 'imageStyle',
@@ -398,7 +403,11 @@ function applyStyle() {
     x.carousel.setEffect(o.effect);
   }
   const hero = cells.find((x) => x.r === HERO);
-  hero?.carousel.el.style.setProperty('grid-row', `span ${settings.heroRows}`);
+  if (hero) {
+    const left = settings.heroPlace === 'left';
+    hero.carousel.el.style.gridRow = left ? `1 / span ${settings.rows}` : `span ${settings.heroRows}`;
+    hero.carousel.el.style.gridColumn = left ? `1 / span ${settings.heroCols}` : '1 / -1';
+  }
 }
 
 /** Line the grid up with the main row's element straight away. */
@@ -415,9 +424,14 @@ function recolor() {
 
 /** Fit rows × cols cells of the chosen aspect ratio inside the stage. */
 function layout() {
-  const { cols, gap, aspect, padding } = settings;
-  // The main carousel is laid out as one extra row of the same height.
-  const rows = settings.rows + (settings.hero ? settings.heroRows : 0);
+  const { gap, aspect, padding } = settings;
+  // The main carousel is laid out as extra rows on top, or extra columns on
+  // the left, of the same size as the grid's own.
+  const { rows: gridRows, cols: gridCols } = settings;
+  const top = settings.hero && settings.heroPlace === 'top';
+  const left = settings.hero && settings.heroPlace === 'left';
+  const rows = gridRows + (top ? settings.heroRows : 0);
+  const cols = gridCols + (left ? settings.heroCols : 0);
   const availW = Math.max(0, stage.clientWidth - padding * 2 - gap * (cols - 1));
   const availH = Math.max(0, stage.clientHeight - padding * 2 - gap * (rows - 1));
   let w = availW / cols;
@@ -433,8 +447,9 @@ function layout() {
   grid.style.setProperty('--half-h', `${h / 2}px`);
   // The main carousel is a wide box, so its cube turns around its own centre.
   const hero = cells.find((x) => x.r === HERO);
-  const heroW = w * cols + gap * (cols - 1);
-  const heroH = h * settings.heroRows + gap * (settings.heroRows - 1);
+  const span = (n: number, size: number) => size * n + gap * (n - 1);
+  const heroW = left ? span(settings.heroCols, w) : span(cols, w);
+  const heroH = left ? span(gridRows, h) : span(settings.heroRows, h);
   hero?.carousel.el.style.setProperty('--half-w', `${heroW / 2}px`);
   hero?.carousel.el.style.setProperty('--half-h', `${heroH / 2}px`);
   hero?.carousel.el.style.setProperty('--persp-base', `${Math.max(heroW, heroH)}px`);
@@ -499,9 +514,11 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'shade', label: 'Shading', min: 0, max: 0.9, step: 0.01, format: (v) => v.toFixed(2) },
 
   { kind: 'section', id: 'hero', label: 'Main carousel',
-    summary: () => (!settings.hero ? 'off' : settings.heroCustom ? `on, own settings` : 'on') },
-  { kind: 'toggle', key: 'hero', label: 'Show main carousel row on top' },
-  { kind: 'range', key: 'heroRows', label: 'Height in rows', min: 1, max: 4, step: 1, show: () => settings.hero },
+    summary: () => (!settings.hero ? 'off' : `${settings.heroPlace === 'left' ? 'left' : 'top'}${settings.heroCustom ? ', own settings' : ''}`) },
+  { kind: 'toggle', key: 'hero', label: 'Show main carousel' },
+  { kind: 'select', key: 'heroPlace', label: 'Position', options: [['top', 'Top row'], ['left', 'Left column']], show: () => settings.hero },
+  { kind: 'range', key: 'heroRows', label: 'Height in rows', min: 1, max: 4, step: 1, show: () => settings.hero && settings.heroPlace === 'top' },
+  { kind: 'range', key: 'heroCols', label: 'Width in columns', min: 1, max: 4, step: 1, show: () => settings.hero && settings.heroPlace === 'left' },
   { kind: 'toggle', key: 'heroCustom', label: 'Use its own carousel settings', show: () => settings.hero },
   { kind: 'sub', label: 'Main carousel settings', show: ownHero },
   { kind: 'select', key: 'heroDirection', label: 'Drag direction', options: [['x', 'Horizontal'], ['y', 'Vertical']], show: ownHero },
