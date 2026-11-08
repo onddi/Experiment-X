@@ -513,8 +513,15 @@ function step(dt: number) {
     }
   }
   const cf = settings.clickForce;
-  const gathering = pointer.down && settings.click === 'gather';
-  const gatherR = Math.max(150, radius * 2.5);
+  // Gather: hold the pointer (click mode), or the Gather action, which pulls
+  // the whole field into an orb at the centre until pressed again.
+  const holdGather = pointer.down && settings.click === 'gather';
+  const gathering = holdGather || gatherAll;
+  const gx = holdGather ? pointer.x : w / 2;
+  const gy = holdGather ? pointer.y : h / 2;
+  const gatherR = holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
+  const gatherMin = holdGather ? 0 : 0.35;
+  const gatherCore = holdGather ? 30 : Math.min(w, h) * 0.18;
   if (pointer.down && settings.click === 'emit') emit(dt);
   // Hover behaviour pauses while gathering so the two don't fight.
   const usePointer = pointer.active && pointerMode !== 'none' && !gathering;
@@ -622,17 +629,22 @@ function step(dt: number) {
     if (gathering) {
       // Pull into a spinning orb: a spring towards the pointer plus a
       // tangential push, so particles orbit instead of collapsing to a dot.
-      const dx = px[i] - pointer.x;
-      const dy = py[i] - pointer.y;
+      const dx = px[i] - gx;
+      const dy = py[i] - gy;
       const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
-      if (d < gatherR) {
-        const f = (1 - d / gatherR) * cf;
+      if (d < gatherR || gatherMin > 0) {
+        const f = Math.max(gatherMin, 1 - d / gatherR) * cf;
         const nx = dx / d;
         const ny = dy / d;
-        const pull = Math.min(1, d / 30); // ease off at the core
+        // Hold: ease off at the core. Full-field: each particle settles at its
+        // own radius (spread evenly over a disc), so the orb fills in.
+        const rest = holdGather ? 0 : gatherCore * Math.sqrt((i * 0.618034) % 1);
+        const pull = holdGather ? Math.min(1, d / gatherCore) : Math.max(-1, Math.min(1, (d - rest) / 40));
         // Extra drag inside the well keeps the orb dense instead of a ring.
-        ax += (-nx * 1.2 * pull - ny * 0.3) * f - vx[i] * 0.08 * f;
-        ay += (-ny * 1.2 * pull + nx * 0.3) * f - vy[i] * 0.08 * f;
+        const spin = holdGather ? 0.3 : 0.25 * Math.min(1, rest / gatherCore + 0.2);
+        const drag = holdGather ? 0.08 : 0.12;
+        ax += (-nx * 1.2 * pull - ny * spin) * f - vx[i] * drag * f;
+        ay += (-ny * 1.2 * pull + nx * spin) * f - vy[i] * drag * f;
       }
     }
 
@@ -1357,6 +1369,7 @@ const svg = (d: string) =>
 const ICONS = {
   pause: svg('<path d="M9 5v14M15 5v14"/>'),
   play: svg('<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>'),
+  gather: svg('<circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M4 4l4 4M20 4l-4 4M4 20l4-4M20 20l-4-4"/><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/>'),
   clear: svg('<path d="M4 20h16"/><path d="M14.5 4.5l5 5L11 18H6.5L4 15.5z"/><path d="M9.5 9.5l5 5"/>'),
   scatter: svg('<circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>'),
   shuffle: svg('<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>'),
@@ -1465,7 +1478,7 @@ const CONTROLS: Control[] = [
     kind: 'icons',
     buttons: [
       ['Pause (Space)', ICONS.pause, togglePause],
-      ['Clear trails (C)', ICONS.clear, clear],
+      ['Gather to the centre (G)', ICONS.gather, toggleGather],
       ['Scatter (S)', ICONS.scatter, scatter],
       ['Shuffle, keeps locked sections (R)', ICONS.shuffle, shuffle],
       ['Reset to defaults', ICONS.reset, reset],
@@ -1668,6 +1681,7 @@ function renderControls() {
         b.innerHTML = icon;
         b.addEventListener('click', fn);
         if (fn === togglePause) pauseButton = b;
+        if (fn === toggleGather) gatherButton = b;
         row.append(b);
       }
       body.append(row);
@@ -1819,7 +1833,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: Space pause · C clear · S scatter · R shuffle · H hide panel.';
+  keys.textContent = 'Click or hold on the field. Keys: Space pause · G gather · S scatter · R shuffle · H hide panel.';
   controls.append(keys);
 }
 
@@ -1918,7 +1932,15 @@ function togglePause() {
   }
 }
 
+let gatherAll = false;
+let gatherButton: HTMLButtonElement | null = null;
+function toggleGather() {
+  gatherAll = !gatherAll;
+  gatherButton?.classList.toggle('on', gatherAll);
+}
+
 function scatter() {
+  if (gatherAll) toggleGather();
   for (let i = 0; i < n; i++) spawn(i, Math.random() * w, Math.random() * h);
   clear();
 }
@@ -2091,6 +2113,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     togglePause();
   } else if (k === 'c') clear();
+  else if (k === 'g') toggleGather();
   else if (k === 's') scatter();
   else if (k === 'r') shuffle();
   else if (k === 'h') toggle.click();
