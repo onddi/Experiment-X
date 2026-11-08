@@ -329,6 +329,8 @@ button:hover, select:hover { border-color: #3c3f46; }
 }
 .fab button:active { transform: scale(0.92); color: #fff; }
 .fab button.on { color: var(--accent); border-color: color-mix(in oklch, var(--accent) 50%, transparent); }
+.fab { transition: opacity 0.4s; }
+.fab.idle { opacity: 0; pointer-events: none; }
 @media (hover: none), (max-width: 720px) {
   .fab { display: flex; }
   body.panel-open .fab { display: none; }

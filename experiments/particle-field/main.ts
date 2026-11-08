@@ -4890,6 +4890,16 @@ function toggleDebug() {
     if (fn === toggleGather) gatherButtons.push(b);
     fab.append(b);
   }
+  // Out of the way while you watch: fade after a few idle seconds, back on
+  // the next touch anywhere (that touch doesn't press a hidden button).
+  let idle = 0;
+  const wake = () => {
+    fab.classList.remove('idle');
+    clearTimeout(idle);
+    idle = window.setTimeout(() => fab.classList.add('idle'), 3500);
+  };
+  window.addEventListener('pointerdown', wake, { capture: true, passive: true });
+  wake();
 }
 document.body.classList.add('panel-open');
 new ResizeObserver(() => resize()).observe(canvas);
