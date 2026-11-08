@@ -20,7 +20,7 @@ type HatAction = 'sparkle' | 'none';
 type SubAction = 'size' | 'flow' | 'speed' | 'none';
 type WaveAt = 'centre' | 'pointer' | 'random' | 'orbit' | 'mirror' | 'corners';
 type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' | 'sweep' | 'mix' | 'random' | 'none';
-type ColorBy = 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
+type ColorBy = 'depth' | 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES | 'custom';
 type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
 type GlyphPick = 'random' | 'speed' | 'heading' | 'sequence';
@@ -94,6 +94,8 @@ interface Settings {
   render: Render;
   linkDist: number;
   ribbonLen: number;
+  depth: number;
+  depthParallax: number;
   trail: number;
   glow: boolean;
   palette: Palette;
@@ -258,6 +260,8 @@ const DEFAULTS: Settings = {
   render: 'dots',
   linkDist: 70,
   ribbonLen: 14,
+  depth: 0,
+  depthParallax: 0.5,
   trail: 0.75,
   glow: false,
   palette: 'aurora',
@@ -368,6 +372,7 @@ let rnd = new Float32Array(0); // a random 0..1 drawn at birth (size variety)
 let psz = new Float32Array(0); // per-particle size multiplier, worked out each frame
 let hx = new Float32Array(0); // home position (Shape section)
 let hy = new Float32Array(0);
+let pz = new Float32Array(0); // depth: 0 far, 1 near
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
@@ -389,7 +394,7 @@ function ensureCount() {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz].map(grow);
     cap = want;
   }
   for (let i = n; i < want; i++) {
@@ -404,6 +409,7 @@ function spawn(i: number, x: number, y: number) {
   py[i] = oy[i] = y;
   tone[i] = Math.random();
   gl[i] = Math.random();
+  pz[i] = Math.random();
   rebirth(i);
   launch(i);
 }
@@ -430,6 +436,10 @@ function rebirth(i: number) {
 
 function fadeOf(i: number) {
   if (dead[i]) return 0;
+  return fadeLife(i) * (settings.depth > 0 ? 1 - (1 - (0.3 + pz[i] * 0.7)) * settings.depth : 1);
+}
+
+function fadeLife(i: number) {
   const flash = span[i] > 0 && settings.lifeFade === 'flash';
   let a = age[i] < FADE_IN && !flash ? age[i] / FADE_IN : 1;
   if (span[i] > 0) {
@@ -816,6 +826,7 @@ function step(dt: number) {
   const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
   runEmitter(dt, on && A.beat);
   const swarm = swarmForces();
+  const depthOn = settings.depth > 0;
   for (let i = 0; i < n; i++) {
     if (dead[i]) continue;
     age[i] += dt;
@@ -913,7 +924,7 @@ function step(dt: number) {
       const d2 = dx * dx + dy * dy;
       if (d2 < r2) {
         const d = Math.sqrt(d2) + 0.001;
-        const f = (1 - d / radius) * force;
+        const f = (1 - d / radius) * force * (depthOn ? 1 + (pz[i] * 1.5 - 0.75) * settings.depth : 1);
         const nx = dx / d;
         const ny = dy / d;
         if (pointerMode === 'repel') {
@@ -1009,8 +1020,9 @@ function step(dt: number) {
     vy[i] = (vy[i] + ay * dt) * Math.pow(damp, dt);
     ox[i] = px[i];
     oy[i] = py[i];
-    px[i] += vx[i] * speedNow * dt;
-    py[i] += vy[i] * speedNow * dt;
+    const zs = depthOn ? 1 + (0.35 + pz[i] * 1.0 - 1) * settings.depth : 1;
+    px[i] += vx[i] * speedNow * zs * dt;
+    py[i] += vy[i] * speedNow * zs * dt;
 
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
       const edges = settings.edges;
@@ -1188,14 +1200,18 @@ function drawRibbons(list: number[], k: number, s: number) {
     ctx.beginPath();
     for (const i of list) {
       const base = i * L;
+      // Parallax offset (the history is stored unshifted).
+      const pk = (pz[i] - 0.5) * parAmt;
+      const offx = -camX * pk;
+      const offy = -camY * pk;
       let slot = (histHead - from + L) % L;
-      let x0 = hist[(base + slot) * 2];
-      let y0 = hist[(base + slot) * 2 + 1];
+      let x0 = hist[(base + slot) * 2] + offx;
+      let y0 = hist[(base + slot) * 2 + 1] + offy;
       ctx.moveTo(x0, y0);
       for (let q = from + 1; q <= to; q++) {
         slot = (histHead - q + L) % L;
-        const x1 = hist[(base + slot) * 2];
-        const y1 = hist[(base + slot) * 2 + 1];
+        const x1 = hist[(base + slot) * 2] + offx;
+        const y1 = hist[(base + slot) * 2 + 1] + offy;
         const dx = x1 - x0;
         const dy = y1 - y0;
         // A big jump means a wrap or a respawn: break the ribbon there.
@@ -1565,6 +1581,9 @@ function shadeIndex(i: number) {
       // the colour of wherever they are, so the flow shows through the bands.
       u = loop((px[i] / w * 0.9 + py[i] / h * 0.4 + tone[i] * 0.08 + t * 0.06) % 1);
       break;
+    case 'depth':
+      u = pz[i];
+      break;
     case 'age':
       // Young particles at the calm end, old ones at the hot end.
       u = span[i] > 0 ? Math.min(1, age[i] / span[i]) : tone[i];
@@ -1851,7 +1870,8 @@ let uniformSize = true;
 function updateSizes() {
   const sv = settings.sizeVar;
   const ls = settings.lifespan > 0 ? settings.lifeSize : 'none';
-  uniformSize = sv <= 0 && ls === 'none';
+  const dp = settings.depth;
+  uniformSize = sv <= 0 && ls === 'none' && dp <= 0;
   if (uniformSize) return;
   for (let i = 0; i < n; i++) {
     const u = rnd[i] * 2 - 1;
@@ -1860,6 +1880,7 @@ function updateSizes() {
       const lt = Math.min(1, age[i] / span[i]);
       z *= ls === 'grow' ? 0.3 + lt * 1.4 : ls === 'shrink' ? 1.7 - lt * 1.4 : 0.3 + Math.sin(Math.PI * lt) * 1.4;
     }
+    if (dp > 0) z *= 1 + (0.3 + pz[i] * 1.4 - 1) * dp;
     psz[i] = z;
   }
 }
@@ -1910,6 +1931,10 @@ function drawWellMarkers(light: boolean) {
   }
 }
 
+let camX = 0;
+let camY = 0;
+let parAmt = 0;
+
 function draw() {
   const [r, g, b] = pal().bg;
   ctx.globalCompositeOperation = 'source-over';
@@ -1932,9 +1957,23 @@ function draw() {
     else if (a > 0) fadeBuckets[Math.min(FADE_LEVELS - 1, (a * FADE_LEVELS) | 0)][shadeIndex(i)].push(i);
   }
 
-  if (settings.render === 'links') drawLinks();
-
   const s = settings.size * audioSizeBoost();
+  // Parallax: shift each depth layer a little with the camera, drawn by
+  // offsetting positions just for this draw and putting them back after.
+  const par = settings.depth > 0 && settings.depthParallax > 0;
+  if (par) {
+    const tx = pointer.active && pointer.x > -1e3 ? (pointer.x / w - 0.5) * 2 : Math.sin(t * 0.13) * 0.6;
+    const ty = pointer.active && pointer.y > -1e3 ? (pointer.y / h - 0.5) * 2 : Math.cos(t * 0.11) * 0.4;
+    camX += (tx - camX) * 0.05;
+    camY += (ty - camY) * 0.05;
+    parAmt = 40 * settings.depthParallax * settings.depth;
+    for (let i = 0; i < n; i++) {
+      const k = (pz[i] - 0.5) * parAmt;
+      px[i] -= camX * k;
+      py[i] -= camY * k;
+    }
+  } else parAmt = 0;
+  if (settings.render === 'links') drawLinks();
   drawBuckets(buckets, s);
   // Fading particles, drawn in a few alpha steps to keep draw calls batched.
   for (let L = 0; L < FADE_LEVELS; L++) {
@@ -1942,6 +1981,13 @@ function draw() {
     drawBuckets(fadeBuckets[L], s);
   }
   ctx.globalAlpha = 1;
+  if (par) {
+    for (let i = 0; i < n; i++) {
+      const k = (pz[i] - 0.5) * parAmt;
+      px[i] += camX * k;
+      py[i] += camY * k;
+    }
+  }
 
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
@@ -2148,7 +2194,7 @@ const RENDERS: [string, string][] = [
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
   ['links', 'Constellation'], ['mixed', 'Mixed'],
 ];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['audio', 'Music energy']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 // Vibes: how the music moves the particles. They only set the reaction
@@ -2361,10 +2407,13 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct, show: ft },
 
   { kind: 'section', id: 'look', label: 'Style', open: true,
-    lock: ['render', 'mixStyles', 'linkDist', 'ribbonLen', 'trail', 'glow', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
+    lock: ['render', 'mixStyles', 'linkDist', 'ribbonLen', 'depth', 'depthParallax', 'trail', 'glow', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
     summary: () => label(RENDERS, settings.render) },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
+  { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
+  { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
   { kind: 'range', key: 'ribbonLen', label: 'Ribbon length', min: 4, max: 40, step: 1, format: (v) => `${v} steps`, show: () => usesRibbons() },
   { kind: 'note', text: 'Ribbons draw their own trails, so they look cleanest with Trails near 0.', show: () => usesRibbons() && settings.trail > 0.3 },
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
@@ -2425,6 +2474,7 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Hello', { count: 4000, size: 1.4, render: 'dots', shape: 'text', shapeText: 'HELLO', shapeSize: 0.8, homeStrength: 1, shapeCycle: 10, flow: 0.6, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.3, trail: 0.75, friction: 0.04, jitter: 0.02, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Starlings', { count: 700, size: 2, render: 'arrows', flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, trail: 0.55, friction: 0.01, jitter: 0.06, palette: 'ice', colorBy: 'direction', glow: false, pointerMode: 'repel', radius: 160, force: 1, click: 'shockwave' }],
   ['Silk ribbons', { count: 600, size: 1.6, render: 'ribbons', ribbonLen: 24, flow: 1, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, trail: 0, friction: 0.05, jitter: 0.01, palette: 'tealorange', colorBy: 'direction', glow: true, pointerMode: 'vortex', radius: 200, force: 0.7, click: 'ripple' }],
+  ['Deep space', { count: 3000, size: 2, render: 'glow', depth: 1, depthParallax: 0.8, flow: 0.2, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.1, speed: 0.8, trail: 0.3, friction: 0.03, jitter: 0.01, wind: 0.15, windDir: 180, palette: 'cosmic', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 160, force: 0.5, click: 'ripple' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
