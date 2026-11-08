@@ -22,6 +22,8 @@ export class Viewer {
   private transition: OpenTransition = 'zoom';
   private anim: Animation | null = null;
   private closing = false;
+  /** Set by a press that starts on the open viewer; only such a press closes it. */
+  private armed = false;
 
   constructor(
     parent: HTMLElement,
@@ -32,7 +34,16 @@ export class Viewer {
     this.el.hidden = true;
     this.el.title = 'Click or press Escape to close';
     parent.append(this.el);
-    this.el.addEventListener('click', () => this.close());
+    // iOS Safari follows a tap with a synthetic click at the same spot, which
+    // would land on the freshly opened viewer and close it straight away. So a
+    // click only closes the viewer when its press also began on the viewer.
+    this.el.addEventListener('pointerdown', () => {
+      this.armed = this.isOpen;
+    });
+    this.el.addEventListener('click', () => {
+      if (this.armed) this.close();
+      this.armed = false;
+    });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.isOpen) this.close();
     });
@@ -54,6 +65,10 @@ export class Viewer {
     this.el.style.setProperty('--cell', `${Math.min(innerWidth, innerHeight) * 0.6}px`);
     this.el.hidden = false;
     this.closing = false;
+    this.armed = false;
+    // Flush layout so WebKit starts the animation from the first keyframe
+    // instead of jumping to the end on an element that was display: none.
+    void this.el.getBoundingClientRect();
     this.play(false, duration);
     from.blur();
   }
