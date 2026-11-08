@@ -6,7 +6,7 @@
 // of the cell and of the full-screen view, then animates those flat pictures.
 // Animating the live elements instead meant redrawing the colour-graded,
 // blended image on every frame, which stutters badly in Safari. The
-// full-screen view is the cell magnified, so Zoom and Flip grow the cell's own
+// full-screen view is the cell magnified, so Zoom grows the cell's own
 // picture with no change of crop or label size.
 // Browsers without View Transitions open and close instantly.
 //
@@ -16,19 +16,40 @@
 // Closing gives the screen back (onRelease), fades the cell back in and
 // zooms it home.
 
-export type OpenTransition = 'zoom' | 'reveal' | 'iris' | 'fade' | 'slide' | 'flip';
+export type OpenTransition = 'zoom' | 'iris';
 
 export const OPEN_TRANSITIONS: [OpenTransition | 'off', string][] = [
   ['off', 'Off'],
   ['zoom', 'Zoom'],
-  ['reveal', 'Reveal'],
   ['iris', 'Iris'],
-  ['flip', 'Flip'],
-  ['fade', 'Fade'],
-  ['slide', 'Slide up'],
 ];
 
-const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+/** Named timing curves (cubic-bezier control points). */
+export const CURVES: Record<string, { label: string; points: [number, number, number, number] }> = {
+  smooth: { label: 'Smooth', points: [0.2, 0.8, 0.2, 1] },
+  expo: { label: 'Fast start', points: [0.16, 1, 0.3, 1] },
+  inout: { label: 'Ease in-out', points: [0.65, 0, 0.35, 1] },
+  gentle: { label: 'Gentle', points: [0.4, 0, 0.2, 1] },
+  overshoot: { label: 'Overshoot', points: [0.34, 1.4, 0.64, 1] },
+  linear: { label: 'Linear', points: [0, 0, 1, 1] },
+};
+
+export interface ViewerOptions {
+  transition: OpenTransition;
+  /** Opening and closing durations, ms. */
+  duration: number;
+  closeDuration: number;
+  /** cubic-bezier control points for both directions. */
+  curve: [number, number, number, number];
+  /** The cell's corner radius, px. */
+  radius: number;
+  /** Share of the zoom (0..1) for which the corners stay as round as the cell's. */
+  cornerHold: number;
+  /** How far the grid behind sinks back while the cell zooms (0 = not at all). */
+  recede: number;
+  /** Fade to black after opening, in ms (0 = stay on the image). */
+  fade: number;
+}
 const NAME = 'cg-view';
 
 interface ViewTransitionLike {
@@ -57,13 +78,7 @@ export class Viewer {
 
   constructor(
     parent: HTMLElement,
-    private opts: () => {
-      transition: OpenTransition;
-      duration: number;
-      radius: number;
-      /** Fade to black after opening, in ms (0 = stay on the image). */
-      fade: number;
-    },
+    private opts: () => ViewerOptions,
   ) {
     this.el = document.createElement('div');
     this.el.className = 'viewer';
@@ -180,9 +195,9 @@ export class Viewer {
       else this.afterOpen();
       return;
     }
-    // Zoom and Flip morph the cell into the viewer, so both carry the shared
-    // name on their side of the change; the others only animate the viewer.
-    const morph = this.transition === 'zoom' || this.transition === 'flip';
+    // Zoom morphs the cell into the viewer, so both carry the shared name on
+    // their side of the change; Iris only animates the viewer.
+    const morph = this.transition === 'zoom';
     this.css.textContent = this.styles(closing);
     if (morph && !closing) source.style.viewTransitionName = NAME;
     if (closing) this.el.style.viewTransitionName = NAME;
@@ -208,22 +223,34 @@ export class Viewer {
 
   /** CSS for the transition's snapshot pseudo-elements. */
   private styles(closing: boolean) {
-    const { duration, radius } = this.opts();
+    const o = this.opts();
     const r = this.source!.getBoundingClientRect();
     const W = innerWidth;
     const H = innerHeight;
-    const rad = Math.min(radius, Math.min(r.width, r.height) * 0.25);
-    const time = `${duration}ms ${EASE} both${closing ? ' reverse' : ''}`;
-    // The full-screen picture is the "new" one when opening, the "old" one when closing.
-    const view = `::view-transition-${closing ? 'old' : 'new'}(${NAME})`;
+    const rad = Math.min(o.radius, Math.min(r.width, r.height) * 0.25);
+    const ms = closing ? o.closeDuration : o.duration;
+    const ease = `cubic-bezier(${o.curve.join(', ')})`;
+    // Closing plays the same curve forwards (big to small), not mirrored.
+    const time = `${ms}ms ${ease} both`;
+    // Keyframes are written "cell end" to "screen end"; closing swaps them.
+    const frames = (cell: string, screen: string, mid = '') =>
+      closing ? `from { ${screen} } ${mid} to { ${cell} }` : `from { ${cell} } ${mid} to { ${screen} }`;
     let css = `
       ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
-      ::view-transition-group(${NAME}) { animation-duration: ${duration}ms; animation-timing-function: ${EASE}; overflow: clip; }
+      ::view-transition-group(${NAME}) { animation-duration: ${ms}ms; animation-timing-function: ${ease}; overflow: clip; }
       ::view-transition-old(${NAME}), ::view-transition-new(${NAME}) {
         width: 100%; height: 100%;
-        animation-duration: ${duration}ms; animation-timing-function: ${EASE};
+        animation-duration: ${ms}ms; animation-timing-function: ${ease};
       }`;
-    if (this.transition === 'zoom' || this.transition === 'flip') {
+    if (o.recede > 0) {
+      // The grid sinks back and darkens a little as the cell comes forward.
+      const s = 1 - o.recede * 0.12;
+      css += `
+        ::view-transition-old(root) { display: none; }
+        ::view-transition-new(root) { animation: cg-recede ${time}; }
+        @keyframes cg-recede { ${frames('transform: none; opacity: 1;', `transform: scale(${s}); opacity: ${1 - o.recede * 0.5};`)} }`;
+    }
+    if (this.transition === 'zoom') {
       // The full-screen view is the cell magnified, so its picture fits inside
       // the morphing box ("contain") exactly where the cell's picture covers
       // it. Laid over the cell's picture with no cross-fade, the two line up
@@ -231,45 +258,25 @@ export class Viewer {
       // fills the edges the full-screen one doesn't reach.
       const big = `::view-transition-${closing ? 'old' : 'new'}(${NAME})`;
       const small = `::view-transition-${closing ? 'new' : 'old'}(${NAME})`;
+      const hold = Math.round(Math.min(0.95, o.cornerHold) * 100);
+      // Corners stay as round as the cell's for the first part of the zoom.
+      const mid = hold > 0 ? `${closing ? 100 - hold : hold}% { border-radius: ${rad}px; }` : '';
       css += `
         ${big} { object-fit: contain; z-index: 1; animation: none; opacity: 1; }
-        ${small} { object-fit: cover; animation: none; opacity: 1; }`;
-    }
-    const anim = (frames: string) => {
-      css += `\n${view} { animation: cg-view ${time}; }\n@keyframes cg-view { ${frames} }`;
-    };
-    switch (this.transition) {
-      case 'zoom':
-        // Round the corners like the cell's at the cell end of the morph.
-        css += `\n::view-transition-image-pair(${NAME}) { overflow: clip; animation: cg-round ${time}; }
-          @keyframes cg-round { from { border-radius: ${rad}px; } to { border-radius: 0px; } }`;
-        break;
-      case 'flip':
-        css += `\n::view-transition-image-pair(${NAME}) { animation: cg-flip ${time}; }
-          @keyframes cg-flip {
-            from { transform: none; }
-            50% { transform: perspective(${W * 1.5}px) rotateY(-40deg); }
-            to { transform: none; }
-          }`;
-        break;
-      case 'reveal':
-        anim(`from { clip-path: inset(${r.top}px ${W - r.right}px ${H - r.bottom}px ${r.left}px round ${rad}px); }
-              to { clip-path: inset(0px 0px 0px 0px round 0px); }`);
-        break;
-      case 'iris': {
-        const cx = r.left + r.width / 2;
-        const cy = r.top + r.height / 2;
-        const far = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy));
-        anim(`from { clip-path: circle(${Math.min(r.width, r.height) / 2}px at ${cx}px ${cy}px); }
-              to { clip-path: circle(${far}px at ${cx}px ${cy}px); }`);
-        break;
-      }
-      case 'fade':
-        anim(`from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; }`);
-        break;
-      case 'slide':
-        anim(`from { transform: translateY(100%); } to { transform: none; }`);
-        break;
+        ${small} { object-fit: cover; animation: none; opacity: 1; }
+        ::view-transition-image-pair(${NAME}) { overflow: clip; animation: cg-round ${time}; }
+        @keyframes cg-round { ${frames(`border-radius: ${rad}px;`, 'border-radius: 0px;', mid)} }`;
+    } else {
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const far = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy));
+      const view = `::view-transition-${closing ? 'old' : 'new'}(${NAME})`;
+      css += `
+        ${view} { animation: cg-iris ${time}; }
+        @keyframes cg-iris { ${frames(
+          `clip-path: circle(${Math.min(r.width, r.height) / 2}px at ${cx}px ${cy}px);`,
+          `clip-path: circle(${far}px at ${cx}px ${cy}px);`,
+        )} }`;
     }
     return css;
   }

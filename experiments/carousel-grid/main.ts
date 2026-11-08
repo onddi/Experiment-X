@@ -2,7 +2,7 @@ import './style.css';
 import { Carousel, type Axis, type CarouselItem, type Effect } from './carousel.ts';
 import { randomWord } from './words.ts';
 import { STYLES, themeFor } from './themes.ts';
-import { OPEN_TRANSITIONS, Viewer, type OpenTransition } from './viewer.ts';
+import { CURVES, OPEN_TRANSITIONS, Viewer, type OpenTransition } from './viewer.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -18,6 +18,14 @@ interface Settings {
   heroRows: number;
   openWith: OpenTransition | 'off';
   openDuration: number;
+  openCloseDuration: number;
+  openCurve: string;
+  openX1: number;
+  openY1: number;
+  openX2: number;
+  openY2: number;
+  openCorner: number;
+  openRecede: number;
   openFade: number;
   heroPlace: 'top' | 'left';
   heroCols: number;
@@ -69,6 +77,14 @@ const DEFAULTS: Settings = {
   heroRows: 1,
   openWith: 'zoom',
   openDuration: 500,
+  openCloseDuration: 450,
+  openCurve: 'smooth',
+  openX1: 0.2,
+  openY1: 0.8,
+  openX2: 0.2,
+  openY2: 1,
+  openCorner: 0,
+  openRecede: 0,
   openFade: 800,
   heroPlace: 'top',
   heroCols: 1,
@@ -113,6 +129,9 @@ const DEFAULTS: Settings = {
 
 const STORAGE_KEY = 'carousel-grid:settings';
 const settings: Settings = { ...DEFAULTS, ...load() };
+// Older saves may name a transition that has since been retired.
+if (!OPEN_TRANSITIONS.some(([k]) => k === settings.openWith)) settings.openWith = 'zoom';
+if (settings.openCurve !== 'custom' && !(settings.openCurve in CURVES)) settings.openCurve = 'smooth';
 
 function load(): Partial<Settings> {
   try {
@@ -310,6 +329,12 @@ const stage = document.getElementById('stage')!;
 const viewer = new Viewer(app, () => ({
   transition: settings.openWith === 'off' ? 'zoom' : settings.openWith,
   duration: settings.openDuration,
+  closeDuration: settings.openCloseDuration,
+  curve: settings.openCurve === 'custom'
+    ? [settings.openX1, settings.openY1, settings.openX2, settings.openY2]
+    : CURVES[settings.openCurve].points,
+  cornerHold: settings.openCorner,
+  recede: settings.openRecede,
   radius: settings.radius,
   fade: settings.openFade,
 }));
@@ -507,6 +532,8 @@ const ASPECTS: [number, string][] = [
   [1, '1:1'], [4 / 3, '4:3'], [3 / 4, '3:4'], [16 / 9, '16:9'], [9 / 16, '9:16'], [21 / 9, '21:9'],
 ];
 
+const opening = () => settings.openWith !== 'off';
+const customCurve = () => opening() && settings.openCurve === 'custom';
 const isCube = () => settings.effect === 'cube' || (settings.hero && settings.heroCustom && settings.heroEffect === 'cube');
 const ownHero = () => settings.hero && settings.heroCustom;
 const isImages = () => settings.surface !== 'colors';
@@ -563,8 +590,16 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'open', label: 'Full screen', summary: () => label(OPEN_TRANSITIONS, settings.openWith) },
   { kind: 'select', key: 'openWith', label: 'Click a cell to open', options: OPEN_TRANSITIONS },
-  { kind: 'range', key: 'openDuration', label: 'Duration', min: 150, max: 1500, step: 50, format: (v) => `${v} ms`, show: () => settings.openWith !== 'off' },
-  { kind: 'range', key: 'openFade', label: 'Then fade to black', min: 0, max: 3000, step: 100, format: (v) => (v ? `${v} ms` : 'off'), show: () => settings.openWith !== 'off' },
+  { kind: 'range', key: 'openDuration', label: 'Open duration', min: 150, max: 2000, step: 25, format: (v) => `${v} ms`, show: opening },
+  { kind: 'range', key: 'openCloseDuration', label: 'Close duration', min: 150, max: 2000, step: 25, format: (v) => `${v} ms`, show: opening },
+  { kind: 'select', key: 'openCurve', label: 'Curve', options: [...Object.entries(CURVES).map(([k, c]): [string, string] => [k, c.label]), ['custom', 'Custom']], show: opening },
+  { kind: 'range', key: 'openX1', label: 'Start pull (x1)', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: customCurve },
+  { kind: 'range', key: 'openY1', label: 'Start speed (y1)', min: -0.5, max: 2, step: 0.01, format: (v) => v.toFixed(2), show: customCurve },
+  { kind: 'range', key: 'openX2', label: 'End pull (x2)', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: customCurve },
+  { kind: 'range', key: 'openY2', label: 'End settle (y2)', min: -0.5, max: 2, step: 0.01, format: (v) => v.toFixed(2), show: customCurve },
+  { kind: 'range', key: 'openCorner', label: 'Keep corners round for', min: 0, max: 0.95, step: 0.05, format: (v) => (v ? `${Math.round(v * 100)}% of the zoom` : 'off'), show: () => opening() && settings.openWith === 'zoom' },
+  { kind: 'range', key: 'openRecede', label: 'Grid sinks back', min: 0, max: 1, step: 0.05, format: (v) => (v ? v.toFixed(2) : 'off'), show: opening },
+  { kind: 'range', key: 'openFade', label: 'Then fade to black', min: 0, max: 3000, step: 100, format: (v) => (v ? `${v} ms` : 'off'), show: opening },
   { kind: 'section', id: 'feel', label: 'Feel', summary: () => `tension ${settings.tension}` },
   { kind: 'range', key: 'tension', label: 'Snap tension', min: 20, max: 600, step: 5 },
   { kind: 'range', key: 'flick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },
@@ -636,6 +671,10 @@ const refreshers: (() => void)[] = [];
 
 function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   if (settings[k] === v) return;
+  // Switching to a custom curve starts from the preset that was selected.
+  if (k === 'openCurve' && v === 'custom' && settings.openCurve in CURVES) {
+    [settings.openX1, settings.openY1, settings.openX2, settings.openY2] = CURVES[settings.openCurve].points;
+  }
   settings[k] = v;
   save();
   if (STRUCTURAL.has(k)) build();
