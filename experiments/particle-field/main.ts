@@ -54,6 +54,7 @@ interface Settings {
   speed: number;
   friction: number;
   jitter: number;
+  renew: number;
   flow: number;
   flowScale: number;
   flowSpeed: number;
@@ -247,6 +248,7 @@ const DEFAULTS: Settings = {
   speed: 1,
   friction: 0.04,
   jitter: 0.05,
+  renew: 0.3,
   flow: 0.3,
   flowType: 'waves',
   flock: 0,
@@ -510,6 +512,7 @@ function fadeLife(i: number) {
   let a = age[i] < FADE_IN && !flash ? age[i] / FADE_IN : 1;
   if (span[i] > 0) {
     a = Math.min(a, (span[i] - age[i]) / FADE_OUT);
+    if (settings.lifespan <= 0) return Math.max(0, a); // Keep fresh: a plain fade
     const lt = age[i] / span[i];
     const f = settings.lifeFade;
     if (f === 'out') a = Math.min(a, 1 - lt);
@@ -837,6 +840,24 @@ function implodeStart() {
 
 const audio = new AudioInput();
 if (import.meta.env.DEV) (window as unknown as { particleAudio: AudioInput }).particleAudio = audio;
+// Dev only: run the simulation fast without drawing, and measure how spread
+// out the live particles are (share of a 32×18 grid's cells in use).
+if (import.meta.env.DEV)
+  (window as unknown as { particleDev: object }).particleDev = {
+    step: (frames: number) => {
+      for (let k = 0; k < frames; k++) step(1);
+    },
+    spread: () => {
+      const used = new Set<number>();
+      let alive = 0;
+      for (let i = 0; i < n; i++) {
+        if (dead[i]) continue;
+        alive++;
+        used.add(Math.min(17, Math.max(0, ((py[i] / h) * 18) | 0)) * 32 + Math.min(31, Math.max(0, ((px[i] / w) * 32) | 0)));
+      }
+      return { cells: used.size / 576, alive };
+    },
+  };
 let lastPulse = 0;
 let lastSnare = 0;
 let swirlDir = 1;
@@ -957,6 +978,7 @@ function flowAngle(x: number, y: number) {
   );
 }
 
+let renewAcc = 0;
 function step(dt: number) {
   updateFlowFreqs();
   recordHistory();
@@ -1092,6 +1114,16 @@ function step(dt: number) {
   runEmitter(dt, on && A.beat);
   const swarm = swarmForces();
   const depthOn = settings.depth > 0;
+  // Keep fresh: mark a trickle of particles to fade out and start over, so
+  // flows and forces can't pull the whole field into a few lines for good.
+  if (settings.renew > 0 && !lifeOn && !emitting && settings.shape === 'none' && n > 0) {
+    renewAcc += (n * settings.renew * dt) / 1200;
+    while (renewAcc >= 1) {
+      renewAcc--;
+      const i = (Math.random() * n) | 0;
+      if (!dead[i] && span[i] <= 0) span[i] = age[i] + FADE_OUT;
+    }
+  }
   for (let i = 0; i < n; i++) {
     if (dead[i]) continue;
     age[i] += dt;
@@ -1110,7 +1142,14 @@ function step(dt: number) {
         rebirth(i);
         age[i] = FADE_IN + Math.random() * Math.max(0, span[i] - FADE_IN - FADE_OUT);
       }
-    } else if (!lifeOn && span[i] > 0) span[i] = 0;
+    } else if (!lifeOn && span[i] > 0 && age[i] >= span[i]) {
+      // Keep fresh (or a lifespan that was switched off): this one has faded
+      // out, so it starts again somewhere new and fades in.
+      px[i] = ox[i] = Math.random() * w;
+      py[i] = oy[i] = Math.random() * h;
+      rebirth(i);
+      launch(i);
+    }
     let ax = (Math.random() - 0.5) * jitterNow;
     let ay = (Math.random() - 0.5) * jitterNow + settings.gravity * 0.05;
 
@@ -1158,6 +1197,16 @@ function step(dt: number) {
       if (wl.kind === 'attract') {
         ax -= nx * f;
         ay -= ny * f;
+        // Swallowed at the core: comes back in from a random edge, so an
+        // attractor keeps feeding instead of ending as one tight ring.
+        if (d < 28 && settings.shape === 'none' && !emitting) {
+          const e = Math.random() * 4;
+          const u = Math.random();
+          px[i] = ox[i] = e < 1 ? u * w : e < 2 ? u * w : e < 3 ? 1 : w - 1;
+          py[i] = oy[i] = e < 1 ? 1 : e < 2 ? h - 1 : u * h;
+          vx[i] = vy[i] = 0;
+          rebirth(i);
+        }
       } else if (wl.kind === 'repel') {
         ax += nx * f;
         ay += ny * f;
@@ -3105,13 +3154,15 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
   // --- Motion ---
-  { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges'],
+  { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges', 'renew'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'renew', label: 'Keep fresh', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : `~${Math.round(20 / v)}s cycle`) },
+  { kind: 'note', text: 'Keep fresh quietly fades a few particles out and back in somewhere new, so currents and forces can\'t gather everything into a few lines over time. Off with a shape, an emitter or a lifespan, which renew particles already.', show: () => settings.renew > 0 },
   { kind: 'select', key: 'edges', label: 'Off-screen', options: [['wrap', 'Wrap to the other side'], ['enter', 'Re-enter with the flow'], ['bounce', 'Bounce off the edges']] },
 
   { kind: 'section', about: 'Invisible currents that carry the particles.', id: 'flow', label: 'Flow', tab: 'motion', lock: ['flow', 'flowType', 'flowScale', 'flowSpeed'],
