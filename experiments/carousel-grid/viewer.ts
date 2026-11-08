@@ -64,6 +64,8 @@ export class Viewer {
   private source: HTMLElement | null = null;
   private transition: OpenTransition = 'zoom';
   private running: ViewTransitionLike | null = null;
+  /** The view transition in flight, and whether a tap has turned it around. */
+  private flight: { closing: boolean; reversed: boolean } | null = null;
   private readonly fade: HTMLElement;
   /** Empty container on top of the black, for whatever takes over. */
   readonly slot: HTMLElement;
@@ -102,8 +104,22 @@ export class Viewer {
       this.armed = false;
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.isOpen) this.close();
+      if (e.key !== 'Escape') return;
+      if (this.flight) this.turnAround();
+      else if (this.isOpen) this.close();
     });
+    // While a transition runs, its snapshots cover the page and take every
+    // press. A press then turns the transition around, from where it is.
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (!this.flight) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.turnAround();
+      },
+      { capture: true },
+    );
   }
 
   get isOpen() {
@@ -182,8 +198,26 @@ export class Viewer {
     }
     this.run(true, () => {
       this.el.hidden = true;
-      this.el.replaceChildren();
     });
+  }
+
+  /** Play the running open/close transition backwards (or forwards again). */
+  private turnAround() {
+    const flight = this.flight;
+    if (!flight) return;
+    const anims = document
+      .getAnimations()
+      .filter((a) => (a.effect as KeyframeEffect | null)?.pseudoElement?.startsWith('::view-transition'));
+    if (!anims.length) return; // not started yet
+    flight.reversed = !flight.reversed;
+    for (const a of anims) a.reverse();
+    // When the reversed run reaches its start, put the page back the way it
+    // was before the transition began, in the same frame, so nothing flashes.
+    const lead = anims.reduce((x, y) => ((y.effect?.getComputedTiming().endTime ?? 0) > (x.effect?.getComputedTiming().endTime ?? 0) ? y : x));
+    lead.onfinish = () => {
+      if (!flight.reversed || this.flight !== flight) return;
+      this.el.hidden = !flight.closing;
+    };
   }
 
   private run(closing: boolean, update: () => void) {
@@ -191,8 +225,10 @@ export class Viewer {
     const source = this.source!;
     if (!start) {
       update();
-      if (closing) source.focus({ preventScroll: true });
-      else this.afterOpen();
+      if (closing) {
+        this.el.replaceChildren();
+        source.focus({ preventScroll: true });
+      } else this.afterOpen();
       return;
     }
     // Zoom morphs the cell into the viewer, so both carry the shared name on
@@ -212,12 +248,21 @@ export class Viewer {
       }
     });
     this.running = vt;
+    const flight = { closing, reversed: false };
+    this.flight = flight;
     vt.finished.finally(() => {
       source.style.viewTransitionName = '';
       this.el.style.viewTransitionName = '';
       this.running = null;
-      if (closing) source.focus({ preventScroll: true });
-      else this.afterOpen();
+      this.flight = null;
+      // A reversed close ends open again, a reversed open ends closed.
+      const endedOpen = closing === flight.reversed;
+      this.el.hidden = !endedOpen;
+      if (endedOpen) this.afterOpen();
+      else {
+        this.el.replaceChildren();
+        source.focus({ preventScroll: true });
+      }
     });
   }
 
