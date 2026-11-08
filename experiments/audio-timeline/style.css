@@ -321,7 +321,8 @@ body.skinned #live { opacity: 0.35; }
 .skin-layer[data-skin='capsule'] .sk-capsule,
 .skin-layer[data-skin='horizon'] .sk-horizon,
 .skin-layer[data-skin='ring'] .sk-ring,
-.skin-layer[data-skin='ghost'] .sk-ghost { display: block; }
+.skin-layer[data-skin='ghost'] .sk-ghost,
+.skin-layer[data-skin='button'] .sk-button { display: block; }
 .sk button, .sk input, .sk [data-seek] { pointer-events: auto; }
 .sk button { border: none; background: none; color: var(--text); padding: 0; display: grid; place-items: center; }
 .sk button svg { width: 20px; height: 20px; }
