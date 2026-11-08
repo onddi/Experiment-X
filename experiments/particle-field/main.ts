@@ -80,6 +80,8 @@ interface Settings {
   audioWaveForce: number;
   audioWaveWidth: number;
   audioWaveAccent: boolean;
+  audioWaveFeel: 'soft' | 'punchy';
+  audioWaveRings: boolean;
   audioGenre: Genre;
   audioKick: KickAction;
   audioSnare: SnareAction;
@@ -161,6 +163,8 @@ const DEFAULTS: Settings = {
   audioWaveForce: 1,
   audioWaveWidth: 1,
   audioWaveAccent: true,
+  audioWaveFeel: 'soft',
+  audioWaveRings: false,
   audioGenre: 'general',
   audioKick: 'pulse',
   audioSnare: 'wave',
@@ -306,11 +310,16 @@ interface Wave {
   width: number; // band width in px
   dir: number; // twist / sweep direction (±1)
   angle: number; // star rotation, or sweep axis (0 = horizontal travel)
+  // Soft waves push ahead of the band and pull behind it, so particles
+  // shift and settle back instead of being thrown outward.
+  soft: boolean;
+  ring: boolean; // draw the outline
+  audio?: boolean;
 }
 const waves: Wave[] = [];
 
 function addWave(kind: WaveKind, x: number, y: number, o: Partial<Wave> = {}) {
-  const wv: Wave = { kind, x, y, r: 0, life: 1, speed: 1, decay: 1, force: 1, width: kind === 'ripple' ? 50 : 40, dir: 1, angle: 0, ...o };
+  const wv: Wave = { kind, x, y, r: 0, life: 1, speed: 1, decay: 1, force: 1, width: kind === 'ripple' ? 50 : 40, dir: 1, angle: 0, soft: false, ring: true, ...o };
   if (kind === 'implode') wv.r = implodeStart();
   if (kind === 'sweep') wv.r = wv.dir > 0 ? 0 : wv.angle === 0 ? w : h;
   waves.push(wv);
@@ -364,8 +373,15 @@ let swirlDir = 1;
 const MIX: WaveKind[] = ['ripple', 'twist', 'shockwave', 'star', 'ripple', 'sweep'];
 let beatCount = 0;
 
+// At most this many beat waves at once; overlapping rings read as fireworks.
+const MAX_BEAT_WAVES = 2;
+
 function beatWave(strength: number) {
   const S = settings;
+  // Low intensity lets only the stronger kicks through.
+  const gate = Math.max(0, 0.95 - 0.45 * S.audioIntensity);
+  if (strength < gate) return;
+  if (waves.filter((wv) => wv.audio).length >= MAX_BEAT_WAVES) return;
   beatCount++;
   if ((beatCount - 1) % S.audioWaveEvery !== 0) return;
   const k = Math.floor((beatCount - 1) / S.audioWaveEvery); // nth wave fired
@@ -380,6 +396,9 @@ function beatWave(strength: number) {
     width: 40 * S.audioWaveWidth,
     dir: k % 2 ? -1 : 1,
     angle: kind === 'sweep' ? (k >> 1) % 2 : Math.random() * Math.PI,
+    soft: S.audioWaveFeel === 'soft',
+    ring: S.audioWaveRings,
+    audio: true,
   };
   const spots = waveSpots(k);
   for (const [x, y] of spots) addWave(kind, x, y, base);
@@ -487,7 +506,7 @@ function step(dt: number) {
   if (on && A.snare) swirlDir = -swirlDir;
   const swirl = S.audioSnare === 'swirl' ? dSnare * 2.2 * S.audioHits * I * swirlDir : 0;
   if (on && A.snare && S.audioSnare === 'wave') {
-    addWave('ripple', w * (0.15 + Math.random() * 0.7), h * (0.15 + Math.random() * 0.7), { life: 0.3 + 0.5 * S.audioHits * I });
+    addWave('ripple', w * (0.15 + Math.random() * 0.7), h * (0.15 + Math.random() * 0.7), { life: 0.3 + 0.5 * S.audioHits * I, soft: true, ring: S.audioWaveRings });
   }
   // Hat sparkle: nudge a few random particles.
   if (on && A.hat && S.audioHats === 'sparkle') {
@@ -579,7 +598,8 @@ function step(dt: number) {
         const along = wv.angle === 0 ? px[i] : py[i];
         const off = along - wv.r;
         if (Math.abs(off) < band) {
-          const f = (1 - Math.abs(off) / band) * wv.life * 1.6 * wv.force * wv.dir;
+          const prof = wv.soft ? Math.sin((off / band) * Math.PI) * 0.7 : 1 - Math.abs(off) / band;
+          const f = prof * wv.life * 1.6 * wv.force * wv.dir;
           if (wv.angle === 0) ax += f;
           else ay += f;
         }
@@ -594,10 +614,16 @@ function step(dt: number) {
         const ny = dy / d;
         const edge = 1 - Math.abs(off) / band;
         let f: number;
-        if (wv.kind === 'ripple') {
+        // Smooth push-then-pull profile used by ripples and soft waves.
+        const wobble = Math.sin((off / band) * Math.PI);
+        if (wv.soft && wv.kind !== 'twist') {
+          let m = 1;
+          if (wv.kind === 'star') m = Math.max(0, Math.cos(3 * (Math.atan2(dy, dx) - wv.angle))) ** 6 * 2.5;
+          f = wobble * wv.life * 0.7 * m * (wv.kind === 'implode' ? -1 : 1);
+        } else if (wv.kind === 'ripple') {
           // Push ahead of the ring, pull behind it: particles bob as it
           // passes and settle back near where they were.
-          f = Math.sin((off / band) * Math.PI) * wv.life * 0.9;
+          f = wobble * wv.life * 0.9;
         } else if (wv.kind === 'implode') {
           f = -edge * wv.life * 1.4;
         } else if (wv.kind === 'twist') {
@@ -1018,7 +1044,7 @@ function draw() {
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
   for (const wv of waves) {
-    if (wv.life <= 0) continue;
+    if (wv.life <= 0 || !wv.ring) continue;
     const a = Math.min(1, wv.life) * (wv.kind === 'ripple' || wv.kind === 'twist' ? 0.12 : 0.22);
     ctx.strokeStyle = `rgb(255 255 255 / ${a.toFixed(3)})`;
     ctx.lineWidth = 1;
@@ -1155,7 +1181,7 @@ const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist
 type Vibe = Partial<Settings>;
 const quiet: Vibe = {
   audioKick: 'pulse', audioPulse: 0.6, audioBeat: 'ripple', audioWaveAt: 'centre', audioWaveEvery: 1,
-  audioWaveForce: 1, audioWaveSpeed: 1, audioWaveReach: 1, audioWaveWidth: 1, audioWaveAccent: true,
+  audioWaveForce: 1, audioWaveSpeed: 1, audioWaveReach: 1, audioWaveWidth: 1, audioWaveAccent: true, audioWaveFeel: 'soft', audioWaveRings: false,
   audioSnare: 'none', audioHats: 'none', audioHits: 0.5, audioSub: 'none', audioSubAmt: 0.5, audioSpeed: 0.3, audioFlow: 0.4,
 };
 const VIBES: [string, Vibe][] = [
@@ -1165,8 +1191,8 @@ const VIBES: [string, Vibe][] = [
   ['Hypnotic', { ...quiet, audioKick: 'both', audioPulse: 0.3, audioBeat: 'twist', audioWaveAt: 'orbit', audioWaveReach: 1.6, audioWaveSpeed: 0.7, audioHats: 'sparkle', audioHits: 0.3, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.1, audioFlow: 0.8 }],
   ['Liquid', { ...quiet, audioKick: 'both', audioPulse: 0.4, audioBeat: 'ripple', audioWaveEvery: 4, audioWaveReach: 2.2, audioWaveWidth: 2, audioWaveSpeed: 0.6, audioSnare: 'swirl', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 1.2, audioSpeed: 0.2, audioFlow: 1 }],
   ['Kaleido', { ...quiet, audioKick: 'both', audioPulse: 0.5, audioBeat: 'star', audioWaveAt: 'mirror', audioWaveReach: 1.3, audioSnare: 'swirl', audioHits: 0.5, audioSub: 'size', audioSubAmt: 0.5, audioSpeed: 0.2 }],
-  ['Glitch', { ...quiet, audioKick: 'wave', audioBeat: 'sweep', audioWaveForce: 1.4, audioWaveSpeed: 1.6, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 1.1, audioSpeed: 0.5, audioFlow: 0.2 }],
-  ['Storm', { ...quiet, audioKick: 'both', audioPulse: 1.2, audioBeat: 'shockwave', audioWaveAt: 'random', audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.9, audioSub: 'speed', audioSubAmt: 0.8, audioSpeed: 0.9, audioFlow: 1.2 }],
+  ['Glitch', { ...quiet, audioWaveFeel: 'punchy', audioKick: 'wave', audioBeat: 'sweep', audioWaveForce: 1.4, audioWaveSpeed: 1.6, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 1.1, audioSpeed: 0.5, audioFlow: 0.2 }],
+  ['Storm', { ...quiet, audioWaveFeel: 'punchy', audioKick: 'both', audioPulse: 1.2, audioBeat: 'shockwave', audioWaveAt: 'random', audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.9, audioSub: 'speed', audioSubAmt: 0.8, audioSpeed: 0.9, audioFlow: 1.2 }],
 ];
 
 function applyVibe(v: Vibe) {
@@ -1264,6 +1290,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioWaveSpeed', label: 'Wave speed', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => ft() && kickWave() },
   { kind: 'range', key: 'audioWaveReach', label: 'Wave reach', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => ft() && kickWave() },
   { kind: 'range', key: 'audioWaveWidth', label: 'Wave width', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => ft() && kickWave() },
+  { kind: 'select', key: 'audioWaveFeel', label: 'Wave feel', options: [['soft', 'Soft (shift and settle)'], ['punchy', 'Punchy (throw outward)']], show: () => ft() && kickWave() },
+  { kind: 'toggle', key: 'audioWaveRings', label: 'Draw the wave outlines', show: () => ft() && kickWave() },
   { kind: 'toggle', key: 'audioWaveAccent', label: 'Louder kicks make bigger waves', show: () => ft() && kickWave() },
   { kind: 'sub', label: 'Snare, clap & hi-hats', show: ft },
   { kind: 'select', key: 'audioSnare', label: 'Snare does', options: [['swirl', 'Swirl'], ['wave', 'Ripple'], ['flash', 'Flash'], ['none', 'Nothing']], show: ft },
