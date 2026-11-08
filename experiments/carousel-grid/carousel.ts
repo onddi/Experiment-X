@@ -59,7 +59,9 @@ export class Carousel {
       const el = document.createElement('div');
       el.className = 'item';
       const span = document.createElement('span');
-      el.append(span);
+      const tint = document.createElement('i');
+      tint.className = 'tint';
+      el.append(span, tint);
       this.el.append(el);
       this.itemEls.push(el);
     }
@@ -118,6 +120,8 @@ export class Carousel {
       el.style.color = item.ink;
       el.style.backgroundImage = item.image ? `url("${item.image}")` : '';
       el.classList.toggle('img', Boolean(item.image));
+      if (item.group === undefined) delete el.dataset.group;
+      else el.dataset.group = String(item.group);
       el.style.setProperty('--exposure', String(item.exposure ?? 1));
       el.firstElementChild!.textContent = item.word;
     });

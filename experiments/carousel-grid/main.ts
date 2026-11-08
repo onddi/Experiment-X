@@ -46,6 +46,7 @@ interface Settings {
   evenExposure: number;
   gradeHue: number;
   vignette: number;
+  elementTint: number;
   labels: boolean;
   imageMode: 'per-cell' | 'cycle';
   heroDrives: boolean;
@@ -91,6 +92,7 @@ const DEFAULTS: Settings = {
   evenExposure: 0.5,
   gradeHue: 45,
   vignette: 0.35,
+  elementTint: 0.45,
   labels: false,
   imageMode: 'per-cell',
   heroDrives: true,
@@ -387,6 +389,7 @@ function applyStyle() {
   s.setProperty('--harmony', String(settings.harmony));
   s.setProperty('--grade', `oklch(62% 0.13 ${settings.gradeHue})`);
   s.setProperty('--vignette', String(settings.vignette));
+  s.setProperty('--element-tint', String(settings.elementTint));
   grid.classList.toggle('show-dots', settings.dots);
   grid.dataset.surface = settings.surface;
   for (const x of cells) {
@@ -528,6 +531,10 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'harmony', label: 'Harmony', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
   { kind: 'range', key: 'gradeHue', label: 'Harmony tint', min: 0, max: 360, step: 1, format: (v) => `${v}°`, show: isImages },
   { kind: 'range', key: 'evenExposure', label: 'Even out exposure', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
+  {
+    kind: 'range', key: 'elementTint', label: 'Element colour', min: 0, max: 1, step: 0.01,
+    format: (v) => (v ? v.toFixed(2) : 'off'), show: isImages,
+  },
   { kind: 'range', key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2), show: isImages },
   {
     kind: 'toggle', key: 'heroDrives', label: 'Main row switches the grid’s element',
