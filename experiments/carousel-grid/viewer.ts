@@ -9,6 +9,12 @@
 // full-screen view is the cell magnified, so Zoom and Flip grow the cell's own
 // picture with no change of crop or label size.
 // Browsers without View Transitions open and close instantly.
+//
+// Hand-over: once the cell fills the screen it can fade to black. The black
+// screen is where another visualisation takes over (onHandover gets an empty
+// container to render into), so nothing expensive lives in the grid itself.
+// Closing gives the screen back (onRelease), fades the cell back in and
+// zooms it home.
 
 export type OpenTransition = 'zoom' | 'reveal' | 'iris' | 'fade' | 'slide' | 'flip';
 
@@ -37,18 +43,37 @@ export class Viewer {
   private source: HTMLElement | null = null;
   private transition: OpenTransition = 'zoom';
   private running: ViewTransitionLike | null = null;
+  private readonly fade: HTMLElement;
+  /** Empty container on top of the black, for whatever takes over. */
+  readonly slot: HTMLElement;
+  private fadeAnim: Animation | null = null;
+  private handedOver = false;
+  /** Called once the screen is black: render the next visualisation into `slot`. */
+  onHandover: ((slot: HTMLElement) => void) | null = null;
+  /** Called when closing starts after a hand-over: tear that visualisation down. */
+  onRelease: (() => void) | null = null;
   /** Set by a press that starts on the open viewer; only such a press closes it. */
   private armed = false;
 
   constructor(
     parent: HTMLElement,
-    private opts: () => { transition: OpenTransition; duration: number; radius: number },
+    private opts: () => {
+      transition: OpenTransition;
+      duration: number;
+      radius: number;
+      /** Fade to black after opening, in ms (0 = stay on the image). */
+      fade: number;
+    },
   ) {
     this.el = document.createElement('div');
     this.el.className = 'viewer';
     this.el.hidden = true;
     this.el.title = 'Click or press Escape to close';
     parent.append(this.el);
+    this.fade = document.createElement('div');
+    this.fade.className = 'viewer-fade';
+    this.slot = document.createElement('div');
+    this.slot.className = 'viewer-slot';
     this.css = document.createElement('style');
     document.head.append(this.css);
     // iOS Safari follows a tap with a synthetic click at the same spot, which
@@ -92,7 +117,9 @@ export class Viewer {
       transform: `translate(-50%, -50%) scale(${k})`,
     });
     clone.style.setProperty('--cell', getComputedStyle(from).getPropertyValue('--cell'));
-    this.el.replaceChildren(clone);
+    this.fade.style.opacity = '0';
+    this.slot.replaceChildren();
+    this.el.replaceChildren(clone, this.fade, this.slot);
     this.armed = false;
     from.blur();
     this.run(false, () => {
@@ -100,8 +127,44 @@ export class Viewer {
     });
   }
 
+  /** After the cell fills the screen: fade to black, then hand over. */
+  private afterOpen() {
+    const { fade } = this.opts();
+    if (!fade || !this.isOpen) return;
+    const anim = this.fade.animate([{ opacity: 0 }, { opacity: 1 }], { duration: fade, easing: 'ease-in-out', fill: 'forwards' });
+    this.fadeAnim = anim;
+    anim.onfinish = () => {
+      if (this.fadeAnim !== anim) return;
+      this.handedOver = true;
+      this.onHandover?.(this.slot);
+    };
+  }
+
   close() {
     if (!this.isOpen || this.running) return;
+    const anim = this.fadeAnim;
+    if (anim) {
+      // Give the screen back, fade the image in again, then zoom home.
+      this.fadeAnim = null;
+      if (this.handedOver) {
+        this.handedOver = false;
+        this.onRelease?.();
+        this.slot.replaceChildren();
+      }
+      const from = Number(getComputedStyle(this.fade).opacity);
+      anim.cancel();
+      this.fade.style.opacity = '0';
+      const back = this.fade.animate([{ opacity: from }, { opacity: 0 }], {
+        duration: this.opts().fade * from * 0.6,
+        easing: 'ease-in-out',
+      });
+      this.running = { finished: back.finished.then(() => {}), skipTransition: () => back.finish() };
+      back.onfinish = () => {
+        this.running = null;
+        this.close();
+      };
+      return;
+    }
     this.run(true, () => {
       this.el.hidden = true;
       this.el.replaceChildren();
@@ -114,6 +177,7 @@ export class Viewer {
     if (!start) {
       update();
       if (closing) source.focus({ preventScroll: true });
+      else this.afterOpen();
       return;
     }
     // Zoom and Flip morph the cell into the viewer, so both carry the shared
@@ -138,6 +202,7 @@ export class Viewer {
       this.el.style.viewTransitionName = '';
       this.running = null;
       if (closing) source.focus({ preventScroll: true });
+      else this.afterOpen();
     });
   }
 

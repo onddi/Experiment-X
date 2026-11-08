@@ -386,3 +386,10 @@ button:hover, select:hover { border-color: #3c3f46; }
   cursor: zoom-out;
 }
 .viewer .item { border-radius: 0; will-change: auto; }
+.viewer-fade,
+.viewer-slot {
+  position: absolute;
+  inset: 0;
+}
+.viewer-fade { background: #000; opacity: 0; pointer-events: none; }
+.viewer-slot:empty { pointer-events: none; }

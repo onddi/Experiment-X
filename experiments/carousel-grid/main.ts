@@ -18,6 +18,7 @@ interface Settings {
   heroRows: number;
   openWith: OpenTransition | 'off';
   openDuration: number;
+  openFade: number;
   heroPlace: 'top' | 'left';
   heroCols: number;
   heroCustom: boolean;
@@ -68,6 +69,7 @@ const DEFAULTS: Settings = {
   heroRows: 1,
   openWith: 'zoom',
   openDuration: 500,
+  openFade: 800,
   heroPlace: 'top',
   heroCols: 1,
   heroCustom: false,
@@ -309,7 +311,16 @@ const viewer = new Viewer(app, () => ({
   transition: settings.openWith === 'off' ? 'zoom' : settings.openWith,
   duration: settings.openDuration,
   radius: settings.radius,
+  fade: settings.openFade,
 }));
+// Once the opened cell has faded to black, the grid is out of sight: hide it
+// so it costs nothing while whatever takes over is on screen.
+viewer.onHandover = () => {
+  stage.style.visibility = 'hidden';
+};
+viewer.onRelease = () => {
+  stage.style.visibility = '';
+};
 /** Click on a cell: show its current item full screen. */
 const openCell = (c: Carousel) => {
   if (settings.openWith !== 'off') viewer.open(c.currentEl, c.el);
@@ -553,6 +564,7 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'open', label: 'Full screen', summary: () => label(OPEN_TRANSITIONS, settings.openWith) },
   { kind: 'select', key: 'openWith', label: 'Click a cell to open', options: OPEN_TRANSITIONS },
   { kind: 'range', key: 'openDuration', label: 'Duration', min: 150, max: 1500, step: 50, format: (v) => `${v} ms`, show: () => settings.openWith !== 'off' },
+  { kind: 'range', key: 'openFade', label: 'Then fade to black', min: 0, max: 3000, step: 100, format: (v) => (v ? `${v} ms` : 'off'), show: () => settings.openWith !== 'off' },
   { kind: 'section', id: 'feel', label: 'Feel', summary: () => `tension ${settings.tension}` },
   { kind: 'range', key: 'tension', label: 'Snap tension', min: 20, max: 600, step: 5 },
   { kind: 'range', key: 'flick', label: 'Flick carry', min: 0, max: 0.6, step: 0.01, format: (v) => v.toFixed(2) },
