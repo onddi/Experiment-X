@@ -87,6 +87,14 @@ interface Settings {
   wellRange: number;
   placeWell: PlaceWell;
   showWells: boolean;
+  obstacles: 'none' | 'circles' | 'text';
+  obsCircles: string;
+  obsRadius: number;
+  obsText: string;
+  obsSize: number;
+  obsForce: number;
+  obsPlace: boolean;
+  obsShow: boolean;
   pointerMode: PointerMode;
   click: ClickMode;
   clickForce: number;
@@ -268,6 +276,14 @@ const DEFAULTS: Settings = {
   wellRange: 200,
   placeWell: 'off',
   showWells: true,
+  obstacles: 'none',
+  obsCircles: '0.3,0.42;0.52,0.62;0.72,0.38',
+  obsRadius: 70,
+  obsText: 'FLOW',
+  obsSize: 0.6,
+  obsForce: 1,
+  obsPlace: true,
+  obsShow: true,
   flowScale: 0.004,
   flowSpeed: 0.2,
   pointerMode: 'repel',
@@ -606,8 +622,159 @@ function setWells(list: Well[]) {
   changed(new Set(['wells']));
 }
 
+// --- obstacles ---------------------------------------------------------------
+// Circles or a word the particles flow around. The shape is drawn into a
+// coarse grid (one cell per OB_CELL px), then a distance transform gives every
+// cell its signed distance to the edge (negative inside) and the direction
+// out. Particles near an edge lose the part of their velocity heading in, so
+// they slide around it, and anything inside is pushed out.
+const OB_CELL = 4;
+const OB_MARGIN = 22;
+type ObField = { W: number; H: number; sd: Float32Array; nx: Float32Array; ny: Float32Array };
+let obField: ObField | null = null;
+let obKey = '';
+
+function obCircleList(): { x: number; y: number }[] {
+  return settings.obsCircles
+    .split(';')
+    .map((p) => p.split(',').map(Number))
+    .filter((p) => p.length === 2 && p.every(Number.isFinite))
+    .map(([x, y]) => ({ x, y }));
+}
+
+// Draws the obstacles in screen pixels (used for both the grid and the display).
+function traceObstacles(g: CanvasRenderingContext2D) {
+  const S = settings;
+  if (S.obstacles === 'circles') {
+    g.beginPath();
+    for (const c of obCircleList()) {
+      g.moveTo(c.x * w + S.obsRadius, c.y * h);
+      g.arc(c.x * w, c.y * h, S.obsRadius, 0, Math.PI * 2);
+    }
+    g.fill();
+  } else if (S.obstacles === 'text') {
+    const text = S.obsText.trim() || ' ';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    let size = h * 0.5;
+    g.font = `800 ${size}px system-ui, sans-serif`;
+    size *= Math.min(1, (w * S.obsSize) / Math.max(1, g.measureText(text).width));
+    size = Math.min(size, h * 0.6 * S.obsSize + 4);
+    g.font = `800 ${size}px system-ui, sans-serif`;
+    g.fillText(text, w / 2, h / 2);
+  }
+}
+
+function obstacleField(): ObField | null {
+  const S = settings;
+  if (S.obstacles === 'none') return null;
+  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, w, h].join('|');
+  if (key === obKey) return obField;
+  obKey = key;
+  const W = Math.max(1, Math.ceil(w / OB_CELL));
+  const H = Math.max(1, Math.ceil(h / OB_CELL));
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.scale(1 / OB_CELL, 1 / OB_CELL);
+  g.fillStyle = '#fff';
+  traceObstacles(g);
+  const data = g.getImageData(0, 0, W, H).data;
+  const N = W * H;
+  const inside = new Uint8Array(N);
+  let any = false;
+  for (let k = 0; k < N; k++) if (data[k * 4 + 3] > 110) (inside[k] = 1), (any = true);
+  if (!any) return (obField = null);
+  // Chamfer distance (1 / 1.414) to the nearest cell of the other kind.
+  const dist = (src: number) => {
+    const d = new Float32Array(N);
+    for (let k = 0; k < N; k++) d[k] = inside[k] === src ? 0 : 1e6;
+    const D = 1.4142;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const k = y * W + x;
+        let v = d[k];
+        if (x > 0) v = Math.min(v, d[k - 1] + 1);
+        if (y > 0) {
+          v = Math.min(v, d[k - W] + 1);
+          if (x > 0) v = Math.min(v, d[k - W - 1] + D);
+          if (x < W - 1) v = Math.min(v, d[k - W + 1] + D);
+        }
+        d[k] = v;
+      }
+    for (let y = H - 1; y >= 0; y--)
+      for (let x = W - 1; x >= 0; x--) {
+        const k = y * W + x;
+        let v = d[k];
+        if (x < W - 1) v = Math.min(v, d[k + 1] + 1);
+        if (y < H - 1) {
+          v = Math.min(v, d[k + W] + 1);
+          if (x < W - 1) v = Math.min(v, d[k + W + 1] + D);
+          if (x > 0) v = Math.min(v, d[k + W - 1] + D);
+        }
+        d[k] = v;
+      }
+    return d;
+  };
+  const dOut = dist(1);
+  const dIn = dist(0);
+  const sd = new Float32Array(N);
+  for (let k = 0; k < N; k++) sd[k] = (inside[k] ? -(dIn[k] - 0.5) : dOut[k] - 0.5) * OB_CELL;
+  const nx = new Float32Array(N);
+  const ny = new Float32Array(N);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const k = y * W + x;
+      const gx = sd[y * W + Math.min(W - 1, x + 1)] - sd[y * W + Math.max(0, x - 1)];
+      const gy = sd[Math.min(H - 1, y + 1) * W + x] - sd[Math.max(0, y - 1) * W + x];
+      const l = Math.hypot(gx, gy);
+      if (l > 1e-6) {
+        nx[k] = gx / l;
+        ny[k] = gy / l;
+      } else {
+        // Flat spot (deep inside): head away from the screen centre.
+        const ax = x * OB_CELL - w / 2;
+        const ay = y * OB_CELL - h / 2 || 1;
+        const al = Math.hypot(ax, ay);
+        nx[k] = ax / al;
+        ny[k] = ay / al;
+      }
+    }
+  return (obField = { W, H, sd, nx, ny });
+}
+
+function toggleObstacle(x: number, y: number) {
+  const list = obCircleList();
+  const hit = list.findIndex((p) => Math.hypot(p.x * w - x, p.y * h - y) < settings.obsRadius);
+  const next = hit >= 0 ? list.filter((_, k) => k !== hit) : [...list, { x: x / w, y: y / h }].slice(-16);
+  settings.obsCircles = next.map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).join(';');
+  changed(new Set(['obsCircles']));
+}
+
+// Faint fill so you can see what the particles avoid. Drawn at a strength
+// scaled by the trail fade so it settles at the same look with any trail.
+function drawObstacles(fade: number, light: boolean) {
+  if (settings.obstacles === 'none' || !settings.obsShow) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.07 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.06 * fade).toFixed(4)})`;
+  if (camA !== 0) {
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(camA);
+    ctx.translate(-w / 2, -h / 2);
+  }
+  traceObstacles(ctx);
+  ctx.restore();
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
+  if (settings.obstacles === 'circles' && settings.obsPlace && settings.placeWell === 'off') {
+    toggleObstacle(e.offsetX, e.offsetY);
+    hint.classList.add('gone');
+    return;
+  }
   if (settings.placeWell === 'emitter') {
     settings.emitX = e.offsetX / w;
     settings.emitY = e.offsetY / h;
@@ -876,6 +1043,8 @@ function step(dt: number) {
   const windX = Math.cos(windA) * settings.wind * 0.05;
   const windY = Math.sin(windA) * settings.wind * 0.05;
   const wellsNow = wellList().map((p) => ({ x: p.x * w, y: p.y * h, kind: p.kind }));
+  const ob = obstacleField();
+  const obF = settings.obsForce;
   const wellF = settings.wellForce * 0.12;
   const wellReach = settings.wellRange;
   const emitting = settings.emitter !== 'none';
@@ -1113,6 +1282,34 @@ function step(dt: number) {
         // seam where opposing currents could trap particles.
         px[i] = ox[i] = ((px[i] % w) + w) % w;
         py[i] = oy[i] = ((py[i] % h) + h) % h;
+      }
+    }
+
+    if (ob) {
+      const gx = (px[i] / OB_CELL) | 0;
+      const gy = (py[i] / OB_CELL) | 0;
+      if (gx >= 0 && gy >= 0 && gx < ob.W && gy < ob.H) {
+        const c = gy * ob.W + gx;
+        const d = ob.sd[c];
+        if (d < OB_MARGIN) {
+          const nx = ob.nx[c];
+          const ny = ob.ny[c];
+          const near = 1 - Math.max(0, d) / OB_MARGIN;
+          // Slide: drop the part of the velocity that heads into the edge.
+          const vn = vx[i] * nx + vy[i] * ny;
+          if (vn < 0) {
+            const k = Math.min(1, near * obF);
+            vx[i] -= vn * nx * k;
+            vy[i] -= vn * ny * k;
+          }
+          vx[i] += nx * near * near * 0.3 * obF * dt;
+          vy[i] += ny * near * near * 0.3 * obF * dt;
+          if (d < 0) {
+            const out = Math.min(-d + 1, 6 * dt);
+            px[i] += nx * out;
+            py[i] += ny * out;
+          }
+        }
       }
     }
   }
@@ -2291,6 +2488,7 @@ function draw() {
   ctx.fillStyle = `rgb(${r} ${g} ${b} / ${(1 - settings.trail * 0.97).toFixed(3)})`;
   ctx.fillRect(0, 0, w, h);
   const light = r * 0.3 + g * 0.59 + b * 0.11 > 140;
+  drawObstacles(1 - settings.trail * 0.97, light);
   ctx.globalCompositeOperation = settings.glow ? (light ? 'multiply' : 'lighter') : 'source-over';
 
   if (settings.colorBy === 'speed' || (settings.render === 'glyphs' && settings.glyphPick === 'speed')) {
@@ -2824,6 +3022,18 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'flockSep', label: 'Avoid crowding', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
+
+  { kind: 'section', about: 'Circles or a word the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow'],
+    power: { on: () => settings.obstacles !== 'none', off: { obstacles: 'none' }, start: { obstacles: 'circles' } },
+    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : 'off') },
+  { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word']] },
+  { kind: 'toggle', key: 'obsPlace', label: 'Click places or removes circles', show: () => settings.obstacles === 'circles' },
+  { kind: 'range', key: 'obsRadius', label: 'Circle size', min: 15, max: 220, step: 5, format: (v) => `${v}px`, show: () => settings.obstacles === 'circles' },
+  { kind: 'text', key: 'obsText', label: 'Word', placeholder: 'Type a word', show: () => settings.obstacles === 'text' },
+  { kind: 'range', key: 'obsSize', label: 'Word size', min: 0.2, max: 1, step: 0.05, format: pct, show: () => settings.obstacles === 'text' },
+  { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
+  { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
+  { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
 
   { kind: 'section', about: 'How particles react to your pointer and clicks.', id: 'pointer', label: 'Pointer & click', tab: 'motion', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
     power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
