@@ -3,6 +3,7 @@ import './style.css';
 // --- settings ----------------------------------------------------------------
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
+type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
 type Render = 'dots' | 'streaks' | 'links';
 type ColorBy = 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES;
@@ -17,6 +18,8 @@ interface Settings {
   flowScale: number;
   flowSpeed: number;
   pointerMode: PointerMode;
+  click: ClickMode;
+  clickForce: number;
   radius: number;
   force: number;
   render: Render;
@@ -66,6 +69,8 @@ const DEFAULTS: Settings = {
   flowScale: 0.004,
   flowSpeed: 0.2,
   pointerMode: 'repel',
+  click: 'gather',
+  clickForce: 1,
   radius: 120,
   force: 0.6,
   render: 'dots',
@@ -102,7 +107,7 @@ const app = document.getElementById('app')!;
 app.innerHTML = `
   <main class="stage" id="stage">
     <canvas id="c"></canvas>
-    <p class="hint" id="hint">Move through the field · click to send a shockwave</p>
+    <p class="hint" id="hint">Move through the field · click and hold</p>
   </main>
   <aside class="panel" id="panel">
     <header>
@@ -182,8 +187,11 @@ function clear() {
 
 // --- pointer -----------------------------------------------------------------
 
-const pointer = { x: -1e4, y: -1e4, active: false };
-const waves: { x: number; y: number; r: number; life: number }[] = [];
+const pointer = { x: -1e4, y: -1e4, active: false, down: false };
+
+// Rings travel out (shockwave, ripple) or in (implode) from a click.
+type WaveKind = 'shockwave' | 'ripple' | 'implode';
+const waves: { kind: WaveKind; x: number; y: number; r: number; life: number }[] = [];
 
 canvas.addEventListener('pointermove', (e) => {
   pointer.x = e.offsetX;
@@ -191,23 +199,35 @@ canvas.addEventListener('pointermove', (e) => {
   pointer.active = true;
 });
 canvas.addEventListener('pointerleave', () => {
+  if (pointer.down) return; // captured: keep tracking while held
   pointer.active = false;
   pointer.x = pointer.y = -1e4;
 });
 canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
   pointer.x = e.offsetX;
   pointer.y = e.offsetY;
   pointer.active = e.pointerType === 'mouse';
-  waves.push({ x: e.offsetX, y: e.offsetY, r: 0, life: 1 });
+  pointer.down = true;
+  const c = settings.click;
+  if (c === 'shockwave' || c === 'ripple') waves.push({ kind: c, x: e.offsetX, y: e.offsetY, r: 0, life: 1 });
+  if (c === 'implode') waves.push({ kind: c, x: e.offsetX, y: e.offsetY, r: implodeStart(), life: 1 });
   hint.classList.add('gone');
 });
-canvas.addEventListener('pointerup', (e) => {
+const release = (e: PointerEvent) => {
+  pointer.down = false;
   // Touch has no hover, so a lifted finger stops influencing the field.
   if (e.pointerType !== 'mouse') {
     pointer.active = false;
     pointer.x = pointer.y = -1e4;
   }
-});
+};
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+
+function implodeStart() {
+  return Math.max(200, settings.radius * 3);
+}
 
 // --- simulation --------------------------------------------------------------
 
@@ -227,12 +247,23 @@ function step(dt: number) {
   const { radius, force, pointerMode, friction, jitter, flow, speed } = settings;
   const r2 = radius * radius;
   const damp = 1 - friction;
-  const usePointer = pointer.active && pointerMode !== 'none';
 
   for (const wv of waves) {
-    wv.r += 9 * dt;
-    wv.life -= 0.025 * dt;
+    if (wv.kind === 'implode') {
+      // Contract to the centre, then fade once it arrives.
+      wv.r = Math.max(0, wv.r - 7 * dt);
+      wv.life = Math.min(1, wv.r / 60 + 0.05) - (wv.r === 0 ? 1 : 0);
+    } else {
+      wv.r += (wv.kind === 'ripple' ? 14 : 9) * dt;
+      wv.life -= (wv.kind === 'ripple' ? 0.015 : 0.025) * dt;
+    }
   }
+  const cf = settings.clickForce;
+  const gathering = pointer.down && settings.click === 'gather';
+  const gatherR = Math.max(150, radius * 2.5);
+  if (pointer.down && settings.click === 'emit') emit(dt);
+  // Hover behaviour pauses while gathering so the two don't fight.
+  const usePointer = pointer.active && pointerMode !== 'none' && !gathering;
   for (let k = waves.length - 1; k >= 0; k--) if (waves[k].life <= 0) waves.splice(k, 1);
 
   for (let i = 0; i < n; i++) {
@@ -268,13 +299,41 @@ function step(dt: number) {
       }
     }
 
+    if (gathering) {
+      // Pull into a spinning orb: a spring towards the pointer plus a
+      // tangential push, so particles orbit instead of collapsing to a dot.
+      const dx = px[i] - pointer.x;
+      const dy = py[i] - pointer.y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      if (d < gatherR) {
+        const f = (1 - d / gatherR) * cf;
+        const nx = dx / d;
+        const ny = dy / d;
+        const pull = Math.min(1, d / 30); // ease off at the core
+        // Extra drag inside the well keeps the orb dense instead of a ring.
+        ax += (-nx * 1.2 * pull - ny * 0.3) * f - vx[i] * 0.08 * f;
+        ay += (-ny * 1.2 * pull + nx * 0.3) * f - vy[i] * 0.08 * f;
+      }
+    }
+
     for (const wv of waves) {
       const dx = px[i] - wv.x;
       const dy = py[i] - wv.y;
       const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
-      const band = Math.abs(d - wv.r);
-      if (band < 40) {
-        const f = (1 - band / 40) * wv.life * 2.2;
+      const off = d - wv.r;
+      const band = wv.kind === 'ripple' ? 50 : 40;
+      if (Math.abs(off) < band) {
+        let f: number;
+        if (wv.kind === 'ripple') {
+          // Push ahead of the ring, pull behind it: particles bob as it
+          // passes and settle back near where they were.
+          f = Math.sin((off / band) * Math.PI) * wv.life * 0.9;
+        } else if (wv.kind === 'implode') {
+          f = -(1 - Math.abs(off) / band) * wv.life * 1.4;
+        } else {
+          f = (1 - Math.abs(off) / band) * wv.life * 2.2;
+        }
+        f *= cf;
         ax += (dx / d) * f;
         ay += (dy / d) * f;
       }
@@ -298,6 +357,23 @@ function step(dt: number) {
         py[i] = oy[i] = ((py[i] % h) + h) % h;
       }
     }
+  }
+}
+
+// A fountain: while held, recycle random particles out of the pointer.
+let emitCarry = 0;
+let emitCursor = 0;
+function emit(dt: number) {
+  emitCarry += n * 0.006 * settings.clickForce * dt;
+  while (emitCarry >= 1 && n > 0) {
+    emitCarry--;
+    const i = emitCursor++ % n;
+    const a = Math.random() * Math.PI * 2;
+    const v = 1.5 + Math.random() * 3;
+    px[i] = ox[i] = pointer.x + Math.cos(a) * 3;
+    py[i] = oy[i] = pointer.y + Math.sin(a) * 3;
+    vx[i] = Math.cos(a) * v;
+    vy[i] = Math.sin(a) * v;
   }
 }
 
@@ -414,10 +490,12 @@ function draw() {
     }
   }
 
-  // Shockwave rings.
+  // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
   for (const wv of waves) {
-    ctx.strokeStyle = `rgb(255 255 255 / ${(wv.life * 0.25).toFixed(3)})`;
+    if (wv.life <= 0) continue;
+    const a = wv.life * (wv.kind === 'ripple' ? 0.12 : 0.25);
+    ctx.strokeStyle = `rgb(255 255 255 / ${a.toFixed(3)})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(wv.x, wv.y, wv.r, 0, Math.PI * 2);
@@ -526,6 +604,9 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'pointerMode', label: 'Mode', options: [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']] },
   { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px` },
   { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2) },
+  { kind: 'section', label: 'Click' },
+  { kind: 'select', key: 'click', label: 'On click', options: [['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']] },
+  { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'section', label: 'Look' },
   { kind: 'select', key: 'render', label: 'Style', options: [['dots', 'Dots'], ['streaks', 'Streaks'], ['links', 'Constellation']] },
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px` },
@@ -550,11 +631,11 @@ const CONTROLS: Control[] = [
 const PRESETS: [string, Partial<Settings>][] = [
   ['Drift', { ...DEFAULTS }],
   ['Silk', { count: 3000, size: 1, render: 'streaks', flow: 1, flowScale: 0.003, flowSpeed: 0.15, trail: 0.95, friction: 0.06, jitter: 0.01, palette: 'ocean', colorBy: 'direction', glow: true, pointerMode: 'vortex', radius: 180, force: 0.5 }],
-  ['Embers', { count: 1500, size: 2.2, render: 'dots', flow: 0.5, flowScale: 0.008, flowSpeed: 0.6, trail: 0.85, friction: 0.03, jitter: 0.15, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 150, force: 1 }],
-  ['Constellation', { count: 500, size: 2, render: 'links', linkDist: 90, flow: 0.1, flowSpeed: 0.1, trail: 0, friction: 0.02, jitter: 0.04, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'attract', radius: 200, force: 0.3 }],
-  ['Neon storm', { count: 4000, size: 1.2, render: 'streaks', flow: 1.6, flowScale: 0.012, flowSpeed: 1, trail: 0.7, friction: 0.05, jitter: 0.05, speed: 1.6, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.2 }],
+  ['Embers', { count: 1500, size: 2.2, render: 'dots', flow: 0.5, flowScale: 0.008, flowSpeed: 0.6, trail: 0.85, friction: 0.03, jitter: 0.15, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 150, force: 1, click: 'emit' }],
+  ['Constellation', { count: 500, size: 2, render: 'links', linkDist: 90, flow: 0.1, flowSpeed: 0.1, trail: 0, friction: 0.02, jitter: 0.04, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'attract', radius: 200, force: 0.3, click: 'ripple' }],
+  ['Neon storm', { count: 4000, size: 1.2, render: 'streaks', flow: 1.6, flowScale: 0.012, flowSpeed: 1, trail: 0.7, friction: 0.05, jitter: 0.05, speed: 1.6, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.2, click: 'shockwave' }],
   ['Dusk', { count: 2200, size: 1.3, render: 'streaks', flow: 0.7, flowScale: 0.004, flowSpeed: 0.25, trail: 0.92, friction: 0.05, jitter: 0.02, palette: 'sunset', colorBy: 'vertical', glow: true, pointerMode: 'vortex', radius: 160, force: 0.7 }],
-  ['Heat', { count: 3000, size: 1.6, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5 }],
+  ['Heat', { count: 3000, size: 1.6, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5, click: 'implode' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
 (CONTROLS[1] as { buttons: [string, () => void][] }).buttons = PRESETS.map(([label, p]) => [label, () => apply(p)]);
@@ -594,6 +675,9 @@ function refresh() {
   }
   for (const el of controls.querySelectorAll<HTMLElement>('[data-key="radius"], [data-key="force"]')) {
     el.classList.toggle('disabled', settings.pointerMode === 'none');
+  }
+  for (const el of controls.querySelectorAll<HTMLElement>('[data-key="clickForce"]')) {
+    el.classList.toggle('disabled', settings.click === 'none');
   }
   for (const el of controls.querySelectorAll<HTMLElement>('[data-key="flowScale"], [data-key="flowSpeed"]')) {
     el.classList.toggle('disabled', settings.flow === 0);
@@ -678,7 +762,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click for a shockwave. Keys: Space pause · C clear · S scatter · R shuffle · H hide panel.';
+  keys.textContent = 'Click or hold on the field. Keys: Space pause · C clear · S scatter · R shuffle · H hide panel.';
   controls.append(keys);
 }
 
@@ -717,6 +801,7 @@ function shuffle() {
     flowScale: rand(0.002, 0.012, 0.0005),
     flowSpeed: rand(0.05, 1, 0.05),
     pointerMode: pick(['repel', 'attract', 'vortex'] as const),
+    click: pick(['gather', 'emit', 'ripple', 'implode', 'shockwave'] as const),
     radius: rand(80, 260, 5),
     force: rand(0.3, 1.4, 0.05),
     render: pick(['dots', 'streaks', 'streaks', 'links'] as const),
