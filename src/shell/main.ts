@@ -178,7 +178,7 @@ function renderMouseBtn() {
   if (mouseBtn.hidden) return;
   const title = bySlug(view.layers[inputLayer(view)].slug)?.title ?? '';
   mouseBtn.textContent = title;
-  mouseBtn.title = `Mouse goes to ${title}. Tap to switch (M)`;
+  mouseBtn.title = `Mouse goes to ${title}. Tap to switch (L)`;
   mouseBtn.setAttribute('aria-label', mouseBtn.title);
 }
 
@@ -552,7 +552,7 @@ window.addEventListener('keydown', (e) => {
   if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === '[') step(-1);
   else if (e.key === ']') step(1);
-  else if (e.key === 'm' || e.key === 'M') cycleMouse();
+  else if (e.key === 'l' || e.key === 'L') cycleMouse();
   else if (e.key === 'Escape' && handover) releaseHandover();
   else if (e.key === 'Escape' && !panel.hidden) openPanel(false);
   else if (e.key === '\\') setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed'));
