@@ -2929,7 +2929,7 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'mine', label: 'My presets', tab: 'look',
     summary: () => (myPresets.length ? `${myPresets.length} saved` : '') },
   { kind: 'mypresets' },
-  { kind: 'note', text: 'Keys 1–9 and 0 play your presets: pick a key in the list, or press Shift + a number to save the current look to it.' },
+  { kind: 'note', text: 'Keys 1–9 and 0 play your presets: pick a key in the list, or press Shift + a number to save the current look to it. Open straight into one with a link ending ?preset=3 (its key) or ?preset=Smoke (any preset name).' },
 
   // How switching between looks feels. Not part of any look: presets keep these.
   { kind: 'section', id: 'transitions', label: 'Transitions', tab: 'look',
@@ -4246,6 +4246,33 @@ function renderMyPresets() {
   return wrap;
 }
 
+// Open into a preset: ?preset=3 (a key of yours), ?preset=Obi%20glow (one of
+// your names) or ?preset=Smoke (a built-in), also as #preset=… . Your own
+// presets win over built-ins with the same name. On load the look is there at
+// once; changing the hash later morphs to it like a key press.
+function presetFromUrl(first: boolean) {
+  const want = (new URLSearchParams(location.hash.slice(1)).get('preset') ?? new URLSearchParams(location.search).get('preset') ?? '').trim();
+  if (!want) return;
+  const lw = want.toLowerCase();
+  const mine = myPresets.find((o) => o.key === want) ?? myPresets.find((o) => o.name.toLowerCase() === lw);
+  if (mine && !first) return playMine(mine);
+  const built = PRESETS.find(([name]) => name.toLowerCase() === lw);
+  const p = mine?.settings ?? built?.[1];
+  if (!p) {
+    showToast(`No preset called “${want}”`);
+    return;
+  }
+  if (first) {
+    const { morph, beatSnap } = settings;
+    settings.morph = 0;
+    settings.beatSnap = false;
+    apply(p, false);
+    settings.morph = morph;
+    settings.beatSnap = beatSnap;
+  } else apply(p, false);
+  showToast(mine ? `${mine.key ? mine.key + '  ' : ''}${mine.name}` : built![0]);
+}
+
 const KEY_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 let redrawMine = () => {};
 
@@ -4534,4 +4561,6 @@ renderControls();
 }
 resize();
 refresh();
+presetFromUrl(true);
+window.addEventListener('hashchange', () => presetFromUrl(false));
 requestAnimationFrame(frame);
