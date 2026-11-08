@@ -66,6 +66,7 @@ interface Settings {
   spaceDist: number;
   shape: Shape;
   shapeText: string;
+  imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -230,6 +231,7 @@ const DEFAULTS: Settings = {
   spaceDist: 12,
   shape: 'none',
   shapeText: 'HELLO',
+  imageMode: 'auto',
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
@@ -1266,9 +1268,89 @@ function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number)
   return pts;
 }
 
+// Image shape: give each pixel a weight (how much it should attract
+// particles), then pick points with probability proportional to it, like a
+// stipple drawing.
+function sampleImage(): [number, number][] {
+  if (!shapeImage) return [];
+  const step = 2;
+  const W = Math.max(1, Math.round(w / step));
+  const H = Math.max(1, Math.round(h / step));
+  const sc = Math.min((W * settings.shapeSize) / shapeImage.width, (H * settings.shapeSize) / shapeImage.height);
+  const iw = Math.max(2, Math.round(shapeImage.width * sc));
+  const ih = Math.max(2, Math.round(shapeImage.height * sc));
+  const ix = Math.round((W - iw) / 2);
+  const iy = Math.round((H - ih) / 2);
+  const c = document.createElement('canvas');
+  c.width = iw;
+  c.height = ih;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(shapeImage, 0, 0, iw, ih);
+  const d = g.getImageData(0, 0, iw, ih).data;
+  const N = iw * ih;
+  const lum = new Float32Array(N);
+  const alpha = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    lum[k] = (0.299 * d[k * 4] + 0.587 * d[k * 4 + 1] + 0.114 * d[k * 4 + 2]) / 255;
+    alpha[k] = d[k * 4 + 3] / 255;
+  }
+  const wt = new Float32Array(N);
+  const subject = () => {
+    // Pixels that differ from the corner colour (the background).
+    const [br, bg, bb, ba] = [d[0], d[1], d[2], d[3]];
+    let cover = 0;
+    for (let k = 0; k < N; k++) {
+      const q = k * 4;
+      const diff = Math.abs(d[q] - br) + Math.abs(d[q + 1] - bg) + Math.abs(d[q + 2] - bb) + Math.abs(d[q + 3] - ba);
+      wt[k] = diff > 90 && d[q + 3] > 60 ? 1 : 0;
+      cover += wt[k];
+    }
+    return cover / N;
+  };
+  let mode = settings.imageMode;
+  if (mode === 'auto') {
+    // A logo on a plain background covers part of the frame; a photo
+    // "differs" almost everywhere, so fall back to brightness.
+    const cover = subject();
+    mode = cover > 0.02 && cover < 0.75 ? 'subject' : 'bright';
+  } else if (mode === 'subject') subject();
+  if (mode === 'bright' || mode === 'dark') {
+    // Stretch to the image's own range so low-contrast photos still read.
+    let lo = 1;
+    let hi = 0;
+    for (let k = 0; k < N; k++) {
+      lo = Math.min(lo, lum[k]);
+      hi = Math.max(hi, lum[k]);
+    }
+    const span = Math.max(0.05, hi - lo);
+    for (let k = 0; k < N; k++) {
+      const v = (lum[k] - lo) / span;
+      wt[k] = (mode === 'bright' ? v : 1 - v) ** 2.2 * alpha[k];
+    }
+  }
+  else if (mode === 'edges') {
+    let max = 1e-6;
+    for (let y = 1; y < ih - 1; y++)
+      for (let x = 1; x < iw - 1; x++) {
+        const k = y * iw + x;
+        const gx = lum[k + 1 - iw] + 2 * lum[k + 1] + lum[k + 1 + iw] - lum[k - 1 - iw] - 2 * lum[k - 1] - lum[k - 1 + iw];
+        const gy = lum[k - 1 + iw] + 2 * lum[k + iw] + lum[k + 1 + iw] - lum[k - 1 - iw] - 2 * lum[k - iw] - lum[k + 1 - iw];
+        wt[k] = Math.hypot(gx, gy) * alpha[k];
+        if (wt[k] > max) max = wt[k];
+      }
+    for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 2.5) ** 0.8;
+  }
+  const pts: [number, number][] = [];
+  for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
+    const k = (Math.random() * N) | 0;
+    if (Math.random() < wt[k]) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
+  }
+  return pts;
+}
+
 function buildShape() {
   const S = settings;
-  const key = [S.shape, S.shapeText, S.shapeSize, w, h, n, shapeImage?.src ?? ''].join('|');
+  const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? ''].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   shapeKey = key;
   const cx = w / 2;
@@ -1313,25 +1395,9 @@ function buildShape() {
       g.fillText(text, W / 2, H / 2);
       return true;
     }
-    if (!shapeImage) return false;
-    // Fit the image, then keep only pixels that differ from its corner colour.
-    const sc = Math.min((W * S.shapeSize) / shapeImage.width, (H * S.shapeSize) / shapeImage.height);
-    const iw = Math.max(1, Math.round(shapeImage.width * sc));
-    const ih = Math.max(1, Math.round(shapeImage.height * sc));
-    const ix = Math.round((W - iw) / 2);
-    const iy = Math.round((H - ih) / 2);
-    g.drawImage(shapeImage, ix, iy, iw, ih);
-    const img = g.getImageData(ix, iy, iw, ih);
-    const d = img.data;
-    const [br, bg, bb, ba] = [d[0], d[1], d[2], d[3]];
-    for (let k = 0; k < d.length; k += 4) {
-      const diff = Math.abs(d[k] - br) + Math.abs(d[k + 1] - bg) + Math.abs(d[k + 2] - bb) + Math.abs(d[k + 3] - ba);
-      d[k + 3] = diff > 90 && d[k + 3] > 60 ? 255 : 0;
-    }
-    g.clearRect(0, 0, W, H);
-    g.putImageData(img, ix, iy);
-    return true;
+    return false;
   });
+  if (S.shape === 'image') pts.push(...sampleImage());
   if (!pts.length) {
     for (let i = 0; i < n; i++) {
       hx[i] = px[i];
@@ -1527,6 +1593,7 @@ let shades: string[] = [];
 
 function buildShades() {
   spriteCache.clear();
+  scaledCache.clear();
   const stops = pal().stops;
   shades = [];
   for (let k = 0; k < SHADES; k++) {
@@ -1625,6 +1692,22 @@ const SPRITES: Record<SpriteStyle, { scale: number; alpha: number }> = {
 };
 const SPRITE_PX = 48;
 const spriteCache = new Map<string, HTMLCanvasElement>();
+
+const scaledCache = new Map<string, { c: HTMLCanvasElement; d: number }>();
+function scaledSprite(img: HTMLCanvasElement, key: string, d0: number) {
+  const d = Math.max(1, Math.round(d0 * dpr));
+  const full = `${key}:${d}`;
+  let e = scaledCache.get(full);
+  if (!e) {
+    if (scaledCache.size > 600) scaledCache.clear();
+    const c = document.createElement('canvas');
+    c.width = c.height = d;
+    c.getContext('2d')!.drawImage(img, 0, 0, d, d);
+    e = { c, d };
+    scaledCache.set(full, e);
+  }
+  return e;
+}
 
 function spriteFor(style: SpriteStyle, k: number) {
   const key = `${style}:${k}`;
@@ -1783,7 +1866,15 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     const img = spriteFor(style as SpriteStyle, k);
     const d0 = s * sprite.scale;
     ctx.globalAlpha = sprite.alpha;
-    if (uniformSize) for (const i of list) ctx.drawImage(img, px[i] - d0 / 2, py[i] - d0 / 2, d0, d0);
+    if (uniformSize) {
+      // Same size for all: stamp a copy pre-scaled to the exact device size,
+      // so the browser copies pixels 1:1 instead of resampling each stamp.
+      const pre = scaledSprite(img, `${style}:${k}`, d0);
+      const hd = pre.d / 2;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      for (const i of list) ctx.drawImage(pre.c, ((px[i] * dpr) | 0) - hd, ((py[i] * dpr) | 0) - hd);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
     else
       for (const i of list) {
         const d = d0 * psz[i];
@@ -2325,12 +2416,13 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
   { kind: 'note', text: 'Flocking works best with little or no Flow, and Pixels, Arrows or Comets.', show: () => settings.flock > 0 },
 
-  { kind: 'section', id: 'shape', label: 'Shape', lock: ['shape', 'shapeText', 'shapeSize', 'homeStrength', 'shapeCycle'],
+  { kind: 'section', id: 'shape', label: 'Shape', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'homeStrength', 'shapeCycle'],
     summary: () => (settings.shape === 'none' ? 'free' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
   { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
   { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
-  { kind: 'note', text: 'The image is used for this session only (it isn’t saved). Particles fill whatever differs from its corner colour.', show: () => settings.shape === 'image' },
+  { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
+  { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
   { kind: 'range', key: 'homeStrength', label: 'Pull home', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasShape },
   { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
@@ -2483,7 +2575,7 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Comet shower', { count: 600, size: 2, render: 'comets', flow: 0.9, flowScale: 0.003, flowSpeed: 0.3, speed: 1.8, trail: 0.5, friction: 0.02, jitter: 0.02, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 200, force: 0.8, click: 'shockwave' }],
   ['Galaxy', { count: 3000, size: 1.4, render: 'sparkles', flow: 0.2, flowScale: 0.003, flowSpeed: 0.1, trail: 0.8, friction: 0.03, jitter: 0.02, palette: 'cosmic', colorBy: 'pointer', glow: true, pointerMode: 'vortex', radius: 320, force: 0.9, click: 'gather' }],
   ['Bubbles', { count: 260, size: 5.5, render: 'rings', gravity: -0.15, flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0, friction: 0.05, jitter: 0.04, palette: 'pastel', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 0.5, click: 'emit' }],
-  ['Campfire', { count: 1800, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.4, flowType: 'curl', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
+  ['Campfire', { count: 1300, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.3, flowType: 'waves', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
   ['Pulse rings', { count: 3000, size: 1.4, render: 'streaks', emitter: 'ring', emitMode: 'burst', burstEvery: 1.6, burstSize: 0.3, emitSize: 60, emitOut: true, launchSpeed: 3, launchSpread: 0, lifespan: 3, lifeFade: 'out', flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.02, jitter: 0, palette: 'neon', colorBy: 'age', glow: true, pointerMode: 'vortex', radius: 200, force: 0.6 }],
   ['Hello', { count: 4000, size: 1.4, render: 'dots', shape: 'text', shapeText: 'HELLO', shapeSize: 0.8, homeStrength: 1, shapeCycle: 10, flow: 0.6, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.3, trail: 0.75, friction: 0.04, jitter: 0.02, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Starlings', { count: 700, size: 2, render: 'arrows', flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, trail: 0.55, friction: 0.01, jitter: 0.06, palette: 'ice', colorBy: 'direction', glow: false, pointerMode: 'repel', radius: 160, force: 1, click: 'shockwave' }],
@@ -2520,7 +2612,7 @@ function changed(keys: Set<keyof Settings>) {
     ensureCount();
   }
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
-  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeSize') || keys.has('count')) buildShape();
+  if (keys.has('shape') || keys.has('shapeText') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) buildShape();
   if (keys.has('emitter') && settings.emitter !== prevEmitter) {
     prevEmitter = settings.emitter;
     emitterChanged();
