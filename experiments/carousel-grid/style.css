@@ -12,6 +12,11 @@
 [hidden] { display: none !important; }
 
 html, body { height: 100%; }
+/* While a full-screen transition runs, the page is replaced by snapshots, and
+   when the grid's snapshot shrinks ("Grid sinks back") whatever is behind it
+   shows. Give that the grid's own background instead of the frame's white. */
+html { background: var(--bg); }
+::view-transition { background: var(--bg); }
 
 body {
   margin: 0;
