@@ -1263,7 +1263,7 @@ function adaptQuality(dt: number) {
 
 type Control = ControlBody & { show?: () => boolean };
 type ControlBody =
-  | { kind: 'section'; id: string; label: string; open?: boolean; summary?: () => string; lock?: (keyof Settings)[] }
+  | { kind: 'section'; id: string; label: string; open?: boolean; fixed?: boolean; summary?: () => string; lock?: (keyof Settings)[] }
   | { kind: 'mypresets' }
   | { kind: 'sub'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
@@ -1275,6 +1275,7 @@ type ControlBody =
   | { kind: 'multi'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'text'; key: keyof Settings; label: string; placeholder?: string }
   | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean }
+  | { kind: 'icons'; buttons: [string, string, () => void][] }
   | { kind: 'note'; text: string }
   | { kind: 'swatch' }
   | { kind: 'audio' };
@@ -1350,6 +1351,17 @@ const isGlyphs = () => settings.render === 'glyphs' || (settings.render === 'mix
 const hasFlow = () => settings.flow > 0;
 const hasPointer = () => settings.pointerMode !== 'none';
 const hasClick = () => settings.click !== 'none';
+
+const svg = (d: string) =>
+  `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICONS = {
+  pause: svg('<path d="M9 5v14M15 5v14"/>'),
+  play: svg('<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>'),
+  clear: svg('<path d="M4 20h16"/><path d="M14.5 4.5l5 5L11 18H6.5L4 15.5z"/><path d="M9.5 9.5l5 5"/>'),
+  scatter: svg('<circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>'),
+  shuffle: svg('<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>'),
+  reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
+};
 
 const CONTROLS: Control[] = [
   { kind: 'section', id: 'presets', label: 'Presets', open: true },
@@ -1448,15 +1460,15 @@ const CONTROLS: Control[] = [
   { kind: 'swatch' },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
-  { kind: 'section', id: 'actions', label: 'Actions', open: true },
+  { kind: 'section', id: 'actions', label: 'Actions', open: true, fixed: true },
   {
-    kind: 'buttons',
+    kind: 'icons',
     buttons: [
-      ['Pause', togglePause],
-      ['Clear', clear],
-      ['Scatter', scatter],
-      ['Shuffle', shuffle],
-      ['Reset', reset],
+      ['Pause (Space)', ICONS.pause, togglePause],
+      ['Clear trails (C)', ICONS.clear, clear],
+      ['Scatter (S)', ICONS.scatter, scatter],
+      ['Shuffle, keeps locked sections (R)', ICONS.shuffle, shuffle],
+      ['Reset to defaults', ICONS.reset, reset],
     ],
   },
 ];
@@ -1582,6 +1594,14 @@ function renderControls() {
         section.classList.toggle('closed', !open);
         head.setAttribute('aria-expanded', String(open));
       };
+      if (ctl.fixed) {
+        // Always open: the header is just a title.
+        section.classList.add('fixed');
+        head.disabled = true;
+        head.removeAttribute('aria-controls');
+        if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
+        continue;
+      }
       setOpen(!(collapsed[ctl.id] ?? !ctl.open));
       head.addEventListener('click', () => {
         const open = section.classList.contains('closed');
@@ -1637,6 +1657,23 @@ function renderControls() {
       continue;
     }
 
+    if (ctl.kind === 'icons') {
+      const row = document.createElement('div');
+      row.className = 'icon-buttons';
+      for (const [title, icon, fn] of ctl.buttons) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = title;
+        b.setAttribute('aria-label', title.replace(/ \(.*\)$/, ''));
+        b.innerHTML = icon;
+        b.addEventListener('click', fn);
+        if (fn === togglePause) pauseButton = b;
+        row.append(b);
+      }
+      body.append(row);
+      continue;
+    }
+
     if (ctl.kind === 'buttons') {
       const row = document.createElement('div');
       row.className = 'buttons';
@@ -1645,7 +1682,6 @@ function renderControls() {
         b.type = 'button';
         b.textContent = text;
         b.addEventListener('click', fn);
-        if (text === 'Pause') pauseButton = b;
         if (ctl.active) refreshers.push(() => b.classList.toggle('on', ctl.active!(text)));
         row.append(b);
       }
@@ -1874,7 +1910,12 @@ function renderAudio() {
 
 function togglePause() {
   paused = !paused;
-  if (pauseButton) pauseButton.textContent = paused ? 'Play' : 'Pause';
+  if (pauseButton) {
+    pauseButton.innerHTML = paused ? ICONS.play : ICONS.pause;
+    pauseButton.title = paused ? 'Play (Space)' : 'Pause (Space)';
+    pauseButton.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+    pauseButton.classList.toggle('on', paused);
+  }
 }
 
 function scatter() {

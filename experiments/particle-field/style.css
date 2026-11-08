@@ -334,3 +334,12 @@ button:hover, select:hover { border-color: #3c3f46; }
 }
 .swatches button { width: 26px; height: 26px; padding: 0; }
 .swatches button:disabled { opacity: 0.35; cursor: default; }
+
+/* Actions: always open, one row of icon buttons. */
+.group.fixed .chev { display: none; }
+.group.fixed .group-head { cursor: default; color: inherit; }
+.icon-buttons { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.icon-buttons button { display: grid; place-items: center; height: 36px; padding: 0; }
+.icon-buttons button.on { border-color: var(--accent); color: var(--accent); }
+.group.fixed .group-head:hover { background: none; }
+.group.fixed .group-head:disabled { opacity: 1; }
