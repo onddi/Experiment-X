@@ -1460,6 +1460,7 @@ function buildShape() {
     }
     return;
   }
+  const tShape = performance.now();
   const pts = sampleTargets((g, W, H) => {
     if (S.shape === 'text') {
       const text = S.shapeText.trim() || ' ';
@@ -1500,6 +1501,7 @@ function buildShape() {
     ty[i] = y + (Math.random() - 0.5) * 2;
   }
   const owner = matchNearest(tx, ty);
+  shapeInfo = { targets: pts.length, ms: performance.now() - tShape };
   for (let t = 0; t < n; t++) {
     hx[owner[t]] = tx[t];
     hy[owner[t]] = ty[t];
@@ -2466,6 +2468,10 @@ function drawLinks() {
 let last = performance.now();
 let fps = 60;
 
+let stepMs = 0;
+let drawMs = 0;
+let shapeInfo = { targets: 0, ms: 0 };
+
 function frame(now: number) {
   // dt is in 60fps frames, clamped so a background tab doesn't explode the sim.
   const dt = Math.min(3, (now - last) / (1000 / 60));
@@ -2478,8 +2484,13 @@ function frame(now: number) {
     updateGlyphs();
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
+    const t0 = performance.now();
     step(dt);
+    const t1 = performance.now();
     draw();
+    const t2 = performance.now();
+    stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
+    drawMs = drawMs * 0.9 + (t2 - t1) * 0.1;
   }
   requestAnimationFrame(frame);
 }
@@ -3679,10 +3690,13 @@ function renderControls() {
   const stats = document.createElement('p');
   stats.className = 'stats';
   stats.id = 'stats';
+  stats.title = 'Show the debug overlay (D)';
+  stats.style.cursor = 'pointer';
+  stats.addEventListener('click', toggleDebug);
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · G gather · S scatter · R shuffle · H hide panel.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · G gather · S scatter · R shuffle · H hide panel · D debug.';
   controls.append(keys);
 }
 
@@ -3934,7 +3948,18 @@ function renderMyPresets() {
           writeJson(MY_PRESETS_KEY, myPresets);
           draw();
         });
-        item.append(key, b, del);
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'del';
+        copy.textContent = '⧉';
+        copy.title = `Copy “${p.name}” as text (paste it into the name box to import)`;
+        copy.addEventListener('click', () => {
+          // Only what differs from the defaults keeps it short.
+          const diff = Object.fromEntries(Object.entries(p.settings).filter(([k, v]) => DEFAULTS[k as keyof Settings] !== v));
+          const text = JSON.stringify({ name: p.name, ...diff });
+          void navigator.clipboard?.writeText(text).then(() => showToast('Copied'), () => prompt('Copy this:', text));
+        });
+        item.append(key, b, copy, del);
         list.append(item);
       });
       wrap.append(h, list);
@@ -3945,7 +3970,21 @@ function renderMyPresets() {
     const input = form.querySelector('input')!;
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const name = input.value.trim() || `My look ${myPresets.length + 1}`;
+      const raw = input.value.trim();
+      // Pasted preset text (from the copy button) imports it.
+      if (raw.startsWith('{')) {
+        try {
+          const { name: nm, ...rest } = JSON.parse(raw) as Partial<Settings> & { name?: string };
+          myPresets.push({ name: String(nm ?? `Imported ${myPresets.length + 1}`), settings: { ...DEFAULTS, ...rest } });
+          writeJson(MY_PRESETS_KEY, myPresets);
+          draw();
+          return;
+        } catch {
+          showToast('That preset text is not valid');
+          return;
+        }
+      }
+      const name = raw || `My look ${myPresets.length + 1}`;
       const existing = myPresets.findIndex((p) => p.name === name);
       if (existing >= 0) myPresets[existing].settings = snapshot();
       else myPresets.push({ name, settings: snapshot() });
@@ -4037,7 +4076,63 @@ window.addEventListener('keydown', (e) => {
   else if (k === 's') scatter();
   else if (k === 'r') shuffle();
   else if (k === 'h') toggle.click();
+  else if (k === 'd') toggleDebug();
 });
+
+// --- debug overlay (D) ------------------------------------------------------------
+// Where the time goes and which costly settings are on, to find out why a
+// look runs slowly or forms slowly.
+let debugTimer = 0;
+function toggleDebug() {
+  let el = document.getElementById('debug');
+  if (el) {
+    el.remove();
+    clearInterval(debugTimer);
+    return;
+  }
+  el = document.createElement('pre');
+  el.id = 'debug';
+  el.className = 'debug';
+  document.getElementById('stage')!.append(el);
+  const out = el;
+  const update = () => {
+    const S = settings;
+    const lines: string[] = [];
+    lines.push(`${Math.round(fps)} fps · ${n.toLocaleString()} particles · ${Math.round(renderScale * 100)}% resolution`);
+    lines.push(`sim ${stepMs.toFixed(1)} ms · draw ${drawMs.toFixed(1)} ms  (16.7 ms = 60 fps)`);
+    lines.push(`style ${S.render}${S.render === 'mixed' ? ` (${S.mixStyles})` : ''} · size ${S.size} · trails ${pct(S.trail)}${S.glow ? ' · glow' : ''}`);
+    if (S.shape !== 'none') {
+      // How formed the shape is: share of particles near their spot.
+      let near = 0;
+      let dist = 0;
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(px[i] - hx[i], py[i] - hy[i]);
+        dist += d;
+        if (d < 4) near++;
+      }
+      lines.push(`shape ${S.shape}${S.shape === 'text' ? ` "${S.shapeText}" (${S.shapeText.length} chars)` : ''} · size ${pct(S.shapeSize)}`);
+      lines.push(`  ${shapeInfo.targets.toLocaleString()} spots for ${n.toLocaleString()} particles${shapeInfo.targets < n ? ` (${(n / Math.max(1, shapeInfo.targets)).toFixed(1)} per spot)` : ''} · built in ${shapeInfo.ms.toFixed(0)} ms`);
+      lines.push(`  formed ${pct(near / Math.max(1, n))} · avg ${(dist / Math.max(1, n)).toFixed(1)} px from spot · snap ${S.homeStrength}× · cycle ${S.shapeCycle ? S.shapeCycle + ' s' : 'off'}`);
+    }
+    const busy: string[] = [];
+    if (S.flow > 0) busy.push(`flow ${S.flowType} ${S.flow}`);
+    if (S.flock > 0) busy.push('flocking');
+    if (S.space > 0) busy.push('personal space');
+    if (S.render === 'links') busy.push(`links ${S.linkDist}px`);
+    if (usesRibbons()) busy.push(`ribbons ${S.ribbonLen}`);
+    if (S.depth > 0) busy.push('3D depth');
+    if (S.lifespan > 0) busy.push(`lifespan ${S.lifespan}s`);
+    if (S.emitter !== 'none') busy.push(`emitter ${S.emitter}`);
+    if (wellList().length) busy.push(`${wellList().length} points`);
+    if (S.friction > 0.08) busy.push(`high friction ${pct(S.friction)}`);
+    if (busy.length) lines.push(`on: ${busy.join(' · ')}`);
+    if (audio.source !== 'off') lines.push(`audio ${audio.source} · ${audio.levels.bpm ? Math.round(audio.levels.bpm) + ' bpm' : 'no tempo yet'} · bars ${audio.levels.bars} · tension ${audio.levels.tension.toFixed(2)}`);
+    lines.push('D hides this');
+    out.textContent = lines.join('\n');
+  };
+  update();
+  debugTimer = window.setInterval(update, 400);
+}
 
 // Mobile quick actions, bottom right while the drawer is closed. Shuffle sits
 // at the bottom, nearest the thumb.
