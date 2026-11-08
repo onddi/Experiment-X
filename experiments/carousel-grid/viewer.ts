@@ -79,12 +79,26 @@ export class Viewer {
     const clone = item.cloneNode(true) as HTMLElement;
     for (const p of ['transform', 'visibility', 'opacity', 'z-index', '--turn', 'will-change']) clone.style.removeProperty(p);
     this.el.replaceChildren(clone);
-    this.el.style.setProperty('--cell', `${Math.min(innerWidth, innerHeight) * 0.6}px`);
+    this.el.style.setProperty('--cell', `${this.labelCell(from)}px`);
     this.armed = false;
     from.blur();
     this.run(false, () => {
       this.el.hidden = false;
     });
+  }
+
+  /**
+   * Size basis for the full-screen label. Zoom and Flip blend the cell's
+   * picture, scaled up to cover the screen, into the full-screen one, so the
+   * label must be exactly that scaled-up size or the two copies of the text
+   * pulse bigger and smaller as they cross-fade.
+   */
+  private labelCell(from: HTMLElement) {
+    const r = from.getBoundingClientRect();
+    const morph = this.transition === 'zoom' || this.transition === 'flip';
+    if (!morph || !r.width || !r.height) return Math.min(innerWidth, innerHeight) * 0.6;
+    const cell = parseFloat(getComputedStyle(from).getPropertyValue('--cell')) || Math.min(r.width, r.height);
+    return cell * Math.max(innerWidth / r.width, innerHeight / r.height);
   }
 
   close() {
