@@ -2874,6 +2874,7 @@ type ControlBody =
   | { kind: 'vibes' }
   | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
+  | { kind: 'presetlib' }
   | { kind: 'sub'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
@@ -3046,8 +3047,8 @@ const ICONS = {
 
 const CONTROLS: Control[] = [
   // --- Look ---
-  { kind: 'section', id: 'presets', label: 'Presets', tab: 'look' },
-  { kind: 'buttons', buttons: [], limit: 8 }, // filled with presets below
+  { kind: 'section', id: 'presets', label: 'Presets', tab: 'look', summary: () => familyLabel(presetFamily) },
+  { kind: 'presetlib' },
 
   { kind: 'section', id: 'mine', label: 'My presets', tab: 'look',
     summary: () => (myPresets.length ? `${myPresets.length} saved` : '') },
@@ -3341,9 +3342,120 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Waterfall', { count: 2600, size: 1.3, render: 'streaks', emitter: 'line', emitMode: 'steady', emitRate: 0.4, emitX: 0.5, emitY: 0.08, emitSize: 700, emitAngle: 0, emitOut: false, launchSpeed: 1, launchDir: 90, launchSpread: 20, lifespan: 5, lifeFade: 'out', gravity: 1, flow: 0.15, flowType: 'waves', flowScale: 0.006, flowSpeed: 0.4, obstacles: 'circles', obsCircles: '0.35,0.55;0.62,0.72', obsRadius: 55, obsShow: true, trail: 0.85, friction: 0.02, jitter: 0.02, palette: 'ocean', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 100, force: 0.8, click: 'none' }],
   ['Sparkler', { count: 1500, size: 1.4, render: 'sparkles', emitter: 'pointer', emitMode: 'steady', emitRate: 0.5, launchSpeed: 2.5, launchSpread: 360, lifespan: 1.6, lifeFade: 'out', lifeSize: 'shrink', gravity: 0.2, flow: 0.1, trail: 0.6, friction: 0.04, jitter: 0.1, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'none', click: 'shockwave' }],
   ['Marbles', { count: 300, size: 6, render: 'circles', space: 1, spaceDist: 16, edges: 'bounce', gravity: 0.3, flow: 0, trail: 0, friction: 0.01, jitter: 0.02, palette: 'crimson', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 140, force: 1.2, click: 'shockwave' }],
+  // --- Words ---
+  ['Neon sign', { count: 3000, size: 1, render: 'glow', shape: 'text', shapeText: 'OPEN', shapeSize: 0.7, entrance: 'formed', flow: 0.05, flowType: 'curl', trail: 0.5, friction: 0.05, jitter: 0.04, palette: 'neon', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 100, force: 0.8, click: 'ripple' }],
+  ['Typewriter', { count: 2500, size: 2.2, render: 'glyphs', glyphSet: 'latin', glyphPick: 'random', glyphChange: 'fixed', glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', shape: 'text', shapeText: 'TYPEWRITER', shapeSize: 0.9, entrance: 'sweep', entranceTime: 2.5, flow: 0, trail: 0, friction: 0.05, jitter: 0, palette: 'paper', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave' }],
+  ['Smoke writing', { count: 5000, size: 1, render: 'dots', shape: 'text', shapeText: 'SMOKE', shapeSize: 0.8, shapeCycle: 6, entrance: 'drift', flow: 1.2, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.4, trail: 0.92, friction: 0.04, jitter: 0.03, palette: 'mono', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'none' }],
+  ['Shatter', { count: 4000, size: 1.6, render: 'sparkles', shape: 'text', shapeText: 'SHATTER', shapeSize: 0.85, entrance: 'centre', flow: 0, trail: 0.4, friction: 0.02, jitter: 0, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'shockwave', clickForce: 2 }],
+  ['Glyph word', { count: 2200, size: 2, render: 'glyphs', glyphSet: 'katakana', glyphPick: 'random', glyphChange: 'flicker', glyphRate: 0.03, glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', shape: 'text', shapeText: 'MATRIX', shapeSize: 0.85, entrance: 'rain', entranceTime: 3, flow: 0.1, flowType: 'curl', trail: 0.6, friction: 0.05, jitter: 0.01, palette: 'toxic', colorBy: 'speed', glow: false, pointerMode: 'repel', radius: 110, force: 0.8, click: 'ripple' }],
+  ['Dot matrix', { count: 3500, size: 1.8, sizeVar: 0, render: 'circles', shape: 'text', shapeText: 'DOTS', shapeSize: 0.75, entrance: 'sweep', entranceTime: 2.5, flow: 0, trail: 0, friction: 0.05, jitter: 0, palette: 'cyber', colorBy: 'horizontal', glow: false, pointerMode: 'repel', radius: 90, force: 1.2, click: 'ripple' }],
+  ['Breathing word', { count: 4500, size: 1.4, render: 'glow', shape: 'text', shapeText: 'BREATHE', shapeSize: 0.85, shapeCycle: 7, entrance: 'centre', depth: 0.8, depthParallax: 0.7, flow: 0.4, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.2, trail: 0.7, friction: 0.04, jitter: 0.02, palette: 'lavender', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 0.6, click: 'none' }],
+  // --- Patterns ---
+  ['Mandala', { count: 3000, size: 1.5, render: 'sparkles', shape: 'sunflower', shapeSize: 0.9, entrance: 'centre', entranceTime: 3, flow: 0, trail: 0.6, friction: 0.04, jitter: 0, palette: 'candy', colorBy: 'cycle', glow: true, pointerMode: 'vortex', radius: 260, force: 1, click: 'ripple' }],
+  ['Pond', { count: 1800, size: 2.6, render: 'dots', shape: 'grid', shapeSize: 1, entrance: 'formed', flow: 0, trail: 0.3, friction: 0.04, jitter: 0, palette: 'ocean', colorBy: 'radial', glow: true, pointerMode: 'repel', radius: 100, force: 0.8, click: 'ripple', clickForce: 1.6 }],
+  ['Portrait', { count: 6000, size: 1.2, render: 'dots', shape: 'image', imageMode: 'auto', shapeSize: 0.9, entrance: 'drift', flow: 0.05, flowType: 'curl', trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave' }],
+  // --- Currents ---
+  ['Marbled paper', { count: 3000, size: 1.2, render: 'streaks', flow: 1.2, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.06, trail: 0.97, friction: 0.06, jitter: 0.01, palette: 'paper', colorBy: 'direction', glow: false, pointerMode: 'vortex', radius: 180, force: 0.5, click: 'none' }],
+  ['Northern lights', { count: 3500, size: 1.2, render: 'streaks', flow: 0.9, flowType: 'waves', flowScale: 0.0025, flowSpeed: 0.12, wind: 0.1, windDir: 0, trail: 0.94, friction: 0.05, jitter: 0.01, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'vortex', radius: 200, force: 0.4, click: 'none' }],
+  // --- Weather ---
+  ['Rainstorm', { count: 2500, size: 1, render: 'streaks', gravity: 1.5, wind: 0.4, windDir: 0, flow: 0.3, flowType: 'waves', flowScale: 0.003, flowSpeed: 0.8, speed: 1.6, trail: 0.5, friction: 0.03, jitter: 0.02, palette: 'ice', colorBy: 'speed', glow: false, pointerMode: 'repel', radius: 120, force: 0.8, click: 'ripple' }],
+  ['Sandstorm', { count: 4000, size: 1.2, render: 'dots', wind: 0.9, windDir: 0, flow: 0.9, flowType: 'curl', flowScale: 0.006, flowSpeed: 0.8, speed: 1.5, trail: 0.8, friction: 0.04, jitter: 0.2, palette: 'desert', colorBy: 'speed', glow: false, pointerMode: 'repel', radius: 140, force: 0.8, click: 'shockwave' }],
+  ['Pollen', { count: 500, size: 2, sizeVar: 0.6, render: 'glow', gravity: -0.03, flow: 0.2, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.05, speed: 0.6, trail: 0.4, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 260, force: 0.25, click: 'ripple' }],
+  // --- Swarms ---
+  ['School of fish', { count: 900, size: 2, render: 'arrows', flock: 1, flockAlign: 1.5, flockCohesion: 1.2, flockSep: 1, flockRange: 40, flow: 0.1, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, trail: 0.5, friction: 0.01, jitter: 0.04, palette: 'ocean', colorBy: 'direction', glow: false, pointerMode: 'vortex', radius: 220, force: 0.8, click: 'shockwave' }],
+  ['Midges', { count: 450, size: 1.6, render: 'glow', flock: 0.8, flockAlign: 0.2, flockCohesion: 2, flockSep: 0.5, flockRange: 100, flow: 0, speed: 1.4, trail: 0.3, friction: 0.02, jitter: 0.5, palette: 'gold', colorBy: 'speed', glow: true, pointerMode: 'attract', radius: 400, force: 0.5, click: 'shockwave' }],
+  ['Crowd', { count: 900, size: 2.6, render: 'circles', space: 1, spaceDist: 14, flow: 0.15, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.1, trail: 0, friction: 0.08, jitter: 0.02, palette: 'pastel', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 140, force: 1.2, click: 'ripple' }],
+  // --- Fountains ---
+  ['Fireworks', { count: 3000, size: 1.4, render: 'sparkles', emitter: 'point', emitMode: 'burst', burstEvery: 1.2, burstSize: 0.12, emitX: 0.5, emitY: 0.35, emitOut: true, launchSpeed: 4, launchSpread: 360, lifespan: 2.2, lifeFade: 'out', lifeSize: 'shrink', gravity: 0.35, flow: 0, trail: 0.75, friction: 0.03, jitter: 0.02, palette: 'rainbow', colorBy: 'age', glow: true, pointerMode: 'none', click: 'emit' }],
+  ['Geyser', { count: 2500, size: 1.4, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.4, emitX: 0.5, emitY: 0.98, emitOut: false, launchSpeed: 6, launchDir: 270, launchSpread: 12, lifespan: 3.5, lifeFade: 'out', gravity: 0.6, flow: 0, trail: 0.7, friction: 0.01, jitter: 0.03, palette: 'ocean', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.8, click: 'none' }],
+  // --- Forces ---
+  ['Black hole', { count: 3000, size: 1.3, render: 'comets', wells: '0.5,0.5,attract;0.5,0.5,vortex', wellForce: 1.6, wellRange: 350, showWells: false, depth: 0.6, flow: 0.1, flowType: 'curl', trail: 0.8, friction: 0.005, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'shockwave' }],
+  ['Slalom', { count: 2500, size: 1.1, render: 'streaks', obstacles: 'circles', obsCircles: '0.2,0.25;0.45,0.25;0.7,0.25;0.32,0.5;0.57,0.5;0.82,0.5;0.2,0.75;0.45,0.75;0.7,0.75', obsRadius: 28, obsForce: 1.2, obsShow: true, wind: 0.6, windDir: 0, flow: 0.2, flowType: 'waves', flowScale: 0.004, flowSpeed: 0.3, edges: 'enter', trail: 0.85, friction: 0.03, jitter: 0.01, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Wind tunnel', { count: 3500, size: 1, render: 'streaks', obstacles: 'text', obsText: 'AERO', obsSize: 0.6, obsForce: 1.4, obsShow: true, wind: 0.7, windDir: 0, flow: 0, trail: 0.93, friction: 0.03, jitter: 0.005, palette: 'blueprint', colorBy: 'speed', glow: false, pointerMode: 'none', click: 'none' }],
+  // --- Space ---
+  ['Warp speed', { count: 2500, size: 1.4, render: 'streaks', depth: 1, depthParallax: 0, wells: '0.5,0.5,repel', wellForce: 1.5, wellRange: 500, showWells: false, lifespan: 3, lifeFade: 'swell', speed: 2, flow: 0, trail: 0.6, friction: 0.005, jitter: 0.01, palette: 'ice', colorBy: 'depth', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Nebula', { count: 220, size: 6, sizeVar: 0.8, render: 'bokeh', depth: 1, depthParallax: 0.6, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.05, speed: 0.5, trail: 0, friction: 0.04, jitter: 0.01, palette: 'cosmic', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
+  // --- Symbols ---
+  ['Runes', { count: 900, size: 2.2, render: 'glyphs', glyphSet: 'runes', glyphPick: 'random', glyphChange: 'flicker', glyphRate: 0.01, glyphFont: 'serif', glyphScale: 1.4, glyphRotate: 'none', flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.5, friction: 0.05, jitter: 0.02, palette: 'ember', colorBy: 'palette', glow: true, pointerMode: 'vortex', radius: 180, force: 0.6, click: 'ripple' }],
+  ['Weather map', { count: 1400, size: 2.6, render: 'glyphs', glyphSet: 'arrows', glyphPick: 'heading', glyphChange: 'fixed', glyphFont: 'sans', glyphScale: 1, glyphRotate: 'none', wind: 0.25, windDir: 20, flow: 0.7, flowType: 'curl', flowScale: 0.0025, flowSpeed: 0.08, trail: 0, friction: 0.05, jitter: 0.01, palette: 'paper', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 200, force: 0.5, click: 'none' }],
 ];
-// Listed A–Z so a preset is easy to find.
-(CONTROLS[1] as { buttons: [string, () => void][] }).buttons = [...PRESETS].sort(([a], [b]) => a.localeCompare(b)).map(([label, p]) => [label, () => apply(p)]);
+
+// Preset families: each built around one engine feature (see the proposal doc).
+type Family = 'all' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+const FAMILIES: [Family, string][] = [
+  ['all', 'All'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
+  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'],
+];
+const FAMILY_OF: Record<string, Family> = {};
+for (const [fam, names] of [
+  ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
+  ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait'],
+  ['currents', 'Drift, Silk, Dusk, Ink, Prism, Neon storm, Silk ribbons, Heat, Marbled paper, Northern lights'],
+  ['weather', 'Snowfall, Embers, Fireflies, Bubbles, Rainstorm, Sandstorm, Pollen'],
+  ['swarms', 'Starlings, Marbles, School of fish, Midges, Crowd'],
+  ['fountains', 'Campfire, Pulse rings, Waterfall, Sparkler, Confetti, Fireworks, Geyser'],
+  ['forces', 'Riverstones, Windbreak, Orbit, Black hole, Slalom, Wind tunnel'],
+  ['space', 'Deep space, Galaxy, Comet shower, Bokeh, Constellation, Warp speed, Nebula'],
+  ['symbols', 'ASCII, Compass, Digital rain, Runes, Weather map'],
+] as [Family, string][]) for (const n of names.split(', ')) FAMILY_OF[n] = fam;
+
+const FAMILY_KEY = 'particle-field:family';
+let presetFamily: Family = (() => {
+  const v = readJson<string>(FAMILY_KEY, 'words');
+  return FAMILIES.some(([f]) => f === v) ? (v as Family) : 'words';
+})();
+const familyLabel = (f: Family) => FAMILIES.find(([k]) => k === f)![1];
+
+function playPreset(name: string, p: Partial<Settings>) {
+  apply(p);
+  // The image pattern needs a picture: ask for one (this runs in the click).
+  if (p.shape === 'image' && !shapeImage) {
+    imageInput.click();
+    showToast('Pick an image for the particles to draw');
+  } else showToast(name);
+}
+
+// Family chips (wrapping, so every family is one tap away on a phone), then
+// that family's presets A–Z.
+function renderPresetLibrary() {
+  const wrap = document.createElement('div');
+  wrap.className = 'presetlib';
+  const chips = document.createElement('div');
+  chips.className = 'families';
+  chips.setAttribute('role', 'tablist');
+  const grid = document.createElement('div');
+  grid.className = 'buttons';
+  const draw = () => {
+    for (const c of chips.children) c.classList.toggle('on', (c as HTMLElement).dataset.fam === presetFamily);
+    grid.innerHTML = '';
+    const list = PRESETS.filter(([n]) => presetFamily === 'all' || FAMILY_OF[n] === presetFamily).sort(([a], [b]) => a.localeCompare(b));
+    for (const [name, p] of list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = name;
+      b.addEventListener('click', () => playPreset(name, p));
+      grid.append(b);
+    }
+  };
+  for (const [fam, label] of FAMILIES) {
+    const c = document.createElement('button');
+    c.type = 'button';
+    c.dataset.fam = fam;
+    c.setAttribute('role', 'tab');
+    const count = fam === 'all' ? PRESETS.length : PRESETS.filter(([n]) => FAMILY_OF[n] === fam).length;
+    c.innerHTML = `${label} <small>${count}</small>`;
+    c.addEventListener('click', () => {
+      presetFamily = fam;
+      writeJson(FAMILY_KEY, fam);
+      draw();
+      refresh();
+    });
+    chips.append(c);
+  }
+  draw();
+  wrap.append(chips, grid);
+  return wrap;
+}
 
 const controls = document.getElementById('controls')!;
 const refreshers: (() => void)[] = [];
@@ -3865,6 +3977,11 @@ function renderControls() {
 
     if (ctl.kind === 'mypresets') {
       body.append(renderMyPresets());
+      continue;
+    }
+
+    if (ctl.kind === 'presetlib') {
+      body.append(renderPresetLibrary());
       continue;
     }
 
