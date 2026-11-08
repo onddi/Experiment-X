@@ -80,6 +80,11 @@ export class Carousel {
     return this.items.length;
   }
 
+  /** Unwrapped index the carousel is resting at or heading to. */
+  get destination() {
+    return this.target ?? Math.round(this.pos);
+  }
+
   /** Index of the item currently closest to centre (0..count-1). */
   get index() {
     const i = Math.round(this.pos);

@@ -49,6 +49,7 @@ interface Settings {
   labels: boolean;
   imageMode: 'per-cell' | 'cycle';
   heroDrives: boolean;
+  wave: number;
 }
 
 const DEFAULTS: Settings = {
@@ -92,6 +93,7 @@ const DEFAULTS: Settings = {
   labels: false,
   imageMode: 'per-cell',
   heroDrives: true,
+  wave: 0,
 };
 
 const STORAGE_KEY = 'carousel-grid:settings';
@@ -153,13 +155,27 @@ function hueFor(k: string, globalIndex: number) {
 }
 
 /** Settings for one carousel: the main carousel can override the grid's. */
+/** Smallest multiple of n that is at least v (so every element repeats evenly). */
+function roundUpTo(v: number, n: number) {
+  return Math.ceil(v / n) * n;
+}
+
+/**
+ * Cycling cells (and a main row that drives them) hold a whole number of
+ * element rounds, so stepping past the end never skips or repeats an element.
+ */
+function itemCount(r: number, wanted: number) {
+  if (settings.surface === 'colors') return wanted;
+  const n = THEMES[settings.surface].groups.length;
+  if (r === HERO ? heroDrives() : cycling()) return roundUpTo(wanted, n);
+  return wanted;
+}
+
 function carouselOpts(r: number) {
   const own = r === HERO && settings.heroCustom;
   return {
     // Cycling cells need at least one item per element.
-    items: own ? settings.heroItems : r !== HERO && settings.surface !== 'colors' && cycling()
-      ? Math.max(settings.items, THEMES[settings.surface].groups.length)
-      : settings.items,
+    items: itemCount(r, own ? settings.heroItems : settings.items),
     effect: own ? settings.heroEffect : settings.effect,
     loop: own ? settings.heroLoop : settings.loop,
     physics: own
@@ -288,13 +304,28 @@ function build() {
     carousel.jumpTo(Math.min(prev.get(`${HERO},${HERO}`) ?? 0, o.items - 1));
     carousel.linked = () => linkedTo(HERO, HERO);
     // When the main row lands on a new element, send the grid to it.
-    let lastGroup = -1;
+    const groupCount = () => (settings.surface === 'colors' ? 4 : THEMES[settings.surface].groups.length);
+    let lastGroup = carousel.index % groupCount();
+    let lastStep = Math.round(carousel.pos);
     carousel.onMove = (c) => {
-      if (!heroDrives()) return;
-      const g = c.index % THEMES[settings.surface].groups.length;
-      if (g === lastGroup) return;
+      const n = groupCount();
+      if (!heroDrives()) {
+        lastGroup = c.index % n;
+        lastStep = Math.round(c.pos);
+        return;
+      }
+      const g = c.index % n;
+      const step = Math.round(c.pos);
+      if (g !== lastGroup) {
+        // Turn every cell by the same number of elements, in the direction the
+        // main row moved, so the whole grid rotates in lockstep.
+        let dg = (((g - lastGroup) % n) + n) % n;
+        const dir = Math.sign(step - lastStep) || 1;
+        if (dg > n / 2 || (dg === n / 2 && dir < 0)) dg -= n;
+        driveGridBy(dg, g);
+      }
       lastGroup = g;
-      driveGridTo(g);
+      lastStep = step;
     };
     grid.append(carousel.el);
     cells.push({ r: HERO, c: HERO, carousel });
@@ -362,7 +393,7 @@ function applyStyle() {
 function syncToHero() {
   const hero = cells.find((x) => x.r === HERO);
   if (!hero || !heroDrives()) return;
-  driveGridTo(hero.carousel.index % THEMES[settings.surface].groups.length, true);
+  jumpGridTo(hero.carousel.index % THEMES[settings.surface].groups.length);
 }
 
 function recolor() {
@@ -487,6 +518,10 @@ const CONTROLS: Control[] = [
   {
     kind: 'toggle', key: 'heroDrives', label: 'Main row switches the grid’s element',
     show: () => isImages() && settings.hero,
+  },
+  {
+    kind: 'range', key: 'wave', label: 'Wave delay', min: 0, max: 150, step: 5, format: (v) => (v ? `${v}ms` : 'off'),
+    show: () => heroDrives(),
   },
   {
     kind: 'select', key: 'imageMode', label: 'Elements', show: () => isImages() && !heroDrives(),
@@ -687,22 +722,53 @@ function updateStats() {
  * Move every grid cell to its nearest item showing group g. Cells ripple out
  * from the top-left so the change reads as a wave rather than a jump.
  */
-function driveGridTo(g: number, instant = false) {
+let waveTimers: number[] = [];
+
+/**
+ * Turn every grid cell by dg items (all cells the same amount, from where
+ * each is resting or heading). Cell item counts are a multiple of the
+ * element count, so dg items is also dg elements and they all land on g.
+ */
+function driveGridBy(dg: number, g: number) {
+  for (const t of waveTimers) clearTimeout(t);
+  waveTimers = [];
   const n = THEMES[settings.surface].groups.length;
   for (const x of cells) {
     if (x.r === HERO) continue;
     const car = x.carousel;
-    const base = Math.round(car.pos);
-    let best: number | null = null;
-    for (let t = base - n; t <= base + n; t++) {
-      if (((t % n) + n) % n !== g) continue;
-      if (!settings.loop && (t < 0 || t > car.count - 1)) continue;
-      if (best === null || Math.abs(t - car.pos) < Math.abs(best - car.pos)) best = t;
-    }
-    if (best === null || best === base) continue;
-    const target = best;
-    if (instant) car.jumpTo(target);
-    else setTimeout(() => car.goTo(target, 0), (x.r + x.c) * 45);
+    let target = car.destination + dg;
+    // Without looping a cell can't pass its ends; fall back to the nearest match.
+    if (!settings.loop && (target < 0 || target > car.count - 1)) target = nearestOf(car, g, n) ?? car.destination;
+    // A cell that was off-sync (e.g. dragged by hand) snaps onto the element.
+    if (mod(target, n) !== g) target = nearestOf(car, g, n) ?? target;
+    const delay = (x.r + x.c) * settings.wave;
+    if (delay === 0) car.goTo(target, 0);
+    else waveTimers.push(window.setTimeout(() => car.goTo(target, 0), delay));
+  }
+}
+
+function mod(a: number, n: number) {
+  return ((a % n) + n) % n;
+}
+
+function nearestOf(car: Carousel, g: number, n: number) {
+  const base = car.destination;
+  let best: number | null = null;
+  for (let t = base - n; t <= base + n; t++) {
+    if (mod(t, n) !== g) continue;
+    if (!settings.loop && (t < 0 || t > car.count - 1)) continue;
+    if (best === null || Math.abs(t - base) < Math.abs(best - base)) best = t;
+  }
+  return best;
+}
+
+/** Snap every grid cell straight to its nearest item showing group g. */
+function jumpGridTo(g: number) {
+  const n = THEMES[settings.surface].groups.length;
+  for (const x of cells) {
+    if (x.r === HERO) continue;
+    const t = nearestOf(x.carousel, g, n);
+    if (t !== null && t !== x.carousel.destination) x.carousel.jumpTo(t);
   }
 }
 
