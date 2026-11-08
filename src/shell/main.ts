@@ -126,7 +126,9 @@ $('sidebar-open').addEventListener('click', () => setSidebarCollapsed(!shellEl.c
 // the screen back when that is closed. Messages (postMessage, same origin):
 //   experiment → shell  { type: 'xp:list' }             ask which experiments exist
 //   shell → experiment  { type: 'xp:list', experiments: [{ slug, title }] }
-//   experiment → shell  { type: 'xp:handover', slug }   show <slug> on top of me
+//   experiment → shell  { type: 'xp:handover', slug, params? }
+//                                                       show <slug> on top of me; params
+//                                                       (strings) go on its URL query
 //   shell → experiment  { type: 'xp:release' }          it was closed: take over again
 
 let handover: HTMLDivElement | null = null;
@@ -135,7 +137,7 @@ function tellFrame(msg: unknown) {
   frame.contentWindow?.postMessage(msg, location.origin);
 }
 
-function handOver(slug: string) {
+function handOver(slug: string, params: Record<string, string> = {}) {
   const exp = experiments.find((e) => e.slug === slug);
   if (!exp || exp.slug === current?.slug) return;
   removeHandover();
@@ -145,7 +147,8 @@ function handOver(slug: string) {
   const inner = document.createElement('iframe');
   inner.className = 'handover__frame';
   inner.title = exp.title;
-  inner.src = exp.url;
+  const query = new URLSearchParams(params).toString();
+  inner.src = query ? `${exp.url}${exp.url.includes('?') ? '&' : '?'}${query}` : exp.url;
   // Fade in only once it has loaded, so the hand-over stays black until then.
   inner.addEventListener('load', () => box.classList.add('handover--ready'), { once: true });
   const back = document.createElement('button');
@@ -180,14 +183,18 @@ function removeHandover() {
 
 window.addEventListener('message', (e) => {
   if (e.source !== frame.contentWindow || e.origin !== location.origin) return;
-  const msg = e.data as { type?: string; slug?: string } | null;
+  const msg = e.data as { type?: string; slug?: string; params?: unknown } | null;
   if (msg?.type === 'xp:list') {
     tellFrame({
       type: 'xp:list',
       experiments: experiments.map(({ slug, title }) => ({ slug, title })),
     });
   } else if (msg?.type === 'xp:handover' && typeof msg.slug === 'string') {
-    handOver(msg.slug);
+    const params: Record<string, string> = {};
+    if (msg.params && typeof msg.params === 'object') {
+      for (const [k, v] of Object.entries(msg.params)) if (typeof v === 'string' || typeof v === 'number') params[k] = String(v);
+    }
+    handOver(msg.slug, params);
   }
 });
 

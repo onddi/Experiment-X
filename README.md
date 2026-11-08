@@ -94,7 +94,7 @@ other; they only exchange `postMessage`s with the shell (same origin):
 | ------------------- | ---------------------------------------------------- |
 | experiment → shell  | `{ type: 'xp:list' }` asks which experiments exist   |
 | shell → experiment  | `{ type: 'xp:list', experiments: [{ slug, title }] }` |
-| experiment → shell  | `{ type: 'xp:handover', slug }` show `slug` on top    |
+| experiment → shell  | `{ type: 'xp:handover', slug, params? }` show `slug` on top; `params` (strings) are added to its URL query, e.g. `{ preset: '3' }` → `?preset=3` |
 | shell → experiment  | `{ type: 'xp:release' }` it was closed, take over again |
 
 Opened on its own page (no shell), an experiment simply gets no answer.

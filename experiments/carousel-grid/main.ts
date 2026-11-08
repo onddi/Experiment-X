@@ -345,7 +345,9 @@ const viewer = new Viewer(app, () => ({
 viewer.onHandover = () => {
   stage.style.visibility = 'hidden';
   // In the Experiment-X shell, ask it to show the chosen experiment on top.
-  if (inShell && settings.openTarget) parent.postMessage({ type: 'xp:handover', slug: settings.openTarget }, location.origin);
+  if (inShell && settings.openTarget) {
+    parent.postMessage({ type: 'xp:handover', slug: settings.openTarget, params: handoverParams() }, location.origin);
+  }
 };
 
 // --- hand-over to other experiments -----------------------------------------
@@ -353,6 +355,16 @@ viewer.onHandover = () => {
 // its own iframe over this one; see src/shell/main.ts for the messages. Run on
 // its own page, the grid just stays on black.
 const inShell = window.parent !== window;
+/**
+ * What the opened experiment is told about the cell: its index (0 = first grid
+ * cell in reading order, "main" for the main carousel) and, as a preset, the
+ * number key that index maps to (1–9 then 0, repeating), so cell 1 opens the
+ * particle field on preset key 1, cell 2 on key 2, and so on.
+ */
+function handoverParams(): Record<string, string> {
+  if (openedIndex < 0) return { index: 'main' };
+  return { index: String(openedIndex), preset: '1234567890'[openedIndex % 10] };
+}
 const TARGETS: [string, string][] = [['', 'Nothing (stay black)']];
 if (inShell) {
   window.addEventListener('message', (e) => {
@@ -377,9 +389,14 @@ if (inShell) {
 viewer.onRelease = () => {
   stage.style.visibility = '';
 };
+/** Which cell was opened: its index in reading order, or -1 for the main carousel. */
+let openedIndex = -1;
 /** Click on a cell: show its current item full screen. */
 const openCell = (c: Carousel) => {
-  if (settings.openWith !== 'off') viewer.open(c.currentEl, c.el);
+  if (settings.openWith === 'off') return;
+  const cell = cells.find((x) => x.carousel === c);
+  openedIndex = !cell || cell.r === HERO ? -1 : cell.r * settings.cols + cell.c;
+  viewer.open(c.currentEl, c.el);
 };
 const grid = document.getElementById('grid')!;
 let cells: { r: number; c: number; carousel: Carousel }[] = [];
