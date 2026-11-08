@@ -40,10 +40,10 @@ const manifests = import.meta.glob<StyleManifest>('./images/four-elements/*/styl
 });
 
 // Order matters: cells use (column + 2 × row) mod 4, so neighbours never
-// share an element, and fire/water and earth/air sit diagonally.
+// share an element, and water/earth and fire/air sit diagonally.
 const ELEMENTS = [
-  { key: 'fire', name: 'Ignis' },
   { key: 'water', name: 'Aqua' },
+  { key: 'fire', name: 'Ignis' },
   { key: 'earth', name: 'Terra' },
   { key: 'air', name: 'Aer' },
 ];

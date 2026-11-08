@@ -124,8 +124,8 @@ body {
   opacity: var(--element-tint, 0);
   pointer-events: none;
 }
-.item[data-group='0'] { --el-color: oklch(62% 0.22 35); }  /* fire: red-orange */
-.item[data-group='1'] { --el-color: oklch(58% 0.16 230); } /* water: deep blue */
+.item[data-group='0'] { --el-color: oklch(58% 0.16 230); } /* water: deep blue */
+.item[data-group='1'] { --el-color: oklch(62% 0.22 35); }  /* fire: red-orange */
 .item[data-group='2'] { --el-color: oklch(60% 0.14 115); } /* earth: olive-ochre */
 .item[data-group='3'] { --el-color: oklch(82% 0.07 285); } /* air: pale violet */
 

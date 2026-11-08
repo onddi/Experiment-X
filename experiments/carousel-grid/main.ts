@@ -614,11 +614,11 @@ function loadCollapsed(): Record<string, boolean> {
 // --- seed --------------------------------------------------------------------
 //
 // A seed lists the element each carousel shows: the main row, a slash, then
-// the grid cells in reading order, one letter per element (S fire, J water, V earth, H air), e.g.
+// the grid cells in reading order, one letter per element (J water, S fire, V earth, H air), e.g.
 // "S/JVHSJVHSJVHS". Applying a seed fills cells from the first one; extra
 // letters are ignored and cells beyond the seed keep what they show.
 
-const SEED_LETTERS = 'SJVH'; // same order as the theme groups
+const SEED_LETTERS = 'JSVH'; // same order as the theme groups
 
 function currentSeed() {
   if (!isImages()) return '';
@@ -685,7 +685,7 @@ function renderSeed(body: HTMLElement) {
   const wrap = document.createElement('div');
   wrap.className = 'seed';
   wrap.innerHTML = `
-    <p class="hint">Main row / grid cells, one letter each: S fire, J water, V earth, H air.</p>
+    <p class="hint">Main row / grid cells, one letter each: J water, S fire, V earth, H air.</p>
     <input class="seed-input" spellcheck="false" autocomplete="off" aria-label="Seed" />
     <div class="buttons">
       <button type="button" data-act="copy">Copy</button>
