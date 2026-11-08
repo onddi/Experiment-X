@@ -344,7 +344,7 @@ const viewer = new Viewer(app, () => ({
 // so it costs nothing while whatever takes over is on screen.
 viewer.onHandover = () => {
   stage.style.visibility = 'hidden';
-  // In the Experiment-X shell, ask it to show the chosen experiment on top.
+  // In X-Frame, ask it to show the chosen experiment on top.
   if (inShell && settings.openTarget) {
     parent.postMessage({ type: 'xp:handover', slug: settings.openTarget, params: handoverParams() }, location.origin);
   }

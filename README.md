@@ -1,14 +1,14 @@
 # Experiment-X
 
-A playground for experimental UIs. A small parent shell lists every experiment and
-switches between them. Each experiment runs in its own iframe, so its scripts,
-styles and globals can't leak into the shell or into other experiments.
+A playground for experimental UIs. **X-Frame**, the parent frame app, lists every
+experiment and switches between them. Each experiment runs in its own iframe, so its
+scripts, styles and globals can't leak into X-Frame or into other experiments.
 
 ## Getting started
 
 ```sh
 npm install
-npm run dev        # shell at http://localhost:5173
+npm run dev        # X-Frame at http://localhost:5173
 npm run build      # static site in dist/
 npm run preview    # serve the build
 ```
@@ -18,7 +18,7 @@ https://onddi.github.io/Experiment-X/ by `.github/workflows/deploy.yml`.
 The build uses relative paths (`base: './'`), so it works under that sub-path as is.
 
 Deep-link to an experiment with `#/<slug>`, e.g. `http://localhost:5173/#/color-mixer`.
-Keyboard shortcuts in the shell: `[` / `]` previous / next, `\` toggle the list
+Keyboard shortcuts in X-Frame: `[` / `]` previous / next, `\` toggle the list
 (click outside the experiment first, since keys typed inside the iframe go to the experiment).
 
 ## Adding an experiment
@@ -30,14 +30,14 @@ npm run new liquid-buttons -- "Liquid buttons"
 ```
 
 This copies `experiments/_template` to `experiments/liquid-buttons/`. It shows up in
-the shell automatically; there's no registry to edit.
+X-Frame automatically; there's no registry to edit.
 
 ### Conventions
 
 ```
 experiments/
   <slug>/              kebab-case folder name, also used in the URL
-    experiment.json    metadata the shell reads (required)
+    experiment.json    metadata X-Frame reads (required)
     index.html         entry page loaded in the iframe (required)
     main.ts            anything else is up to the experiment
     style.css
@@ -62,7 +62,7 @@ Rules that keep experiments siloed:
   keeps it contained.
 - **Use relative paths** (`./main.ts`, `./assets/foo.png`) so the build works from
   any base path.
-- Folders starting with `_` (like `_template`) are ignored by the shell and the build.
+- Folders starting with `_` (like `_template`) are ignored by X-Frame and the build.
 
 ### Using a framework
 
@@ -73,7 +73,7 @@ Other experiments are unaffected because each one is a separate page and bundle.
 
 ## How it works
 
-- `index.html` + `src/shell/` is the parent shell. It discovers experiments with
+- `index.html` + `src/shell/` is X-Frame, the parent frame app. It discovers experiments with
   `import.meta.glob('/experiments/*/experiment.json')` and only ever reads that
   metadata, never experiment code.
 - Picking an experiment points the iframe at `experiments/<slug>/`. Each switch loads
@@ -85,16 +85,16 @@ Other experiments are unaffected because each one is a separate page and bundle.
 ## Hand-over between experiments
 
 An experiment can hand the screen to another one, e.g. the carousel grid opening a
-cell into a different visualisation. The shell is in charge: it loads the next
+cell into a different visualisation. X-Frame is in charge: it loads the next
 experiment in a second iframe over the current one, fades it in once it has loaded,
 and shows a ✕ (or takes Escape) to go back. Experiments still never import each
-other; they only exchange `postMessage`s with the shell (same origin):
+other; they only exchange `postMessage`s with X-Frame (same origin):
 
-| direction           | message                                              |
-| ------------------- | ---------------------------------------------------- |
-| experiment → shell  | `{ type: 'xp:list' }` asks which experiments exist   |
-| shell → experiment  | `{ type: 'xp:list', experiments: [{ slug, title }] }` |
-| experiment → shell  | `{ type: 'xp:handover', slug, params? }` show `slug` on top; `params` (strings) are added to its URL query, e.g. `{ preset: '3' }` → `?preset=3` |
-| shell → experiment  | `{ type: 'xp:release' }` it was closed, take over again |
+| direction            | message                                              |
+| -------------------- | ---------------------------------------------------- |
+| experiment → X-Frame | `{ type: 'xp:list' }` asks which experiments exist   |
+| X-Frame → experiment | `{ type: 'xp:list', experiments: [{ slug, title }] }` |
+| experiment → X-Frame | `{ type: 'xp:handover', slug, params? }` show `slug` on top; `params` (strings) are added to its URL query, e.g. `{ preset: '3' }` → `?preset=3` |
+| X-Frame → experiment | `{ type: 'xp:release' }` it was closed, take over again |
 
-Opened on its own page (no shell), an experiment simply gets no answer.
+Opened on its own page (outside X-Frame), an experiment simply gets no answer.

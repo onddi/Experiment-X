@@ -59,7 +59,7 @@ function show(exp: Experiment | undefined) {
     frame.hidden = true;
     empty.hidden = false;
     currentTitle.textContent = '—';
-    document.title = 'Experiment-X';
+    document.title = 'X-Frame';
     renderList(search.value);
     return;
   }
@@ -73,7 +73,7 @@ function show(exp: Experiment | undefined) {
   frame.title = exp.title;
   currentTitle.textContent = exp.title;
   openTab.href = exp.url;
-  document.title = `${exp.title} · Experiment-X`;
+  document.title = `${exp.title} · X-Frame`;
   renderList(search.value);
 }
 
@@ -121,15 +121,15 @@ $('sidebar-open').addEventListener('click', () => setSidebarCollapsed(!shellEl.c
 
 // --- hand-over ---------------------------------------------------------------
 // An experiment can hand the screen to another one, e.g. the carousel grid
-// opening a cell into a different visualisation. The shell is in charge: it
+// opening a cell into a different visualisation. X-Frame is in charge: it
 // loads the next experiment in its own iframe over the current one, and gives
 // the screen back when that is closed. Messages (postMessage, same origin):
-//   experiment → shell  { type: 'xp:list' }             ask which experiments exist
-//   shell → experiment  { type: 'xp:list', experiments: [{ slug, title }] }
-//   experiment → shell  { type: 'xp:handover', slug, params? }
+//   experiment → X-Frame  { type: 'xp:list' }             ask which experiments exist
+//   X-Frame → experiment  { type: 'xp:list', experiments: [{ slug, title }] }
+//   experiment → X-Frame  { type: 'xp:handover', slug, params? }
 //                                                       show <slug> on top of me; params
 //                                                       (strings) go on its URL query
-//   shell → experiment  { type: 'xp:release' }          it was closed: take over again
+//   X-Frame → experiment  { type: 'xp:release' }          it was closed: take over again
 
 let handover: HTMLDivElement | null = null;
 

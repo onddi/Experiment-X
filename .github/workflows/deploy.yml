@@ -43,7 +43,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   smoke:
-    # Opens the live site and checks every experiment renders inside the shell's iframe.
+    # Opens the live site and checks every experiment renders inside X-Frame's iframe.
     needs: deploy
     runs-on: ubuntu-latest
     steps:

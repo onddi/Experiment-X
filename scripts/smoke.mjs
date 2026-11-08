@@ -1,4 +1,4 @@
-// Smoke test for a deployed (or locally served) site: opens the shell on each
+// Smoke test for a deployed (or locally served) site: opens X-Frame on each
 // experiment and checks that the iframe actually renders the experiment.
 // Usage: node scripts/smoke.mjs https://onddi.github.io/Experiment-X/
 // Needs the "playwright" package and a Chromium install (CI installs both).

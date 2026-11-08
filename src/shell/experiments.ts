@@ -2,10 +2,10 @@
  * Experiment registry.
  *
  * Experiments are discovered automatically: every folder in /experiments that
- * contains an `experiment.json` shows up in the shell. Folders whose name
+ * contains an `experiment.json` shows up in X-Frame. Folders whose name
  * starts with "_" (e.g. `_template`) are ignored.
  *
- * The shell only ever reads this metadata. It never imports experiment code;
+ * X-Frame only ever reads this metadata. It never imports experiment code;
  * experiments are loaded in an iframe so their scripts and styles stay isolated.
  */
 
@@ -25,7 +25,7 @@ export interface ExperimentMeta {
 export interface Experiment extends ExperimentMeta {
   /** Folder name, used in the URL: #/<slug> */
   slug: string;
-  /** URL of the experiment page, relative to the shell. */
+  /** URL of the experiment page, relative to X-Frame. */
   url: string;
 }
 

@@ -1,4 +1,4 @@
-/* Styles for the parent shell only. Experiments never see these (they live in an iframe). */
+/* Styles for X-Frame (the parent frame app) only. Experiments never see these (they live in an iframe). */
 
 :root {
   --bg: #f6f6f4;
