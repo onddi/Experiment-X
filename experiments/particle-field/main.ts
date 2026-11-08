@@ -380,6 +380,14 @@ canvas.addEventListener('pointerleave', () => {
   pointer.active = false;
   pointer.x = pointer.y = -1e4;
 });
+// iOS Safari can still double-tap zoom or pinch on fast taps despite
+// touch-action: none, so cancel the native gestures on the field itself.
+for (const type of ['touchstart', 'touchend'] as const) {
+  canvas.addEventListener(type, (e) => e.cancelable && e.preventDefault(), { passive: false });
+}
+document.addEventListener('dblclick', (e) => e.preventDefault());
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointer.x = e.offsetX;
