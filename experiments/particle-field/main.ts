@@ -1416,9 +1416,8 @@ function buildShape() {
     const j = (Math.random() * (k + 1)) | 0;
     [pts[k], pts[j]] = [pts[j], pts[k]];
   }
-  // Then give each target to a nearby particle: sort particles and targets
-  // along a Hilbert curve and pair them by rank. Neighbours stay neighbours,
-  // so a new word grows out of the old one instead of everything swapping.
+  // Then give each target to a nearby particle, so a new word grows out of
+  // the old one instead of everything swapping places.
   const tx = new Float32Array(n);
   const ty = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -1426,38 +1425,109 @@ function buildShape() {
     tx[i] = x + (Math.random() - 0.5) * 2;
     ty[i] = y + (Math.random() - 0.5) * 2;
   }
-  const hk = (x: number, y: number) => hilbert(Math.min(1023, Math.max(0, (x / w) * 1024)) | 0, Math.min(1023, Math.max(0, (y / h) * 1024)) | 0);
-  const pKey = new Float64Array(n);
-  const tKey = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    pKey[i] = hk(px[i], py[i]) * 65536 + i; // index breaks ties, keeps keys unique
-    tKey[i] = hk(tx[i], ty[i]) * 65536 + i;
-  }
-  const pOrder = Array.from({ length: n }, (_, i) => i).sort((a, b) => pKey[a] - pKey[b]);
-  const tOrder = Array.from({ length: n }, (_, i) => i).sort((a, b) => tKey[a] - tKey[b]);
-  for (let k = 0; k < n; k++) {
-    hx[pOrder[k]] = tx[tOrder[k]];
-    hy[pOrder[k]] = ty[tOrder[k]];
+  const owner = matchNearest(tx, ty);
+  for (let t = 0; t < n; t++) {
+    hx[owner[t]] = tx[t];
+    hy[owner[t]] = ty[t];
   }
 }
 
-// Position along a Hilbert curve on a 1024 × 1024 grid: points close on the
-// curve are close on screen.
-function hilbert(x: number, y: number): number {
-  let d = 0;
-  for (let s = 512; s > 0; s >>= 1) {
-    const rx = (x & s) > 0 ? 1 : 0;
-    const ry = (y & s) > 0 ? 1 : 0;
-    d += s * s * ((3 * rx) ^ ry);
-    if (ry === 0) {
-      if (rx === 1) {
-        x = 1023 - x;
-        y = 1023 - y;
+// Pairs each particle with a target spot so the total travel is small:
+// every particle (in random order) takes the closest free spot, then a few
+// rounds of swaps between neighbours undo the worst greedy choices.
+// Returns owner[target] = particle.
+function matchNearest(tx: Float32Array, ty: Float32Array): Int32Array {
+  const m = tx.length;
+  const cell = Math.max(4, Math.sqrt((w * h) / Math.max(1, m)) * 1.5);
+  const gw = Math.ceil(w / cell) + 1;
+  const gh = Math.ceil(h / cell) + 1;
+  const cellOf = (x: number, y: number) => Math.min(gh - 1, Math.max(0, (y / cell) | 0)) * gw + Math.min(gw - 1, Math.max(0, (x / cell) | 0));
+  // Targets bucketed by cell (counting sort).
+  const start = new Int32Array(gw * gh + 1);
+  const tc = new Int32Array(m);
+  for (let t = 0; t < m; t++) start[(tc[t] = cellOf(tx[t], ty[t])) + 1]++;
+  for (let c = 0; c < gw * gh; c++) start[c + 1] += start[c];
+  const items = new Int32Array(m);
+  const fill = start.slice(0, gw * gh);
+  for (let t = 0; t < m; t++) items[fill[tc[t]]++] = t;
+  const free = new Int32Array(gw * gh);
+  for (let c = 0; c < gw * gh; c++) free[c] = start[c + 1] - start[c];
+  const taken = new Uint8Array(m);
+  const owner = new Int32Array(m);
+  const mine = new Int32Array(m); // particle → target
+
+  const order = Array.from({ length: m }, (_, i) => i);
+  for (let k = m - 1; k > 0; k--) {
+    const j = (Math.random() * (k + 1)) | 0;
+    [order[k], order[j]] = [order[j], order[k]];
+  }
+  for (const i of order) {
+    const x = px[i];
+    const y = py[i];
+    const cx = Math.min(gw - 1, Math.max(0, (x / cell) | 0));
+    const cy = Math.min(gh - 1, Math.max(0, (y / cell) | 0));
+    let best = -1;
+    let bestD = Infinity;
+    let foundAt = -1;
+    for (let r = 0; r < Math.max(gw, gh); r++) {
+      // A spot found at ring r could still lose to one in ring r + 1.
+      if (foundAt >= 0 && r > foundAt + 1) break;
+      for (let gy = cy - r; gy <= cy + r; gy++) {
+        if (gy < 0 || gy >= gh) continue;
+        const edge = gy === cy - r || gy === cy + r;
+        for (let gx = cx - r; gx <= cx + r; gx += edge ? 1 : 2 * r || 1) {
+          if (gx < 0 || gx >= gw) continue;
+          const c = gy * gw + gx;
+          if (!free[c]) continue;
+          for (let q = start[c]; q < start[c + 1]; q++) {
+            const t = items[q];
+            if (taken[t]) continue;
+            const d = (tx[t] - x) ** 2 + (ty[t] - y) ** 2;
+            if (d < bestD) {
+              bestD = d;
+              best = t;
+            }
+          }
+        }
       }
-      [x, y] = [y, x];
+      if (best >= 0 && foundAt < 0) foundAt = r;
+    }
+    taken[best] = 1;
+    free[tc[best]]--;
+    owner[best] = i;
+    mine[i] = best;
+  }
+
+  // Swap pass: for each particle, try trading spots with the owners of
+  // the spots around it when that shortens their combined (squared) travel.
+  for (let round = 0; round < 3; round++) {
+    for (let i = 0; i < m; i++) {
+      const x = px[i];
+      const y = py[i];
+      const cx = Math.min(gw - 1, Math.max(0, (x / cell) | 0));
+      const cy = Math.min(gh - 1, Math.max(0, (y / cell) | 0));
+      for (let gy = Math.max(0, cy - 1); gy <= Math.min(gh - 1, cy + 1); gy++) {
+        for (let gx = Math.max(0, cx - 1); gx <= Math.min(gw - 1, cx + 1); gx++) {
+          const c = gy * gw + gx;
+          for (let q = start[c]; q < start[c + 1]; q++) {
+            const t = items[q];
+            const j = owner[t];
+            if (j === i) continue;
+            const a = mine[i];
+            const now = (tx[a] - x) ** 2 + (ty[a] - y) ** 2 + (tx[t] - px[j]) ** 2 + (ty[t] - py[j]) ** 2;
+            const swapped = (tx[t] - x) ** 2 + (ty[t] - y) ** 2 + (tx[a] - px[j]) ** 2 + (ty[a] - py[j]) ** 2;
+            if (swapped < now) {
+              owner[t] = i;
+              owner[a] = j;
+              mine[i] = t;
+              mine[j] = a;
+            }
+          }
+        }
+      }
     }
   }
-  return d;
+  return owner;
 }
 
 // --- emitter -------------------------------------------------------------------
