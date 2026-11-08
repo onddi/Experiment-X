@@ -87,6 +87,8 @@ interface Settings {
   audioHits: number;
   audioSub: SubAction;
   audioSubAmt: number;
+  audioIntensity: number;
+  audioFineTune: boolean;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -166,6 +168,8 @@ const DEFAULTS: Settings = {
   audioHits: 0.6,
   audioSub: 'size',
   audioSubAmt: 0.5,
+  audioIntensity: 1,
+  audioFineTune: false,
 };
 
 const STORAGE_KEY = 'particle-field:settings';
@@ -372,7 +376,7 @@ function beatWave(strength: number) {
     life: accent,
     speed: S.audioWaveSpeed,
     decay: 1 / S.audioWaveReach,
-    force: S.audioWaveForce,
+    force: S.audioWaveForce * S.audioIntensity,
     width: 40 * S.audioWaveWidth,
     dir: k % 2 ? -1 : 1,
     angle: kind === 'sweep' ? (k >> 1) % 2 : Math.random() * Math.PI,
@@ -460,9 +464,10 @@ function step(dt: number) {
   const A = audio.levels;
   const on = audio.source !== 'off';
   const S = settings;
-  const sub2 = on ? A.sub * A.sub * S.audioSubAmt : 0; // squared: swells, not a constant
-  let speedNow = on ? speed * (1 + (A.liftLevel * 1.2 + A.level * 0.25) * S.audioSpeed) : speed;
-  let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow) : flow;
+  const I = S.audioIntensity;
+  const sub2 = on ? A.sub * A.sub * S.audioSubAmt * I : 0; // squared: swells, not a constant
+  let speedNow = on ? speed * (1 + (A.liftLevel * 1.2 + A.level * 0.25) * S.audioSpeed * I) : speed;
+  let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow * I) : flow;
   if (S.audioSub === 'speed') speedNow *= 1 + sub2 * 1.2;
   if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
   const jitterNow = jitter;
@@ -473,16 +478,16 @@ function step(dt: number) {
   // back while it decays, so the field breathes in place.
   const dPulse = kickPulse ? A.pulse - lastPulse : 0;
   lastPulse = A.pulse;
-  const kick = dPulse * (dPulse > 0 ? 3 : 2.5) * S.audioPulse;
+  const kick = dPulse * (dPulse > 0 ? 3 : 2.5) * S.audioPulse * I;
   if (kickWave && A.beat && S.audioBeat !== 'none') beatWave(A.pulse);
 
   // Snare swirl: a twist on each hit, alternating direction.
   const dSnare = on ? Math.max(0, A.snareEnv - lastSnare) : 0;
   lastSnare = A.snareEnv;
   if (on && A.snare) swirlDir = -swirlDir;
-  const swirl = S.audioSnare === 'swirl' ? dSnare * 2.2 * S.audioHits * swirlDir : 0;
+  const swirl = S.audioSnare === 'swirl' ? dSnare * 2.2 * S.audioHits * I * swirlDir : 0;
   if (on && A.snare && S.audioSnare === 'wave') {
-    addWave('ripple', w * (0.15 + Math.random() * 0.7), h * (0.15 + Math.random() * 0.7), { life: 0.3 + 0.5 * S.audioHits });
+    addWave('ripple', w * (0.15 + Math.random() * 0.7), h * (0.15 + Math.random() * 0.7), { life: 0.3 + 0.5 * S.audioHits * I });
   }
   // Hat sparkle: nudge a few random particles.
   if (on && A.hat && S.audioHats === 'sparkle') {
@@ -490,8 +495,8 @@ function step(dt: number) {
     for (let q = 0; q < m; q++) {
       const i = (Math.random() * n) | 0;
       const a = Math.random() * Math.PI * 2;
-      vx[i] += Math.cos(a) * 1.4 * S.audioHits;
-      vy[i] += Math.sin(a) * 1.4 * S.audioHits;
+      vx[i] += Math.cos(a) * 1.4 * S.audioHits * I;
+      vy[i] += Math.sin(a) * 1.4 * S.audioHits * I;
     }
   }
   const cx = w / 2;
@@ -731,9 +736,9 @@ function audioSizeBoost() {
   const L = audio.levels;
   const S = settings;
   let b = 1;
-  if (S.audioKick === 'pulse' || S.audioKick === 'both') b += L.pulse * 0.7 * S.audioPulse;
-  if (S.audioSnare === 'flash') b += L.snareEnv * 1.5 * S.audioHits;
-  if (S.audioSub === 'size') b += L.sub * L.sub * 1.2 * S.audioSubAmt;
+  if (S.audioKick === 'pulse' || S.audioKick === 'both') b += L.pulse * 0.7 * S.audioPulse * S.audioIntensity;
+  if (S.audioSnare === 'flash') b += L.snareEnv * 1.5 * S.audioHits * S.audioIntensity;
+  if (S.audioSub === 'size') b += L.sub * L.sub * 1.2 * S.audioSubAmt * S.audioIntensity;
   return b;
 }
 
@@ -1123,6 +1128,7 @@ type ControlBody =
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
+  | { kind: 'choice'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'multi'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'text'; key: keyof Settings; label: string; placeholder?: string }
   | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean }
@@ -1138,23 +1144,61 @@ const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', '
 const RENDERS: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['glyphs', 'Glyphs'],
-  ['links', 'Constellation'], ['mixed', 'Mixed (each particle its own)'],
+  ['links', 'Constellation'], ['mixed', 'Mixed'],
 ];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['audio', 'Music energy']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
-// Genre presets set how hits are detected and what each one does. They
-// only touch audio settings.
-const AUDIO_PRESETS: [string, Partial<Settings>][] = [
-  ['Rap', { audioGenre: 'hiphop', audioKick: 'pulse', audioPulse: 0.8, audioSnare: 'wave', audioHats: 'none', audioHits: 0.6, audioSub: 'size', audioSubAmt: 0.7, audioSpeed: 0.3, audioFlow: 0.4 }],
-  ['Drill', { audioGenre: 'hiphop', audioKick: 'pulse', audioPulse: 0.6, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.3, audioFlow: 0.3 }],
-  ['Drum & bass', { audioGenre: 'dnb', audioKick: 'pulse', audioPulse: 0.5, audioSnare: 'wave', audioHats: 'sparkle', audioHits: 0.5, audioSub: 'speed', audioSubAmt: 0.6, audioSpeed: 0.5, audioFlow: 0.8 }],
-  ['Afro', { audioGenre: 'afro', audioKick: 'pulse', audioPulse: 0.6, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.4, audioSub: 'flow', audioSubAmt: 0.5, audioSpeed: 0.3, audioFlow: 0.6 }],
-  ['Reggae', { audioGenre: 'reggae', audioKick: 'pulse', audioPulse: 1, audioSnare: 'swirl', audioHats: 'sparkle', audioHits: 0.35, audioSub: 'flow', audioSubAmt: 0.9, audioSpeed: 0.15, audioFlow: 0.5 }],
-  ['Techno', { audioGenre: 'techno', audioKick: 'both', audioPulse: 0.7, audioBeat: 'mix', audioWaveAt: 'orbit', audioWaveEvery: 1, audioWaveReach: 0.8, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.4, audioSub: 'none', audioSpeed: 0.2, audioFlow: 0.3 }],
-  ['Breathe', { audioGenre: 'general', audioKick: 'pulse', audioPulse: 0.9, audioSnare: 'none', audioHats: 'none', audioSub: 'size', audioSubAmt: 0.4, audioSpeed: 0.15, audioFlow: 0.3 }],
+// Vibes: how the music moves the particles. They only set the reaction
+// (what each drum does and how strongly), never the detection, so any
+// vibe works with any genre.
+type Vibe = Partial<Settings>;
+const quiet: Vibe = {
+  audioKick: 'pulse', audioPulse: 0.6, audioBeat: 'ripple', audioWaveAt: 'centre', audioWaveEvery: 1,
+  audioWaveForce: 1, audioWaveSpeed: 1, audioWaveReach: 1, audioWaveWidth: 1, audioWaveAccent: true,
+  audioSnare: 'none', audioHats: 'none', audioHits: 0.5, audioSub: 'none', audioSubAmt: 0.5, audioSpeed: 0.3, audioFlow: 0.4,
+};
+const VIBES: [string, Vibe][] = [
+  ['Breathe', { ...quiet, audioPulse: 0.9, audioSub: 'size', audioSubAmt: 0.4, audioSpeed: 0.15, audioFlow: 0.3 }],
+  ['Groove', { ...quiet, audioPulse: 0.6, audioSnare: 'swirl', audioHits: 0.5, audioSub: 'flow', audioSubAmt: 0.6, audioSpeed: 0.3, audioFlow: 0.5 }],
+  ['Bounce', { ...quiet, audioKick: 'both', audioPulse: 0.9, audioBeat: 'ripple', audioSnare: 'wave', audioHats: 'sparkle', audioHits: 0.6, audioSub: 'size', audioSubAmt: 0.7, audioSpeed: 0.4 }],
+  ['Hypnotic', { ...quiet, audioKick: 'both', audioPulse: 0.3, audioBeat: 'twist', audioWaveAt: 'orbit', audioWaveReach: 1.6, audioWaveSpeed: 0.7, audioHats: 'sparkle', audioHits: 0.3, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.1, audioFlow: 0.8 }],
+  ['Liquid', { ...quiet, audioKick: 'both', audioPulse: 0.4, audioBeat: 'ripple', audioWaveEvery: 4, audioWaveReach: 2.2, audioWaveWidth: 2, audioWaveSpeed: 0.6, audioSnare: 'swirl', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 1.2, audioSpeed: 0.2, audioFlow: 1 }],
+  ['Kaleido', { ...quiet, audioKick: 'both', audioPulse: 0.5, audioBeat: 'star', audioWaveAt: 'mirror', audioWaveReach: 1.3, audioSnare: 'swirl', audioHits: 0.5, audioSub: 'size', audioSubAmt: 0.5, audioSpeed: 0.2 }],
+  ['Glitch', { ...quiet, audioKick: 'wave', audioBeat: 'sweep', audioWaveForce: 1.4, audioWaveSpeed: 1.6, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 1.1, audioSpeed: 0.5, audioFlow: 0.2 }],
+  ['Storm', { ...quiet, audioKick: 'both', audioPulse: 1.2, audioBeat: 'shockwave', audioWaveAt: 'random', audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.9, audioSub: 'speed', audioSubAmt: 0.8, audioSpeed: 0.9, audioFlow: 1.2 }],
 ];
-const GENRES: [string, string][] = [['general', 'Any music'], ['hiphop', 'Rap / trap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afrobeats / amapiano'], ['reggae', 'Reggae / dub'], ['techno', 'Techno / house']];
+
+function applyVibe(v: Vibe) {
+  Object.assign(settings, v);
+  changed(new Set(Object.keys(v) as (keyof Settings)[]));
+}
+
+// A random combination, not just a random preset.
+function surpriseVibe() {
+  const kick = pick(['pulse', 'wave', 'both', 'both'] as const);
+  applyVibe({
+    ...quiet,
+    audioKick: kick,
+    audioPulse: rand(0.3, 1.2, 0.05),
+    audioBeat: pick(['ripple', 'twist', 'shockwave', 'star', 'sweep', 'implode', 'mix', 'random'] as const),
+    audioWaveAt: pick(['centre', 'orbit', 'mirror', 'corners', 'random'] as const),
+    audioWaveEvery: pick([1, 1, 2, 4] as const),
+    audioWaveReach: rand(0.6, 2, 0.05),
+    audioWaveSpeed: rand(0.6, 1.6, 0.05),
+    audioWaveWidth: rand(0.6, 2, 0.05),
+    audioSnare: pick(['swirl', 'wave', 'flash', 'none'] as const),
+    audioHats: pick(['sparkle', 'none'] as const),
+    audioHits: rand(0.3, 1, 0.05),
+    audioSub: pick(['size', 'flow', 'speed', 'none'] as const),
+    audioSubAmt: rand(0.3, 1, 0.05),
+    audioSpeed: rand(0.1, 0.7, 0.05),
+    audioFlow: rand(0.2, 1, 0.05),
+  });
+}
+
+const GENRES: [string, string][] = [['general', 'Any'], ['hiphop', 'Rap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afro'], ['reggae', 'Reggae'], ['techno', 'Techno']];
+const ft = () => settings.audioFineTune;
 const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick === 'both';
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
@@ -1193,43 +1237,44 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
   { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
 
-  { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : `, ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
+  { kind: 'section', id: 'audio', label: 'Audio', open: true, summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : `, ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}, ${VIBES.find(([, v]) => Object.entries(v).every(([k, x]) => settings[k as keyof Settings] === x))?.[0] ?? 'custom'}`) },
   { kind: 'audio' },
-  { kind: 'sub', label: 'Presets' },
-  { kind: 'note', text: 'Each preset sets the detection and what every drum does. Tweak anything below afterwards.' },
+  { kind: 'sub', label: 'Genre' },
+  { kind: 'choice', key: 'audioGenre', label: 'Genre', options: GENRES },
+  { kind: 'note', text: 'Tunes how kicks, snares, hats and 808s are picked out.' },
+  { kind: 'sub', label: 'Vibe' },
   {
     kind: 'buttons',
-    buttons: AUDIO_PRESETS.map(([name, p]) => [name, () => { Object.assign(settings, p); changed(new Set(Object.keys(p) as (keyof Settings)[])); }]),
-    // Lit while every setting of the preset is unchanged.
+    buttons: [...VIBES.map(([name, v]) => [name, () => applyVibe(v)] as [string, () => void]), ['Surprise me', surpriseVibe]],
+    // Lit while every setting of the vibe is unchanged.
     active: (name) => {
-      const p = AUDIO_PRESETS.find(([n]) => n === name)?.[1] ?? {};
-      return Object.entries(p).every(([k, v]) => settings[k as keyof Settings] === v);
+      const v = VIBES.find(([n]) => n === name)?.[1];
+      return !!v && Object.entries(v).every(([k, x]) => settings[k as keyof Settings] === x);
     },
   },
-  { kind: 'sub', label: 'Detection' },
-  { kind: 'select', key: 'audioGenre', label: 'Genre', options: GENRES },
-  { kind: 'note', text: 'Only changes how kicks, snares and hats are picked out (timing and frequencies), not what they do.' },
-  { kind: 'sub', label: 'Kick' },
-  { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['none', 'Nothing']] },
-  { kind: 'range', key: 'audioPulse', label: 'Pulse strength', min: 0, max: 2, step: 0.05, format: pct, show: kickPulse },
-  { kind: 'select', key: 'audioBeat', label: 'Wave type', options: BEAT_ACTIONS, show: kickWave },
-  { kind: 'select', key: 'audioWaveAt', label: 'Waves from', options: [['centre', 'Centre'], ['orbit', 'Orbit the centre'], ['mirror', 'Mirrored pair'], ['corners', 'Corners in turn'], ['pointer', 'Pointer'], ['random', 'Random spot']], show: () => kickWave() && settings.audioBeat !== 'sweep' },
-  { kind: 'range', key: 'audioWaveEvery', label: 'Every', min: 1, max: 8, step: 1, format: (v) => (v === 1 ? 'kick' : `${v} kicks`), show: kickWave },
-  { kind: 'range', key: 'audioWaveForce', label: 'Wave strength', min: 0.1, max: 3, step: 0.05, format: pct, show: kickWave },
-  { kind: 'range', key: 'audioWaveSpeed', label: 'Wave speed', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: kickWave },
-  { kind: 'range', key: 'audioWaveReach', label: 'Wave reach', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: kickWave },
-  { kind: 'range', key: 'audioWaveWidth', label: 'Wave width', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: kickWave },
-  { kind: 'toggle', key: 'audioWaveAccent', label: 'Louder kicks make bigger waves', show: kickWave },
-  { kind: 'sub', label: 'Snare, clap & hi-hats' },
-  { kind: 'select', key: 'audioSnare', label: 'Snare does', options: [['swirl', 'Swirl'], ['wave', 'Ripple'], ['flash', 'Flash'], ['none', 'Nothing']] },
-  { kind: 'select', key: 'audioHats', label: 'Hi-hats do', options: [['sparkle', 'Sparkle'], ['none', 'Nothing']] },
-  { kind: 'range', key: 'audioHits', label: 'Hit strength', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.audioSnare !== 'none' || settings.audioHats !== 'none' },
-  { kind: 'sub', label: '808 & sub bass' },
-  { kind: 'select', key: 'audioSub', label: 'Sub swells', options: [['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed'], ['none', 'Nothing']] },
-  { kind: 'range', key: 'audioSubAmt', label: 'Sub strength', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.audioSub !== 'none' },
-  { kind: 'sub', label: 'Overall energy' },
-  { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct },
-  { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct },
+  { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
+  { kind: 'toggle', key: 'audioFineTune', label: 'Fine-tune each drum' },
+  { kind: 'sub', label: 'Kick', show: ft },
+  { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['none', 'Nothing']], show: ft },
+  { kind: 'range', key: 'audioPulse', label: 'Pulse strength', min: 0, max: 2, step: 0.05, format: pct, show: () => ft() && kickPulse() },
+  { kind: 'select', key: 'audioBeat', label: 'Wave type', options: BEAT_ACTIONS, show: () => ft() && kickWave() },
+  { kind: 'select', key: 'audioWaveAt', label: 'Waves from', options: [['centre', 'Centre'], ['orbit', 'Orbit the centre'], ['mirror', 'Mirrored pair'], ['corners', 'Corners in turn'], ['pointer', 'Pointer'], ['random', 'Random spot']], show: () => ft() && kickWave() && settings.audioBeat !== 'sweep' },
+  { kind: 'range', key: 'audioWaveEvery', label: 'Every', min: 1, max: 8, step: 1, format: (v) => (v === 1 ? 'kick' : `${v} kicks`), show: () => ft() && kickWave() },
+  { kind: 'range', key: 'audioWaveForce', label: 'Wave strength', min: 0.1, max: 3, step: 0.05, format: pct, show: () => ft() && kickWave() },
+  { kind: 'range', key: 'audioWaveSpeed', label: 'Wave speed', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => ft() && kickWave() },
+  { kind: 'range', key: 'audioWaveReach', label: 'Wave reach', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => ft() && kickWave() },
+  { kind: 'range', key: 'audioWaveWidth', label: 'Wave width', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => ft() && kickWave() },
+  { kind: 'toggle', key: 'audioWaveAccent', label: 'Louder kicks make bigger waves', show: () => ft() && kickWave() },
+  { kind: 'sub', label: 'Snare, clap & hi-hats', show: ft },
+  { kind: 'select', key: 'audioSnare', label: 'Snare does', options: [['swirl', 'Swirl'], ['wave', 'Ripple'], ['flash', 'Flash'], ['none', 'Nothing']], show: ft },
+  { kind: 'select', key: 'audioHats', label: 'Hi-hats do', options: [['sparkle', 'Sparkle'], ['none', 'Nothing']], show: ft },
+  { kind: 'range', key: 'audioHits', label: 'Hit strength', min: 0, max: 2, step: 0.05, format: pct, show: () => ft() && (settings.audioSnare !== 'none' || settings.audioHats !== 'none') },
+  { kind: 'sub', label: '808 & sub bass', show: ft },
+  { kind: 'select', key: 'audioSub', label: 'Sub swells', options: [['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed'], ['none', 'Nothing']], show: ft },
+  { kind: 'range', key: 'audioSubAmt', label: 'Sub strength', min: 0, max: 2, step: 0.05, format: pct, show: () => ft() && settings.audioSub !== 'none' },
+  { kind: 'sub', label: 'Overall energy', show: ft },
+  { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct, show: ft },
+  { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct, show: ft },
 
   { kind: 'section', id: 'look', label: 'Look', open: true,
     summary: () => `${label(RENDERS, settings.render)}, ${(PALETTES[settings.palette] as PaletteDef).label}` },
@@ -1427,7 +1472,7 @@ function renderControls() {
     }
 
     // A label around chip buttons would forward clicks to the first chip.
-    const row = document.createElement(ctl.kind === 'multi' ? 'div' : 'label');
+    const row = document.createElement(ctl.kind === 'multi' || ctl.kind === 'choice' ? 'div' : 'label');
     row.className = `row ${ctl.kind}`;
     row.dataset.key = ctl.key;
     const name = document.createElement('span');
@@ -1453,6 +1498,20 @@ function renderControls() {
       select.addEventListener('change', () => set(k, select.value as never));
       row.append(select);
       refreshers.push(() => (select.value = String(settings[k])));
+    } else if (ctl.kind === 'choice') {
+      // Single-choice chips.
+      row.classList.add('stack', 'bare');
+      const wrap = document.createElement('div');
+      wrap.className = 'chips';
+      for (const [value, text] of ctl.options) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = text;
+        b.addEventListener('click', () => set(k, value as never));
+        wrap.append(b);
+        refreshers.push(() => b.classList.toggle('on', settings[k] === value));
+      }
+      row.append(wrap);
     } else if (ctl.kind === 'multi') {
       // Toggle chips stored as a comma-separated list.
       row.classList.add('stack');

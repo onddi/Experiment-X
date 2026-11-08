@@ -250,3 +250,5 @@ button:hover, select:hover { border-color: #3c3f46; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chips button { padding: 2px 7px; font-size: 12px; }
 .chips button.on { border-color: var(--accent); color: var(--accent); }
+
+.row.bare .name { display: none; }
