@@ -245,3 +245,8 @@ button:hover, select:hover { border-color: #3c3f46; }
   border-radius: 6px;
   padding: 5px 8px;
 }
+
+.row.stack { grid-template-columns: 1fr; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips button { padding: 2px 7px; font-size: 12px; }
+.chips button.on { border-color: var(--accent); color: var(--accent); }

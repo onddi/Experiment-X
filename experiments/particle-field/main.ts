@@ -5,7 +5,7 @@ import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
-type Render = 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'glyphs' | 'links';
+type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'glyphs' | 'links';
 type KickAction = 'pulse' | 'wave' | 'both' | 'none';
 type SnareAction = 'swirl' | 'wave' | 'flash' | 'none';
 type HatAction = 'sparkle' | 'none';
@@ -59,6 +59,7 @@ interface Settings {
   glow: boolean;
   palette: Palette;
   colorBy: ColorBy;
+  mixStyles: string;
   gravity: number;
   glyphSet: GlyphSet;
   glyphText: string;
@@ -137,6 +138,7 @@ const DEFAULTS: Settings = {
   glow: false,
   palette: 'aurora',
   colorBy: 'palette',
+  mixStyles: 'circles,glow,sparkles,rings,glyphs,comets',
   gravity: 0,
   glyphSet: 'katakana',
   glyphText: 'HELLO WORLD',
@@ -896,6 +898,85 @@ function drawGlyphs(list: number[], k: number, s: number) {
 // Buckets let us draw every particle of one colour in a single path.
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
+// Draws one bucket of particles (all the same colour) in one style.
+function drawStyle(style: Render, list: number[], k: number, s: number) {
+  const sprite = SPRITES[style as SpriteStyle];
+  if (sprite) {
+    // Pre-rendered shapes, stamped with drawImage: much faster than a path
+    // per particle for soft or curved shapes.
+    const img = spriteFor(style as SpriteStyle, k);
+    const d = s * sprite.scale;
+    ctx.globalAlpha = sprite.alpha;
+    for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    ctx.globalAlpha = 1;
+  } else if (style === 'arrows') {
+    // Small triangles pointing where each particle is heading.
+    ctx.fillStyle = shades[k];
+    ctx.beginPath();
+    const L = s * 2.2;
+    for (const i of list) {
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      const ux = vx[i] / v;
+      const uy = vy[i] / v;
+      ctx.moveTo(px[i] + ux * L, py[i] + uy * L);
+      ctx.lineTo(px[i] - ux * L * 0.6 - uy * L * 0.55, py[i] - uy * L * 0.6 + ux * L * 0.55);
+      ctx.lineTo(px[i] - ux * L * 0.6 + uy * L * 0.55, py[i] - uy * L * 0.6 - ux * L * 0.55);
+      ctx.closePath();
+    }
+    ctx.fill();
+  } else if (style === 'comets') {
+    // A thin tapering tail plus a bright head.
+    ctx.strokeStyle = shades[k];
+    ctx.lineWidth = Math.max(0.5, s * 0.5);
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    for (const i of list) {
+      ctx.moveTo(px[i] - vx[i] * 9, py[i] - vy[i] * 9);
+      ctx.lineTo(px[i], py[i]);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    const img = spriteFor('glow', k);
+    const d = s * 3;
+    for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+  } else if (style === 'glyphs') {
+    drawGlyphs(list, k, s);
+  } else if (style === 'streaks') {
+    ctx.strokeStyle = shades[k];
+    ctx.lineWidth = s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (const i of list) {
+      // Stretch the streak along velocity so slow particles still read as dots.
+      ctx.moveTo(px[i] - vx[i] * 3, py[i] - vy[i] * 3);
+      ctx.lineTo(px[i], py[i]);
+    }
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = shades[k];
+    ctx.beginPath();
+    for (const i of list) ctx.rect(px[i] - s / 2, py[i] - s / 2, s, s);
+    ctx.fill();
+  }
+}
+
+const MIXABLE: [string, string][] = [
+  ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
+  ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['glyphs', 'Glyphs'],
+];
+
+function mixStyles(): Render[] {
+  const list = settings.mixStyles.split(',').filter((x) => MIXABLE.some(([k]) => k === x)) as Render[];
+  return list.length ? list : ['circles'];
+}
+
+// A fixed pseudo-random 0..1 per particle index.
+function styleHash(i: number) {
+  const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 function draw() {
   const [r, g, b] = PALETTES[settings.palette].bg;
   ctx.globalCompositeOperation = 'source-over';
@@ -914,69 +995,19 @@ function draw() {
   if (settings.render === 'links') drawLinks();
 
   const s = settings.size * audioSizeBoost();
-  const style = settings.render;
-  const sprite = SPRITES[style as SpriteStyle];
-  for (let k = 0; k < SHADES; k++) {
-    const list = buckets[k];
-    if (!list.length) continue;
-    if (sprite) {
-      // Pre-rendered shapes, stamped with drawImage: much faster than a path
-      // per particle for soft or curved shapes.
-      const img = spriteFor(style as SpriteStyle, k);
-      const d = s * sprite.scale;
-      ctx.globalAlpha = sprite.alpha;
-      for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
-      ctx.globalAlpha = 1;
-    } else if (style === 'arrows') {
-      // Small triangles pointing where each particle is heading.
-      ctx.fillStyle = shades[k];
-      ctx.beginPath();
-      const L = s * 2.2;
-      for (const i of list) {
-        const v = Math.hypot(vx[i], vy[i]) + 1e-6;
-        const ux = vx[i] / v;
-        const uy = vy[i] / v;
-        ctx.moveTo(px[i] + ux * L, py[i] + uy * L);
-        ctx.lineTo(px[i] - ux * L * 0.6 - uy * L * 0.55, py[i] - uy * L * 0.6 + ux * L * 0.55);
-        ctx.lineTo(px[i] - ux * L * 0.6 + uy * L * 0.55, py[i] - uy * L * 0.6 - ux * L * 0.55);
-        ctx.closePath();
-      }
-      ctx.fill();
-    } else if (style === 'comets') {
-      // A thin tapering tail plus a bright head.
-      ctx.strokeStyle = shades[k];
-      ctx.lineWidth = Math.max(0.5, s * 0.5);
-      ctx.lineCap = 'round';
-      ctx.globalAlpha = 0.55;
-      ctx.beginPath();
-      for (const i of list) {
-        ctx.moveTo(px[i] - vx[i] * 9, py[i] - vy[i] * 9);
-        ctx.lineTo(px[i], py[i]);
-      }
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      const img = spriteFor('glow', k);
-      const d = s * 3;
-      for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
-    } else if (style === 'glyphs') {
-      drawGlyphs(list, k, s);
-    } else if (style === 'streaks') {
-      ctx.strokeStyle = shades[k];
-      ctx.lineWidth = s;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      for (const i of list) {
-        // Stretch the streak along velocity so slow particles still read as dots.
-        ctx.moveTo(px[i] - vx[i] * 3, py[i] - vy[i] * 3);
-        ctx.lineTo(px[i], py[i]);
-      }
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = shades[k];
-      ctx.beginPath();
-      for (const i of list) ctx.rect(px[i] - s / 2, py[i] - s / 2, s, s);
-      ctx.fill();
+  if (settings.render === 'mixed') {
+    // Each particle keeps one style from the mix, picked by its index.
+    const mix = mixStyles();
+    const parts: number[][] = mix.map(() => []);
+    for (let k = 0; k < SHADES; k++) {
+      const list = buckets[k];
+      if (!list.length) continue;
+      for (const p of parts) p.length = 0;
+      for (const i of list) parts[(styleHash(i) * mix.length) | 0].push(i);
+      mix.forEach((st, m) => parts[m].length && drawStyle(st, parts[m], k, s));
     }
+  } else {
+    for (let k = 0; k < SHADES; k++) if (buckets[k].length) drawStyle(settings.render, buckets[k], k, s);
   }
 
   // Wave rings.
@@ -1092,6 +1123,7 @@ type ControlBody =
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
+  | { kind: 'multi'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'text'; key: keyof Settings; label: string; placeholder?: string }
   | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean }
   | { kind: 'note'; text: string }
@@ -1106,7 +1138,7 @@ const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', '
 const RENDERS: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['glyphs', 'Glyphs'],
-  ['links', 'Constellation'],
+  ['links', 'Constellation'], ['mixed', 'Mixed (each particle its own)'],
 ];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['audio', 'Music energy']];
 
@@ -1127,7 +1159,7 @@ const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick ===
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
 
-const isGlyphs = () => settings.render === 'glyphs';
+const isGlyphs = () => settings.render === 'glyphs' || (settings.render === 'mixed' && settings.mixStyles.split(',').includes('glyphs'));
 const hasFlow = () => settings.flow > 0;
 const hasPointer = () => settings.pointerMode !== 'none';
 const hasClick = () => settings.click !== 'none';
@@ -1202,6 +1234,7 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'look', label: 'Look', open: true,
     summary: () => `${label(RENDERS, settings.render)}, ${(PALETTES[settings.palette] as PaletteDef).label}` },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
+  { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
@@ -1242,6 +1275,7 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Heat', { count: 3000, size: 1.6, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5, click: 'implode' }],
   ['Fireflies', { count: 400, size: 1.6, render: 'glow', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0.6, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather' }],
   ['Bokeh', { count: 250, size: 3, render: 'bokeh', flow: 0.2, flowScale: 0.002, flowSpeed: 0.08, trail: 0, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
+  ['Confetti', { count: 900, size: 1.8, render: 'mixed', mixStyles: 'circles,sparkles,rings,arrows,glyphs', glyphSet: 'shapes', flow: 0.5, flowScale: 0.004, flowSpeed: 0.3, trail: 0.4, friction: 0.04, jitter: 0.04, palette: 'candy', colorBy: 'palette', glow: false, pointerMode: 'vortex', radius: 180, force: 0.7, click: 'emit' }],
   ['Digital rain', { count: 900, size: 2.4, render: 'glyphs', glyphSet: 'katakana', glyphPick: 'random', glyphChange: 'flicker', glyphRate: 0.02, glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', gravity: 0.5, flow: 0, trail: 0.88, friction: 0.08, jitter: 0, speed: 1, palette: 'toxic', colorBy: 'speed', glow: false, pointerMode: 'repel', radius: 120, force: 0.6, click: 'ripple' }],
   ['ASCII', { count: 2500, size: 2, render: 'glyphs', glyphSet: 'density', glyphPick: 'speed', glyphChange: 'fixed', glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', flow: 0.8, flowScale: 0.004, flowSpeed: 0.3, trail: 0, friction: 0.05, jitter: 0.02, palette: 'mono', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 180, force: 0.8, click: 'gather' }],
   ['Compass', { count: 700, size: 2.2, render: 'glyphs', glyphSet: 'arrows', glyphPick: 'heading', glyphFont: 'sans', glyphScale: 1.2, glyphRotate: 'none', flow: 1, flowScale: 0.003, flowSpeed: 0.2, trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'ice', colorBy: 'direction', glow: false, pointerMode: 'vortex', radius: 200, force: 0.6 }],
@@ -1392,7 +1426,8 @@ function renderControls() {
       continue;
     }
 
-    const row = document.createElement('label');
+    // A label around chip buttons would forward clicks to the first chip.
+    const row = document.createElement(ctl.kind === 'multi' ? 'div' : 'label');
     row.className = `row ${ctl.kind}`;
     row.dataset.key = ctl.key;
     const name = document.createElement('span');
@@ -1418,6 +1453,27 @@ function renderControls() {
       select.addEventListener('change', () => set(k, select.value as never));
       row.append(select);
       refreshers.push(() => (select.value = String(settings[k])));
+    } else if (ctl.kind === 'multi') {
+      // Toggle chips stored as a comma-separated list.
+      row.classList.add('stack');
+      const wrap = document.createElement('div');
+      wrap.className = 'chips';
+      for (const [value, text] of ctl.options) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = text;
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          const cur = new Set(String(settings[k]).split(',').filter(Boolean));
+          if (cur.has(value)) {
+            if (cur.size > 1) cur.delete(value);
+          } else cur.add(value);
+          set(k, ctl.options.map(([v]) => v).filter((v) => cur.has(v)).join(',') as never);
+        });
+        wrap.append(b);
+        refreshers.push(() => b.classList.toggle('on', String(settings[k]).split(',').includes(value)));
+      }
+      row.append(wrap);
     } else if (ctl.kind === 'text') {
       const input = document.createElement('input');
       input.type = 'text';
@@ -1566,7 +1622,7 @@ function shuffle() {
     click: pick(['gather', 'emit', 'ripple', 'implode', 'shockwave'] as const),
     radius: rand(80, 260, 5),
     force: rand(0.3, 1.4, 0.05),
-    render: pick(['dots', 'circles', 'glow', 'bokeh', 'rings', 'sparkles', 'arrows', 'streaks', 'streaks', 'comets', 'glyphs', 'links'] as const),
+    render: pick(['dots', 'circles', 'glow', 'bokeh', 'rings', 'sparkles', 'arrows', 'streaks', 'streaks', 'comets', 'glyphs', 'links', 'mixed'] as const),
     linkDist: rand(50, 100, 5),
     trail: rand(0.5, 0.95, 0.01),
     glow: Math.random() < 0.6,
