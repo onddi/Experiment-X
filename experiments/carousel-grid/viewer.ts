@@ -21,6 +21,7 @@ export const OPEN_TRANSITIONS: [OpenTransition | 'off', string][] = [
 ];
 
 const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+const ease = cubicBezier(0.2, 0.8, 0.2, 1);
 
 export class Viewer {
   readonly el: HTMLElement;
@@ -121,11 +122,14 @@ export class Viewer {
 
   private play(reverse: boolean, duration: number) {
     for (const a of this.anims) a.cancel();
-    const { box, inner } = this.frames();
+    const { box, inner, sampled } = this.frames(reverse);
+    // Sampled frames already carry the easing (Safari only runs multi-keyframe
+    // animations on the GPU when the overall timing is linear); two-keyframe
+    // ones are eased as a whole and simply played backwards to close.
     const run = (el: HTMLElement, frames: Keyframe[]) =>
-      el.animate(reverse ? [...frames].reverse().map((f, k, all) => ({ ...f, offset: k / (all.length - 1) })) : frames, {
+      el.animate(sampled || !reverse ? frames : [...frames].reverse(), {
         duration,
-        easing: EASE,
+        easing: sampled ? 'linear' : EASE,
         fill: 'both',
       });
     this.anims = [run(this.box, box), run(this.inner, inner)];
@@ -140,27 +144,28 @@ export class Viewer {
   }
 
   /** Keyframes for the box and the image, from "in the cell" to "full screen". */
-  private frames(): { box: Keyframe[]; inner: Keyframe[] } {
+  private frames(reverse: boolean): { box: Keyframe[]; inner: Keyframe[]; sampled: boolean } {
     const r = this.source!.getBoundingClientRect();
     const W = innerWidth;
     const H = innerHeight;
-    const STEPS = 12;
+    const STEPS = 24;
     // Sample the rect from the cell to the screen so the image stays
-    // undistorted between keyframes (the easing applies over the whole run).
+    // undistorted between keyframes. The easing is baked into the samples.
     const sampled = (f: (p: number, x: number, y: number, w: number, h: number) => [Keyframe, Keyframe]) => {
       const box: Keyframe[] = [];
       const inner: Keyframe[] = [];
       for (let s = 0; s <= STEPS; s++) {
-        const p = s / STEPS;
+        const t = s / STEPS;
+        const p = reverse ? 1 - ease(t) : ease(t);
         const x = r.left * (1 - p);
         const y = r.top * (1 - p);
         const w = r.width + (W - r.width) * p;
         const h = r.height + (H - r.height) * p;
         const [b, i] = f(p, x, y, w, h);
-        box.push({ ...b, offset: p });
-        inner.push({ ...i, offset: p });
+        box.push({ ...b, offset: t });
+        inner.push({ ...i, offset: t });
       }
-      return { box, inner };
+      return { box, inner, sampled: true };
     };
     // Box: the screen-sized layer squeezed onto rect (x, y, w, h).
     const boxAt = (x: number, y: number, w: number, h: number) => `translate(${x}px, ${y}px) scale(${w / W}, ${h / H})`;
@@ -198,9 +203,25 @@ export class Viewer {
         });
       }
       case 'fade':
-        return { box: [{ opacity: 0, transform: 'scale(1.06)' }, none], inner: [{ transform: 'none' }, { transform: 'none' }] };
+        return { box: [{ opacity: 0, transform: 'scale(1.06)' }, none], inner: [{ transform: 'none' }, { transform: 'none' }], sampled: false };
       case 'slide':
-        return { box: [{ transform: 'translateY(100%)' }, { transform: 'none' }], inner: [{ transform: 'none' }, { transform: 'none' }] };
+        return { box: [{ transform: 'translateY(100%)' }, { transform: 'none' }], inner: [{ transform: 'none' }, { transform: 'none' }], sampled: false };
     }
   }
+}
+
+/** CSS cubic-bezier timing function as a JS function of progress 0..1. */
+function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
+  const at = (a: number, b: number, t: number) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (x: number) => {
+    if (x <= 0 || x >= 1) return x;
+    let lo = 0;
+    let hi = 1;
+    for (let k = 0; k < 30; k++) {
+      const mid = (lo + hi) / 2;
+      if (at(x1, x2, mid) < x) lo = mid;
+      else hi = mid;
+    }
+    return at(y1, y2, (lo + hi) / 2);
+  };
 }
