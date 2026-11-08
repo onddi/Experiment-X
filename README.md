@@ -139,6 +139,11 @@ showing just that one.
 blend mode. Keep the controls out of the way, or hide them when `layer.input` is
 false since that layer can't be clicked anyway.
 
+**One options panel at a time.** Register your options panel with
+`xframe.panel({ element, isOpen, close })`. When it opens, X-Frame closes the
+other layers' panels and its own Layers panel; when another one opens, X-Frame calls
+your `close`. (Messages: `xp:panel` from the experiment, `xp:close-panel` to it.)
+
 ## Data bus
 
 Experiments on screen together can share data through X-Frame: one publishes on a

@@ -5324,6 +5324,8 @@ toggle.addEventListener('click', () => {
   toggle.textContent = collapsed ? '⟨' : '⟩';
   requestAnimationFrame(resize);
 });
+// In X-Frame, only one layer's options panel is open at a time.
+xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click() });
 
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;

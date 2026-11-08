@@ -258,7 +258,15 @@ function reloadAll() {
 
 let panelTimer = 0;
 
+/** Ask every experiment except `except` to close its options panel. */
+function closePanels(except?: Window) {
+  const wins = [...frames.values()].map((f) => f.contentWindow);
+  if (handover) wins.push(handover.frame.contentWindow);
+  for (const w of wins) if (w && w !== except) w.postMessage({ type: 'xp:close-panel' }, location.origin);
+}
+
 function openPanel(open: boolean) {
+  if (open && panel.hidden) closePanels();
   panel.hidden = !open;
   layersBtn.setAttribute('aria-expanded', String(open));
   clearInterval(panelTimer);
@@ -492,7 +500,10 @@ window.addEventListener('message', (e) => {
   if (!msg || typeof msg.type !== 'string') return;
 
   if (handleBusMessage(source, msg)) return;
-  if (msg.type === 'xp:hello') {
+  if (msg.type === 'xp:panel') {
+    closePanels(source);
+    openPanel(false);
+  } else if (msg.type === 'xp:hello') {
     const frame = frames.get(slug);
     if (frame) tellLayer(frame);
   } else if (msg.type === 'xp:list') {

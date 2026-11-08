@@ -1,4 +1,5 @@
 import './style.css';
+import { xframe } from './xframe.ts';
 import { Carousel, type Axis, type CarouselItem, type Effect } from './carousel.ts';
 import { randomWord } from './words.ts';
 import { STYLES, themeFor } from './themes.ts';
@@ -1106,6 +1107,8 @@ toggle.addEventListener('click', () => {
   toggle.textContent = collapsed ? '⟨' : '⟩';
 });
 if (window.innerWidth < 720) toggle.click();
+// In X-Frame, only one layer's options panel is open at a time.
+xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click() });
 
 renderControls();
 build();

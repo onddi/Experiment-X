@@ -13,6 +13,9 @@
  *   // How this experiment is shown: 'standalone', 'base', 'stacked' or 'docked'.
  *   xframe.onLayer((layer) => document.body.classList.toggle('see-through', layer.role === 'stacked'));
  *
+ *   // Only one options panel open at a time across layers.
+ *   xframe.panel({ element: panelEl, isOpen: () => !panelEl.classList.contains('collapsed'), close: () => hidePanel() });
+ *
  *   // Hand the screen to another experiment, and get it back.
  *   xframe.handover('particle-field', { preset: '3' });
  *   xframe.onRelease(() => { ... });
@@ -46,6 +49,7 @@ const inFrame = window.parent !== window;
 const subs = new Map<string, Set<Handler>>();
 const layerHandlers = new Set<(layer: LayerInfo) => void>();
 const releaseHandlers = new Set<() => void>();
+const closePanelHandlers = new Set<() => void>();
 const listWaiters: ((list: ExperimentInfo[]) => void)[] = [];
 let layer: LayerInfo = { role: inFrame ? 'base' : 'standalone', placement: 'full', index: 0, count: 1, input: true };
 
@@ -62,6 +66,8 @@ if (inFrame) {
     } else if (msg?.type === 'xp:layer') {
       layer = { role: msg.role, placement: msg.placement, index: msg.index, count: msg.count, input: msg.input };
       layerHandlers.forEach((h) => h(layer));
+    } else if (msg?.type === 'xp:close-panel') {
+      closePanelHandlers.forEach((h) => h());
     } else if (msg?.type === 'xp:release') {
       releaseHandlers.forEach((h) => h());
     } else if (msg?.type === 'xp:list' && Array.isArray(msg.experiments)) {
@@ -124,6 +130,31 @@ export const xframe = {
   onRelease(handler: () => void): () => void {
     releaseHandlers.add(handler);
     return () => releaseHandlers.delete(handler);
+  },
+
+  /**
+   * Keep only one options panel open across layers: when yours opens, X-Frame
+   * closes the others (and its own Layers panel), and asks you to close yours
+   * when another one opens. Watches `element` for attribute changes and calls
+   * `isOpen()` to tell open from closed. Returns a function that stops it.
+   */
+  panel({ element, isOpen, close }: { element: Element; isOpen: () => boolean; close: () => void }): () => void {
+    if (!inFrame) return () => {};
+    let open = isOpen();
+    const observer = new MutationObserver(() => {
+      const now = isOpen();
+      if (now && !open) send({ type: 'xp:panel', open: true });
+      open = now;
+    });
+    observer.observe(element, { attributes: true });
+    const onClose = () => {
+      if (isOpen()) close();
+    };
+    closePanelHandlers.add(onClose);
+    return () => {
+      observer.disconnect();
+      closePanelHandlers.delete(onClose);
+    };
   },
 
   /** All experiments X-Frame knows about (empty outside X-Frame). */
