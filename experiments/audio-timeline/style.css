@@ -419,15 +419,46 @@ body.skinned #live { opacity: 0.35; }
 .gh-play { width: 60px; height: 60px; border-radius: 50% !important; border: 1px solid rgb(255 255 255 / 0.32) !important; }
 
 @media (max-width: 720px) {
-  .cap { gap: 8px; padding: 0 8px; }
-  .cap-meta { width: 90px; }
+  /* Phones: keep the layouts small so the layer underneath stays the main thing. */
+  .cap { bottom: 12px; height: 54px; gap: 8px; padding: 0 6px 0 5px; border-radius: 27px; width: calc(100% - 24px); }
+  .cap-play { width: 44px; height: 44px; }
+  .cap-play svg { width: 18px; height: 18px; }
+  .cap-meta { width: 74px; }
+  .cap-meta b { font-size: 12px; }
+  .cap-meta span { font-size: 10px; letter-spacing: 0; }
+  .cap-wave { height: 28px; }
   .cap .sk-vol { display: none; }
-  .hz-head { left: 16px; right: 16px; }
-  .hz-left b { font-size: 20px; }
-  .hz-time { font-size: 30px; }
-  .hz-band { left: 16px; right: 16px; }
-  .gh-text { left: 20px; right: 20px; bottom: 120px; }
-  .gh-controls { right: 50%; transform: translateX(50%); bottom: 32px; }
+
+  .sk-horizon::before { height: 160px; }
+  .hz-head { left: 12px; right: 12px; bottom: 82px; align-items: center; }
+  .hz-left { gap: 8px; }
+  .hz-left small { display: none; }
+  .hz-left b { font-size: 15px; }
+  .hz-play { width: 44px; height: 44px; }
+  .hz-play svg { width: 16px; height: 16px; }
+  .hz-time { font-size: 22px; }
+  .hz-time em { font-size: 12px; }
+  .hz-band { left: 12px; right: 12px; bottom: 16px; height: 56px; }
+  .hz-foot { display: none; }
+
+  .ring-title { left: 14px; top: 12px; }
+  .ring-title b { font-size: 15px; }
+  .ring-title small { display: none; }
+  .ring-hit { width: min(46vh, 58vw); }
+  .ring-play { width: 48px; height: 48px; }
+  .ring-play svg { width: 20px; height: 20px; }
+  .ring-centre { gap: 4px; }
+  .ring-centre span { font-size: 10px; }
+  .ring-vol { right: 8px; bottom: 8px; }
+  .ring-vol .sk-vol { display: none; }
+
+  .gh-text { left: 16px; right: 16px; bottom: 72px; gap: 2px; }
+  .gh-text span { font-size: 11px; letter-spacing: 0.2em; }
+  .gh-text b { font-size: 30px; }
+  .gh-controls { right: 50%; transform: translateX(50%); bottom: 14px; gap: 6px; }
+  .gh-play { width: 46px; height: 46px; }
+  .gh-play svg { width: 18px; height: 18px; }
+  .gh-skip { width: 40px; height: 40px; }
 }
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }
