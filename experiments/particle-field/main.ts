@@ -4,6 +4,7 @@ import { AudioInput, tabAudioSupported, type Genre } from './audio.ts';
 // --- settings ----------------------------------------------------------------
 
 type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
+type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
 type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'glyphs' | 'links';
 type KickAction = 'pulse' | 'wave' | 'both' | 'none';
@@ -64,6 +65,7 @@ interface Settings {
   mixStyles: string;
   gravity: number;
   lifespan: number;
+  edges: Edges;
   glyphSet: GlyphSet;
   glyphText: string;
   glyphPick: GlyphPick;
@@ -190,6 +192,7 @@ const DEFAULTS: Settings = {
   mixStyles: 'circles,glow,sparkles,rings,glyphs,comets',
   gravity: 0,
   lifespan: 0,
+  edges: 'wrap',
   glyphSet: 'katakana',
   glyphText: 'HELLO WORLD',
   glyphPick: 'random',
@@ -511,17 +514,30 @@ function waveSpots(k: number): [number, number][] {
 // --- simulation --------------------------------------------------------------
 
 // A cheap smooth flow field: layered sines read as a gently turning current.
-function flowAngle(x: number, y: number) {
+// Spatial frequencies of the flow field. In wrap mode each one is rounded to
+// a whole number of waves across the screen, so the field tiles seamlessly.
+const fk = { x1: 0, y1: 0, x2: 0, y2: 0 };
+function updateFlowFreqs() {
   const s = settings.flowScale;
+  const tile = settings.edges === 'wrap';
+  const q = (k: number, len: number) => (tile ? (Math.max(1, Math.round((k * len) / (Math.PI * 2))) * Math.PI * 2) / len : k);
+  fk.x1 = q(s, w);
+  fk.y1 = q(s * 1.3, h);
+  fk.x2 = q(s * 0.6, w);
+  fk.y2 = q(s * 0.6, h);
+}
+
+function flowAngle(x: number, y: number) {
   const tt = t * settings.flowSpeed;
   return (
-    Math.sin(x * s + tt) * 1.7 +
-    Math.cos(y * s * 1.3 - tt * 0.8) * 1.7 +
-    Math.sin((x + y) * s * 0.6 + tt * 0.5) * 1.2
+    Math.sin(x * fk.x1 + tt) * 1.7 +
+    Math.cos(y * fk.y1 - tt * 0.8) * 1.7 +
+    Math.sin(x * fk.x2 + y * fk.y2 + tt * 0.5) * 1.2
   );
 }
 
 function step(dt: number) {
+  updateFlowFreqs();
   t += dt / 60;
   const { radius, force, pointerMode, friction, jitter, flow, speed } = settings;
   const r2 = radius * radius;
@@ -752,12 +768,18 @@ function step(dt: number) {
     py[i] += vy[i] * speedNow * dt;
 
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
-      if (flow > 0) {
-        // The flow field isn't periodic, so wrapping would trap particles on
-        // the seam where opposing currents meet. Re-enter from an edge where
-        // the current flows inwards instead, so nothing appears mid-screen.
+      const edges = settings.edges;
+      if (edges === 'bounce') {
+        if (px[i] < 0 || px[i] >= w) vx[i] = -vx[i];
+        if (py[i] < 0 || py[i] >= h) vy[i] = -vy[i];
+        px[i] = Math.min(w - 0.5, Math.max(0, px[i]));
+        py[i] = Math.min(h - 0.5, Math.max(0, py[i]));
+      } else if (edges === 'enter' && flow > 0) {
+        // Come back in at an edge where the current flows inwards.
         enterFromEdge(i);
       } else {
+        // Wrap. The flow field tiles the screen in this mode, so there's no
+        // seam where opposing currents could trap particles.
         px[i] = ox[i] = ((px[i] % w) + w) % w;
         py[i] = oy[i] = ((py[i] % h) + h) % h;
       }
@@ -1469,13 +1491,14 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [] }, // filled with presets below
   { kind: 'mypresets' },
 
-  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity', 'lifespan'],
+  { kind: 'section', id: 'particles', label: 'Particles', open: true, lock: ['count', 'size', 'speed', 'friction', 'jitter', 'gravity', 'lifespan', 'edges'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'select', key: 'edges', label: 'Off-screen', options: [['wrap', 'Wrap to the other side'], ['enter', 'Re-enter with the flow'], ['bounce', 'Bounce off the edges']] },
   { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
   { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
 
