@@ -496,3 +496,4 @@ html:has(body.see-through) { color-scheme: normal; }
 .loop-btn svg, .sk-loop svg { width: 18px; height: 18px; }
 .sk-loop { width: 40px; height: 40px; flex: none; color: rgb(233 233 236 / 0.5) !important; }
 .loop-btn.on, .sk-loop.on { color: var(--accent) !important; }
+.buttons.demos { margin-top: 4px; }

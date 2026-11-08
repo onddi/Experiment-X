@@ -1,12 +1,10 @@
-// A second demo: a 16-bar drum & bass loop made to repeat without a seam.
+// Demo loop: a 16-bar drum & bass loop made to repeat without a seam.
 // 174 BPM in F minor: a two-step beat, a growling reese bass over a sub, and
 // a dark pad, through Fm – Db – Eb – C. The sound that rings past the last
 // bar (reverb, delay, the last notes) is folded back onto the start, so
 // playing it on repeat has no click or gap.
 
 import { normalise, renderBars } from './instruments.ts';
-
-export const LOOP_NAME = 'Undertow';
 
 const BPM = 174;
 const BEAT = 60 / BPM;
@@ -23,7 +21,7 @@ const CHORDS = [
   { root: 36, pad: [60, 64, 67] }, // C
 ];
 
-export async function renderLoop(): Promise<AudioBuffer> {
+export async function renderDnb(): Promise<AudioBuffer> {
   const full = await renderBars(BARS, BAR, TAIL, (s) => (bar) => {
     const t0 = bar * BAR;
     const { root, pad } = CHORDS[Math.floor(bar / 2) % 4];

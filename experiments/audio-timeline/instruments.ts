@@ -1,7 +1,8 @@
-// The instrument kit for the synthesised demos (techno and drum & bass):
-// punchy drums through a driven drum bus, a sub, a rolling filter bass, a
-// detuned "reese" bass, chord stabs into a dub delay, a dark pad and the
-// techno kick rumble, all with a shared reverb. Rendered offline.
+// The instrument kit for the synthesised demos: punchy drums through a driven
+// drum bus, a sub, a rolling filter bass, a detuned "reese" bass, a 303-style
+// acid line, chord stabs into a dub delay, a dark pad, the techno kick rumble,
+// and for lo-fi an FM electric piano with tape wobble, a soft lead and vinyl
+// crackle, all with a shared reverb. Rendered offline.
 
 export const midi = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -21,6 +22,26 @@ export interface Studio {
   pad(t: number, notes: number[], len: number, amp?: number, cutoff?: number): void;
   /** A noise sweep that rises over `len` seconds. */
   riser(t: number, len: number, amp?: number): void;
+  /**
+   * One 303-style acid note: a saw through a screaming resonant filter into
+   * some drive. `cutoff` is the filter's resting point; the envelope (bigger on
+   * an accent) opens it from there. With `slideTo` the pitch glides into that
+   * note at the end, for legato slides.
+   */
+  acid(t: number, m: number, len: number, o: { cutoff: number; accent?: boolean; slideTo?: number; amp?: number }): void;
+  /** FM electric piano chord, with a little strum and tape wobble. */
+  keys(t: number, notes: number[], len: number, amp?: number, strum?: number): void;
+  /** A soft, flute-like lead with vibrato on held notes. */
+  lead(t: number, m: number, len: number, amp?: number): void;
+  /** Vinyl crackle and hiss from `t` for `len` seconds. */
+  crackle(t: number, len: number, amp?: number): void;
+}
+
+export interface RenderOptions {
+  /** Echo time of the stab delay, in seconds (default: a dotted 8th). */
+  delayTime?: number;
+  /** Dull the top end and narrow the low end, like a worn tape. */
+  lofi?: boolean;
 }
 
 /**
@@ -33,11 +54,11 @@ export async function renderBars(
   barLen: number,
   tail: number,
   build: (s: Studio) => (bar: number) => void,
-  delayTime = barLen * 3 / 16,
+  opts: RenderOptions = {},
 ): Promise<AudioBuffer> {
   const sr = 44100;
   const ctx = new OfflineAudioContext(2, Math.ceil((bars * barLen + tail) * sr), sr);
-  const scheduleBar = build(makeStudio(ctx, delayTime));
+  const scheduleBar = build(makeStudio(ctx, opts.delayTime ?? (barLen * 3) / 16, !!opts.lofi));
   scheduleBar(0);
   for (let bar = 1; bar < bars; bar++) {
     void ctx.suspend(bar * barLen - 0.25).then(() => {
@@ -62,7 +83,7 @@ export function normalise(buf: AudioBuffer, length = buf.length) {
   }
 }
 
-function makeStudio(ctx: OfflineAudioContext, delayTime: number): Studio {
+function makeStudio(ctx: OfflineAudioContext, delayTime: number, lofi: boolean): Studio {
   const sr = ctx.sampleRate;
 
   const master = ctx.createGain();
@@ -72,7 +93,23 @@ function makeStudio(ctx: OfflineAudioContext, delayTime: number): Studio {
   comp.ratio.value = 4;
   comp.attack.value = 0.005;
   comp.release.value = 0.12;
-  master.connect(comp).connect(ctx.destination);
+  if (lofi) {
+    const top = ctx.createBiquadFilter();
+    top.type = 'lowpass';
+    top.frequency.value = 5200;
+    top.Q.value = -3;
+    const low = ctx.createBiquadFilter();
+    low.type = 'highpass';
+    low.frequency.value = 38;
+    master.connect(top).connect(low).connect(comp).connect(ctx.destination);
+  } else master.connect(comp).connect(ctx.destination);
+
+  // Grit for the acid line: a harder clipper than the drum bus.
+  const acidCurve = new Float32Array(1024);
+  for (let i = 0; i < acidCurve.length; i++) {
+    const x = (i / (acidCurve.length - 1)) * 2 - 1;
+    acidCurve[i] = Math.tanh(x * 4) / Math.tanh(4);
+  }
 
   // Drums go through a soft clipper for weight.
   const drums = ctx.createGain();
@@ -203,6 +240,62 @@ function makeStudio(ctx: OfflineAudioContext, delayTime: number): Studio {
     s.start(t, Math.random() * 1.5);
     s.stop(t + len + 0.02);
   };
+
+  // Tape wobble: one slow LFO, in cents, shared by every keys note.
+  const wobble = ctx.createGain();
+  wobble.gain.value = lofi ? 9 : 0;
+  {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.45;
+    lfo.connect(wobble);
+    lfo.start(0);
+  }
+
+  // Keys: FM electric piano, a sine whose brightness fades after the hit.
+  const keyNote = (t: number, m: number, len: number, amp: number, pan: number) => {
+    const f = midi(m);
+    const a = amp * Math.pow(2, -(m - 60) / 24);
+    const car = ctx.createOscillator();
+    car.frequency.value = f;
+    const mod = ctx.createOscillator();
+    mod.frequency.value = f;
+    wobble.connect(car.detune);
+    wobble.connect(mod.detune);
+    const idx = ctx.createGain();
+    idx.gain.setValueAtTime(f * 1.5, t);
+    idx.gain.exponentialRampToValueAtTime(f * 0.12, t + 0.7);
+    mod.connect(idx).connect(car.frequency);
+    const hold = Math.max(0.7, len);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(a, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(a * 0.4, t + 0.6);
+    g.gain.exponentialRampToValueAtTime(a * 0.15, t + hold);
+    g.gain.setTargetAtTime(0.0001, t + hold, 0.09);
+    car.connect(g);
+    out(g, bus(pan), car, [[verbIn, 0.3]], [idx]);
+    const end = t + hold + 0.6;
+    car.start(t);
+    mod.start(t);
+    car.stop(end);
+    mod.stop(end);
+    mod.onended = () => mod.disconnect();
+  };
+
+  // Crackle: sparse clicks over a quiet hiss, two seconds that loop.
+  const dust = ctx.createBuffer(2, 2 * sr, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = dust.getChannelData(c);
+    let hiss = 0;
+    for (let i = 0; i < d.length; i++) {
+      hiss += (Math.random() * 2 - 1 - hiss) * 0.3;
+      d[i] = hiss * 0.08;
+      if (Math.random() < 0.0004) {
+        const amp = 0.3 + Math.random() * 0.7;
+        for (let k = 0; k < 30 && i + k < d.length; k++) d[i + k] += (Math.random() * 2 - 1) * amp * Math.exp(-k / 6);
+      }
+    }
+  }
 
   const saws = (t: number, m: number, end: number, detunes: number[], into: AudioNode) => {
     for (const det of detunes) {
@@ -397,6 +490,87 @@ function makeStudio(ctx: OfflineAudioContext, delayTime: number): Studio {
       s.connect(f).connect(g);
       out(g, master, s, [[verbIn, 0.4]], [f]);
       s.start(t);
+      s.stop(t + len);
+    },
+
+    acid(t, m, len, { cutoff, accent = false, slideTo, amp = 0.3 }) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(midi(m), t);
+      if (slideTo !== undefined) {
+        o.frequency.setValueAtTime(midi(m), t + len * 0.75);
+        o.frequency.exponentialRampToValueAtTime(midi(slideTo), t + len);
+      }
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.Q.value = accent ? 19 : 15;
+      const peak = Math.min(9000, cutoff * (accent ? 5 : 3));
+      f.frequency.setValueAtTime(peak, t);
+      f.frequency.exponentialRampToValueAtTime(cutoff, t + (accent ? 0.22 : 0.15));
+      // Keep the scream from pinning the clipper: tame low-cutoff boom too.
+      const pre = ctx.createGain();
+      pre.gain.value = 0.35;
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = acidCurve;
+      const a = amp * (accent ? 1.35 : 1);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(a, t + 0.003);
+      if (slideTo !== undefined) g.gain.setValueAtTime(a, t + len + 0.01);
+      else g.gain.setTargetAtTime(a * 0.5, t + 0.05, 0.08);
+      g.gain.setTargetAtTime(0.0001, t + len + (slideTo !== undefined ? 0.01 : 0), 0.012);
+      o.connect(f).connect(pre).connect(shaper).connect(g);
+      out(g, bus(0), o, [[delayIn, 0.22], [verbIn, 0.12]], [f, pre, shaper]);
+      o.start(t);
+      o.stop(t + len + 0.12);
+    },
+
+    keys(t, notes, len, amp = 0.09, strum = 0.014) {
+      notes.forEach((m, i) => keyNote(t + i * strum, m, len, amp, i % 2 ? 0.25 : -0.25));
+    },
+
+    lead(t, m, len, amp = 0.07) {
+      const f = midi(m);
+      const o = ctx.createOscillator();
+      o.frequency.value = f;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 5;
+      const depth = ctx.createGain();
+      depth.gain.setValueAtTime(0, t);
+      depth.gain.linearRampToValueAtTime(0, t + 0.25);
+      depth.gain.linearRampToValueAtTime(f * 0.004, t + 0.6);
+      lfo.connect(depth).connect(o.frequency);
+      wobble.connect(o.detune);
+      const h = ctx.createOscillator();
+      h.frequency.value = f * 2;
+      const hl = ctx.createGain();
+      hl.gain.value = 0.12;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.035);
+      g.gain.setValueAtTime(amp, t + len);
+      g.gain.setTargetAtTime(0.0001, t + len, 0.07);
+      o.connect(g);
+      h.connect(hl).connect(g);
+      out(g, bus(0.15), o, [[verbIn, 0.5]], [depth, hl]);
+      const end = t + len + 0.45;
+      for (const n of [o, lfo, h]) {
+        n.start(t);
+        n.stop(end);
+      }
+      lfo.onended = () => lfo.disconnect();
+      h.onended = () => h.disconnect();
+    },
+
+    crackle(t, len, amp = 0.5) {
+      const s = ctx.createBufferSource();
+      s.buffer = dust;
+      s.loop = true;
+      const g = ctx.createGain();
+      g.gain.value = amp;
+      s.connect(g);
+      out(g, master, s);
+      s.start(t, Math.random() * 2);
       s.stop(t + len);
     },
   };

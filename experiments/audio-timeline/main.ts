@@ -1,8 +1,8 @@
 import './style.css';
 import { analyse, type TrackAnalysis } from './analysis.ts';
 import { AudioFeed, BandMeter } from './feed.ts';
-import { DEMO_NAME, renderDemo, toWav } from './demo.ts';
-import { LOOP_NAME, renderLoop } from './loop.ts';
+import { DEMOS, type Demo } from './demos.ts';
+import { toWav } from './wav.ts';
 import { xframe } from './xframe.ts';
 import { createSkins, SKINS, type Skin } from './skins.ts';
 
@@ -440,14 +440,14 @@ async function load(blob: Blob, name: string, decoded?: AudioBuffer) {
   }
 }
 
-async function loadDemo(kind: 'track' | 'loop' = 'track') {
+async function loadDemo(demo: Demo = DEMOS[0]) {
   const token = ++loadToken;
-  busy(kind === 'loop' ? 'Rendering the demo loop…' : 'Rendering the demo track…', 0.05);
-  const buffer = kind === 'loop' ? await renderLoop() : await renderDemo();
+  busy(`Rendering ${demo.name}…`, 0.05);
+  const buffer = await demo.render();
   if (token !== loadToken) return;
-  // The loop is made to repeat seamlessly, so switch repeat on with it.
-  if (kind === 'loop') setLoop(true);
-  await load(toWav(buffer), kind === 'loop' ? LOOP_NAME : DEMO_NAME, buffer);
+  // A loop demo is made to repeat seamlessly, so switch repeat on with it.
+  if (demo.loop) setLoop(true);
+  await load(toWav(buffer), demo.name, buffer);
 }
 
 const loopSyncs: (() => void)[] = [];
@@ -1071,11 +1071,22 @@ function refreshPanel() {
   const { body, summary } = group('track', 'Track');
   const buttons = document.createElement('div');
   buttons.className = 'buttons';
-  buttons.innerHTML = `<button type="button" id="open" class="wide">Open file…</button><button type="button" id="demo">Demo track</button><button type="button" id="demo-loop">Demo loop</button>`;
+  buttons.innerHTML = `<button type="button" id="open" class="wide">Open file…</button>`;
   body.append(buttons);
   buttons.querySelector('#open')!.addEventListener('click', () => fileInput.click());
-  buttons.querySelector('#demo')!.addEventListener('click', () => void loadDemo('track'));
-  buttons.querySelector('#demo-loop')!.addEventListener('click', () => void loadDemo('loop'));
+  note(body, 'Or try a demo:');
+  const demos = document.createElement('div');
+  demos.className = 'buttons demos';
+  for (const d of DEMOS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.demo = d.id;
+    b.textContent = d.label;
+    b.title = `“${d.name}”${d.loop ? ', made to loop' : ''}`;
+    b.addEventListener('click', () => void loadDemo(d));
+    demos.append(b);
+  }
+  body.append(demos);
   const info = note(body, '');
   note(body, 'Or drop an audio file anywhere on the page.');
   const speed = document.createElement('div');
