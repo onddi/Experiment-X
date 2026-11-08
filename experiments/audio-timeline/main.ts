@@ -1,7 +1,7 @@
 import './style.css';
 import { analyse, type TrackAnalysis } from './analysis.ts';
 import { AudioFeed, BandMeter } from './feed.ts';
-import { renderDemo, toWav } from './demo.ts';
+import { DEMO_NAME, renderDemo, toWav } from './demo.ts';
 import { LOOP_NAME, renderLoop } from './loop.ts';
 import { xframe } from './xframe.ts';
 import { createSkins, SKINS, type Skin } from './skins.ts';
@@ -447,7 +447,7 @@ async function loadDemo(kind: 'track' | 'loop' = 'track') {
   if (token !== loadToken) return;
   // The loop is made to repeat seamlessly, so switch repeat on with it.
   if (kind === 'loop') setLoop(true);
-  await load(toWav(buffer), kind === 'loop' ? LOOP_NAME : 'Demo track', buffer);
+  await load(toWav(buffer), kind === 'loop' ? LOOP_NAME : DEMO_NAME, buffer);
 }
 
 const loopSyncs: (() => void)[] = [];
