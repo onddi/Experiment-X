@@ -5,9 +5,9 @@
 // The transitions use the browser's View Transitions API: it takes a picture
 // of the cell and of the full-screen view, then animates those flat pictures.
 // Animating the live elements instead meant redrawing the colour-graded,
-// blended image on every frame, which stutters badly in Safari. Zoom and Flip
-// cross-fade between the cell's picture and the full-screen one while they
-// grow, so the crop and label size change smoothly instead of jumping.
+// blended image on every frame, which stutters badly in Safari. The
+// full-screen view is the cell magnified, so Zoom and Flip grow the cell's own
+// picture with no change of crop or label size.
 // Browsers without View Transitions open and close instantly.
 
 export type OpenTransition = 'zoom' | 'reveal' | 'iris' | 'fade' | 'slide' | 'flip';
@@ -78,27 +78,26 @@ export class Viewer {
     this.source = from;
     const clone = item.cloneNode(true) as HTMLElement;
     for (const p of ['transform', 'visibility', 'opacity', 'z-index', '--turn', 'will-change']) clone.style.removeProperty(p);
+    // The full-screen view is the cell itself, magnified until it covers the
+    // screen: same crop, same label, just bigger. That way growing out of the
+    // cell and shrinking back into it is a pure zoom with nothing to jump.
+    const r = from.getBoundingClientRect();
+    const k = Math.max(innerWidth / r.width, innerHeight / r.height);
+    Object.assign(clone.style, {
+      inset: 'auto',
+      left: '50%',
+      top: '50%',
+      width: `${r.width}px`,
+      height: `${r.height}px`,
+      transform: `translate(-50%, -50%) scale(${k})`,
+    });
+    clone.style.setProperty('--cell', getComputedStyle(from).getPropertyValue('--cell'));
     this.el.replaceChildren(clone);
-    this.el.style.setProperty('--cell', `${this.labelCell(from)}px`);
     this.armed = false;
     from.blur();
     this.run(false, () => {
       this.el.hidden = false;
     });
-  }
-
-  /**
-   * Size basis for the full-screen label. Zoom and Flip blend the cell's
-   * picture, scaled up to cover the screen, into the full-screen one, so the
-   * label must be exactly that scaled-up size or the two copies of the text
-   * pulse bigger and smaller as they cross-fade.
-   */
-  private labelCell(from: HTMLElement) {
-    const r = from.getBoundingClientRect();
-    const morph = this.transition === 'zoom' || this.transition === 'flip';
-    if (!morph || !r.width || !r.height) return Math.min(innerWidth, innerHeight) * 0.6;
-    const cell = parseFloat(getComputedStyle(from).getPropertyValue('--cell')) || Math.min(r.width, r.height);
-    return cell * Math.max(innerWidth / r.width, innerHeight / r.height);
   }
 
   close() {
@@ -156,9 +155,21 @@ export class Viewer {
       ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
       ::view-transition-group(${NAME}) { animation-duration: ${duration}ms; animation-timing-function: ${EASE}; overflow: clip; }
       ::view-transition-old(${NAME}), ::view-transition-new(${NAME}) {
-        height: 100%; object-fit: cover;
+        width: 100%; height: 100%;
         animation-duration: ${duration}ms; animation-timing-function: ${EASE};
       }`;
+    if (this.transition === 'zoom' || this.transition === 'flip') {
+      // The full-screen view is the cell magnified, so its picture fits inside
+      // the morphing box ("contain") exactly where the cell's picture covers
+      // it. Laid over the cell's picture with no cross-fade, the two line up
+      // at every size, so nothing ghosts or jumps; the cell's picture only
+      // fills the edges the full-screen one doesn't reach.
+      const big = `::view-transition-${closing ? 'old' : 'new'}(${NAME})`;
+      const small = `::view-transition-${closing ? 'new' : 'old'}(${NAME})`;
+      css += `
+        ${big} { object-fit: contain; z-index: 1; animation: none; opacity: 1; }
+        ${small} { object-fit: cover; animation: none; opacity: 1; }`;
+    }
     const anim = (frames: string) => {
       css += `\n${view} { animation: cg-view ${time}; }\n@keyframes cg-view { ${frames} }`;
     };
@@ -171,9 +182,9 @@ export class Viewer {
       case 'flip':
         css += `\n::view-transition-image-pair(${NAME}) { animation: cg-flip ${time}; }
           @keyframes cg-flip {
-            from { transform: perspective(${W * 1.5}px) rotateY(-85deg); opacity: 0.3; }
-            50% { transform: perspective(${W * 1.5}px) rotateY(-30deg); opacity: 1; }
-            to { transform: none; opacity: 1; }
+            from { transform: none; }
+            50% { transform: perspective(${W * 1.5}px) rotateY(-40deg); }
+            to { transform: none; }
           }`;
         break;
       case 'reveal':

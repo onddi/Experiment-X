@@ -198,12 +198,8 @@ export class Carousel {
         const rot = this.axis === 'x' ? `rotateY(${off * 90}deg)` : `rotateX(${-off * 90}deg)`;
         // Optionally sink the whole box back mid-turn so it bulges less over neighbours.
         const sink = Math.sin(Math.PI * (pos - Math.floor(pos))).toFixed(4);
-        // A face resting square-on needs no 3D transform; leaving it flat keeps
-        // the resting cell out of its own GPU layer (see style.css).
         el.style.transform =
-          a < 0.0005
-            ? ''
-            : `translateZ(calc(${half} * -1 - ${sink} * var(--pullback, 0) * ${half} * 2)) ${rot} translateZ(${half})`;
+          `translateZ(calc(${half} * -1 - ${sink} * var(--pullback, 0) * ${half} * 2)) ${rot} translateZ(${half})`;
         el.style.opacity = '';
         el.style.zIndex = '';
         el.style.setProperty('--turn', `calc(1 - ${a.toFixed(4)} * var(--shade, 0.35))`);

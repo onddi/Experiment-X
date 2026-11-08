@@ -70,8 +70,7 @@ body {
 }
 .carousel[data-effect='cube'].moving,
 .carousel[data-effect='cube'].dragging { z-index: 1; }
-.carousel[data-effect='cube'].moving .item,
-.carousel[data-effect='cube'].dragging .item { backface-visibility: hidden; }
+.carousel[data-effect='cube'] .item { backface-visibility: hidden; }
 .carousel:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
 
 .item {
@@ -80,14 +79,8 @@ body {
   display: grid;
   place-items: center;
   border-radius: inherit;
+  will-change: transform;
 }
-/* Items only get their own GPU layers while their carousel moves. Kept on
-   permanently, every resting cell became a layer whose filters and blend
-   modes Safari re-applies on each frame the screen changes, which made
-   anything else animating (like the full-screen view) stutter. At rest the
-   cell is drawn once into its carousel's layer instead. */
-.carousel.moving .item,
-.carousel.dragging .item { will-change: transform; }
 .item { filter: brightness(var(--turn, 1)); }
 
 /* Photo surfaces. The grade is shared by every photo: a soft-light wash of
@@ -387,4 +380,3 @@ button:hover, select:hover { border-color: #3c3f46; }
   cursor: zoom-out;
 }
 .viewer .item { border-radius: 0; will-change: auto; }
-.viewer .item.img span { font-size: calc(var(--cell) * 0.09 * var(--font-scale, 1)); }
