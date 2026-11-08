@@ -13,6 +13,7 @@ const search = $<HTMLInputElement>('search');
 const stack = $<HTMLDivElement>('layers');
 const panel = $<HTMLElement>('layers-panel');
 const layersBtn = $<HTMLButtonElement>('layers-btn');
+const mouseBtn = $<HTMLButtonElement>('mouse-btn');
 const empty = $<HTMLDivElement>('empty');
 const currentTitle = $<HTMLDivElement>('current-title');
 const openTab = $<HTMLAnchorElement>('open-tab');
@@ -149,6 +150,7 @@ function applyView() {
   empty.hidden = exps.length > 0;
   stack.hidden = exps.length === 0;
   layersBtn.hidden = exps.length === 0;
+  renderMouseBtn();
   const title = exps.map((e) => e.title).join(' + ');
   currentTitle.textContent = title || '—';
   document.title = title ? `${title} · X-Frame` : 'X-Frame';
@@ -162,6 +164,29 @@ function updateView(change: (v: View) => void) {
   change(view);
   history.replaceState(null, '', toHash(view));
   applyView();
+}
+
+/** Layers that can get the mouse by choice: the base and stacked layers (docked strips always do). */
+function stackedLayers() {
+  return view.layers.map((l, i) => (i === 0 || l.placement === 'full' ? i : -1)).filter((i) => i >= 0);
+}
+
+/** Toolbar chip: shows who gets the mouse; one tap hands it to the next stacked layer. */
+function renderMouseBtn() {
+  const stacked = stackedLayers();
+  mouseBtn.hidden = stacked.length < 2;
+  if (mouseBtn.hidden) return;
+  const title = bySlug(view.layers[inputLayer(view)].slug)?.title ?? '';
+  mouseBtn.textContent = title;
+  mouseBtn.title = `Mouse goes to ${title}. Tap to switch (M)`;
+  mouseBtn.setAttribute('aria-label', mouseBtn.title);
+}
+
+function cycleMouse() {
+  const stacked = stackedLayers();
+  if (stacked.length < 2) return;
+  const next = stacked[(stacked.indexOf(inputLayer(view)) + 1) % stacked.length];
+  updateView((v) => { v.input = next; });
 }
 
 function addLayer(slug: string, placement: Placement = 'full') {
@@ -518,6 +543,7 @@ playAll.addEventListener('click', () => {
 shellSubscribe('play', syncPlayAll);
 window.setInterval(syncPlayAll, 1000);
 layersBtn.addEventListener('click', () => openPanel(!!panel.hidden));
+mouseBtn.addEventListener('click', cycleMouse);
 $('sidebar-close').addEventListener('click', () => setSidebarCollapsed(true));
 $('sidebar-open').addEventListener('click', () => setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed')));
 
@@ -526,6 +552,7 @@ window.addEventListener('keydown', (e) => {
   if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === '[') step(-1);
   else if (e.key === ']') step(1);
+  else if (e.key === 'm' || e.key === 'M') cycleMouse();
   else if (e.key === 'Escape' && handover) releaseHandover();
   else if (e.key === 'Escape' && !panel.hidden) openPanel(false);
   else if (e.key === '\\') setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed'));

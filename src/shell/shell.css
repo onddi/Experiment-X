@@ -270,3 +270,27 @@ kbd {
 .panel__feed { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; }
 .panel__feed span:nth-child(2) { color: var(--muted); font-size: 12px; }
 .panel__feed code { font-size: 12px; }
+
+/* Who gets the mouse: one tap passes it to the next stacked layer. */
+.mouse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 40vw;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  overflow: hidden;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.mouse-btn::before { content: '\2196'; font-size: 13px; }
+.mouse-btn[hidden] { display: none; }
+@media (max-width: 720px) { .mouse-btn { max-width: 34vw; } }
