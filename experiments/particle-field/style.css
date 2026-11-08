@@ -488,3 +488,11 @@ button:hover, select:hover { border-color: #3c3f46; }
 .group.closed .about { display: none; }
 .group.closed .group-head .chev { transform: rotate(-45deg); }
 .group.off .group-head .chev { visibility: hidden; }
+
+/* Vibe gallery: name plus a short line. */
+.vibes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.vibes button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 7px 8px; text-align: left; }
+.vibes button b { font-weight: 600; font-size: 12px; }
+.vibes button span { font-size: 10.5px; line-height: 1.3; color: var(--muted); }
+.vibes button.on { border-color: var(--accent); }
+.vibes button.on b { color: var(--accent); }

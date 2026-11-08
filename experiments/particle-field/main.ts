@@ -145,6 +145,7 @@ interface Settings {
   audioSubAmt: number;
   audioIntensity: number;
   audioFineTune: boolean;
+  audioVibe: string;
   audioVibeLook: boolean;
   audioDrop: number;
   audioDropBuild: boolean;
@@ -326,6 +327,7 @@ const DEFAULTS: Settings = {
   audioSubAmt: 0.5,
   audioIntensity: 1,
   audioFineTune: false,
+  audioVibe: '',
   audioVibeLook: true,
   audioDrop: 1,
   audioDropBuild: true,
@@ -2522,7 +2524,8 @@ const TABS: [Tab, string][] = [['look', 'Look'], ['motion', 'Motion'], ['life', 
 // what switching on sets the first time (later it restores what you had).
 type Power = { on: () => boolean; off: Partial<Settings>; start: Partial<Settings> };
 type ControlBody =
-  | { kind: 'section'; id: string; label: string; tab?: Tab; fixed?: boolean; summary?: () => string; lock?: (keyof Settings)[]; power?: Power; about?: string }
+  | { kind: 'section'; id: string; label: string; tab?: Tab; fixed?: boolean; summary?: () => string; lock?: (keyof Settings)[]; power?: Power; about?: string; folded?: boolean }
+  | { kind: 'vibes' }
   | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
   | { kind: 'sub'; label: string }
@@ -2562,62 +2565,84 @@ const quiet: Vibe = {
   audioWaveForce: 1, audioWaveSpeed: 1, audioWaveReach: 1, audioWaveWidth: 1, audioWaveAccent: true, audioWaveFeel: 'soft', audioWaveRings: false,
   audioSnare: 'none', audioHats: 'none', audioHits: 0.5, audioSub: 'none', audioSubAmt: 0.5, audioSpeed: 0.3, audioFlow: 0.4,
 };
-const VIBES: [string, Vibe][] = [
-  ['Breathe', { ...quiet, audioPulse: 0.9, audioSub: 'size', audioSubAmt: 0.4, audioSpeed: 0.15, audioFlow: 0.3 }],
-  ['Groove', { ...quiet, audioPulse: 0.6, audioSnare: 'swirl', audioHits: 0.5, audioSub: 'flow', audioSubAmt: 0.6, audioSpeed: 0.3, audioFlow: 0.5 }],
-  ['Bounce', { ...quiet, audioKick: 'both', audioPulse: 0.9, audioBeat: 'ripple', audioSnare: 'wave', audioHats: 'sparkle', audioHits: 0.6, audioSub: 'size', audioSubAmt: 0.7, audioSpeed: 0.4 }],
-  ['Hypnotic', { ...quiet, audioKick: 'both', audioPulse: 0.3, audioBeat: 'twist', audioWaveAt: 'orbit', audioWaveReach: 1.6, audioWaveSpeed: 0.7, audioHats: 'sparkle', audioHits: 0.3, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.1, audioFlow: 0.8 }],
-  ['Liquid', { ...quiet, audioKick: 'both', audioPulse: 0.4, audioBeat: 'ripple', audioWaveEvery: 4, audioWaveReach: 2.2, audioWaveWidth: 2, audioWaveSpeed: 0.6, audioSnare: 'swirl', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 1.2, audioSpeed: 0.2, audioFlow: 1 }],
-  ['Kaleido', { ...quiet, audioKick: 'both', audioPulse: 0.5, audioBeat: 'star', audioWaveAt: 'mirror', audioWaveReach: 1.3, audioSnare: 'swirl', audioHits: 0.5, audioSub: 'size', audioSubAmt: 0.5, audioSpeed: 0.2 }],
-  ['Glitch', { ...quiet, audioWaveFeel: 'punchy', audioKick: 'wave', audioBeat: 'sweep', audioWaveForce: 1.4, audioWaveSpeed: 1.6, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 1.1, audioSpeed: 0.5, audioFlow: 0.2 }],
-  ['Storm', { ...quiet, audioWaveFeel: 'punchy', audioKick: 'both', audioPulse: 1.2, audioBeat: 'shockwave', audioWaveAt: 'random', audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.9, audioSub: 'speed', audioSubAmt: 0.8, audioSpeed: 0.9, audioFlow: 1.2 }],
+// A vibe is a full recipe for how the music plays the field: the drums
+// (what each hit does), the music cards (drops, groups, colour, camera)
+// and, optionally, the look. Locked cards keep their own settings.
+type VibeDef = { name: string; about: string; drums: Vibe; cards: Partial<Settings>; look: Partial<Settings> };
+const CARDS_OFF: Partial<Settings> = { audioDrop: 0, audioDropBuild: true, audioBands: 0, audioHue: 'off', audioHueAmt: 30, audioBright: 0, audioCam: 0, audioSpin: 'off' };
+const vibe = (name: string, about: string, drums: Vibe, cards: Partial<Settings>, look: Partial<Settings>): VibeDef => ({
+  name, about, drums: { ...quiet, ...drums }, cards: { ...CARDS_OFF, ...cards }, look,
+});
+const VIBES: VibeDef[] = [
+  vibe('Breathe', 'Swells with the kick, colours drift', { audioPulse: 0.9, audioSub: 'size', audioSubAmt: 0.4, audioSpeed: 0.15, audioFlow: 0.3 },
+    { audioDrop: 0.6, audioHue: 'drift', audioHueAmt: 20, audioBright: 0.4, audioCam: 0.2, audioSpin: 'sway' }, { render: 'glow', trail: 0.85, flow: 0.3, flowType: 'curl' }),
+  vibe('Groove', 'Snare swirls, colour steps each bar', { audioPulse: 0.6, audioSnare: 'swirl', audioHits: 0.5, audioSub: 'flow', audioSubAmt: 0.6, audioSpeed: 0.3, audioFlow: 0.5 },
+    { audioDrop: 1, audioHue: 'bar', audioHueAmt: 40, audioBright: 0.3, audioCam: 0.4, audioBands: 0.5 }, { render: 'circles', trail: 0.55, flow: 0.5, flowType: 'waves' }),
+  vibe('Bounce', 'Everything jumps: waves, ripples, sparks', { audioKick: 'both', audioPulse: 0.9, audioBeat: 'ripple', audioSnare: 'wave', audioHats: 'sparkle', audioHits: 0.6, audioSub: 'size', audioSubAmt: 0.7, audioSpeed: 0.4 },
+    { audioDrop: 1, audioHue: 'beat', audioHueAmt: 12, audioBright: 0.5, audioCam: 0.8, audioBands: 1 }, { render: 'circles', trail: 0.15, flow: 0.2, flowType: 'waves' }),
+  vibe('Hypnotic', 'Twisting orbits, a slow full turn', { audioKick: 'both', audioPulse: 0.3, audioBeat: 'twist', audioWaveAt: 'orbit', audioWaveReach: 1.6, audioWaveSpeed: 0.7, audioHats: 'sparkle', audioHits: 0.3, audioSub: 'flow', audioSubAmt: 0.8, audioSpeed: 0.1, audioFlow: 0.8 },
+    { audioDrop: 0.6, audioHue: 'drift', audioHueAmt: 30, audioBright: 0.3, audioCam: 0.2, audioSpin: 'turn', audioBands: 0.3 }, { render: 'streaks', trail: 0.9, flow: 0.8, flowType: 'curl' }),
+  vibe('Liquid', 'Long rolling waves and smoke', { audioKick: 'both', audioPulse: 0.4, audioBeat: 'ripple', audioWaveEvery: 4, audioWaveReach: 2.2, audioWaveWidth: 2, audioWaveSpeed: 0.6, audioSnare: 'swirl', audioHits: 0.7, audioSub: 'flow', audioSubAmt: 1.2, audioSpeed: 0.2, audioFlow: 1 },
+    { audioDrop: 0.8, audioHue: 'drift', audioHueAmt: 15, audioBright: 0.5, audioCam: 0.2, audioSpin: 'sway' }, { render: 'glow', trail: 0.93, flow: 1, flowType: 'curl' }),
+  vibe('Kaleido', 'Mirrored star bursts, turning', { audioKick: 'both', audioPulse: 0.5, audioBeat: 'star', audioWaveAt: 'mirror', audioWaveReach: 1.3, audioSnare: 'swirl', audioHits: 0.5, audioSub: 'size', audioSubAmt: 0.5, audioSpeed: 0.2 },
+    { audioDrop: 1, audioHue: 'bar', audioHueAmt: 60, audioBright: 0.4, audioCam: 0.4, audioSpin: 'turn', audioBands: 0.5 }, { render: 'sparkles', trail: 0.7, flow: 0.4, flowType: 'curl' }),
+  vibe('Glitch', 'Hard sweeps, flashes, colour jumps', { audioWaveFeel: 'punchy', audioKick: 'wave', audioBeat: 'sweep', audioWaveForce: 1.4, audioWaveSpeed: 1.6, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 1.1, audioSpeed: 0.5, audioFlow: 0.2 },
+    { audioDrop: 1.2, audioHue: 'beat', audioHueAmt: 90, audioBright: 0.8, audioCam: 1, audioBands: 1 }, { render: 'dots', trail: 0, flow: 0.2, flowType: 'waves', glow: false }),
+  vibe('Storm', 'Shockwaves, shaking camera, big drops', { audioWaveFeel: 'punchy', audioKick: 'both', audioPulse: 1.2, audioBeat: 'shockwave', audioWaveAt: 'random', audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.9, audioSub: 'speed', audioSubAmt: 0.8, audioSpeed: 0.9, audioFlow: 1.2 },
+    { audioDrop: 1.6, audioHue: 'drop', audioHueAmt: 60, audioBright: 0.7, audioCam: 1.2, audioBands: 0.8 }, { render: 'streaks', trail: 0.7, flow: 1.4, flowType: 'waves' }),
+  vibe('Ambient', 'No hits: drifting colour, gentle sway', { audioKick: 'none', audioPulse: 0, audioSub: 'size', audioSubAmt: 0.6, audioSpeed: 0.1, audioFlow: 0.6 },
+    { audioHue: 'drift', audioHueAmt: 10, audioBright: 0.3, audioSpin: 'sway' }, { render: 'bokeh', trail: 0.6, flow: 0.3, flowType: 'curl' }),
+  vibe('Minimal', 'Just a clean pulse on the kick', { audioPulse: 0.8, audioSpeed: 0.1, audioFlow: 0.1 }, {}, { render: 'dots', trail: 0.3 }),
+  vibe('Lo-fi', 'Laid back: soft trails, slow drift', { audioPulse: 0.5, audioSnare: 'swirl', audioHits: 0.3, audioSub: 'flow', audioSubAmt: 0.5, audioSpeed: 0.1, audioFlow: 0.3 },
+    { audioDrop: 0.4, audioHue: 'drift', audioHueAmt: 8, audioBright: 0.2, audioSpin: 'sway' }, { render: 'streaks', trail: 0.92, flow: 0.5, flowType: 'curl' }),
+  vibe('Rave', 'Colour every kick, strobing, big camera', { audioWaveFeel: 'punchy', audioKick: 'both', audioPulse: 1, audioBeat: 'mix', audioWaveAt: 'random', audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.9, audioSpeed: 0.6 },
+    { audioDrop: 1.4, audioHue: 'beat', audioHueAmt: 45, audioBright: 1, audioCam: 1.2, audioBands: 0.7 }, { render: 'glow', trail: 0.5, flow: 0.6, flowType: 'waves' }),
+  vibe('Bass face', 'Heavy: bass swells, deep zoom, huge drops', { audioKick: 'both', audioPulse: 1.3, audioBeat: 'shockwave', audioSub: 'size', audioSubAmt: 1.2, audioSpeed: 0.4 },
+    { audioDrop: 1.8, audioHue: 'drop', audioHueAmt: 90, audioBright: 0.6, audioCam: 1.3, audioBands: 1 }, { render: 'circles', trail: 0.4, flow: 0.4, flowType: 'waves' }),
+  vibe('Festival', 'Long build-ups, star bursts at the drop', { audioKick: 'both', audioPulse: 0.9, audioBeat: 'star', audioHats: 'sparkle', audioHits: 0.7, audioSpeed: 0.5 },
+    { audioDrop: 2, audioHue: 'drop', audioHueAmt: 120, audioBright: 0.8, audioCam: 1, audioBands: 0.6 }, { render: 'sparkles', trail: 0.75, flow: 0.7, flowType: 'curl' }),
 ];
 
-// What each vibe does beyond the drums: its look (style, trails, flow) and
-// how it flavours the music cards. Only cards that are on and unlocked take
-// these, so a vibe never switches a card on or overrides a locked one.
-const VIBE_LOOK: Record<string, Partial<Settings>> = {
-  Breathe: { render: 'glow', trail: 0.85, flow: 0.3, flowType: 'curl' },
-  Groove: { render: 'circles', trail: 0.55, flow: 0.5, flowType: 'waves' },
-  Bounce: { render: 'circles', trail: 0.15, flow: 0.2, flowType: 'waves' },
-  Hypnotic: { render: 'streaks', trail: 0.9, flow: 0.8, flowType: 'curl' },
-  Liquid: { render: 'glow', trail: 0.93, flow: 1, flowType: 'curl' },
-  Kaleido: { render: 'sparkles', trail: 0.7, flow: 0.4, flowType: 'curl' },
-  Glitch: { render: 'dots', trail: 0, flow: 0.2, flowType: 'waves', glow: false },
-  Storm: { render: 'streaks', trail: 0.7, flow: 1.4, flowType: 'waves' },
-};
-const VIBE_FEEL: Record<string, Partial<Settings>> = {
-  Breathe: { audioHue: 'drift', audioHueAmt: 20, audioBright: 0.5, audioCam: 0.3, audioSpin: 'sway', audioBands: 0.3 },
-  Groove: { audioHue: 'bar', audioHueAmt: 40, audioBright: 0.4, audioCam: 0.5, audioSpin: 'off', audioBands: 0.6 },
-  Bounce: { audioHue: 'beat', audioHueAmt: 12, audioBright: 0.5, audioCam: 0.8, audioSpin: 'off', audioBands: 1 },
-  Hypnotic: { audioHue: 'drift', audioHueAmt: 30, audioBright: 0.3, audioCam: 0.3, audioSpin: 'turn', audioBands: 0.4 },
-  Liquid: { audioHue: 'drift', audioHueAmt: 15, audioBright: 0.6, audioCam: 0.2, audioSpin: 'sway', audioBands: 0.3 },
-  Kaleido: { audioHue: 'bar', audioHueAmt: 60, audioBright: 0.4, audioCam: 0.4, audioSpin: 'turn', audioBands: 0.5 },
-  Glitch: { audioHue: 'beat', audioHueAmt: 90, audioBright: 0.8, audioCam: 1, audioSpin: 'off', audioBands: 1 },
-  Storm: { audioHue: 'drop', audioHueAmt: 60, audioBright: 0.7, audioCam: 1, audioSpin: 'off', audioBands: 0.8 },
-};
-
-// May a vibe (or similar) change this key? Not if its card is locked or off.
+// May a vibe change this key? Not if the card it belongs to is locked.
 function cardAllows(k: keyof Settings) {
-  const sec = CONTROLS.find((c) => c.kind === 'section' && c.lock?.includes(k)) as Extract<Control, { kind: 'section' }> | undefined;
-  if (!sec) return true;
-  if (locks.has(sec.id)) return false;
-  return !sec.power || sec.power.on();
+  const sec = CONTROLS.find((c) => c.kind === 'section' && c.lock?.includes(k));
+  return !sec || sec.kind !== 'section' || !locks.has(sec.id);
 }
 
-function applyVibe(v: Vibe, name?: string) {
-  const patch: Partial<Settings> = { ...v };
-  const extra = { ...(name ? VIBE_FEEL[name] : {}), ...(name && settings.audioVibeLook ? VIBE_LOOK[name] : {}) };
-  for (const [k, x] of Object.entries(extra) as [keyof Settings, never][]) if (cardAllows(k)) (patch as Record<string, unknown>)[k] = x;
+function applyVibe(v: VibeDef) {
+  const patch: Partial<Settings> = {};
+  const all = { ...v.drums, ...v.cards, ...(settings.audioVibeLook ? v.look : {}) };
+  for (const [k, x] of Object.entries(all) as [keyof Settings, never][]) if (cardAllows(k)) (patch as Record<string, unknown>)[k] = x;
+  patch.audioVibe = v.name;
   Object.assign(settings, patch);
   changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+}
+
+// Is the vibe still as it was applied (ignoring locked cards and the look)?
+function vibeIntact(v: VibeDef) {
+  return Object.entries({ ...v.drums, ...v.cards }).every(([k, x]) => !cardAllows(k as keyof Settings) || settings[k as keyof Settings] === x);
+}
+const currentVibe = () => VIBES.find((v) => v.name === settings.audioVibe);
+function vibeLabel() {
+  const v = currentVibe();
+  if (!v) return settings.audioVibe ? 'custom' : '';
+  return vibeIntact(v) ? v.name : `${v.name} (edited)`;
 }
 
 // A random combination, not just a random preset.
 function surpriseVibe() {
   const kick = pick(['pulse', 'wave', 'both', 'both'] as const);
-  applyVibe({
-    ...quiet,
+  const look = pick(VIBES).look;
+  const cards: Partial<Settings> = {
+    audioDrop: pick([0, 0.8, 1.2, 1.6]),
+    audioBands: pick([0, 0, 0.5, 1]),
+    audioHue: pick(['off', 'beat', 'bar', 'drift', 'drop'] as const),
+    audioHueAmt: rand(10, 120, 5),
+    audioBright: pick([0, 0.3, 0.6, 0.9]),
+    audioCam: pick([0, 0.4, 0.8, 1.2]),
+    audioSpin: pick(['off', 'off', 'sway', 'turn'] as const),
+  };
+  applyVibe(vibe('Surprise', '', {
     audioKick: kick,
     audioPulse: rand(0.3, 1.2, 0.05),
     audioBeat: pick(['ripple', 'twist', 'shockwave', 'star', 'sweep', 'implode', 'mix', 'random'] as const),
@@ -2633,11 +2658,11 @@ function surpriseVibe() {
     audioSubAmt: rand(0.3, 1, 0.05),
     audioSpeed: rand(0.1, 0.7, 0.05),
     audioFlow: rand(0.2, 1, 0.05),
-  });
+  }, cards, look));
 }
 
 const GENRES: [string, string][] = [['general', 'Any'], ['hiphop', 'Rap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afro'], ['reggae', 'Reggae'], ['techno', 'Techno']];
-const ft = () => settings.audioFineTune;
+const ft = () => true;
 const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick === 'both';
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
@@ -2815,25 +2840,22 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
 
   // --- Sound ---
-  { kind: 'section', id: 'audio', label: 'Audio', tab: 'sound', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : `, ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}, ${VIBES.find(([, v]) => Object.entries(v).every(([k, x]) => settings[k as keyof Settings] === x))?.[0] ?? 'custom'}`) },
+  { kind: 'section', id: 'audio', label: 'Audio', tab: 'sound', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : ` · ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
   { kind: 'audio' },
   { kind: 'sub', label: 'Genre' },
   { kind: 'choice', key: 'audioGenre', label: 'Genre', options: GENRES },
   { kind: 'note', text: 'Tunes how kicks, snares, hats and 808s are picked out.' },
-  { kind: 'sub', label: 'Vibe' },
-  {
-    kind: 'buttons',
-    buttons: [...VIBES.map(([name, v]) => [name, () => applyVibe(v, name)] as [string, () => void]), ['Surprise me', surpriseVibe]],
-    // Lit while every setting of the vibe is unchanged.
-    active: (name) => {
-      const v = VIBES.find(([n]) => n === name)?.[1];
-      return !!v && Object.entries(v).every(([k, x]) => settings[k as keyof Settings] === x);
-    },
-  },
-  { kind: 'toggle', key: 'audioVibeLook', label: 'Vibes also change style, trails and flow' },
+
+  { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'sound', summary: vibeLabel },
+  { kind: 'vibes' },
   { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
-  { kind: 'toggle', key: 'audioFineTune', label: 'Fine-tune each drum' },
-  { kind: 'sub', label: 'Kick', show: ft },
+  { kind: 'toggle', key: 'audioVibeLook', label: 'Vibes also change style, trails and flow' },
+  { kind: 'note', text: 'A vibe sets the drums and the cards below (switching them on or off). Lock a card to keep it as it is when you change vibe.' },
+
+  { kind: 'section', id: 'drums', label: 'Drums', tab: 'sound', folded: true,
+    lock: ['audioKick', 'audioPulse', 'audioBeat', 'audioWaveAt', 'audioWaveEvery', 'audioWaveForce', 'audioWaveSpeed', 'audioWaveReach', 'audioWaveWidth', 'audioWaveFeel', 'audioWaveRings', 'audioWaveAccent', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioSubAmt', 'audioSpeed', 'audioFlow'],
+    summary: () => [label([['pulse', 'pulse'], ['wave', 'waves'], ['both', 'pulse + waves'], ['none', '']], settings.audioKick), settings.audioSnare !== 'none' ? `snare ${settings.audioSnare}` : '', settings.audioHats !== 'none' ? 'hats' : ''].filter(Boolean).join(' · ') },
+  { kind: 'sub', label: 'Kick' },
   { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['none', 'Nothing']], show: ft },
   { kind: 'range', key: 'audioPulse', label: 'Pulse strength', min: 0, max: 2, step: 0.05, format: pct, show: () => ft() && kickPulse() },
   { kind: 'select', key: 'audioBeat', label: 'Wave type', options: BEAT_ACTIONS, show: () => ft() && kickWave() },
@@ -3373,12 +3395,11 @@ function renderControls() {
           section.classList.toggle('closed', !open);
           head.setAttribute('aria-expanded', String(open));
         };
-        setOpen(!collapsed[id]);
+        setOpen(!(collapsed[id] ?? ctl.folded ?? false));
         head.addEventListener('click', () => {
           const open = section.classList.contains('closed');
           setOpen(open);
-          if (open) delete collapsed[id];
-          else collapsed[id] = true;
+          collapsed[id] = !open;
           try {
             localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed));
           } catch {
@@ -3421,6 +3442,24 @@ function renderControls() {
       });
       sectionBody.append(btn, more);
       body = more;
+      continue;
+    }
+
+    if (ctl.kind === 'vibes') {
+      // Vibe gallery: name and a one-line description each.
+      const grid = document.createElement('div');
+      grid.className = 'vibes';
+      for (const v of [...VIBES, null]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.innerHTML = '<b></b><span></span>';
+        b.querySelector('b')!.textContent = v ? v.name : 'Surprise me';
+        b.querySelector('span')!.textContent = v ? v.about : 'A random mix of everything';
+        b.addEventListener('click', () => (v ? applyVibe(v) : surpriseVibe()));
+        if (v) refreshers.push(() => b.classList.toggle('on', settings.audioVibe === v.name && vibeIntact(v)));
+        grid.append(b);
+      }
+      body.append(grid);
       continue;
     }
 
@@ -3804,7 +3843,7 @@ function shuffle() {
   const keys = new Set<keyof Settings>();
   const S = settings as unknown as Record<string, unknown>;
   for (const ctl of CONTROLS) {
-    if (ctl.kind !== 'section' || !ctl.lock || locks.has(ctl.id)) continue;
+    if (ctl.kind !== 'section' || !ctl.lock || locks.has(ctl.id) || ctl.tab === 'sound') continue;
     if (ctl.power && !ctl.power.on()) continue;
     const before = Object.fromEntries(ctl.lock.map((k) => [k, S[k]]));
     for (const k of ctl.lock) S[k] = k in r ? r[k] : ctl.power ? S[k] : DEFAULTS[k];
