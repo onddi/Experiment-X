@@ -2934,9 +2934,9 @@ const CONTROLS: Control[] = [
     kind: 'icons',
     buttons: [
       ['Pause (Space)', ICONS.pause, togglePause],
-      ['Gather to the centre (G)', ICONS.gather, toggleGather],
+      ['Gather to the centre (A)', ICONS.gather, toggleGather],
       ['Scatter (S)', ICONS.scatter, scatter],
-      ['Shuffle, keeps locked sections (R)', ICONS.shuffle, shuffle],
+      ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle],
       ['Reset to defaults', ICONS.reset, reset],
     ],
   },
@@ -3690,13 +3690,13 @@ function renderControls() {
   const stats = document.createElement('p');
   stats.className = 'stats';
   stats.id = 'stats';
-  stats.title = 'Show the debug overlay (D)';
+  stats.title = 'Show debug info (I)';
   stats.style.cursor = 'pointer';
   stats.addEventListener('click', toggleDebug);
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · G gather · S scatter · R shuffle · H hide panel · D debug.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · A gather · S scatter · D shuffle · H hide panel · I debug info.';
   controls.append(keys);
 }
 
@@ -3966,7 +3966,7 @@ function renderMyPresets() {
     }
     const form = document.createElement('form');
     form.className = 'save';
-    form.innerHTML = '<input type="text" maxlength="40" placeholder="Name this look…" aria-label="Preset name" /><button type="submit">Save</button>';
+    form.innerHTML = '<input type="text" maxlength="8000" placeholder="Name this look…" aria-label="Preset name" /><button type="submit">Save</button>';
     const input = form.querySelector('input')!;
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -3984,7 +3984,7 @@ function renderMyPresets() {
           return;
         }
       }
-      const name = raw || `My look ${myPresets.length + 1}`;
+      const name = raw.slice(0, 40) || `My look ${myPresets.length + 1}`;
       const existing = myPresets.findIndex((p) => p.name === name);
       if (existing >= 0) myPresets[existing].settings = snapshot();
       else myPresets.push({ name, settings: snapshot() });
@@ -4072,14 +4072,15 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     togglePause();
   } else if (k === 'c') clear();
-  else if (k === 'g') toggleGather();
+  // A S D: gather, scatter, shuffle, left to right like the buttons.
+  else if (k === 'a' || k === 'g') toggleGather();
   else if (k === 's') scatter();
-  else if (k === 'r') shuffle();
+  else if (k === 'd' || k === 'r') shuffle();
   else if (k === 'h') toggle.click();
-  else if (k === 'd') toggleDebug();
+  else if (k === 'i') toggleDebug();
 });
 
-// --- debug overlay (D) ------------------------------------------------------------
+// --- debug overlay (I) ------------------------------------------------------------
 // Where the time goes and which costly settings are on, to find out why a
 // look runs slowly or forms slowly.
 let debugTimer = 0;
@@ -4127,7 +4128,7 @@ function toggleDebug() {
     if (S.friction > 0.08) busy.push(`high friction ${pct(S.friction)}`);
     if (busy.length) lines.push(`on: ${busy.join(' · ')}`);
     if (audio.source !== 'off') lines.push(`audio ${audio.source} · ${audio.levels.bpm ? Math.round(audio.levels.bpm) + ' bpm' : 'no tempo yet'} · bars ${audio.levels.bars} · tension ${audio.levels.tension.toFixed(2)}`);
-    lines.push('D hides this');
+    lines.push('I hides this');
     out.textContent = lines.join('\n');
   };
   update();
