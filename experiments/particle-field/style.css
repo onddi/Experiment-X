@@ -234,3 +234,14 @@ button:hover, select:hover { border-color: #3c3f46; }
 
 .note { margin: 4px 0 8px; font-size: 11px; line-height: 1.35; color: var(--muted); }
 .buttons button.on { border-color: var(--accent); color: var(--accent); }
+
+.row.text { grid-template-columns: 1fr; }
+.row.text input {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: #22242a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}

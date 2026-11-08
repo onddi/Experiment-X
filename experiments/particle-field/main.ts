@@ -14,6 +14,30 @@ type WaveAt = 'centre' | 'pointer' | 'random' | 'orbit' | 'mirror' | 'corners';
 type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' | 'sweep' | 'mix' | 'random' | 'none';
 type ColorBy = 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES;
+type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
+type GlyphPick = 'random' | 'speed' | 'heading' | 'sequence';
+type GlyphChange = 'fixed' | 'flicker' | 'beat';
+type GlyphFont = 'mono' | 'serif' | 'sans' | 'bold';
+type GlyphRotate = 'none' | 'heading' | 'spin';
+
+// Glyph sets. 'density' runs light → heavy so picking by speed reads as
+// ASCII-art shading; 'arrows' is ordered by angle so picking by heading
+// points each arrow where its particle is going.
+const GLYPH_SETS = {
+  katakana: { label: 'Katakana & digits', chars: '01アイウエオカキクケコサシスセソタチツテトナニヌネノ' },
+  binary: { label: 'Binary', chars: '01' },
+  hex: { label: 'Hex', chars: '0123456789ABCDEF' },
+  latin: { label: 'Letters', chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' },
+  density: { label: 'ASCII shading', chars: '.·:-=+*#%@' },
+  blocks: { label: 'Blocks', chars: '░▒▓█▀▄▌▐' },
+  box: { label: 'Box lines', chars: '─│┌┐└┘├┤┬┴┼╱╲╳' },
+  braille: { label: 'Braille', chars: '⠁⠃⠇⠏⠟⠿⡿⣿⠛⠶⠼⠹⠸⠴⠦⠖' },
+  runes: { label: 'Runes', chars: 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ' },
+  math: { label: 'Math', chars: '∑∫∂√π∞≈≠±×÷∆∇∈∀∃λΩ' },
+  arrows: { label: 'Arrows', chars: '→↘↓↙←↖↑↗' },
+  shapes: { label: 'Shapes', chars: '●○◆◇■□▲△★☆✦✧' },
+  notes: { label: 'Music notes', chars: '♩♪♫♬♭♮♯' },
+} as const;
 
 interface Settings {
   count: number;
@@ -35,6 +59,15 @@ interface Settings {
   glow: boolean;
   palette: Palette;
   colorBy: ColorBy;
+  gravity: number;
+  glyphSet: GlyphSet;
+  glyphText: string;
+  glyphPick: GlyphPick;
+  glyphChange: GlyphChange;
+  glyphRate: number;
+  glyphFont: GlyphFont;
+  glyphScale: number;
+  glyphRotate: GlyphRotate;
   audioSpeed: number;
   audioFlow: number;
   audioPulse: number;
@@ -104,6 +137,15 @@ const DEFAULTS: Settings = {
   glow: false,
   palette: 'aurora',
   colorBy: 'palette',
+  gravity: 0,
+  glyphSet: 'katakana',
+  glyphText: 'HELLO WORLD',
+  glyphPick: 'random',
+  glyphChange: 'flicker',
+  glyphRate: 0.01,
+  glyphFont: 'mono',
+  glyphScale: 1,
+  glyphRotate: 'none',
   audioSpeed: 0.4,
   audioFlow: 0.5,
   audioPulse: 0.6,
@@ -178,12 +220,14 @@ let vy = new Float32Array(0);
 let ox = new Float32Array(0); // previous position, for streaks
 let oy = new Float32Array(0);
 let tone = new Float32Array(0); // 0..1 position along the palette
+let gl = new Float32Array(0); // glyph choice, 0..1
 let n = 0;
 
 let w = 0;
 let h = 0;
 let t = 0;
 let paused = false;
+let dpr = 1;
 
 function ensureCount() {
   const want = settings.count;
@@ -193,7 +237,7 @@ function ensureCount() {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone] = [px, py, vx, vy, ox, oy, tone].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl] = [px, py, vx, vy, ox, oy, tone, gl].map(grow);
     cap = want;
   }
   for (let i = n; i < want; i++) spawn(i, Math.random() * w, Math.random() * h);
@@ -206,10 +250,11 @@ function spawn(i: number, x: number, y: number) {
   vx[i] = (Math.random() - 0.5) * 0.4;
   vy[i] = (Math.random() - 0.5) * 0.4;
   tone[i] = Math.random();
+  gl[i] = Math.random();
 }
 
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
   w = canvas.clientWidth;
   h = canvas.clientHeight;
   canvas.width = Math.round(w * dpr);
@@ -453,7 +498,7 @@ function step(dt: number) {
 
   for (let i = 0; i < n; i++) {
     let ax = (Math.random() - 0.5) * jitterNow;
-    let ay = (Math.random() - 0.5) * jitterNow;
+    let ay = (Math.random() - 0.5) * jitterNow + settings.gravity * 0.05;
 
     if (flowNow > 0) {
       const a = flowAngle(px[i], py[i]);
@@ -701,7 +746,6 @@ const SPRITES: Record<SpriteStyle, { scale: number; alpha: number }> = {
   rings: { scale: 4, alpha: 0.9 },
   sparkles: { scale: 6, alpha: 1 },
 };
-const GLYPHS = '01アイウエオカキクケコサシスセソ+×*·<>/\\';
 const SPRITE_PX = 48;
 const spriteCache = new Map<string, HTMLCanvasElement>();
 
@@ -773,6 +817,82 @@ function withAlpha(hsl: string, a: number) {
   return hsl.replace(')', ` / ${a})`);
 }
 
+// --- glyphs ------------------------------------------------------------------
+
+const FONTS: Record<GlyphFont, string> = {
+  mono: 'ui-monospace, Menlo, monospace',
+  serif: 'Georgia, "Times New Roman", serif',
+  sans: 'system-ui, sans-serif',
+  bold: '800 {px} system-ui, sans-serif',
+};
+let glyphChars: string[] = [];
+
+function buildGlyphs() {
+  const src = settings.glyphSet === 'custom' ? settings.glyphText || '?' : GLYPH_SETS[settings.glyphSet]?.chars ?? '?';
+  // Array.from keeps multi-byte characters (and emoji) whole.
+  glyphChars = Array.from(src).filter((c) => settings.glyphSet !== 'custom' || c.trim() !== '' || src.trim() === '');
+  if (!glyphChars.length) glyphChars = ['?'];
+}
+
+// Called once per frame: glyph changes over time.
+function updateGlyphs() {
+  if (settings.render !== 'glyphs') return;
+  const { glyphChange, glyphRate } = settings;
+  if (glyphChange === 'flicker' && glyphRate > 0) {
+    // Expected number of changes this frame, without looping over all.
+    let m = n * glyphRate;
+    while (m > 0) {
+      if (m >= 1 || Math.random() < m) gl[(Math.random() * n) | 0] = Math.random();
+      m--;
+    }
+  } else if (glyphChange === 'beat' && audio.levels.beat) {
+    for (let i = 0; i < n; i++) if (Math.random() < 0.5) gl[i] = Math.random();
+  }
+}
+
+function glyphFor(i: number) {
+  const L = glyphChars.length;
+  let g: number;
+  switch (settings.glyphPick) {
+    case 'speed':
+      g = Math.min(L - 1, Math.floor(Math.min(1, Math.hypot(vx[i], vy[i]) / (meanSpeed * 2.2 + 1e-3)) * L));
+      break;
+    case 'heading': {
+      const a = (Math.atan2(vy[i], vx[i]) + Math.PI * 2) % (Math.PI * 2);
+      g = Math.round((a / (Math.PI * 2)) * L) % L;
+      break;
+    }
+    case 'sequence':
+      g = i % L;
+      break;
+    default:
+      g = (gl[i] * L) | 0;
+  }
+  return glyphChars[g];
+}
+
+function drawGlyphs(list: number[], k: number, s: number) {
+  const size = Math.max(6, s * 5 * settings.glyphScale);
+  const f = FONTS[settings.glyphFont];
+  ctx.font = f.includes('{px}') ? f.replace('{px}', `${size.toFixed(1)}px`) : `${size.toFixed(1)}px ${f}`;
+  ctx.fillStyle = shades[k];
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const rot = settings.glyphRotate;
+  if (rot === 'none') {
+    for (const i of list) ctx.fillText(glyphFor(i), px[i], py[i]);
+    return;
+  }
+  for (const i of list) {
+    const a = rot === 'heading' ? Math.atan2(vy[i], vx[i]) : t * (1 + tone[i] * 2) * (tone[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    ctx.setTransform(c * dpr, sn * dpr, -sn * dpr, c * dpr, px[i] * dpr, py[i] * dpr);
+    ctx.fillText(glyphFor(i), 0, 0);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
 // Buckets let us draw every particle of one colour in a single path.
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
@@ -783,7 +903,7 @@ function draw() {
   ctx.fillRect(0, 0, w, h);
   ctx.globalCompositeOperation = settings.glow ? 'lighter' : 'source-over';
 
-  if (settings.colorBy === 'speed') {
+  if (settings.colorBy === 'speed' || (settings.render === 'glyphs' && settings.glyphPick === 'speed')) {
     let sum = 0;
     for (let i = 0; i < n; i++) sum += Math.hypot(vx[i], vy[i]);
     meanSpeed = meanSpeed * 0.9 + (sum / Math.max(1, n)) * 0.1;
@@ -839,15 +959,7 @@ function draw() {
       const d = s * 3;
       for (const i of list) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
     } else if (style === 'glyphs') {
-      ctx.fillStyle = shades[k];
-      ctx.font = `${Math.max(7, s * 5).toFixed(1)}px ui-monospace, Menlo, monospace`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      for (const i of list) {
-        // Each particle keeps its glyph, with an occasional flicker.
-        const g = (tone[i] * GLYPHS.length + (Math.random() < 0.01 ? 1 : 0)) | 0;
-        ctx.fillText(GLYPHS[g % GLYPHS.length], px[i], py[i]);
-      }
+      drawGlyphs(list, k, s);
     } else if (style === 'streaks') {
       ctx.strokeStyle = shades[k];
       ctx.lineWidth = s;
@@ -964,6 +1076,7 @@ function frame(now: number) {
   audio.genre = settings.audioGenre;
   audio.update(now);
   if (!paused) {
+    updateGlyphs();
     step(dt);
     draw();
   }
@@ -979,6 +1092,7 @@ type ControlBody =
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
+  | { kind: 'text'; key: keyof Settings; label: string; placeholder?: string }
   | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean }
   | { kind: 'note'; text: string }
   | { kind: 'swatch' }
@@ -1013,6 +1127,7 @@ const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick ===
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file' } as const;
 
+const isGlyphs = () => settings.render === 'glyphs';
 const hasFlow = () => settings.flow > 0;
 const hasPointer = () => settings.pointerMode !== 'none';
 const hasClick = () => settings.click !== 'none';
@@ -1028,6 +1143,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'range', key: 'jitter', label: 'Jitter', min: 0, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+  { kind: 'range', key: 'gravity', label: 'Gravity', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v > 0 ? `↓ ${v.toFixed(2)}` : `↑ ${(-v).toFixed(2)}`) },
 
   { kind: 'section', id: 'flow', label: 'Flow',
     summary: () => (hasFlow() ? `strength ${settings.flow.toFixed(2)}` : 'off') },
@@ -1089,6 +1205,15 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
+  { kind: 'sub', label: 'Glyphs', show: isGlyphs },
+  { kind: 'select', key: 'glyphSet', label: 'Characters', options: [...Object.entries(GLYPH_SETS).map(([k, g]) => [k, g.label] as [string, string]), ['custom', 'Your own text']], show: isGlyphs },
+  { kind: 'text', key: 'glyphText', label: 'Text', placeholder: 'Type characters or a word', show: () => isGlyphs() && settings.glyphSet === 'custom' },
+  { kind: 'select', key: 'glyphPick', label: 'Each particle shows', options: [['random', 'A random glyph'], ['speed', 'By speed'], ['heading', 'By direction'], ['sequence', 'In order (spells it)']], show: isGlyphs },
+  { kind: 'select', key: 'glyphChange', label: 'Glyphs change', options: [['fixed', 'Never'], ['flicker', 'Flicker'], ['beat', 'On the beat']], show: () => isGlyphs() && (settings.glyphPick === 'random') },
+  { kind: 'range', key: 'glyphRate', label: 'Flicker rate', min: 0, max: 0.2, step: 0.005, format: pct, show: () => isGlyphs() && settings.glyphPick === 'random' && settings.glyphChange === 'flicker' },
+  { kind: 'select', key: 'glyphFont', label: 'Font', options: [['mono', 'Monospace'], ['serif', 'Serif'], ['sans', 'Sans'], ['bold', 'Heavy']], show: isGlyphs },
+  { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
+  { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
   { kind: 'sub', label: 'Colour' },
   { kind: 'select', key: 'palette', label: 'Palette', options: Object.entries(PALETTES).map(([k, p]) => [k, p.label]) },
   { kind: 'swatch' },
@@ -1117,6 +1242,9 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Heat', { count: 3000, size: 1.6, render: 'dots', flow: 0.4, flowScale: 0.006, flowSpeed: 0.3, trail: 0.85, friction: 0.04, jitter: 0.03, palette: 'infra', colorBy: 'pointer', glow: true, pointerMode: 'attract', radius: 160, force: 0.5, click: 'implode' }],
   ['Fireflies', { count: 400, size: 1.6, render: 'glow', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0.6, friction: 0.05, jitter: 0.08, palette: 'gold', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather' }],
   ['Bokeh', { count: 250, size: 3, render: 'bokeh', flow: 0.2, flowScale: 0.002, flowSpeed: 0.08, trail: 0, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 200, force: 0.3, click: 'ripple' }],
+  ['Digital rain', { count: 900, size: 2.4, render: 'glyphs', glyphSet: 'katakana', glyphPick: 'random', glyphChange: 'flicker', glyphRate: 0.02, glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', gravity: 0.5, flow: 0, trail: 0.88, friction: 0.08, jitter: 0, speed: 1, palette: 'toxic', colorBy: 'speed', glow: false, pointerMode: 'repel', radius: 120, force: 0.6, click: 'ripple' }],
+  ['ASCII', { count: 2500, size: 2, render: 'glyphs', glyphSet: 'density', glyphPick: 'speed', glyphChange: 'fixed', glyphFont: 'mono', glyphScale: 1, glyphRotate: 'none', flow: 0.8, flowScale: 0.004, flowSpeed: 0.3, trail: 0, friction: 0.05, jitter: 0.02, palette: 'mono', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 180, force: 0.8, click: 'gather' }],
+  ['Compass', { count: 700, size: 2.2, render: 'glyphs', glyphSet: 'arrows', glyphPick: 'heading', glyphFont: 'sans', glyphScale: 1.2, glyphRotate: 'none', flow: 1, flowScale: 0.003, flowSpeed: 0.2, trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'ice', colorBy: 'direction', glow: false, pointerMode: 'vortex', radius: 200, force: 0.6 }],
   ['Glyph drift', { count: 900, size: 2.4, render: 'glyphs', flow: 0, trail: 0.85, friction: 0.02, jitter: 0, speed: 1, palette: 'toxic', colorBy: 'vertical', glow: false, pointerMode: 'repel', radius: 120, force: 0.6, click: 'ripple' }],
   ['Prism', { count: 2500, size: 1.4, render: 'dots', flow: 0.8, flowScale: 0.005, flowSpeed: 0.3, trail: 0.9, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 140, force: 0.8 }],
 ];
@@ -1147,6 +1275,7 @@ function changed(keys: Set<keyof Settings>) {
     n = Math.min(n, settings.count);
     ensureCount();
   }
+  if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
   if (keys.has('palette')) {
     buildShades();
     clear();
@@ -1289,6 +1418,16 @@ function renderControls() {
       select.addEventListener('change', () => set(k, select.value as never));
       row.append(select);
       refreshers.push(() => (select.value = String(settings[k])));
+    } else if (ctl.kind === 'text') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = ctl.placeholder ?? '';
+      input.maxLength = 200;
+      input.addEventListener('input', () => set(k, input.value as never));
+      row.append(input);
+      refreshers.push(() => {
+        if (document.activeElement !== input) input.value = String(settings[k]);
+      });
     } else if (ctl.kind === 'toggle') {
       const input = document.createElement('input');
       input.type = 'checkbox';
@@ -1469,6 +1608,7 @@ new ResizeObserver(() => resize()).observe(canvas);
 if (window.innerWidth < 720) toggle.click();
 
 buildShades();
+buildGlyphs();
 renderControls();
 resize();
 refresh();
