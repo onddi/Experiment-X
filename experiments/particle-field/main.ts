@@ -1031,7 +1031,11 @@ function step(dt: number) {
   t += dt / 60;
   const { radius, force, pointerMode, friction, jitter, flow, speed } = settings;
   const r2 = radius * radius;
-  const damp = 1 - friction;
+  // Right after an explosion, friction, flow and springs ease off for a
+  // moment so the burst can travel before the look takes over again.
+  const blastLeft = blastUntil - performance.now();
+  const blastK = blastLeft > 0 ? Math.min(1, blastLeft / 700) : 0;
+  const damp = 1 - friction * (1 - blastK * 0.75);
 
   for (const wv of waves) {
     if (wv.kind === 'implode') {
@@ -1076,6 +1080,7 @@ function step(dt: number) {
   let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow * I) : flow;
   if (S.audioSub === 'speed') speedNow *= 1 + sub2 * 1.2;
   if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
+  flowNow *= 1 - blastK;
   const jitterNow = jitter;
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
@@ -1146,7 +1151,7 @@ function step(dt: number) {
     const cyc = settings.shapeCycle;
     const phase = cyc > 0 ? (t % cyc) / cyc : 0;
     const formed = cyc > 0 ? Math.max(0, Math.min(1, Math.cos(phase * Math.PI * 2) * 1.6 + 0.4)) : 1;
-    homeK = settings.homeStrength * 0.004 * formed;
+    homeK = settings.homeStrength * 0.004 * formed * (1 - blastK);
   }
   const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
   const cxW = w / 2;
@@ -4960,22 +4965,32 @@ function toggleGather() {
   for (const b of gatherButtons) b.classList.toggle('on', gatherAll);
 }
 
-// Explode: everything bursts out of the centre at uneven speeds, then the
-// look's own forces (shape, flow, wells) take over again.
+// Explode: a blast from the middle of the screen. Particles keep their
+// places and are thrown outward, the nearest ones hardest, so a gathered
+// clump bursts like a firework. Then the look's own forces take over again.
+let blastUntil = 0;
 function explode() {
   if (gatherAll) toggleGather();
   const cx = w / 2;
   const cy = h / 2;
   const k = Math.min(w, h) / 800;
+  const reach = Math.hypot(w, h) / 2;
   for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const r = Math.random() * 12;
-    const sp = (3 + Math.random() ** 0.7 * 16) * k;
-    px[i] = ox[i] = cx + Math.cos(a) * r;
-    py[i] = oy[i] = cy + Math.sin(a) * r;
-    vx[i] = Math.cos(a) * sp;
-    vy[i] = Math.sin(a) * sp;
+    let dx = px[i] - cx;
+    let dy = py[i] - cy;
+    let d = Math.hypot(dx, dy);
+    if (d < 0.5) {
+      const a = Math.random() * Math.PI * 2;
+      dx = Math.cos(a);
+      dy = Math.sin(a);
+      d = 1;
+    }
+    const near = Math.max(0.15, 1 - d / reach);
+    const sp = (6 + Math.random() ** 0.6 * 22) * k * near;
+    vx[i] += (dx / d) * sp;
+    vy[i] += (dy / d) * sp;
   }
+  blastUntil = performance.now() + 1400;
   addWave('shockwave', cx, cy);
 }
 
