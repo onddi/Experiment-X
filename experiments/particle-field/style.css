@@ -723,7 +723,7 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 .knob.show { opacity: 1; transform: none; transition-duration: 0.12s; }
 .knob svg { width: 64px; height: 64px; grid-area: 2 / 1; filter: drop-shadow(0 1px 6px rgb(0 0 0 / 0.5)); }
 .knob .track { fill: rgb(0 0 0 / 0.35); stroke: rgb(255 255 255 / 0.15); stroke-width: 4; }
-.knob .arc { fill: none; stroke: #fff; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.08s; }
+.knob .arc { fill: none; stroke: #fff; stroke-width: 4; stroke-linecap: round; }
 .knob b { position: relative; z-index: 1; grid-area: 2 / 1; align-self: center; color: #fff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .knob span { color: rgb(255 255 255 / 0.85); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-shadow: 0 1px 4px rgb(0 0 0 / 0.8); }
 body.no-input .knob, body.no-input .fader { display: none; }

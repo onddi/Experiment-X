@@ -6794,7 +6794,7 @@ function playShow(key: string) {
   const S = settings;
   const at: KnobAt = key === S.playLeft ? 'left' : key === S.playRight ? 'right' : key === S.playWheel3 ? 'w3' : key === S.playWheel4 ? 'w4' : 'centre';
   const k = knobs[at];
-  const share = playShare(key);
+  const share = (playBase(key) - r.min) / (r.max - r.min);
   k.arc.style.strokeDashoffset = (RING * (1 - share)).toFixed(2);
   k.pct.textContent = `${Math.round(share * 100)}%`;
   k.name.textContent = r.label;
@@ -6802,23 +6802,44 @@ function playShow(key: string) {
   clearTimeout(k.timer);
   k.timer = window.setTimeout(() => k.el.classList.remove('show'), 1400);
 }
+// Playing keeps its own unrounded value per setting, so tiny trackpad
+// moves add up instead of being rounded away, and the heavy work (saving,
+// redrawing the panel) runs at most once a frame.
+const playRaw: Record<string, number> = {};
+const playDirty = new Set<keyof Settings>();
+let playFrame = 0;
+function playFlush() {
+  playFrame = 0;
+  if (playDirty.size) changed(new Set(playDirty));
+  playDirty.clear();
+}
+// Set a setting from play: the engine sees it at once, the rest next frame.
+function playSet(key: string, raw: number) {
+  const r = rangeOf(key);
+  if (!r) return;
+  raw = Math.max(r.min, Math.min(r.max, raw));
+  playRaw[key] = raw;
+  const v = Number((Math.round(raw / r.step) * r.step).toFixed(6));
+  if (settings[r.key] !== v) {
+    (settings as unknown as Record<string, number>)[r.key] = v;
+    playDirty.add(r.key);
+    playFrame ||= requestAnimationFrame(playFlush);
+  }
+  playShow(key);
+}
+// The value play works from: its own if still in step with the setting.
+function playBase(key: string) {
+  const r = rangeOf(key);
+  if (!r) return 0;
+  const v = settings[r.key] as number;
+  const raw = playRaw[key];
+  return raw !== undefined && Math.abs(raw - v) <= r.step ? raw : v;
+}
 // Move a setting by a share of its range (0..1 of min→max).
 function playNudge(key: string, from: number, share: number) {
   const r = rangeOf(key);
-  if (!r) return;
-  let v = Math.max(r.min, Math.min(r.max, from + share * (r.max - r.min)));
-  v = Math.round(v / r.step) * r.step;
-  set(r.key, Number(v.toFixed(6)) as never);
-  playShow(key);
+  if (r) playSet(key, from + share * (r.max - r.min));
 }
-const playVal = (key: string) => {
-  const r = rangeOf(key);
-  return r ? (settings[r.key] as number) : 0;
-};
-const playShare = (key: string) => {
-  const r = rangeOf(key);
-  return r ? (playVal(key) - r.min) / (r.max - r.min) : 0;
-};
 for (const side of ['left', 'right'] as const) {
   const f = document.createElement('div');
   f.className = `fader ${side}`;
@@ -6826,7 +6847,7 @@ for (const side of ['left', 'right'] as const) {
   let start: { y: number; v: number } | null = null;
   f.addEventListener('pointerdown', (e) => {
     f.setPointerCapture(e.pointerId);
-    start = { y: e.clientY, v: playVal(key()) };
+    start = { y: e.clientY, v: playBase(key()) };
     playShow(key());
   });
   f.addEventListener('pointermove', (e) => {
@@ -6860,7 +6881,7 @@ canvas.addEventListener('pointerdown', (e) => {
     pointer.down = false;
     pointer.active = false;
     pointer.x = pointer.y = -1e4;
-    twoStart = { ...twoGeom(), two: playVal(settings.playTwo), pinch: playVal(settings.playPinch) };
+    twoStart = { ...twoGeom(), two: playBase(settings.playTwo), pinch: playBase(settings.playPinch) };
   }
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -6887,7 +6908,9 @@ canvas.addEventListener(
     e.preventDefault();
     const S = settings;
     const key = !e.shiftKey ? S.playLeft : e.metaKey || e.ctrlKey ? S.playWheel3 : e.altKey ? S.playWheel4 : S.playRight;
-    playNudge(key, playVal(key), -(e.deltaY || e.deltaX) / 1500);
+    // Lines (a mouse wheel) to pixels, like a trackpad.
+    const px = (e.deltaY || e.deltaX) * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    playNudge(key, playBase(key), -px / 1200);
   },
   { passive: false },
 );
