@@ -4,7 +4,7 @@ import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { VIBE_FAMILIES, vibe, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
-import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, mergeLinks, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
+import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -1584,8 +1584,7 @@ function faceHomes() {
 }
 
 // Expressions on the first face: how strong each is (0..1) and whether it's
-// past its mark. Connections decide what they do; the Expressions card is a
-// view of those connections.
+// past its mark. Connections decide what they do.
 type ExKey = 'exMouth' | 'exBlink' | 'exSmile' | 'exBrows' | 'exPucker' | 'exWink' | 'exTilt';
 const EXPRESSIONS: [ExKey, string, number][] = [
   ['exMouth', 'Open mouth', 0.6], ['exBlink', 'Blink', 0.55], ['exSmile', 'Smile', 0.7], ['exBrows', 'Raise eyebrows', 0.6],
@@ -1770,7 +1769,7 @@ function renderLinks() {
   return box;
 }
 
-// Live meters for the Expressions card: how strong each one is right now.
+// Live meters for the Camera inputs card: how strong each one is right now.
 function renderExMeters() {
   const box = document.createElement('div');
   box.className = 'ex-meters';
@@ -1957,7 +1956,7 @@ function sprayFrom(x: number, y: number, dx: number, dy: number) {
   }
 }
 
-// Hand signs: what they do is up to Connections (the Gestures card is a
+// This only lists the signs seen, for the card summary and debug.
 // view of those). This only lists the signs seen, for the card and debug.
 type GKey = 'gFist' | 'gPalm' | 'gPoint' | 'gThumbUp' | 'gThumbDown' | 'gVictory' | 'gLove';
 const GESTURES: [GKey, string, string][] = [
@@ -1989,7 +1988,7 @@ function clearDrawing() {
   syncPaint();
 }
 
-// Two hands (Gestures card): how far apart they are and the angle between
+// Two hands (Camera inputs card): how far apart they are and the angle between
 // them turn live dials. Level hands a shoulder-width apart are neutral.
 const handDial = { zoom: 1, size: 1, flow: 1, speed: 1, roll: 0, hue: 0 };
 let twoLine: [Pt2, Pt2] | null = null;
@@ -2089,7 +2088,7 @@ function skelHomes() {
   }
 }
 
-// Body (Body card): wrists sweep particles along with them, and a jump (the
+// Body (Camera inputs card): wrists sweep particles along with them, and a jump (the
 // hips rising fast) is a Connections input.
 let sweepPts: { x: number; y: number; vx: number; vy: number; r: number }[] = [];
 const wristWas: ({ x: number; y: number; vx: number; vy: number } | null)[] = [null, null];
@@ -4204,8 +4203,6 @@ type ControlBody =
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'links' }
-  // One input's connection, as a dropdown (Expressions, Gestures, Body cards).
-  | { kind: 'linkpick'; src: string; label: string }
   | { kind: 'sub'; label: string }
   | { kind: 'heading'; label: string; tab: Tab }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
@@ -4384,31 +4381,6 @@ const ICONS = {
   reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
 };
 
-// Expressions, Gestures and Body cards are views of Connections: their
-// switch adds or removes that group's connections (remembering them).
-const EX_SRCS = ['mouth', 'blink', 'smile', 'brows', 'pucker', 'wink', 'tilt'];
-const SIGN_SRCS = ['fist', 'palm', 'victory', 'thumbUp', 'thumbDown', 'point', 'love'];
-const groupStash: Record<string, string> = {};
-const inGroup = (srcs: string[]) => parseLinks(settings.links).filter((l) => srcs.includes(l.src));
-function groupPower(id: string, srcs: string[], start: string, flag?: 'gestOn' | 'poseOn') {
-  return {
-    on: () => (flag ? settings[flag] : false) || inGroup(srcs).length > 0,
-    get off(): Partial<Settings> {
-      const all = parseLinks(settings.links);
-      groupStash[id] = formatLinks(all.filter((l) => srcs.includes(l.src)));
-      return { links: formatLinks(all.filter((l) => !srcs.includes(l.src))), ...(flag ? { [flag]: false } : {}) };
-    },
-    get start(): Partial<Settings> {
-      return { links: mergeLinks(settings.links, groupStash[id] || start), ...(flag ? { [flag]: true } : {}) };
-    },
-  };
-}
-function groupSummary(srcs: string[], flag?: 'gestOn' | 'poseOn') {
-  const k = inGroup(srcs).length;
-  return k ? `${k} in use` : flag && settings[flag] ? 'on' : 'off';
-}
-const LINKPICK_OPTS: [string, string][] = [['off', 'Nothing'], ...ACTIONS.map((a): [string, string] => [a.id, `${a.label}${a.kind === 'moment' ? '' : a.kind === 'while' ? ' (while held)' : ' (amount)'}`])];
-const PICK_AMT: Record<string, number> = { flow: 0.8, size: 0.6, speed: 0.8, hue: 1, roll: 1, emit: 1 };
 
 // Every slider, for Play mode's pickers (filled once CONTROLS exists).
 const PLAYABLE: [string, string][] = [];
@@ -4777,17 +4749,6 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Two people (or two hands) in view each get half the particles. Colour by Face features or Camera colours on the Look tab. Shape size is on the Shape tab.' },
 
   { kind: 'heading', label: 'Your face', tab: 'camera' },
-  { kind: 'section', id: 'expressions', label: 'Expressions', tab: 'camera', about: 'Choose what each facial expression does (with a camera face).',
-    lock: ['exSense'],
-    power: groupPower('expressions', EX_SRCS, 'mouth>explode;blink>colours;smile>warm;brows>ripple;pucker>gather;wink>look;tilt>roll@1'),
-    summary: () => groupSummary(EX_SRCS) },
-  { kind: 'note', text: 'Needs You as the shape (above) with a face mode, or a Camera scene.', show: () => !(isCam() && faceMode()) },
-  { kind: 'exmeters' },
-  { kind: 'note', text: 'Live: how strong each expression is now. The tick is where a moment fires.' },
-  { kind: 'range', key: 'exSense', label: 'Sensitivity', min: 0.5, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×` },
-  ...EXPRESSIONS.map(([, name], k): Control => ({ kind: 'linkpick', src: EX_SRCS[k], label: name })),
-  { kind: 'note', text: 'A moment fires once as the expression starts. While held lasts as long as you hold it. An amount follows how strong the expression is. These are connections: the Connections card (Scenes tab) shows them all, with strengths and combos.' },
-
   { kind: 'section', id: 'facefx', label: 'Face extras', tab: 'camera', about: 'Flames, a crown or tears on your face; your gaze and voice move particles.',
     lock: ['maskFx', 'maskShare', 'gaze', 'voice'],
     power: { on: faceExtras, off: { maskFx: 'none', gaze: 'off', voice: false }, start: { maskFx: 'flames' } },
@@ -4813,25 +4774,26 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Draw: pinch your thumb and index finger to put the pen down, open them to lift it. With a colour per finger, pinch the thumb to any finger. The oldest strokes are reused when you run out of particles (Count, Particles card). Spray: point your index finger.', show: isPaint },
   { kind: 'note', show: () => !isPaint(), text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them; flick and let go to throw them. Uses the camera (asks once); the picture stays on this device.' },
 
-  { kind: 'section', id: 'gestures', label: 'Gestures', tab: 'camera', about: 'Hand signs as switches, and two hands as dials.',
-    lock: ['twoDist', 'twoAngle'],
-    power: groupPower('gestures', SIGN_SRCS, 'fist>explode;palm>freeze;thumbUp>save;victory>scene;love>shockwave', 'gestOn'),
-    summary: () => gestShown || groupSummary(SIGN_SRCS, 'gestOn') },
-  ...GESTURES.map(([, , name], k): Control => ({ kind: 'linkpick', src: SIGN_SRCS[k], label: name })),
+  { kind: 'heading', label: 'Inputs', tab: 'camera' },
+  { kind: 'section', id: 'caminputs', label: 'Camera inputs', tab: 'camera', about: 'Expression sensitivity, two hands as dials, arms that sweep. What expressions, hand signs and jumps do is set in Connections.',
+    lock: ['exSense', 'twoDist', 'twoAngle', 'poseSweep'],
+    summary: () => [gestShown, settings.gestOn ? 'two hands' : '', settings.poseOn ? 'arm sweep' : ''].filter(Boolean).join(' · ') },
+  { kind: 'sub', label: 'Face' },
+  { kind: 'exmeters' },
+  { kind: 'range', key: 'exSense', label: 'Expression sensitivity', min: 0.5, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×` },
+  { kind: 'note', text: 'Live: how strong each expression is now; the tick is where a moment fires. Needs You as the shape with a face mode, or a Camera scene.' },
   { kind: 'sub', label: 'Two hands' },
-  { kind: 'select', key: 'twoDist', label: 'Hands apart', options: [['off', 'Nothing'], ['zoom', 'Zoom the view'], ['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed']] },
-  { kind: 'select', key: 'twoAngle', label: 'Tilt between them', options: [['off', 'Nothing'], ['turn', 'Turn the view'], ['hue', 'Shift the colours']] },
-  { kind: 'note', text: 'Hold a sign for a moment: it fires once (hold it again for another go). Freeze and Gather last while you hold them. Two hands a shoulder width apart and level is neutral; move them apart, together or tilt them. Works with any look; uses the camera.' },
+  { kind: 'toggle', key: 'gestOn', label: 'Two hands work as dials' },
+  { kind: 'select', key: 'twoDist', label: 'Hands apart', options: [['off', 'Nothing'], ['zoom', 'Zoom the view'], ['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed']], show: () => settings.gestOn },
+  { kind: 'select', key: 'twoAngle', label: 'Tilt between them', options: [['off', 'Nothing'], ['turn', 'Turn the view'], ['hue', 'Shift the colours']], show: () => settings.gestOn },
+  { kind: 'note', text: 'Two hands a shoulder width apart and level is neutral; move them apart, together or tilt them.', show: () => settings.gestOn },
+  { kind: 'sub', label: 'Body' },
+  { kind: 'toggle', key: 'poseOn', label: 'Your arms sweep the particles' },
+  { kind: 'range', key: 'poseSweep', label: 'Arms sweep', min: 0, max: 3, step: 0.1, format: (v) => (v === 0 ? 'off' : `${v.toFixed(1)}×`), show: () => settings.poseOn },
+  { kind: 'note', text: 'Expressions, hand signs and jumps: pick what they do in Connections (Scenes tab). Step back so the camera sees you from the hips up (the whole body for jumps).' },
+  { kind: 'buttons', buttons: [['Open Connections', () => openConnections()]] },
 
   { kind: 'heading', label: 'Your body', tab: 'camera' },
-  { kind: 'section', id: 'body', label: 'Body', tab: 'camera', about: 'Your arms sweep the particles; jump for a moment.',
-    lock: ['poseSweep'],
-    power: groupPower('body', ['jump'], 'jump>explode', 'poseOn'),
-    summary: () => (settings.poseOn ? (cam.poses.length ? 'tracking you' : 'on') : 'off') },
-  { kind: 'range', key: 'poseSweep', label: 'Arms sweep', min: 0, max: 3, step: 0.1, format: (v) => (v === 0 ? 'off' : `${v.toFixed(1)}×`) },
-  { kind: 'linkpick', src: 'jump', label: 'A jump does' },
-  { kind: 'note', text: 'Step back so the camera sees you from the hips up (the whole body for jumps). Shape → Your camera → Your body makes you the shape; Obstacles → Your silhouette makes particles flow round you.' },
-
   { kind: 'section', id: 'mirror', label: 'Silhouette & mirror world', tab: 'camera', about: 'Particles flow round you, or the left half is reflected.',
     summary: () => [settings.obstacles === 'body' ? 'silhouette' : '', settings.mirrorWorld ? 'mirror world' : ''].filter(Boolean).join(' · ') || 'off' },
   { kind: 'buttons', buttons: [['Particles flow round your silhouette', () => set('obstacles', settings.obstacles === 'body' ? 'none' : 'body')]], active: () => settings.obstacles === 'body' },
@@ -5499,6 +5461,15 @@ function showTab(tab: Tab) {
   }
 }
 
+// Jump to the Connections card (Scenes tab), opened.
+function openConnections() {
+  showTab('presets');
+  const sec = document.querySelector<HTMLElement>('[data-sec="links"]');
+  if (!sec) return;
+  if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // A dot on a tab when one of its cards is locked.
 function syncTabDots() {
   for (const [t, b] of tabButtons) {
@@ -5784,6 +5755,7 @@ function renderControls() {
         continue;
       }
       controls.append(section);
+      section.dataset.sec = ctl.id;
       sectionTabs.push([section, ctl.tab ?? 'look']);
       {
         const id = ctl.id;
@@ -5906,33 +5878,6 @@ function renderControls() {
 
     if (ctl.kind === 'links') {
       searchItem(body, renderLinks());
-      continue;
-    }
-
-    if (ctl.kind === 'linkpick') {
-      // The first plain connection from this input; changing it rewrites that one.
-      const row = document.createElement('label');
-      row.className = 'row select';
-      const name = document.createElement('span');
-      name.className = 'name';
-      name.textContent = ctl.label;
-      const sel = document.createElement('select');
-      for (const [v, t] of LINKPICK_OPTS) sel.add(new Option(t, v));
-      const src = ctl.src;
-      sel.addEventListener('change', () => {
-        const list = parseLinks(settings.links);
-        const k = list.findIndex((l) => l.src === src && !l.when);
-        if (sel.value === 'off') {
-          if (k >= 0) list.splice(k, 1);
-        } else if (k >= 0) list[k] = { ...list[k], act: sel.value, amt: actionDef(list[k].act)?.kind === 'amount' ? list[k].amt : (PICK_AMT[sel.value] ?? 0.6) };
-        else list.push({ src, when: '', act: sel.value, amt: PICK_AMT[sel.value] ?? 0.6 });
-        set('links', formatLinks(list) as never);
-      });
-      refreshers.push(() => {
-        sel.value = parseLinks(settings.links).find((l) => l.src === src && !l.when)?.act ?? 'off';
-      });
-      row.append(name, sel);
-      searchItem(body, row);
       continue;
     }
 
