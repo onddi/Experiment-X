@@ -6741,18 +6741,30 @@ function playName(key: string) {
   return rangeOf(key)?.label ?? key;
 }
 const stage = document.querySelector<HTMLElement>('.stage')!;
-const playLabel = document.createElement('div');
-playLabel.className = 'play-label';
-stage.append(playLabel);
-let playLabelTimer = 0;
+// A knob (0–100% ring) shows while you play a setting, then fades away:
+// on its own side for the edge faders, in the middle for two fingers.
+type KnobAt = 'left' | 'right' | 'centre';
+const RING = 2 * Math.PI * 26;
+const knobs = {} as Record<KnobAt, { el: HTMLElement; arc: SVGCircleElement; pct: HTMLElement; name: HTMLElement; timer: number }>;
+for (const at of ['left', 'right', 'centre'] as const) {
+  const el = document.createElement('div');
+  el.className = `knob ${at}`;
+  el.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="26"/><circle class="arc" cx="32" cy="32" r="26" stroke-dasharray="${RING.toFixed(2)}" transform="rotate(-90 32 32)"/></svg><b></b><span></span>`;
+  stage.append(el);
+  knobs[at] = { el, arc: el.querySelector('.arc')!, pct: el.querySelector('b')!, name: el.querySelector('span')!, timer: 0 };
+}
 function playShow(key: string) {
   const r = rangeOf(key);
   if (!r) return;
-  const v = settings[r.key] as number;
-  playLabel.textContent = `${r.label}  ${r.format ? r.format(v) : v}`;
-  playLabel.classList.add('show');
-  clearTimeout(playLabelTimer);
-  playLabelTimer = window.setTimeout(() => playLabel.classList.remove('show'), 900);
+  const at: KnobAt = key === settings.playLeft ? 'left' : key === settings.playRight ? 'right' : 'centre';
+  const k = knobs[at];
+  const share = playShare(key);
+  k.arc.style.strokeDashoffset = (RING * (1 - share)).toFixed(2);
+  k.pct.textContent = `${Math.round(share * 100)}%`;
+  k.name.textContent = r.label;
+  k.el.classList.add('show');
+  clearTimeout(k.timer);
+  k.timer = window.setTimeout(() => k.el.classList.remove('show'), 1400);
 }
 // Move a setting by a share of its range (0..1 of min→max).
 function playNudge(key: string, from: number, share: number) {
@@ -6774,14 +6786,11 @@ const playShare = (key: string) => {
 for (const side of ['left', 'right'] as const) {
   const f = document.createElement('div');
   f.className = `fader ${side}`;
-  f.innerHTML = '<i><b></b></i>';
-  const bar = f.querySelector('b')!;
   const key = () => (side === 'left' ? settings.playLeft : settings.playRight);
   let start: { y: number; v: number } | null = null;
   f.addEventListener('pointerdown', (e) => {
     f.setPointerCapture(e.pointerId);
     start = { y: e.clientY, v: playVal(key()) };
-    f.classList.add('on');
     playShow(key());
   });
   f.addEventListener('pointermove', (e) => {
@@ -6790,13 +6799,11 @@ for (const side of ['left', 'right'] as const) {
   });
   const end = () => {
     start = null;
-    f.classList.remove('on');
   };
   f.addEventListener('pointerup', end);
   f.addEventListener('pointercancel', end);
   const sync = () => {
     f.hidden = !settings.playOn || !rangeOf(key());
-    bar.style.height = `${(playShare(key()) * 100).toFixed(1)}%`;
   };
   refreshers.push(sync);
   sync();
