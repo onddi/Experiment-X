@@ -5448,7 +5448,9 @@ const sectionTabs: [HTMLElement, Tab][] = [];
 // What a card had when you switched it off, so switching on brings it back.
 const powerMemory: Record<string, Partial<Settings>> = {};
 
+let currentTab: Tab = 'presets';
 function showTab(tab: Tab) {
+  currentTab = tab;
   for (const [t, b] of tabButtons) {
     b.classList.toggle('on', t === tab);
     b.setAttribute('aria-selected', String(t === tab));
@@ -5622,6 +5624,22 @@ function renderControls() {
   }
   controls.before(tabBar);
   tabBar.before(renderSearch());
+  // Fold or unfold every card on the open tab at once.
+  const foldAll = document.createElement('div');
+  foldAll.className = 'fold-all';
+  for (const [text, open] of [['Collapse all', false], ['Expand all', true]] as const) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.addEventListener('click', () => {
+      for (const [el, t] of sectionTabs) {
+        if (t !== currentTab || !el.classList.contains('group')) continue;
+        if (el.classList.contains('closed') === open) el.querySelector<HTMLElement>('.group-head')?.click();
+      }
+    });
+    foldAll.append(b);
+  }
+  tabBar.after(foldAll);
   const actionBar = document.getElementById('actionbar')!;
 
   for (const [ci, ctl] of CONTROLS.entries()) {

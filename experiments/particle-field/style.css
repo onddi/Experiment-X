@@ -413,6 +413,11 @@ button:hover, select:hover { border-color: #3c3f46; }
 }
 .tabs button:hover { color: var(--text); }
 .tabs button.on { background: #2a2c33; color: var(--text); }
+/* Collapse all / Expand all for the open tab. */
+.fold-all { display: flex; justify-content: flex-end; gap: 2px; margin: 4px 10px -4px; }
+.fold-all button { padding: 4px 6px; border: none; border-radius: 6px; background: none; color: var(--muted); font-size: 11px; }
+.fold-all button:hover { color: var(--text); background: #1c1d22; }
+.panel.collapsed .fold-all { display: none; }
 /* A dot: something on this tab is locked. */
 .tabs button.has-lock::after {
   content: '';
@@ -657,6 +662,7 @@ body.no-input .cam-preview { display: none; }
 .fine-toggle[hidden] { display: none; }
 
 /* Searching: only matching cards and settings, from every tab. */
+.searching .fold-all,
 .searching .tab-heading,
 .searching .group:not(.hit),
 .searching .more-toggle { display: none; }
