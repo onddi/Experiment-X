@@ -16,7 +16,7 @@ type CamMode = 'face' | 'features' | 'mixed' | 'body' | 'edges' | 'bright' | 'da
 // What an expression does: a moment (fires once as the expression starts),
 // "while held", or an amount that follows how strong the expression is.
 type ExAction = 'off' | 'explode' | 'ripple' | 'shockwave' | 'scatter' | 'colours' | 'warm' | 'look' | 'mine' | 'gather' | 'flow' | 'size' | 'speed' | 'hue' | 'roll' | 'emit';
-type CamHands = 'off' | 'attract' | 'repel' | 'vortex';
+type CamHands = 'off' | 'attract' | 'repel' | 'vortex' | 'draw' | 'spray';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
@@ -930,6 +930,7 @@ function implodeStart() {
 
 const audio = new AudioInput();
 if (import.meta.env.DEV) (window as unknown as { particleAudio: AudioInput }).particleAudio = audio;
+if (import.meta.env.DEV) setTimeout(() => ((window as unknown as { particleCam: Camera }).particleCam = cam));
 // Dev only: run the simulation fast without drawing, and measure how spread
 // out the live particles are (share of a 32×18 grid's cells in use).
 if (import.meta.env.DEV)
@@ -2090,22 +2091,102 @@ function renderExMeters() {
 }
 
 // Hands: fingertips push or pull (or swirl) the particles; a pinch grabs.
+// Draw mode: a pinch is the pen. Spray mode: index fingers shoot particles.
 const TIPS = [4, 8, 12, 16, 20];
 let handPts: { x: number; y: number }[] = [];
 let pinchPts: { x: number; y: number }[] = [];
+let markPts: { x: number; y: number }[] = [];
+let penPts: { x: number; y: number }[] = [];
+const penLast: ({ x: number; y: number } | null)[] = [null, null];
+let drawIdx = 0;
+const isPaint = () => settings.camHands === 'draw' || settings.camHands === 'spray';
 function handForces() {
   handPts = [];
   pinchPts = [];
+  markPts = [];
+  penPts = [];
   if (!handsOn()) return;
-  for (const hd of cam.hands) {
-    for (const k of TIPS) handPts.push({ x: toSx(hd.x[k]), y: toSy(hd.y[k]) });
+  const paint = isPaint();
+  cam.hands.forEach((hd, k) => {
     const tx = toSx(hd.x[4]);
     const ty = toSy(hd.y[4]);
     const ix = toSx(hd.x[8]);
     const iy = toSy(hd.y[8]);
     const span = Math.hypot(toSx(hd.x[0]) - toSx(hd.x[9]), toSy(hd.y[0]) - toSy(hd.y[9])) || 100;
-    if (Math.hypot(tx - ix, ty - iy) < span * 0.35) pinchPts.push({ x: (tx + ix) / 2, y: (ty + iy) / 2 });
+    const pinch = Math.hypot(tx - ix, ty - iy) < span * 0.35;
+    if (!paint) {
+      for (const q of TIPS) handPts.push({ x: toSx(hd.x[q]), y: toSy(hd.y[q]) });
+      if (pinch) pinchPts.push({ x: (tx + ix) / 2, y: (ty + iy) / 2 });
+      markPts = handPts;
+      return;
+    }
+    markPts.push({ x: ix, y: iy });
+    if (settings.camHands === 'draw') {
+      if (pinch) {
+        const pt = { x: (tx + ix) / 2, y: (ty + iy) / 2 };
+        penPts.push(pt);
+        drawStroke(penLast[k] ?? pt, pt);
+        penLast[k] = pt;
+      } else penLast[k] = null;
+    } else {
+      // Spray along the index finger, from its tip.
+      const dx = ix - toSx(hd.x[6]);
+      const dy = iy - toSy(hd.y[6]);
+      const d = Math.hypot(dx, dy) || 1;
+      sprayFrom(ix, iy, dx / d, dy / d);
+    }
+  });
+  for (let k = cam.hands.length; k < penLast.length; k++) penLast[k] = null;
+}
+
+// The next particle for drawing: the oldest drawn one (or a parked one).
+function nextInk(x: number, y: number) {
+  const i = drawIdx++ % n;
+  px[i] = ox[i] = x;
+  py[i] = oy[i] = y;
+  dead[i] = 0;
+  rebirth(i);
+  age[i] = FADE_IN;
+  // Colour runs along the stroke, so a drawing is a slow rainbow.
+  tone[i] = (performance.now() / 6000) % 1;
+  return i;
+}
+
+function drawStroke(a: { x: number; y: number }, b: { x: number; y: number }) {
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  const steps = Math.min(60, Math.max(2, Math.round(d / 2)));
+  const thick = 1 + settings.size * 1.5;
+  for (let q = 0; q < steps; q++) {
+    const u = q / steps;
+    const i = nextInk(a.x + (b.x - a.x) * u + (Math.random() - 0.5) * thick, a.y + (b.y - a.y) * u + (Math.random() - 0.5) * thick);
+    vx[i] = (Math.random() - 0.5) * 0.2;
+    vy[i] = (Math.random() - 0.5) * 0.2;
   }
+}
+
+function sprayFrom(x: number, y: number, dx: number, dy: number) {
+  const k = Math.max(2, Math.round(n / 300));
+  const sp = Math.min(w, h) / 800;
+  for (let q = 0; q < k; q++) {
+    const i = nextInk(x + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4);
+    const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.5;
+    const v = (3 + Math.random() * 5) * sp;
+    vx[i] = Math.cos(a) * v;
+    vy[i] = Math.sin(a) * v;
+  }
+}
+
+// Painting starts on an empty canvas: every particle waits, parked, until
+// a stroke or spray uses it. Other modes bring them all back.
+let paintParked = false;
+function syncPaint() {
+  const want = handsOn() && isPaint() && cam.on;
+  if (want === paintParked) return;
+  paintParked = want;
+  if (want) {
+    for (let i = 0; i < n; i++) dead[i] = 1;
+    drawIdx = 0;
+  } else if (settings.emitter === 'none') for (let i = 0; i < n; i++) if (dead[i]) spawn(i, Math.random() * w, Math.random() * h), (dead[i] = 0);
 }
 
 // Camera colours: the frame's colours ranked by brightness become the
@@ -2174,7 +2255,8 @@ function syncPreview() {
 function cameraTick(now: number) {
   syncPreview();
   if (!cam.on) {
-    handPts = pinchPts = [];
+    handPts = pinchPts = markPts = penPts = [];
+    syncPaint();
     faceDial.flow = faceDial.size = faceDial.speed = 1;
     faceGather = false;
     faceRoll *= 0.9;
@@ -2196,6 +2278,7 @@ function cameraTick(now: number) {
     faceHue *= 0.9;
     for (const [k] of EXPRESSIONS) exLevel[k] = 0;
   }
+  syncPaint();
   handForces();
   camColours(now);
   if (isCam() && !faceOn && now - camLast > 1000 / settings.camRate) {
@@ -3459,18 +3542,18 @@ function draw() {
   ctx.globalCompositeOperation = 'source-over';
   if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
   // Fingertips and pinches, faintly, so you can see where your hands are.
-  if (handPts.length) {
+  if (markPts.length) {
     ctx.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
     ctx.beginPath();
-    for (const hp of handPts) {
+    for (const hp of markPts) {
       ctx.moveTo(hp.x + 3, hp.y);
       ctx.arc(hp.x, hp.y, 3, 0, Math.PI * 2);
     }
     ctx.fill();
     ctx.strokeStyle = ctx.fillStyle;
-    for (const pp of pinchPts) {
+    for (const pp of [...pinchPts, ...penPts]) {
       ctx.beginPath();
-      ctx.arc(pp.x, pp.y, 14, 0, Math.PI * 2);
+      ctx.arc(pp.x, pp.y, penPts.includes(pp) ? 6 : 14, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -4073,12 +4156,14 @@ const CONTROLS: Control[] = [
   { kind: 'section', about: 'Your hands, seen by the camera, push, pull or swirl the particles. Pinch to grab.', id: 'hands', label: 'Hands', tab: 'motion', lock: ['camHands', 'camHandReach', 'camHandForce'],
     power: { on: handsOn, off: { camHands: 'off' }, start: { camHands: 'repel' } },
     summary: () => (handsOn() ? `${settings.camHands}${cam.hands.length ? ` · ${cam.hands.length} hand${cam.hands.length > 1 ? 's' : ''}` : ''}` : 'off') },
-  { kind: 'select', key: 'camHands', label: 'Fingertips', options: [['repel', 'Push away'], ['attract', 'Pull in'], ['vortex', 'Swirl']] },
-  { kind: 'range', key: 'camHandReach', label: 'Reach', min: 40, max: 400, step: 10, format: (v) => `${v}px` },
-  { kind: 'range', key: 'camHandForce', label: 'Strength', min: 0.1, max: 3, step: 0.05, format: pct },
+  { kind: 'select', key: 'camHands', label: 'Hands', options: [['repel', 'Push away'], ['attract', 'Pull in'], ['vortex', 'Swirl'], ['draw', 'Draw (pinch is the pen)'], ['spray', 'Spray from your index fingers']] },
+  { kind: 'range', key: 'camHandReach', label: 'Reach', min: 40, max: 400, step: 10, format: (v) => `${v}px`, show: () => !isPaint() },
+  { kind: 'range', key: 'camHandForce', label: 'Strength', min: 0.1, max: 3, step: 0.05, format: pct, show: () => !isPaint() },
+  { kind: 'buttons', buttons: [['Clear the drawing', () => { paintParked = false; syncPaint(); }]], show: isPaint },
+  { kind: 'note', text: 'Draw: pinch thumb and index finger to put the pen down, open them to lift it. The oldest strokes are reused when you run out of particles (Count, Particles card). Spray: point your index finger.', show: isPaint },
   { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie' },
   { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview' },
-  { kind: 'note', text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them. Uses the camera (asks once); the picture stays on this device.' },
+  { kind: 'note', show: () => !isPaint(), text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them. Uses the camera (asks once); the picture stays on this device.' },
 
   { kind: 'section', about: 'How particles react to your pointer and clicks.', id: 'pointer', label: 'Pointer & click', tab: 'motion', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
     power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
@@ -4360,6 +4445,12 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Portrait colours', { count: 6000, size: 1.8, render: 'dots', shape: 'camera', camMode: 'face', camCentre: true, shapeSize: 0.9, flow: 0, trail: 0.2, friction: 0.12, jitter: 0, palette: 'mono', colorBy: 'camera', glow: false, pointerMode: 'repel', radius: 80, force: 0.6, click: 'ripple' }],
   ['Deep face', { count: 4500, size: 1.3, render: 'dots', shape: 'camera', camMode: 'mixed', camMix: 0.5, camDepth: true, depth: 0.9, depthParallax: 0.3, camCentre: true, shapeSize: 0.9, flow: 0, trail: 0.4, friction: 0.12, jitter: 0, palette: 'infra', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave', camTriggers: true }],
   ['Breath', { count: 3000, size: 1.5, render: 'glow', shape: 'camera', camMode: 'features', camTriggers: true, exMouth: 'emit', exBrows: 'size', exSmile: 'speed', exBlink: 'off', exWink: 'off', exPucker: 'gather', exTilt: 'roll', camCentre: true, shapeSize: 0.85, flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.08, jitter: 0.01, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Light painting', { count: 8000, size: 1.4, render: 'glow', camHands: 'draw', flow: 0, jitter: 0.002, friction: 0.2, trail: 0.6, renew: 0, palette: 'rainbow', colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Smoke drawing', { count: 6000, size: 1.1, render: 'streaks', camHands: 'draw', flow: 0.35, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.1, jitter: 0.01, friction: 0.05, trail: 0.9, renew: 0, palette: 'ice', colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Neon graffiti', { count: 5000, size: 2.2, render: 'circles', camHands: 'draw', flow: 0, jitter: 0, friction: 0.3, trail: 0.2, renew: 0, palette: 'neon', colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Finger sparks', { count: 2500, size: 1.4, render: 'sparkles', camHands: 'spray', gravity: 1, edges: 'bounce', flow: 0, jitter: 0.02, friction: 0.02, trail: 0.75, renew: 0, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Hand magnets', { count: 3000, size: 1.2, render: 'comets', camHands: 'attract', camHandReach: 250, camHandForce: 1.4, flow: 0.2, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.1, trail: 0.85, friction: 0.03, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Force field', { count: 1800, size: 1.6, render: 'links', linkDist: 45, shape: 'grid', shapeSize: 0.95, camHands: 'repel', camHandReach: 130, camHandForce: 2, flow: 0, trail: 0, friction: 0.06, jitter: 0, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 120, force: 1.2, click: 'none' }],
   ['Hand play', { count: 3500, size: 1.4, render: 'glow', shape: 'text', shapeText: 'HANDS', camHands: 'repel', camHandReach: 170, camHandForce: 1.4, flow: 0, trail: 0.6, friction: 0.08, jitter: 0.01, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Hand swirl', { count: 3000, size: 1.1, render: 'streaks', camHands: 'vortex', camHandReach: 220, camHandForce: 1.2, flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.9, friction: 0.04, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
   ['Portrait', { count: 6000, size: 1.2, render: 'dots', shape: 'image', imageMode: 'auto', shapeSize: 0.9, entrance: 'drift', flow: 0.05, flowType: 'curl', trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave' }],
@@ -4399,7 +4490,7 @@ const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
   ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
   ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait'],
-  ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl'],
+  ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl, Light painting, Smoke drawing, Neon graffiti, Finger sparks, Hand magnets, Force field'],
   ['currents', 'Drift, Silk, Dusk, Ink, Prism, Neon storm, Silk ribbons, Heat, Marbled paper, Northern lights'],
   ['weather', 'Snowfall, Embers, Fireflies, Bubbles, Rainstorm, Sandstorm, Pollen'],
   ['swarms', 'Starlings, Marbles, School of fish, Midges, Crowd'],
@@ -4512,7 +4603,9 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   const own = keepAudio ? {} : Object.fromEntries(MUSIC_KEYS.filter((k) => k in p && !k.startsWith('audioVj')).map((k) => [k, p[k]]));
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
-  const hands = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  // Drawing and spraying belong to their look, so they don't carry over.
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
     pendingLook = { target, since: performance.now() };
