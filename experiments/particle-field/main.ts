@@ -4384,6 +4384,24 @@ const ICONS = {
 
 // Every slider, for Play mode's pickers (filled once CONTROLS exists).
 const PLAYABLE: [string, string][] = [];
+// Knob sets: five settings for knobs A–E in one go.
+const KNOB_SLOTS = ['playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5'] as const;
+const KNOB_SETS: [string, string[], string][] = [
+  ['Macros', ['mEnergy', 'mOrder', 'mHeat', 'mDream', 'mDensity'], 'Energy, Order, Heat, Dream, Density: each moves a group of settings around the scene.'],
+  ['Motion', ['speed', 'flow', 'flowScale', 'friction', 'jitter'], 'Speed, flow strength, flow scale, friction, jitter.'],
+  ['Look', ['size', 'trail', 'sizeVar', 'depth', 'mHeat'], 'Size, trails, size variety, 3D depth, colour heat.'],
+  ['Forces', ['gravity', 'wind', 'windDir', 'flow', 'speed'], 'Gravity, wind, wind direction, flow, speed.'],
+  ['Shape', ['shapeSize', 'homeStrength', 'shapeCycle', 'size', 'mDensity'], 'Shape size, snap to shape, form & dissolve, particle size, density.'],
+  ['Music VJ', ['audioIntensity', 'audioPulse', 'audioCam', 'audioTunnel', 'audioKaleido'], 'Music intensity, pulse, punch & shake, feedback tunnel, kaleidoscope (needs a sound source).'],
+];
+function knobSetName() {
+  return KNOB_SETS.find(([, keys]) => keys.every((k, i) => settings[KNOB_SLOTS[i]] === k))?.[0];
+}
+function useKnobSet(keys: string[]) {
+  KNOB_SLOTS.forEach((slot, i) => ((settings as unknown as Record<string, string>)[slot] = keys[i]));
+  changed(new Set<keyof Settings>(KNOB_SLOTS));
+}
+
 const CONTROLS: Control[] = [
   { kind: 'section', id: 'presets', label: 'Scene library', tab: 'presets', summary: () => familyLabel(presetFamily) },
   { kind: 'presetlib' },
@@ -4418,8 +4436,12 @@ const CONTROLS: Control[] = [
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
   { kind: 'section', id: 'play', label: 'Play on the field', tab: 'presets',
     about: 'Play settings like an instrument with the menu closed.',
-    summary: () => (settings.playOn ? [settings.playLeft, settings.playRight].map(playName).join(' · ') : 'off'),
+    summary: () => (settings.playOn ? (knobSetName() ?? 'own mix') : 'off'),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
+  { kind: 'sub', label: 'Knob set' },
+  { kind: 'buttons', buttons: KNOB_SETS.map(([name, keys]): [string, () => void] => [name, () => useKnobSet(keys)]), active: (t) => knobSetName() === t },
+  ...KNOB_SETS.map(([name, , text]): Control => ({ kind: 'note', text, show: () => knobSetName() === name })),
+  { kind: 'note', text: 'Your own mix. Pick a set above, or choose each knob below.', show: () => !knobSetName() },
   { kind: 'select', key: 'playLeft', label: 'Knob A', options: PLAYABLE },
   { kind: 'select', key: 'playWheel3', label: 'Knob B', options: PLAYABLE },
   { kind: 'select', key: 'playWheel4', label: 'Knob C', options: PLAYABLE },
@@ -4919,7 +4941,7 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
@@ -6691,9 +6713,6 @@ function fillPlayable() {
 }
 fillPlayable();
 const rangeOf = (key: string) => CONTROLS.find((c): c is Extract<Control, { kind: 'range' }> => c.kind === 'range' && c.key === key);
-function playName(key: string) {
-  return rangeOf(key)?.label ?? key;
-}
 const stage = document.querySelector<HTMLElement>('.stage')!;
 // Knobs A–D sit in a row along the bottom, left to right. Each has a touch
 // zone (slide up/down) and a wheel combo; its 0–100% ring shows while you
