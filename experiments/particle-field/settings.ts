@@ -116,6 +116,11 @@ export interface Settings {
   mirrorWorld: boolean;
   // Connections card: input → action links (see links.ts).
   links: string;
+  // Macros: each moves a group of settings at once, relative to the scene. 0.5 = as the scene is.
+  mEnergy: number;
+  mOrder: number;
+  mDream: number;
+  mHeat: number;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -364,6 +369,10 @@ export const DEFAULTS: Settings = {
   poseJump: 'explode',
   mirrorWorld: false,
   links: '',
+  mEnergy: 0.5,
+  mOrder: 0.5,
+  mDream: 0.5,
+  mHeat: 0.5,
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,

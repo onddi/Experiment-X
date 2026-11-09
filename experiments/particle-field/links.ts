@@ -77,6 +77,10 @@ export const ACTIONS: ActionDef[] = [
   { id: 'hue', label: 'Colour shift', kind: 'amount' },
   { id: 'roll', label: 'Roll the view', kind: 'amount' },
   { id: 'zoom', label: 'Zoom', kind: 'amount' },
+  { id: 'energy', label: 'Macro: Energy', kind: 'amount' },
+  { id: 'order', label: 'Macro: Order', kind: 'amount' },
+  { id: 'dream', label: 'Macro: Dream', kind: 'amount' },
+  { id: 'heat', label: 'Macro: Heat', kind: 'amount' },
 ];
 
 export type Link = { src: string; when: string; act: string; amt: number };
@@ -111,11 +115,14 @@ export function linkNeeds(list: Link[]) {
 
 export type Signal = { level: number; fire?: boolean; x?: number; y?: number };
 export type Amounts = { size: number; flow: number; speed: number; hue: number; roll: number; zoom: number };
+// Macro offsets (-0.5..0.5) on top of the Macros card's sliders.
+export type MacroPush = { energy: number; order: number; dream: number; heat: number };
 export type LinkOut = {
   fired: { act: string; x?: number; y?: number }[];
   gather: boolean;
   freeze: boolean;
   amounts: Amounts;
+  macros: MacroPush;
 };
 
 // How far an amount goes at full level and full strength.
@@ -129,7 +136,7 @@ export class LinkRunner {
   private state: { on: boolean; since: number; at: number; v: number }[] = [];
   private heldSince: Record<string, number> = {};
   levels: Record<string, number> = {};
-  out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1 } };
+  out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1 }, macros: { energy: 0, order: 0, dream: 0, heat: 0 } };
 
   sync(text: string) {
     if (text === this.text) return;
@@ -154,7 +161,7 @@ export class LinkRunner {
   }
 
   step(signal: (id: string) => Signal, now: number) {
-    const out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 0, flow: 0, speed: 0, hue: 0, roll: 0, zoom: 0 } };
+    const out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 0, flow: 0, speed: 0, hue: 0, roll: 0, zoom: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0 } };
     const cache: Record<string, Signal> = {};
     const sig = (id: string) => (cache[id] ??= signal(id));
     this.levels = {};
@@ -167,7 +174,8 @@ export class LinkRunner {
       if (kind === 'amount') {
         // Moments as amounts: their level is a short envelope (e.g. the kick's pulse).
         st.v += ((gate ? s.level : 0) - st.v) * 0.3;
-        out.amounts[l.act as keyof Amounts] += st.v * l.amt;
+        if (l.act in out.macros) out.macros[l.act as keyof MacroPush] += st.v * l.amt * 0.5;
+        else out.amounts[l.act as keyof Amounts] += st.v * l.amt;
         return;
       }
       const was = st.on;
@@ -208,4 +216,6 @@ export const LINK_EXAMPLES: [string, string][] = [
   ['Kick + fist → explode', 'kick+fist>explode'],
   ['Palm → gather', 'palm>gather'],
   ['Jump → shockwave', 'jump>shockwave'],
+  ['Loudness → Energy', 'loud>energy@0.8'],
+  ['Smile → Heat', 'smile>heat@0.8'],
 ];

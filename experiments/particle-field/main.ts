@@ -646,7 +646,12 @@ function step(dt: number) {
   updateFlowFreqs();
   recordHistory();
   t += dt / 60;
-  const { radius, force, pointerMode, friction, jitter, flow, speed } = settings;
+  const { radius, force, pointerMode } = settings;
+  // Macros move these relative to the scene.
+  const friction = Math.min(0.5, settings.friction * macro.friction);
+  const jitter = settings.jitter * macro.jitter + macro.jitterAdd;
+  const flow = Math.max(settings.flow, macro.flowMin) * macro.flow;
+  const speed = settings.speed * macro.speed;
   const r2 = radius * radius;
   // Right after an explosion, friction, flow and springs ease off for a
   // moment so the burst can travel before the look takes over again.
@@ -777,7 +782,7 @@ function step(dt: number) {
     // A tracked face moves all the time: hold on tighter so it keeps up.
     // Follow tightness: up to 15× the usual pull, so lips and eyes keep up.
     const live = settings.shape === 'camera' ? (trackMode() ? 3 + settings.camSnap * 12 : 2) : 1;
-    homeK = settings.homeStrength * 0.004 * formed * (1 - blastK) * live;
+    homeK = settings.homeStrength * macro.home * 0.004 * formed * (1 - blastK) * live;
   }
   // A tracked face needs more damping too, or the stronger pull wobbles.
   const faceLive = settings.shape === 'camera' && trackMode();
@@ -1381,6 +1386,8 @@ const handsOn = () => settings.camHands !== 'off';
 const faceExtras = () => settings.maskFx !== 'none' || settings.gaze !== 'off' || settings.voice;
 // Connections (see runLinks): declared early, the camera helpers read them.
 const linkRun = new LinkRunner();
+// Macros (Macros card, plus Connections pushing them): what they do this frame.
+const macro = { speed: 1, flow: 1, flowMin: 0, jitter: 1, jitterAdd: 0, friction: 1, home: 1, trailAdd: 0, size: 1, filter: '' };
 let linkNeed = linkNeeds([]);
 let linkFlash = 0;
 const faceTracked = () => (isCam() && faceMode()) || faceExtras() || linkNeed.face;
@@ -3787,7 +3794,7 @@ function draw() {
     else if (a > 0) fadeBuckets[Math.min(FADE_LEVELS - 1, (a * FADE_LEVELS) | 0)][shadeIndex(i)].push(i);
   }
 
-  const s = settings.size * audioSizeBoost() * faceDial.size * handDial.size * linkRun.out.amounts.size;
+  const s = settings.size * audioSizeBoost() * faceDial.size * handDial.size * linkRun.out.amounts.size * macro.size;
   // Parallax: shift each depth layer a little with the camera, drawn by
   // offsetting positions just for this draw and putting them back after.
   const par = settings.depth > 0 && settings.depthParallax > 0;
@@ -3995,11 +4002,20 @@ function drawLinks() {
   }
 }
 
-// --- connections ------------------------------------------------------------------
+// --- macros & connections ----------------------------------------------------------
+type MacroKey = 'mEnergy' | 'mOrder' | 'mDream' | 'mHeat';
+const MACROS: [MacroKey, string, string, string][] = [
+  ['mEnergy', 'Energy', 'calm', 'frantic'],
+  ['mOrder', 'Order', 'chaos', 'tight shape'],
+  ['mDream', 'Dream', 'crisp', 'hazy'],
+  ['mHeat', 'Heat', 'cool', 'warm'],
+];
+const macroText = (v: number, lo: string, hi: string) => (Math.abs(v - 0.5) < 0.01 ? 'scene' : `${v < 0.5 ? lo : hi} ${Math.round(Math.abs(v - 0.5) * 200)}%`);
 // Any input (music, face, hands, body, pointer) to any action or amount; the
 // Connections card edits them. The runner lives in links.ts; this gathers the
 // inputs and does the actions.
 let pressAt = 0;
+let lastLinkList: Link[] = [];
 let linkAt = 0;
 let linkHips: { t: number; y: number }[] = [];
 let linkJumpAt = 0;
@@ -4091,11 +4107,58 @@ function linkSignal(id: string, now: number): Signal {
   }
   return none;
 }
+// Heat: a white-balance tint (SVG colour matrix), warm or cool.
+const heatSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+heatSvg.setAttribute('width', '0');
+heatSvg.setAttribute('height', '0');
+heatSvg.style.position = 'absolute';
+heatSvg.innerHTML = '<filter id="pf-heat" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0"/></filter>';
+document.body.append(heatSvg);
+const heatMatrix = heatSvg.querySelector('feColorMatrix')!;
+let heatShown = 0;
+const two = (x: number) => Math.pow(2, x);
+function runMacros() {
+  const push = linkRun.out.macros;
+  const v = (k: 'mEnergy' | 'mOrder' | 'mDream' | 'mHeat', p: number) => Math.max(-1, Math.min(1, (settings[k] - 0.5 + p) * 2));
+  const e = v('mEnergy', push.energy);
+  const o = v('mOrder', push.order);
+  const d = v('mDream', push.dream);
+  const t = v('mHeat', push.heat);
+  const up = (x: number) => Math.max(0, x);
+  macro.speed = two(0.9 * e) * two(-0.6 * up(d));
+  macro.flow = two(1.1 * e) * two(-1.2 * o);
+  macro.flowMin = e > 0.15 || o < -0.15 ? 0.15 : 0;
+  macro.jitter = two(-1.5 * o);
+  macro.jitterAdd = 0.06 * up(e) + 0.05 * up(-o);
+  macro.friction = two(0.6 * o) * two(-0.4 * e);
+  macro.home = two(1.3 * o);
+  macro.trailAdd = -0.25 * up(e) + 0.15 * up(-e) + 0.3 * up(d) - 0.35 * up(-d);
+  macro.size = 1 + 0.3 * up(d);
+  const parts: string[] = [];
+  if (Math.abs(d) > 0.02) parts.push(d > 0 ? `blur(${(d * 1.4).toFixed(2)}px) saturate(${(1 - 0.3 * d).toFixed(2)})` : `contrast(${(1 - 0.3 * d).toFixed(2)}) saturate(${(1 - 0.2 * d).toFixed(2)})`);
+  if (Math.abs(t) > 0.02) {
+    parts.push('url(#pf-heat)');
+    if (Math.abs(t - heatShown) > 0.01) {
+      heatShown = t;
+      // Warm lifts red and drops blue; cool the other way round.
+      const r = 1 + 0.28 * t;
+      const g = 1 + 0.06 * t;
+      const b = 1 - 0.35 * t;
+      heatMatrix.setAttribute('values', `${r.toFixed(3)} 0 0 0 0 0 ${g.toFixed(3)} 0 0 0 0 0 ${b.toFixed(3)} 0 0 0 0 0 1 0`);
+    }
+  }
+  macro.filter = parts.join(' ');
+}
+
 function runLinks(now: number) {
   syncLinks();
+  runMacros();
   linkFlash *= 0.82;
   if (!linkRun.list.length) {
-    if (linkRun.out.fired.length || linkRun.out.gather || linkRun.out.freeze) linkRun.out = { ...linkRun.out, fired: [], gather: false, freeze: false };
+    if (linkRun.out.fired.length || linkRun.out.gather || linkRun.out.freeze || linkRun.list !== lastLinkList) {
+      linkRun.out = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1 }, macros: { energy: 0, order: 0, dream: 0, heat: 0 } };
+      lastLinkList = linkRun.list;
+    }
     linkAt = now;
     return;
   }
@@ -4395,6 +4458,18 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'shuffleCards', label: 'Shuffle also switches cards on and off' },
   { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Scenes don\'t change these.' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
+  { kind: 'section', id: 'macros', label: 'Macros', tab: 'presets',
+    about: 'Each slider moves a group of settings at once, on top of the scene. The middle is the scene as it is.',
+    lock: ['mEnergy', 'mOrder', 'mDream', 'mHeat'],
+    summary: () => {
+      const on = MACROS.filter(([k]) => Math.abs(settings[k] - 0.5) > 0.01).map(([, name]) => name);
+      return on.length ? on.join(', ') : 'as the scene';
+    } },
+  ...MACROS.map(([key, name, lo, hi]): Control => ({ kind: 'range', key, label: name, min: 0, max: 1, step: 0.01, format: (v) => macroText(v, lo, hi) })),
+  { kind: 'buttons', buttons: [['Back to the scene', () => {
+    Object.assign(settings, { mEnergy: 0.5, mOrder: 0.5, mDream: 0.5, mHeat: 0.5 });
+    changed(new Set(['mEnergy', 'mOrder', 'mDream', 'mHeat']));
+  }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -4894,7 +4969,7 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'poseJump', 'links'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'poseJump', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
@@ -5066,6 +5141,7 @@ function musicVisuals(now: number) {
   }
   const hueCam = faceHue + handDial.hue + linkRun.out.amounts.hue;
   if (Math.abs(hueCam) > 0.5) parts.push(`hue-rotate(${hueCam.toFixed(1)}deg)`);
+  if (macro.filter) parts.push(macro.filter);
   const filter = parts.join(' ');
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
 
@@ -5161,6 +5237,7 @@ function musicVisuals(now: number) {
     swayF = swayDir * Math.max(L.sub, L.bass * 0.7) * S.audioSway * 0.12;
   } else swayF = 0;
   trailNow = on && S.audioTrailEnergy > 0 ? Math.min(0.985, S.trail + (1 - S.trail) * S.audioTrailEnergy * Math.min(1, L.level * 1.4)) : S.trail;
+  if (macro.trailAdd) trailNow = Math.max(0, Math.min(0.985, trailNow + macro.trailAdd));
 
   // View effects. The tunnel and kaleidoscope also run without music.
   if (S.audioTunnel > 0) {
