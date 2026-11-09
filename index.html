@@ -17,7 +17,7 @@
           <ul class="exp-list" id="exp-list"></ul>
         </nav>
         <footer class="sidebar__footer">
-          <kbd>[</kbd> <kbd>]</kbd> previous / next &middot; <kbd>\</kbd> toggle list &middot; <kbd>L</kbd> mouse layer
+          <kbd>[</kbd> <kbd>]</kbd> previous / next &middot; <kbd>\</kbd> toggle list &middot; <kbd>L</kbd> mouse layer &middot; <kbd>F</kbd> fullscreen
         </footer>
       </aside>
 
@@ -28,10 +28,12 @@
           <button class="icon-btn" id="play-all" aria-label="Pause everything" title="Pause everything" hidden>⏸</button>
           <button class="mouse-btn" id="mouse-btn" hidden></button>
           <button class="icon-btn" id="layers-btn" aria-label="Layers and feeds" title="Layers and feeds" aria-expanded="false" aria-controls="layers-panel">&#x29C9;</button>
+          <button class="icon-btn" id="fullscreen-btn" aria-label="Fullscreen (F)" title="Fullscreen (F)">&#x26F6;</button>
           <button class="icon-btn" id="reload" aria-label="Reload experiment" title="Reload experiment">&#8635;</button>
           <a class="icon-btn" id="open-tab" target="_blank" rel="noopener" aria-label="Open in new tab" title="Open in new tab">&#8599;</a>
         </div>
         <div class="layers" id="layers"></div>
+        <button class="fs-exit" id="fs-exit" aria-label="Exit fullscreen (Esc)" title="Exit fullscreen (Esc)">&#x2715;</button>
         <section class="panel" id="layers-panel" aria-label="Layers and feeds" hidden></section>
         <div class="empty" id="empty" hidden>
           <p>No experiments yet.</p>

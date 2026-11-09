@@ -20,6 +20,9 @@ The build uses relative paths (`base: './'`), so it works under that sub-path as
 Deep-link to an experiment with `#/<slug>`, e.g. `http://localhost:5173/#/color-mixer`.
 Keyboard shortcuts in X-Frame: `[` / `]` previous / next, `\` toggle the list
 (click outside the experiment first, since keys typed inside the iframe go to the experiment).
+**Fullscreen** (⛶ in the toolbar, or `F`) hides the list and toolbar so only the
+experiments show; a faint ✕ at the top centre, `Esc` or `F` brings them back. On
+iPhone, where pages can't go truly fullscreen, it still hides X-Frame's own chrome.
 
 ## Adding an experiment
 

@@ -544,6 +544,30 @@ function setSidebarCollapsed(collapsed: boolean) {
   }
 }
 
+// --- fullscreen ----------------------------------------------------------------
+// Hides the list and toolbar so the experiments fill the screen. Uses the
+// browser's real fullscreen where it exists (not on iPhone), and falls back to
+// just hiding X-Frame's chrome. A faint ✕ in the corner (or Esc / F) exits.
+
+const canFullscreen = () => !!document.documentElement.requestFullscreen && document.fullscreenEnabled !== false;
+
+function setFullscreen(on: boolean) {
+  shellEl.classList.toggle('shell--fullscreen', on);
+  if (on) openPanel(false);
+  if (on && canFullscreen() && !document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => { /* chrome-only fallback is fine */ });
+  } else if (!on && document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+const isFullscreen = () => shellEl.classList.contains('shell--fullscreen');
+
+// Leaving browser fullscreen (Esc, swipe, etc.) also brings X-Frame's chrome back.
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && isFullscreen()) shellEl.classList.remove('shell--fullscreen');
+});
+
 function isTyping(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 }
@@ -554,6 +578,8 @@ list.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('a') && isSmallScreen()) setSidebarCollapsed(true);
 });
 $('reload').addEventListener('click', reloadAll);
+$('fullscreen-btn').addEventListener('click', () => setFullscreen(true));
+$('fs-exit').addEventListener('click', () => setFullscreen(false));
 
 // Shared play/pause ('play' topic): one button for every experiment that hooks in.
 // It shows only while someone listens, and follows whoever pressed play or pause last.
@@ -584,6 +610,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '[') step(-1);
   else if (e.key === ']') step(1);
   else if (e.key === 'l' || e.key === 'L') cycleMouse();
+  else if (e.key === 'f' || e.key === 'F') setFullscreen(!isFullscreen());
+  else if (e.key === 'Escape' && isFullscreen() && !handover) setFullscreen(false);
   else if (e.key === 'Escape' && handover) releaseHandover();
   else if (e.key === 'Escape' && !panel.hidden) openPanel(false);
   else if (e.key === '\\') setSidebarCollapsed(!shellEl.classList.contains('shell--collapsed'));

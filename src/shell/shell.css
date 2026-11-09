@@ -294,3 +294,34 @@ kbd {
 .mouse-btn::before { content: '\2196'; font-size: 13px; }
 .mouse-btn[hidden] { display: none; }
 @media (max-width: 720px) { .mouse-btn { max-width: 34vw; } }
+
+/* Fullscreen: only the experiments, no list or toolbar. */
+.fs-exit { display: none; }
+.shell--fullscreen { display: block !important; }
+.shell--fullscreen .sidebar, .shell--fullscreen .toolbar { display: none; }
+.shell--fullscreen .stage { height: 100dvh; }
+.shell--fullscreen .fs-exit {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  /* Top centre: experiments tend to keep their own buttons in the corners. */
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 15px;
+  color: #fff;
+  background: rgb(20 21 26 / 0.45);
+  border: 1px solid rgb(255 255 255 / 0.15);
+  border-radius: 50%;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  opacity: 0.3;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+.shell--fullscreen .fs-exit:hover, .shell--fullscreen .fs-exit:focus-visible { opacity: 1; }
+.shell--fullscreen .handover { top: 0 !important; }
