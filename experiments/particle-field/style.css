@@ -591,3 +591,11 @@ body.no-input .panel, body.no-input .fab, body.no-input .hint { display: none !i
 .cam-preview.mirror { transform: scaleX(-1); }
 body.no-input .cam-preview { display: none; }
 @media (max-width: 600px) { .cam-preview { width: 96px; bottom: 76px; } }
+
+/* Expressions card: a live meter per expression, the tick marks the trigger. */
+.ex-meters { display: grid; gap: 5px; margin: 6px 0 2px; }
+.ex-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; font-size: 11px; color: var(--muted, #9aa); }
+.ex-row i { position: relative; height: 6px; border-radius: 3px; background: color-mix(in oklch, currentColor 18%, transparent); overflow: hidden; }
+.ex-row b { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); opacity: 0.6; transition: width 80ms linear; }
+.ex-row b.hot { opacity: 1; }
+.ex-row em { position: absolute; top: 0; bottom: 0; width: 1px; background: currentColor; opacity: 0.7; }

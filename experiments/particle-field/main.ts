@@ -13,6 +13,9 @@ type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointe
 type EmitMode = 'steady' | 'burst' | 'beat';
 type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring';
 type CamMode = 'face' | 'features' | 'mixed' | 'body' | 'edges' | 'bright' | 'dark';
+// What an expression does: a moment (fires once as the expression starts),
+// "while held", or an amount that follows how strong the expression is.
+type ExAction = 'off' | 'explode' | 'ripple' | 'shockwave' | 'scatter' | 'colours' | 'warm' | 'look' | 'mine' | 'gather' | 'flow' | 'size' | 'speed' | 'hue' | 'roll' | 'emit';
 type CamHands = 'off' | 'attract' | 'repel' | 'vortex';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
@@ -79,8 +82,14 @@ interface Settings {
   camTriggers: boolean;
   camMix: number;
   camDepth: boolean;
-  camDials: boolean;
-  camMouthEmit: boolean;
+  exMouth: ExAction;
+  exBlink: ExAction;
+  exSmile: ExAction;
+  exBrows: ExAction;
+  exPucker: ExAction;
+  exWink: ExAction;
+  exTilt: ExAction;
+  exSense: number;
   camPreview: boolean;
   camHands: CamHands;
   camHandReach: number;
@@ -307,8 +316,14 @@ const DEFAULTS: Settings = {
   camTriggers: false,
   camMix: 0.6,
   camDepth: false,
-  camDials: false,
-  camMouthEmit: false,
+  exMouth: 'explode',
+  exBlink: 'colours',
+  exSmile: 'warm',
+  exBrows: 'ripple',
+  exPucker: 'gather',
+  exWink: 'look',
+  exTilt: 'roll',
+  exSense: 1,
   camPreview: true,
   camHands: 'off',
   camHandReach: 140,
@@ -1868,7 +1883,6 @@ const faceDial = { flow: 1, size: 1, speed: 1 };
 let faceGather = false;
 let faceRoll = 0;
 let mouthIdx = 0;
-const faceFlags = { mouth: false, blink: false, brows: false, smile: false, wink: false, at: 0 };
 const WARM = ['ember', 'sunset', 'gold', 'crimson', 'desert'] as const;
 
 function assignFace() {
@@ -1929,73 +1943,150 @@ function faceHomes() {
   }
 }
 
-// Expressions on the first face: dials (continuous) and triggers (moments).
+// Expressions on the first face. Each one is mapped (Expressions card) to
+// a moment, a "while held" action or an amount.
+type ExKey = 'exMouth' | 'exBlink' | 'exSmile' | 'exBrows' | 'exPucker' | 'exWink' | 'exTilt';
+const EXPRESSIONS: [ExKey, string, number][] = [
+  ['exMouth', 'Open mouth', 0.6], ['exBlink', 'Blink', 0.55], ['exSmile', 'Smile', 0.7], ['exBrows', 'Raise eyebrows', 0.6],
+  ['exPucker', 'Pucker', 0.6], ['exWink', 'Wink', 0.5], ['exTilt', 'Tilt your head', 0.5],
+];
+const EX_ACTIONS: [string, string][] = [
+  ['off', 'Nothing'],
+  ['explode', 'Explode (moment)'], ['ripple', 'Ripple (moment)'], ['shockwave', 'Shockwave (moment)'], ['scatter', 'Scatter (moment)'],
+  ['colours', 'New colours (moment)'], ['warm', 'Warm colours (moment)'], ['look', 'Next face look (moment)'], ['mine', 'Next of my presets (moment)'],
+  ['gather', 'Gather (while held)'],
+  ['flow', 'More flow (amount)'], ['size', 'Bigger particles (amount)'], ['speed', 'Faster (amount)'], ['hue', 'Shift colour (amount)'],
+  ['roll', 'Roll the view (amount)'], ['emit', 'Stream from the mouth (amount)'],
+];
+const isAmount = (a: ExAction) => a === 'flow' || a === 'size' || a === 'speed' || a === 'hue' || a === 'roll' || a === 'emit';
+const exLevel: Record<ExKey, number> = { exMouth: 0, exBlink: 0, exSmile: 0, exBrows: 0, exPucker: 0, exWink: 0, exTilt: 0 };
+const exOn: Record<ExKey, boolean> = { exMouth: false, exBlink: false, exSmile: false, exBrows: false, exPucker: false, exWink: false, exTilt: false };
+let faceHue = 0;
+let exAt = 0;
+let mineIdx = 0;
+
 function faceExpressions(now: number) {
   const f = cam.face;
   const S = settings;
+  const live = !!f && S.camTriggers;
   const b = f?.blend ?? {};
-  const jaw = b.jawOpen ?? 0;
-  const brows = b.browInnerUp ?? 0;
-  const smile = ((b.mouthSmileLeft ?? 0) + (b.mouthSmileRight ?? 0)) / 2;
-  const ease = (o: number, v: number) => o + (v - o) * 0.2;
-  faceDial.flow = ease(faceDial.flow, f && S.camDials ? 1 + jaw * 2.5 : 1);
-  faceDial.size = ease(faceDial.size, f && S.camDials ? 1 + brows * 0.8 : 1);
-  faceDial.speed = ease(faceDial.speed, f && S.camDials ? 1 + smile * 1.5 : 1);
-  faceGather = !!f && S.camTriggers && (b.mouthPucker ?? 0) > 0.6;
-  // Head tilt rolls the view (the eye line, as seen on screen).
-  let roll = 0;
-  if (f && S.camTriggers) {
+  // How strong each expression is, 0..1.
+  let tiltDeg = 0;
+  if (f) {
     const a = Math.atan2(toSy(f.y[263]) - toSy(f.y[33]), toSx(f.x[263]) - toSx(f.x[33]));
-    const up = Math.abs(a) > Math.PI / 2 ? a - Math.sign(a) * Math.PI : a;
-    roll = (up * 180) / Math.PI;
+    tiltDeg = ((Math.abs(a) > Math.PI / 2 ? a - Math.sign(a) * Math.PI : a) * 180) / Math.PI;
   }
-  faceRoll += (roll - faceRoll) * 0.15;
-  if (!f) return;
-  // Mouth emitter: particles stream out while the mouth is open (and,
-  // with music on, more when it's loud).
-  if (S.camMouthEmit && jaw > 0.12) {
+  const bl = b.eyeBlinkLeft ?? 0;
+  const br = b.eyeBlinkRight ?? 0;
+  const raw: Record<ExKey, number> = {
+    exMouth: b.jawOpen ?? 0,
+    exBlink: Math.min(bl, br),
+    exSmile: ((b.mouthSmileLeft ?? 0) + (b.mouthSmileRight ?? 0)) / 2,
+    exBrows: b.browInnerUp ?? 0,
+    exPucker: b.mouthPucker ?? 0,
+    exWink: Math.max(bl, br) > 0.5 ? Math.abs(bl - br) : 0,
+    exTilt: Math.min(1, Math.abs(tiltDeg) / 30),
+  };
+  // Sensitivity scales every expression up or down.
+  for (const [k] of EXPRESSIONS) exLevel[k] = f ? Math.min(1, raw[k] * S.exSense) : 0;
+
+  const amt = { flow: 0, size: 0, speed: 0, hue: 0, roll: 0, emit: 0 };
+  let gather = false;
+  for (const [k, , hi] of EXPRESSIONS) {
+    const act = S[k];
+    const v = live ? exLevel[k] : 0;
+    if (act === 'off' || !live) {
+      exOn[k] = false;
+      continue;
+    }
+    if (isAmount(act)) {
+      // The tilt rolls the view its own way round; others turn one way.
+      if (act === 'roll') amt.roll += k === 'exTilt' ? tiltDeg : v * 25;
+      else amt[act as 'flow'] += v;
+      continue;
+    }
+    // Fires once on crossing the mark, re-arms well below it.
+    const was = exOn[k];
+    const on = was ? v > hi * 0.5 : v > hi;
+    exOn[k] = on;
+    if (act === 'gather') {
+      gather ||= on;
+      continue;
+    }
+    if (on && !was && now - exAt > 600) {
+      exAt = now;
+      exMoment(act, now, f!);
+    }
+  }
+  const ease = (o: number, v: number) => o + (v - o) * 0.2;
+  faceDial.flow = ease(faceDial.flow, 1 + amt.flow * 2.5);
+  faceDial.size = ease(faceDial.size, 1 + amt.size * 0.9);
+  faceDial.speed = ease(faceDial.speed, 1 + amt.speed * 1.6);
+  faceHue = ease(faceHue, amt.hue * 180);
+  faceRoll += (amt.roll - faceRoll) * 0.15;
+  faceGather = gather;
+  // Stream from the mouth (more when the music is loud).
+  if (f && amt.emit > 0.12) {
     const mx = toSx((f.x[13] + f.x[14]) / 2);
     const my = toSy((f.y[13] + f.y[14]) / 2);
     const loud = audio.source !== 'off' ? 0.4 + audio.levels.level * 1.2 : 1;
-    const k = Math.min(n, Math.round(jaw * 50 * loud));
+    const k = Math.min(n, Math.round(amt.emit * 50 * loud));
     const sp = Math.min(w, h) / 800;
     for (let q = 0; q < k; q++) {
       const i = mouthIdx++ % n;
       const a = Math.PI / 2 + (Math.random() - 0.5) * 2.4;
-      const v = (2 + Math.random() * 7) * sp * (0.6 + jaw);
+      const v = (2 + Math.random() * 7) * sp * (0.6 + amt.emit);
       px[i] = ox[i] = mx + (Math.random() - 0.5) * 8;
       py[i] = oy[i] = my + (Math.random() - 0.5) * 4;
       vx[i] = Math.cos(a) * v * (Math.random() < 0.5 ? 1 : -1) * 0.8;
       vy[i] = Math.sin(a) * v;
     }
   }
-  if (!S.camTriggers) return;
-  // Each trigger fires once when crossing a high mark and re-arms only after
-  // dropping well below it, so a held expression doesn't keep firing.
-  const hyst = (was: boolean, v: number, hi: number, lo: number) => (was ? v > lo : v > hi);
-  const mouth = hyst(faceFlags.mouth, jaw, 0.6, 0.3);
-  const blink = hyst(faceFlags.blink, Math.min(b.eyeBlinkLeft ?? 0, b.eyeBlinkRight ?? 0), 0.55, 0.3);
-  const browUp = hyst(faceFlags.brows, brows, 0.65, 0.35);
-  const smiling = hyst(faceFlags.smile, smile, 0.75, 0.4);
-  const wink = hyst(faceFlags.wink, Math.abs((b.eyeBlinkLeft ?? 0) - (b.eyeBlinkRight ?? 0)) * (Math.max(b.eyeBlinkLeft ?? 0, b.eyeBlinkRight ?? 0) > 0.6 ? 1 : 0), 0.5, 0.2);
-  if (now - faceFlags.at > 900) {
-    const fx = toSx(f.x[1]);
-    const fy = toSy(f.y[1]);
-    let fired = true;
-    if (mouth && !faceFlags.mouth) explode();
-    else if (blink && !faceFlags.blink) newPalette(now);
-    else if (browUp && !faceFlags.brows) addWave('ripple', fx, fy);
-    else if (smiling && !faceFlags.smile) newPalette(now, WARM);
-    else if (wink && !faceFlags.wink) {
-      // A wink steps through the face looks.
-      const order = ['face', 'features', 'mixed'] as const;
-      const k = order.indexOf(S.camMode as (typeof order)[number]);
-      set('camMode', order[(k + 1) % order.length]);
-      showToast(label(CAM_MODES, S.camMode));
-    } else fired = false;
-    if (fired) faceFlags.at = now;
+}
+
+function exMoment(act: ExAction, now: number, f: { x: Float32Array; y: Float32Array }) {
+  const fx = toSx(f.x[1]);
+  const fy = toSy(f.y[1]);
+  if (act === 'explode') explode();
+  else if (act === 'ripple') addWave('ripple', fx, fy);
+  else if (act === 'shockwave') addWave('shockwave', fx, fy);
+  else if (act === 'scatter') scatter();
+  else if (act === 'colours') newPalette(now);
+  else if (act === 'warm') newPalette(now, WARM);
+  else if (act === 'look') {
+    const order = ['face', 'features', 'mixed'] as const;
+    const k = order.indexOf(settings.camMode as (typeof order)[number]);
+    set('camMode', order[(k + 1) % order.length]);
+    showToast(label(CAM_MODES, settings.camMode));
+  } else if (act === 'mine' && myPresets.length) {
+    // Keep the camera look: only presets that use the camera, else all.
+    const camOnes = myPresets.filter((p) => p.settings.shape === 'camera');
+    const list = camOnes.length ? camOnes : myPresets;
+    playMine(list[mineIdx++ % list.length]);
   }
-  Object.assign(faceFlags, { mouth, blink, brows: browUp, smile: smiling, wink });
+}
+
+// Live meters for the Expressions card: how strong each one is right now.
+function renderExMeters() {
+  const box = document.createElement('div');
+  box.className = 'ex-meters';
+  const bars: [ExKey, HTMLElement][] = [];
+  for (const [k, name, hi] of EXPRESSIONS) {
+    const row = document.createElement('div');
+    row.className = 'ex-row';
+    row.innerHTML = `<span>${name}</span><i><b></b><em style="left:${hi * 100}%"></em></i>`;
+    bars.push([k, row.querySelector('b')!]);
+    box.append(row);
+  }
+  const tick = () => {
+    if (box.isConnected && box.offsetParent) for (const [k, el] of bars) {
+      el.style.width = `${(exLevel[k] * 100).toFixed(0)}%`;
+      el.classList.toggle('hot', exOn[k]);
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return box;
 }
 
 // Hands: fingertips push or pull (or swirl) the particles; a pinch grabs.
@@ -2087,6 +2178,8 @@ function cameraTick(now: number) {
     faceDial.flow = faceDial.size = faceDial.speed = 1;
     faceGather = false;
     faceRoll *= 0.9;
+    faceHue *= 0.9;
+    for (const [k] of EXPRESSIONS) exLevel[k] = 0;
     return;
   }
   const faceOn = isCam() && faceMode();
@@ -2100,6 +2193,8 @@ function cameraTick(now: number) {
     faceDial.flow = faceDial.size = faceDial.speed = 1;
     faceGather = false;
     faceRoll *= 0.9;
+    faceHue *= 0.9;
+    for (const [k] of EXPRESSIONS) exLevel[k] = 0;
   }
   handForces();
   camColours(now);
@@ -3583,6 +3678,7 @@ type ControlBody =
   | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
   | { kind: 'presetlib' }
+  | { kind: 'exmeters' }
   | { kind: 'sub'; label: string }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
@@ -4020,7 +4116,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'camMode', 'camMirror', 'camCentre', 'camRate', 'camTriggers', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'camMode', 'camMirror', 'camCentre', 'camRate', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -4037,11 +4133,6 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'camCentre', label: 'Keep the face centred and sized', show: () => isCam() && faceMode() },
   { kind: 'toggle', key: 'camDepth', label: 'Real depth: near parts bigger (turns on 3D depth)', show: () => isCam() && faceMode() },
   { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => isCam() && !faceMode() },
-  { kind: 'sub', label: 'Expressions', show: () => isCam() && faceMode() },
-  { kind: 'toggle', key: 'camTriggers', label: 'Expressions do things', show: () => isCam() && faceMode() },
-  { kind: 'note', text: 'Open mouth: explode. Blink: new colours. Smile: warm colours. Raised brows: a ripple. Pucker: gather. Wink: next face look. Tilt your head to roll the view.', show: () => isCam() && faceMode() && settings.camTriggers },
-  { kind: 'toggle', key: 'camDials', label: 'Expressions steer: mouth → flow, brows → size, smile → speed', show: () => isCam() && faceMode() },
-  { kind: 'toggle', key: 'camMouthEmit', label: 'Particles stream out of your mouth', show: () => isCam() && faceMode() },
   { kind: 'note', text: 'Two people in view each get a face (half the particles each). Colour by Face features or Camera colours on the Look tab. The picture stays on this device; tracking downloads a small model the first time.', show: isCam },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
   { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
@@ -4051,6 +4142,17 @@ const CONTROLS: Control[] = [
   { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
   { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
+
+  { kind: 'section', id: 'expressions', label: 'Expressions', tab: 'life', about: 'Choose what each facial expression does (with a camera face).',
+    lock: ['camTriggers', 'exMouth', 'exBlink', 'exSmile', 'exBrows', 'exPucker', 'exWink', 'exTilt', 'exSense'],
+    power: { on: () => settings.camTriggers, off: { camTriggers: false }, start: { camTriggers: true } },
+    summary: () => (settings.camTriggers ? `${EXPRESSIONS.filter(([k]) => settings[k] !== 'off').length} in use` : 'off') },
+  { kind: 'note', text: 'Needs Shape → Your camera with a face mode (Face mesh, Face features or Features + mesh), or a Camera preset.', show: () => !(isCam() && faceMode()) },
+  { kind: 'exmeters' },
+  { kind: 'note', text: 'Live: how strong each expression is now. The tick is where a moment fires.' },
+  { kind: 'range', key: 'exSense', label: 'Sensitivity', min: 0.5, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×` },
+  ...EXPRESSIONS.map(([k, name]): Control => ({ kind: 'select', key: k, label: name, options: EX_ACTIONS })),
+  { kind: 'note', text: 'A moment fires once as the expression starts. While held lasts as long as you hold it. An amount follows how strong the expression is.' },
 
   // --- Sound ---
   { kind: 'section', id: 'audio', label: 'Audio', tab: 'sound', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : ` · ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
@@ -4257,7 +4359,7 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Silhouette', { count: 5000, size: 1.2, render: 'glow', shape: 'camera', camMode: 'body', camRate: 10, shapeSize: 1, flow: 0.15, flowType: 'curl', trail: 0.75, friction: 0.08, jitter: 0.02, palette: 'neon', colorBy: 'cycle', glow: true, pointerMode: 'repel', radius: 100, force: 0.8, click: 'shockwave' }],
   ['Portrait colours', { count: 6000, size: 1.8, render: 'dots', shape: 'camera', camMode: 'face', camCentre: true, shapeSize: 0.9, flow: 0, trail: 0.2, friction: 0.12, jitter: 0, palette: 'mono', colorBy: 'camera', glow: false, pointerMode: 'repel', radius: 80, force: 0.6, click: 'ripple' }],
   ['Deep face', { count: 4500, size: 1.3, render: 'dots', shape: 'camera', camMode: 'mixed', camMix: 0.5, camDepth: true, depth: 0.9, depthParallax: 0.3, camCentre: true, shapeSize: 0.9, flow: 0, trail: 0.4, friction: 0.12, jitter: 0, palette: 'infra', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave', camTriggers: true }],
-  ['Breath', { count: 3000, size: 1.5, render: 'glow', shape: 'camera', camMode: 'features', camMouthEmit: true, camDials: true, camCentre: true, shapeSize: 0.85, flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.08, jitter: 0.01, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Breath', { count: 3000, size: 1.5, render: 'glow', shape: 'camera', camMode: 'features', camTriggers: true, exMouth: 'emit', exBrows: 'size', exSmile: 'speed', exBlink: 'off', exWink: 'off', exPucker: 'gather', exTilt: 'roll', camCentre: true, shapeSize: 0.85, flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.08, jitter: 0.01, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
   ['Hand play', { count: 3500, size: 1.4, render: 'glow', shape: 'text', shapeText: 'HANDS', camHands: 'repel', camHandReach: 170, camHandForce: 1.4, flow: 0, trail: 0.6, friction: 0.08, jitter: 0.01, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Hand swirl', { count: 3000, size: 1.1, render: 'streaks', camHands: 'vortex', camHandReach: 220, camHandForce: 1.2, flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.9, friction: 0.04, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
   ['Portrait', { count: 6000, size: 1.2, render: 'dots', shape: 'image', imageMode: 'auto', shapeSize: 0.9, entrance: 'drift', flow: 0.05, flowType: 'curl', trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave' }],
@@ -4579,6 +4681,7 @@ function musicVisuals(now: number) {
     if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
     if (S.audioInvert && L.dropEnv > 0.55) parts.push('invert(1)');
   }
+  if (Math.abs(faceHue) > 0.5) parts.push(`hue-rotate(${faceHue.toFixed(1)}deg)`);
   const filter = parts.join(' ');
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
 
@@ -5151,6 +5254,11 @@ function renderControls() {
 
     if (ctl.kind === 'mypresets') {
       body.append(renderMyPresets());
+      continue;
+    }
+
+    if (ctl.kind === 'exmeters') {
+      body.append(renderExMeters());
       continue;
     }
 
