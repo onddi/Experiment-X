@@ -257,6 +257,8 @@ function unspin(x: number, y: number): [number, number] {
 }
 
 canvas.addEventListener('pointermove', (e) => {
+  // Two fingers play settings (Play mode), they don't push particles.
+  if (playTouch.size > 1) return;
   [pointer.x, pointer.y] = unspin(e.offsetX, e.offsetY);
   pointer.active = true;
 });
@@ -458,6 +460,8 @@ function drawObstacles(fade: number, light: boolean) {
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
+  // A second finger starts a two-finger play gesture instead.
+  if (settings.playOn && e.pointerType === 'touch' && playTouch.size >= 1) return;
   pressAt = performance.now();
   if (settings.obstacles === 'circles' && settings.obsPlace && settings.placeWell === 'off') {
     toggleObstacle(e.offsetX, e.offsetY);
@@ -4439,6 +4443,8 @@ const ICONS = {
   reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
 };
 
+// Every slider, for Play mode's pickers (filled once CONTROLS exists).
+const PLAYABLE: [string, string][] = [];
 const CONTROLS: Control[] = [
   { kind: 'section', id: 'presets', label: 'Scene library', tab: 'presets', summary: () => familyLabel(presetFamily) },
   { kind: 'presetlib' },
@@ -4470,6 +4476,15 @@ const CONTROLS: Control[] = [
     Object.assign(settings, { mEnergy: 0.5, mOrder: 0.5, mDream: 0.5, mHeat: 0.5 });
     changed(new Set(['mEnergy', 'mOrder', 'mDream', 'mHeat']));
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
+  { kind: 'section', id: 'play', label: 'Play on the field', tab: 'presets',
+    about: 'Play settings like an instrument with the menu closed.',
+    summary: () => (settings.playOn ? [settings.playLeft, settings.playRight].map(playName).join(' · ') : 'off'),
+    power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
+  { kind: 'select', key: 'playLeft', label: 'Left edge', options: PLAYABLE },
+  { kind: 'select', key: 'playRight', label: 'Right edge', options: PLAYABLE },
+  { kind: 'select', key: 'playTwo', label: 'Two-finger drag', options: PLAYABLE },
+  { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
+  { kind: 'note', text: 'Slide a thumb along the left or right edge of the field, or use two fingers. With a mouse: the wheel plays the left edge, Shift + wheel the right.' },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -6701,6 +6716,130 @@ function reset() {
   apply({}, false);
   showToast(had ? 'Reset, locks cleared' : 'Reset');
 }
+
+// --- play mode ----------------------------------------------------------------------
+// Settings you can play on the field: a fader along each edge, two-finger
+// drag and pinch, and the mouse wheel. Moves are relative, so touching never
+// makes a value jump.
+function fillPlayable() {
+  let sec = '';
+  for (const c of CONTROLS) {
+    if (c.kind === 'section') sec = c.label;
+    else if (c.kind === 'range') PLAYABLE.push([c.key, `${sec} · ${c.label}`]);
+  }
+}
+fillPlayable();
+const rangeOf = (key: string) => CONTROLS.find((c): c is Extract<Control, { kind: 'range' }> => c.kind === 'range' && c.key === key);
+function playName(key: string) {
+  return rangeOf(key)?.label ?? key;
+}
+const stage = document.querySelector<HTMLElement>('.stage')!;
+const playLabel = document.createElement('div');
+playLabel.className = 'play-label';
+stage.append(playLabel);
+let playLabelTimer = 0;
+function playShow(key: string) {
+  const r = rangeOf(key);
+  if (!r) return;
+  const v = settings[r.key] as number;
+  playLabel.textContent = `${r.label}  ${r.format ? r.format(v) : v}`;
+  playLabel.classList.add('show');
+  clearTimeout(playLabelTimer);
+  playLabelTimer = window.setTimeout(() => playLabel.classList.remove('show'), 900);
+}
+// Move a setting by a share of its range (0..1 of min→max).
+function playNudge(key: string, from: number, share: number) {
+  const r = rangeOf(key);
+  if (!r) return;
+  let v = Math.max(r.min, Math.min(r.max, from + share * (r.max - r.min)));
+  v = Math.round(v / r.step) * r.step;
+  set(r.key, Number(v.toFixed(6)) as never);
+  playShow(key);
+}
+const playVal = (key: string) => {
+  const r = rangeOf(key);
+  return r ? (settings[r.key] as number) : 0;
+};
+const playShare = (key: string) => {
+  const r = rangeOf(key);
+  return r ? (playVal(key) - r.min) / (r.max - r.min) : 0;
+};
+for (const side of ['left', 'right'] as const) {
+  const f = document.createElement('div');
+  f.className = `fader ${side}`;
+  f.innerHTML = '<i><b></b></i>';
+  const bar = f.querySelector('b')!;
+  const key = () => (side === 'left' ? settings.playLeft : settings.playRight);
+  let start: { y: number; v: number } | null = null;
+  f.addEventListener('pointerdown', (e) => {
+    f.setPointerCapture(e.pointerId);
+    start = { y: e.clientY, v: playVal(key()) };
+    f.classList.add('on');
+    playShow(key());
+  });
+  f.addEventListener('pointermove', (e) => {
+    if (!start) return;
+    playNudge(key(), start.v, (start.y - e.clientY) / (stage.clientHeight * 0.55));
+  });
+  const end = () => {
+    start = null;
+    f.classList.remove('on');
+  };
+  f.addEventListener('pointerup', end);
+  f.addEventListener('pointercancel', end);
+  const sync = () => {
+    f.hidden = !settings.playOn || !rangeOf(key());
+    bar.style.height = `${(playShare(key()) * 100).toFixed(1)}%`;
+  };
+  refreshers.push(sync);
+  sync();
+  stage.append(f);
+}
+// Two fingers: drag up/down and pinch.
+const playTouch = new Map<number, { x: number; y: number }>();
+let twoStart: { cy: number; d: number; two: number; pinch: number } | null = null;
+const twoGeom = () => {
+  const [a, b] = [...playTouch.values()];
+  return { cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+};
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch') return;
+  playTouch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (settings.playOn && playTouch.size === 2) {
+    // The first finger stops acting on the particles.
+    pointer.down = false;
+    pointer.active = false;
+    pointer.x = pointer.y = -1e4;
+    twoStart = { ...twoGeom(), two: playVal(settings.playTwo), pinch: playVal(settings.playPinch) };
+  }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!playTouch.has(e.pointerId)) return;
+  playTouch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!twoStart || playTouch.size !== 2) return;
+  const g = twoGeom();
+  const dy = (twoStart.cy - g.cy) / (stage.clientHeight * 0.55);
+  const pinch = Math.log2(g.d / twoStart.d) * 0.35;
+  // Whichever the hands are doing more of wins, so one doesn't drag the other.
+  if (Math.abs(dy) > Math.abs(pinch)) playNudge(settings.playTwo, twoStart.two, dy);
+  else playNudge(settings.playPinch, twoStart.pinch, pinch);
+});
+const twoEnd = (e: PointerEvent) => {
+  playTouch.delete(e.pointerId);
+  if (playTouch.size < 2) twoStart = null;
+};
+canvas.addEventListener('pointerup', twoEnd);
+canvas.addEventListener('pointercancel', twoEnd);
+canvas.addEventListener(
+  'wheel',
+  (e) => {
+    if (!settings.playOn) return;
+    e.preventDefault();
+    const key = e.shiftKey ? settings.playRight : settings.playLeft;
+    playNudge(key, playVal(key), -(e.deltaY || e.deltaX) / 1500);
+  },
+  { passive: false },
+);
 
 // --- panel toggle & keys -----------------------------------------------------
 

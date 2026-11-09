@@ -687,3 +687,57 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 .link-bottom select { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
 .link-add > button { width: 100%; margin: 6px 0; }
 .link-ideas button { font-size: 11px; }
+
+/* --- Play mode: edge faders and the label while playing --------------------------- */
+.fader {
+  position: absolute;
+  top: 22%;
+  bottom: 30%;
+  width: 44px;
+  z-index: 3;
+  touch-action: none;
+  cursor: ns-resize;
+}
+.fader[hidden] { display: none; }
+/* Inset from the very edge, where phones keep their own back swipe. */
+.fader.left { left: 10px; }
+.fader.right { right: 10px; }
+.fader i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.07);
+  overflow: hidden;
+  transition: background 0.2s, width 0.2s;
+}
+.fader.left i { left: 4px; }
+.fader.right i { right: 4px; }
+.fader b { position: absolute; left: 0; right: 0; bottom: 0; background: rgb(255 255 255 / 0.22); transition: background 0.2s; }
+.fader:hover i, .fader.on i { width: 5px; background: rgb(255 255 255 / 0.14); }
+.fader.on b { background: rgb(255 255 255 / 0.6); }
+.play-label {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  z-index: 4;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
+  font-size: 13px;
+  white-space: pre;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition: opacity 0.25s, transform 0.25s;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.play-label.show { opacity: 1; transform: translate(-50%, 0); }
+body.no-input .fader { display: none; }
+/* Phones: keep the faders above the shortcut buttons. */
+@media (max-width: 720px) {
+  .fader { top: 14%; bottom: 46%; }
+}

@@ -121,6 +121,12 @@ export interface Settings {
   mOrder: number;
   mDream: number;
   mHeat: number;
+  // Play mode: settings you play on the field itself (edge faders, two fingers, wheel).
+  playOn: boolean;
+  playLeft: string;
+  playRight: string;
+  playTwo: string;
+  playPinch: string;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -373,6 +379,11 @@ export const DEFAULTS: Settings = {
   mOrder: 0.5,
   mDream: 0.5,
   mHeat: 0.5,
+  playOn: true,
+  playLeft: 'mEnergy',
+  playRight: 'mDream',
+  playTwo: 'mHeat',
+  playPinch: 'size',
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
