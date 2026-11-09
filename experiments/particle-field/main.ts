@@ -2060,7 +2060,7 @@ const EXPRESSIONS: [ExKey, string, number][] = [
 const EX_ACTIONS: [string, string][] = [
   ['off', 'Nothing'],
   ['explode', 'Explode (moment)'], ['ripple', 'Ripple (moment)'], ['shockwave', 'Shockwave (moment)'], ['scatter', 'Scatter (moment)'],
-  ['colours', 'New colours (moment)'], ['warm', 'Warm colours (moment)'], ['look', 'Next face look (moment)'], ['mine', 'Next of my presets (moment)'],
+  ['colours', 'New colours (moment)'], ['warm', 'Warm colours (moment)'], ['look', 'Next face look (moment)'], ['mine', 'Next of my scenes (moment)'],
   ['gather', 'Gather (while held)'],
   ['flow', 'More flow (amount)'], ['size', 'Bigger particles (amount)'], ['speed', 'Faster (amount)'], ['hue', 'Shift colour (amount)'],
   ['roll', 'Roll the view (amount)'], ['emit', 'Stream from the mouth (amount)'],
@@ -2168,7 +2168,7 @@ function exMoment(act: ExAction, now: number, f: { x: Float32Array; y: Float32Ar
   } else if (act === 'mine') nextMine();
 }
 function nextMine() {
-  if (!myPresets.length) return showToast('No presets of yours yet');
+  if (!myPresets.length) return showToast('No scenes of yours yet');
   // Keep the camera look: only presets that use the camera, else all.
   const camOnes = myPresets.filter((p) => p.settings.shape === 'camera');
   const list = camOnes.length ? camOnes : myPresets;
@@ -2371,8 +2371,8 @@ const GESTURES: [GKey, string, string][] = [
 ];
 const G_ACTIONS: [string, string][] = [
   ['off', 'Nothing'], ['explode', 'Explode'], ['ripple', 'Ripple'], ['shockwave', 'Shockwave'], ['scatter', 'Scatter'],
-  ['colours', 'New colours'], ['warm', 'Warm colours'], ['preset', 'Next preset (same family)'], ['mine', 'Next of my presets'],
-  ['save', 'Save the look to My presets'], ['clear', 'Clear the drawing'], ['freeze', 'Freeze (while held)'], ['gather', 'Gather (while held)'],
+  ['colours', 'New colours'], ['warm', 'Warm colours'], ['preset', 'Next scene (same family)'], ['mine', 'Next of my scenes'],
+  ['save', 'Save the scene to My scenes'], ['clear', 'Clear the drawing'], ['freeze', 'Freeze (while held)'], ['gather', 'Gather (while held)'],
 ];
 const gState: { g: string; since: number; fired: string }[] = [];
 let gestFreeze = false;
@@ -2428,7 +2428,7 @@ function gestMoment(act: GAction, now: number, x: number, y: number) {
     myPresets.push({ name, settings: snapshot() });
     writeJson(MY_PRESETS_KEY, myPresets);
     redrawMine();
-    showToast(`Saved “${name}” to My presets`);
+    showToast(`Saved “${name}” to My scenes`);
   }
 }
 
@@ -4438,8 +4438,8 @@ function adaptQuality(dt: number) {
 // --- controls ----------------------------------------------------------------
 
 type Control = ControlBody & { show?: () => boolean };
-type Tab = 'look' | 'motion' | 'life' | 'sound';
-const TABS: [Tab, string][] = [['look', 'Look'], ['motion', 'Motion'], ['life', 'Life'], ['sound', 'Sound']];
+type Tab = 'presets' | 'look' | 'shape' | 'motion' | 'music' | 'camera';
+const TABS: [Tab, string][] = [['presets', 'Scenes'], ['look', 'Look'], ['shape', 'Shape'], ['motion', 'Motion'], ['music', 'Music'], ['camera', 'Camera']];
 // A card that can be switched off: `off` is what switching off sets, `start`
 // what switching on sets the first time (later it restores what you had).
 type Power = { on: () => boolean; off: Partial<Settings>; start: Partial<Settings> };
@@ -4451,6 +4451,7 @@ type ControlBody =
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'sub'; label: string }
+  | { kind: 'heading'; label: string; tab: Tab }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'toggle'; key: keyof Settings; label: string }
@@ -4726,23 +4727,23 @@ const ICONS = {
 };
 
 const CONTROLS: Control[] = [
-  // --- Look ---
-  { kind: 'section', id: 'presets', label: 'Presets', tab: 'look', summary: () => familyLabel(presetFamily) },
+  { kind: 'section', id: 'presets', label: 'Scene library', tab: 'presets', summary: () => familyLabel(presetFamily) },
   { kind: 'presetlib' },
 
-  { kind: 'section', id: 'mine', label: 'My presets', tab: 'look',
+  { kind: 'section', id: 'mine', label: 'My scenes', tab: 'presets',
     summary: () => (myPresets.length ? `${myPresets.length} saved` : '') },
   { kind: 'mypresets' },
-  { kind: 'note', text: 'Keys 1–9 and 0 play your presets: pick a key in the list, or press Shift + a number to save the current look to it. Open straight into one with a link ending ?preset=3 (its key) or ?preset=Smoke (any preset name).' },
+  { kind: 'note', text: 'Keys 1–9 and 0 play your scenes: pick a key in the list, or press Shift + a number to save the current scene to it. Open straight into one with a link ending ?preset=3 (its key) or ?preset=Smoke (any scene name).' },
 
   // How switching between looks feels. Not part of any look: presets keep these.
-  { kind: 'section', id: 'transitions', label: 'Transitions', tab: 'look',
+
+  { kind: 'section', id: 'transitions', label: 'Transitions', tab: 'presets',
     summary: () => [settings.morph > 0 ? `${settings.morph.toFixed(1)}s morph` : 'instant', `snap ${settings.homeStrength.toFixed(1)}×`, settings.beatSnap ? 'on the beat' : '', settings.shuffleCards ? 'wild shuffle' : ''].filter(Boolean).join(' · ') },
   { kind: 'range', key: 'morph', label: 'Morph time', min: 0, max: 4, step: 0.1, format: (v) => (v === 0 ? 'instant' : `${v.toFixed(1)}s`) },
   { kind: 'range', key: 'homeStrength', label: 'Snap to shape', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'beatSnap', label: 'Switch on the next kick drum' },
   { kind: 'toggle', key: 'shuffleCards', label: 'Shuffle also switches cards on and off' },
-  { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Presets don\'t change these.' },
+  { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Scenes don\'t change these.' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
@@ -4767,13 +4768,6 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
   { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
 
-  { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
-    power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
-    summary: () => (settings.depth > 0 ? `${pct(settings.depth)}${settings.depthParallax > 0 ? ', parallax' : ''}` : 'off') },
-  { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
-  { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
-  { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
-
   { kind: 'section', id: 'colour', label: 'Colour', tab: 'look', lock: ['palette', 'colorBy', 'customColors', 'customBg'],
     summary: () => `${pal().label}, ${label(COLOR_BY, settings.colorBy)}` },
   { kind: 'select', key: 'palette', label: 'Palette', options: [...Object.entries(PALETTES).map(([k, p]) => [k, p.label] as [string, string]), ['custom', 'Custom…']] },
@@ -4782,7 +4776,56 @@ const CONTROLS: Control[] = [
   { kind: 'swatch' },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
-  // --- Motion ---
+  { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
+    power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
+    summary: () => (settings.depth > 0 ? `${pct(settings.depth)}${settings.depthParallax > 0 ? ', parallax' : ''}` : 'off') },
+  { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
+  { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
+
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+    power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
+    summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
+  { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
+  { kind: 'note', text: 'How the camera forms you (face, hands or body) is on the Camera tab.', show: isCam },
+  { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
+  { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
+  { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
+  { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
+  { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
+  { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && !isCam() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
+  { kind: 'buttons', buttons: [['Play entrance', () => playEntrance()]], show: () => hasShape() && !isCam() && settings.entrance !== 'scatter' },
+  { kind: 'note', text: 'How the shape forms when the page opens. Scattered is the old free-for-all.', show: () => hasShape() && !isCam() },
+  { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
+  { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
+
+  { kind: 'section', about: 'Lifespans, emitters and launch speed.', id: 'life', label: 'Birth & lifespan', tab: 'shape',
+    lock: ['lifespan', 'lifeSize', 'lifeFade', 'launchSpeed', 'launchDir', 'launchSpread', 'emitter', 'emitMode', 'emitX', 'emitY', 'emitSize', 'emitAngle', 'emitRate', 'burstEvery', 'burstSize', 'emitOut'],
+    power: { on: () => settings.lifespan > 0 || hasEmitter() || settings.launchSpeed > 0, off: { lifespan: 0, emitter: 'none', launchSpeed: 0 }, start: { lifespan: 6, lifeFade: 'swell' } },
+    summary: () => [settings.lifespan > 0 ? `~${settings.lifespan}s life` : '', hasEmitter() ? label(EMITTERS, settings.emitter).toLowerCase() : '', settings.launchSpeed > 0 ? 'launched' : ''].filter(Boolean).join(', ') || 'off' },
+  { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
+  { kind: 'select', key: 'emitter', label: 'Born from', options: EMITTERS },
+  { kind: 'select', key: 'emitMode', label: 'Release', options: EMIT_MODES, show: hasEmitter },
+  { kind: 'range', key: 'emitRate', label: 'Rate', min: 0.02, max: 1, step: 0.01, format: (v) => `${Math.round(v * 100)}% / s`, show: () => hasEmitter() && settings.emitMode === 'steady' },
+  { kind: 'range', key: 'burstEvery', label: 'Burst every', min: 0.3, max: 8, step: 0.1, format: (v) => `${v.toFixed(1)}s`, show: () => hasEmitter() && settings.emitMode === 'burst' },
+  { kind: 'range', key: 'burstSize', label: 'Burst size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && settings.emitMode !== 'steady' },
+  { kind: 'note', text: 'Bursts on each kick drum; turn on Audio first.', show: () => hasEmitter() && settings.emitMode === 'beat' && audio.source === 'off' },
+  { kind: 'range', key: 'emitX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
+  { kind: 'range', key: 'emitY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
+  { kind: 'range', key: 'emitSize', label: 'Size', min: 10, max: 600, step: 5, format: (v) => `${v}px`, show: () => ['line', 'circle', 'ring'].includes(settings.emitter) },
+  { kind: 'range', key: 'emitAngle', label: 'Line angle', min: 0, max: 179, step: 1, format: (v) => `${v}°`, show: () => settings.emitter === 'line' },
+  { kind: 'more', label: 'More birth settings' },
+  { kind: 'select', key: 'lifeSize', label: 'Size over life', options: [['none', 'Stays the same'], ['grow', 'Grows'], ['shrink', 'Shrinks'], ['swell', 'Swells then shrinks']], show: () => settings.lifespan > 0 },
+  { kind: 'select', key: 'lifeFade', label: 'Fade over life', options: [['edges', 'Quick fade in and out'], ['out', 'Bright at birth, fades out'], ['swell', 'Slow fade in and out'], ['flash', 'Flash at birth']], show: () => settings.lifespan > 0 },
+  { kind: 'note', text: 'Tip: set Colour by → Age to shift colour from birth (calm end) to old age (hot end).', show: () => settings.lifespan > 0 && settings.colorBy !== 'age' },
+  { kind: 'range', key: 'launchSpeed', label: 'Launch speed', min: 0, max: 6, step: 0.1, format: (v) => (v === 0 ? 'still' : v.toFixed(1)) },
+  { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
+  { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
+  { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
+  { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
+  { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
+
   { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges', 'renew'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
@@ -4842,39 +4885,6 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
 
-  { kind: 'section', about: 'Your hands, seen by the camera, push, pull or swirl the particles. Pinch to grab.', id: 'hands', label: 'Hands', tab: 'motion', lock: ['camHands', 'camHandReach', 'camHandForce'],
-    power: { on: handsOn, off: { camHands: 'off' }, start: { camHands: 'repel' } },
-    summary: () => (handsOn() ? `${settings.camHands}${cam.hands.length ? ` · ${cam.hands.length} hand${cam.hands.length > 1 ? 's' : ''}` : ''}` : 'off') },
-  { kind: 'select', key: 'camHands', label: 'Hands', options: [['repel', 'Push away'], ['attract', 'Pull in'], ['vortex', 'Swirl'], ['draw', 'Draw (pinch is the pen)'], ['spray', 'Spray from your index fingers']] },
-  { kind: 'range', key: 'camHandReach', label: 'Reach', min: 40, max: 400, step: 10, format: (v) => `${v}px`, show: () => !isPaint() },
-  { kind: 'range', key: 'camHandForce', label: 'Strength', min: 0.1, max: 3, step: 0.05, format: pct, show: () => !isPaint() },
-  { kind: 'select', key: 'drawColour', label: 'Colour', options: [['flow', 'Rainbow along the stroke'], ['finger', 'A colour per finger']], show: () => settings.camHands === 'draw' },
-  { kind: 'toggle', key: 'drawWidth', label: 'Brush width: spread index and middle finger', show: () => settings.camHands === 'draw' },
-  { kind: 'toggle', key: 'drawErase', label: 'Open palm erases', show: () => settings.camHands === 'draw' },
-  { kind: 'buttons', buttons: [['Clear the drawing', () => { paintParked = false; syncPaint(); }]], show: isPaint },
-  { kind: 'note', text: 'Draw: pinch your thumb and index finger to put the pen down, open them to lift it. With a colour per finger, pinch the thumb to any finger. The oldest strokes are reused when you run out of particles (Count, Particles card). Spray: point your index finger.', show: isPaint },
-  { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie' },
-  { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview' },
-  { kind: 'note', show: () => !isPaint(), text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them; flick and let go to throw them. Uses the camera (asks once); the picture stays on this device.' },
-
-  { kind: 'section', id: 'gestures', label: 'Gestures', tab: 'motion', about: 'Hand signs as switches, and two hands as dials.',
-    lock: ['gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle'],
-    power: { on: () => settings.gestOn, off: { gestOn: false }, start: { gestOn: true } },
-    summary: () => (settings.gestOn ? gestShown || `${GESTURES.filter(([k]) => settings[k] !== 'off').length} signs` : 'off') },
-  ...GESTURES.map(([k, , name]): Control => ({ kind: 'select', key: k, label: name, options: G_ACTIONS })),
-  { kind: 'sub', label: 'Two hands' },
-  { kind: 'select', key: 'twoDist', label: 'Hands apart', options: [['off', 'Nothing'], ['zoom', 'Zoom the view'], ['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed']] },
-  { kind: 'select', key: 'twoAngle', label: 'Tilt between them', options: [['off', 'Nothing'], ['turn', 'Turn the view'], ['hue', 'Shift the colours']] },
-  { kind: 'note', text: 'Hold a sign for a moment: it fires once (hold it again for another go). Freeze and Gather last while you hold them. Two hands a shoulder width apart and level is neutral; move them apart, together or tilt them. Works with any look; uses the camera.' },
-
-  { kind: 'section', id: 'body', label: 'Body', tab: 'motion', about: 'Your arms sweep the particles; jump for a moment.',
-    lock: ['poseOn', 'poseSweep', 'poseJump'],
-    power: { on: () => settings.poseOn, off: { poseOn: false }, start: { poseOn: true } },
-    summary: () => (settings.poseOn ? (cam.poses.length ? 'tracking you' : 'on') : 'off') },
-  { kind: 'range', key: 'poseSweep', label: 'Arms sweep', min: 0, max: 3, step: 0.1, format: (v) => (v === 0 ? 'off' : `${v.toFixed(1)}×`) },
-  { kind: 'select', key: 'poseJump', label: 'A jump does', options: [['off', 'Nothing'], ['explode', 'Explode'], ['shockwave', 'Shockwave'], ['colours', 'New colours'], ['scatter', 'Scatter']] },
-  { kind: 'note', text: 'Step back so the camera sees you from the hips up (the whole body for jumps). Shape → Your camera → Your body makes you the shape; Obstacles → Your silhouette makes particles flow round you.' },
-
   { kind: 'section', about: 'How particles react to your pointer and clicks.', id: 'pointer', label: 'Pointer & click', tab: 'motion', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
     power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
     summary: () => [hasPointer() ? label(POINTER_MODES, settings.pointerMode) : '', hasClick() ? label(CLICK_MODES, settings.click).replace(' (hold)', '') : ''].filter(Boolean).join(' · ') || 'off' },
@@ -4884,98 +4894,29 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
   { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
 
-  // --- Life ---
-  { kind: 'section', about: 'Lifespans, emitters and launch speed.', id: 'life', label: 'Birth & spawning', tab: 'life',
-    lock: ['lifespan', 'lifeSize', 'lifeFade', 'launchSpeed', 'launchDir', 'launchSpread', 'emitter', 'emitMode', 'emitX', 'emitY', 'emitSize', 'emitAngle', 'emitRate', 'burstEvery', 'burstSize', 'emitOut'],
-    power: { on: () => settings.lifespan > 0 || hasEmitter() || settings.launchSpeed > 0, off: { lifespan: 0, emitter: 'none', launchSpeed: 0 }, start: { lifespan: 6, lifeFade: 'swell' } },
-    summary: () => [settings.lifespan > 0 ? `~${settings.lifespan}s life` : '', hasEmitter() ? label(EMITTERS, settings.emitter).toLowerCase() : '', settings.launchSpeed > 0 ? 'launched' : ''].filter(Boolean).join(', ') || 'off' },
-  { kind: 'range', key: 'lifespan', label: 'Lifespan', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'endless' : `~${v}s`) },
-  { kind: 'select', key: 'emitter', label: 'Born from', options: EMITTERS },
-  { kind: 'select', key: 'emitMode', label: 'Release', options: EMIT_MODES, show: hasEmitter },
-  { kind: 'range', key: 'emitRate', label: 'Rate', min: 0.02, max: 1, step: 0.01, format: (v) => `${Math.round(v * 100)}% / s`, show: () => hasEmitter() && settings.emitMode === 'steady' },
-  { kind: 'range', key: 'burstEvery', label: 'Burst every', min: 0.3, max: 8, step: 0.1, format: (v) => `${v.toFixed(1)}s`, show: () => hasEmitter() && settings.emitMode === 'burst' },
-  { kind: 'range', key: 'burstSize', label: 'Burst size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && settings.emitMode !== 'steady' },
-  { kind: 'note', text: 'Bursts on each kick drum; turn on Audio first.', show: () => hasEmitter() && settings.emitMode === 'beat' && audio.source === 'off' },
-  { kind: 'range', key: 'emitX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
-  { kind: 'range', key: 'emitY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
-  { kind: 'range', key: 'emitSize', label: 'Size', min: 10, max: 600, step: 5, format: (v) => `${v}px`, show: () => ['line', 'circle', 'ring'].includes(settings.emitter) },
-  { kind: 'range', key: 'emitAngle', label: 'Line angle', min: 0, max: 179, step: 1, format: (v) => `${v}°`, show: () => settings.emitter === 'line' },
-  { kind: 'more', label: 'More birth settings' },
-  { kind: 'select', key: 'lifeSize', label: 'Size over life', options: [['none', 'Stays the same'], ['grow', 'Grows'], ['shrink', 'Shrinks'], ['swell', 'Swells then shrinks']], show: () => settings.lifespan > 0 },
-  { kind: 'select', key: 'lifeFade', label: 'Fade over life', options: [['edges', 'Quick fade in and out'], ['out', 'Bright at birth, fades out'], ['swell', 'Slow fade in and out'], ['flash', 'Flash at birth']], show: () => settings.lifespan > 0 },
-  { kind: 'note', text: 'Tip: set Colour by → Age to shift colour from birth (calm end) to old age (hot end).', show: () => settings.lifespan > 0 && settings.colorBy !== 'age' },
-  { kind: 'range', key: 'launchSpeed', label: 'Launch speed', min: 0, max: 6, step: 0.1, format: (v) => (v === 0 ? 'still' : v.toFixed(1)) },
-  { kind: 'range', key: 'launchDir', label: 'Launch direction', min: 0, max: 359, step: 1, format: (v) => `${'→↘↓↙←↖↑↗'[Math.round(v / 45) % 8]} ${v}°`, show: () => settings.launchSpeed > 0 && settings.launchSpread < 360 },
-  { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
-  { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
-  { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
-  { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
-
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'camMode', 'camMirror', 'camCentre', 'camRate', 'mirrorWorld', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
-    power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
-    summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
-  { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
-  { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
-  { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
-  { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
-  { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
-  { kind: 'buttons', buttons: [['Start camera', () => void startCamera()]], show: () => isCam() && !cam.on },
-  { kind: 'buttons', buttons: [['Stop camera', stopCamera]], show: () => isCam() && cam.on },
-  { kind: 'select', key: 'camMode', label: 'Use', options: CAM_MODES, show: isCam },
-  { kind: 'range', key: 'camMix', label: 'Features vs mesh', min: 0.1, max: 0.95, step: 0.05, format: (v) => `${Math.round(v * 100)}% features`, show: () => isCam() && settings.camMode === 'mixed' },
-  { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie', show: isCam },
-  { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview', show: isCam },
-  { kind: 'range', key: 'camSnap', label: 'Follow tightness', min: 0, max: 1, step: 0.05, format: (v) => (v < 0.2 ? 'loose' : v > 0.8 ? 'tight' : pct(v)), show: () => isCam() && trackMode() },
-  { kind: 'toggle', key: 'camCentre', label: 'Keep the face centred and sized', show: () => isCam() && faceMode() },
-  { kind: 'toggle', key: 'camDepth', label: 'Real depth: near parts bigger (turns on 3D depth)', show: () => isCam() && faceMode() },
-  { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => isCam() && !trackMode() },
-  { kind: 'toggle', key: 'mirrorWorld', label: 'Mirror world: the left half reflected in other colours', show: isCam },
-  { kind: 'note', text: 'Two people (or two hands) in view each get half the particles. Colour by Face features or Camera colours on the Look tab. The picture stays on this device; tracking downloads a small model the first time.', show: isCam },
-  { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
-  { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
-  { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && !isCam() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
-  { kind: 'buttons', buttons: [['Play entrance', () => playEntrance()]], show: () => hasShape() && !isCam() && settings.entrance !== 'scatter' },
-  { kind: 'note', text: 'How the shape forms when the page opens. Scattered is the old free-for-all.', show: () => hasShape() && !isCam() },
-  { kind: 'more', label: 'More settings' },
-  { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
-  { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
-
-  { kind: 'section', id: 'expressions', label: 'Expressions', tab: 'life', about: 'Choose what each facial expression does (with a camera face).',
-    lock: ['camTriggers', 'exMouth', 'exBlink', 'exSmile', 'exBrows', 'exPucker', 'exWink', 'exTilt', 'exSense'],
-    power: { on: () => settings.camTriggers, off: { camTriggers: false }, start: { camTriggers: true } },
-    summary: () => (settings.camTriggers ? `${EXPRESSIONS.filter(([k]) => settings[k] !== 'off').length} in use` : 'off') },
-  { kind: 'note', text: 'Needs Shape → Your camera with a face mode (Face mesh, Face features or Features + mesh), or a Camera preset.', show: () => !(isCam() && faceMode()) },
-  { kind: 'exmeters' },
-  { kind: 'note', text: 'Live: how strong each expression is now. The tick is where a moment fires.' },
-  { kind: 'range', key: 'exSense', label: 'Sensitivity', min: 0.5, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×` },
-  ...EXPRESSIONS.map(([k, name]): Control => ({ kind: 'select', key: k, label: name, options: EX_ACTIONS })),
-  { kind: 'note', text: 'A moment fires once as the expression starts. While held lasts as long as you hold it. An amount follows how strong the expression is.' },
-
-  { kind: 'section', id: 'facefx', label: 'Face extras', tab: 'life', about: 'Flames, a crown or tears on your face; your gaze and voice move particles.',
-    lock: ['maskFx', 'maskShare', 'gaze', 'voice'],
-    power: { on: faceExtras, off: { maskFx: 'none', gaze: 'off', voice: false }, start: { maskFx: 'flames' } },
-    summary: () => [settings.maskFx !== 'none' ? settings.maskFx : '', settings.gaze !== 'off' ? 'gaze' : '', settings.voice ? 'voice' : ''].filter(Boolean).join(', ') || 'off' },
-  { kind: 'select', key: 'maskFx', label: 'Mask', options: [['none', 'None'], ['flames', 'Flame hair'], ['crown', 'Crown of sparks'], ['tears', 'Tears'], ['beard', 'Rainbow beard'], ['halo', 'Halo'], ['lasers', 'Laser eyes']] },
-  { kind: 'range', key: 'maskShare', label: 'Particles for the mask and voice', min: 0.1, max: 0.8, step: 0.05, format: pct, show: () => settings.maskFx !== 'none' || settings.voice },
-  { kind: 'select', key: 'gaze', label: 'Your gaze', options: [['off', 'Nothing'], ['drift', 'Particles drift where you look'], ['eyes', 'Your eyes pull particles in']] },
-  { kind: 'toggle', key: 'voice', label: 'Voice: sing or talk and particles stream from your mouth' },
-  { kind: 'buttons', buttons: [['Use the microphone', () => void audio.start('mic')]], show: () => settings.voice && audio.source === 'off' },
-  { kind: 'note', text: 'Voice colours follow your pitch: low notes one end of the palette, high notes the other. Works with any look; with Shape → Your camera → a face mode the effects sit on the particle face.' },
-
-  // --- Sound ---
-  { kind: 'section', id: 'audio', label: 'Audio', tab: 'sound', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : ` · ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
+  { kind: 'section', id: 'audio', label: 'Sound source', tab: 'music', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : ` · ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
   { kind: 'audio' },
   { kind: 'sub', label: 'Genre' },
   { kind: 'choice', key: 'audioGenre', label: 'Genre', options: GENRES },
   { kind: 'note', text: 'Tunes how kicks, snares, hats and 808s are picked out.' },
 
-  { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'sound', summary: vibeLabel },
+  { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
   { kind: 'vibes' },
   { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
   { kind: 'toggle', key: 'audioVibeLook', label: 'Vibes also change style, trails and flow' },
   { kind: 'note', text: 'A vibe sets the drums and the cards below (switching them on or off). Lock a card to keep it as it is when you change vibe.' },
 
-  { kind: 'section', id: 'drums', label: 'Drums', tab: 'sound', folded: true,
+  { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'music', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
+    power: { on: () => settings.audioVj > 0, off: { audioVj: 0 }, start: { audioVj: 8 } },
+    summary: () => (settings.audioVj > 0 ? `every ${settings.audioVj} bars` : 'off') },
+  { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
+  { kind: 'range', key: 'audioVj', label: 'Every', min: 1, max: 32, step: 1, format: (v) => `${v} bar${v > 1 ? 's' : ''}` },
+  { kind: 'select', key: 'audioVjFrom', label: 'Switch to', options: [['mine', 'My scenes (keyed ones in order)'], ['presets', 'Random library scenes'], ['shuffle', 'Shuffle (keeps locks)']] },
+  { kind: 'toggle', key: 'audioVjDrop', label: 'Also switch on every drop' },
+  { kind: 'note', text: 'Uses Morph time (Transitions card, Scenes tab) for the change.' },
+
+  { kind: 'heading', label: 'Hits', tab: 'music' },
+  { kind: 'section', id: 'drums', label: 'Drums', tab: 'music',
     lock: ['audioKick', 'audioPulse', 'audioBeat', 'audioWaveAt', 'audioWaveEvery', 'audioWaveForce', 'audioWaveSpeed', 'audioWaveReach', 'audioWaveWidth', 'audioWaveFeel', 'audioWaveRings', 'audioWaveAccent', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioSubAmt', 'audioSpeed', 'audioFlow'],
     summary: () => [label([['pulse', 'pulse'], ['wave', 'waves'], ['both', 'pulse + waves'], ['none', '']], settings.audioKick), settings.audioSnare !== 'none' ? `snare ${settings.audioSnare}` : '', settings.audioHats !== 'none' ? 'hats' : ''].filter(Boolean).join(' · ') },
   { kind: 'sub', label: 'Kick' },
@@ -5002,7 +4943,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct, show: ft },
   { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct, show: ft },
 
-  { kind: 'section', id: 'drops', label: 'Drops', tab: 'sound', about: 'Build-ups pull the field in, the drop blows it apart.', lock: ['audioDrop', 'audioDropBuild'],
+  { kind: 'section', id: 'drops', label: 'Drops', tab: 'music', about: 'Build-ups pull the field in, the drop blows it apart.', lock: ['audioDrop', 'audioDropBuild'],
     power: { on: () => settings.audioDrop > 0, off: { audioDrop: 0 }, start: { audioDrop: 1 } },
     summary: () => (settings.audioDrop > 0 ? `${pct(settings.audioDrop)}${audio.source !== 'off' && audio.levels.tension > 0.1 ? ' · building' : ''}` : 'off') },
   { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
@@ -5010,23 +4951,15 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'audioDropBuild', label: 'Build-ups pull in and shiver' },
   { kind: 'note', text: 'A drop is the first kick back after a break or build-up (the kick gone for ~2 s, rising energy, or a snare roll).' },
 
-  { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'sound', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
-    power: { on: () => settings.audioVj > 0, off: { audioVj: 0 }, start: { audioVj: 8 } },
-    summary: () => (settings.audioVj > 0 ? `every ${settings.audioVj} bars` : 'off') },
-  { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
-  { kind: 'range', key: 'audioVj', label: 'Every', min: 1, max: 32, step: 1, format: (v) => `${v} bar${v > 1 ? 's' : ''}` },
-  { kind: 'select', key: 'audioVjFrom', label: 'Switch to', options: [['mine', 'My presets (keyed ones in order)'], ['presets', 'Random built-in presets'], ['shuffle', 'Shuffle (keeps locks)']] },
-  { kind: 'toggle', key: 'audioVjDrop', label: 'Also switch on every drop' },
-  { kind: 'note', text: 'Uses Morph time (My presets card) for the change.' },
-
-  { kind: 'section', id: 'bands', label: 'Frequency groups', tab: 'sound', about: 'Bass, mid and high particles each move to their own part.', lock: ['audioBands'],
+  { kind: 'section', id: 'bands', label: 'Frequency groups', tab: 'music', about: 'Bass, mid and high particles each move to their own part.', lock: ['audioBands'],
     power: { on: () => settings.audioBands > 0, off: { audioBands: 0 }, start: { audioBands: 0.7 } },
     summary: () => (settings.audioBands > 0 ? pct(settings.audioBands) : 'off') },
   { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
   { kind: 'range', key: 'audioBands', label: 'Separation', min: 0.05, max: 1, step: 0.05, format: pct },
   { kind: 'note', text: 'A third of the particles are bass: big, swell with the bass, thrown by kicks. A third are mids: swirl with snares. The rest are highs: small, sparkle with hats. Try Colour by → Frequency group.' },
 
-  { kind: 'section', id: 'mcolour', label: 'Music colour', tab: 'sound', about: 'Hue shifts, new palettes per section, flashes and colour that drains in a build-up.',
+  { kind: 'heading', label: 'Colour', tab: 'music' },
+  { kind: 'section', id: 'mcolour', label: 'Music colour', tab: 'music', about: 'Hue shifts, new palettes per section, flashes and colour that drains in a build-up.',
     lock: ['audioHue', 'audioHueAmt', 'audioBright', 'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert'],
     power: { on: () => settings.audioHue !== 'off' || settings.audioBright > 0 || settings.audioPalEvery > 0 || settings.audioMonoBuild || settings.audioBgFlash > 0 || settings.audioInvert,
       off: { audioHue: 'off', audioBright: 0, audioPalEvery: 0, audioMonoBuild: false, audioBgFlash: 0, audioInvert: false }, start: { audioHue: 'bar', audioBright: 0.4 } },
@@ -5045,7 +4978,8 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'audioMonoBuild', label: 'Colour drains in a build-up, back at the drop' },
   { kind: 'toggle', key: 'audioInvert', label: 'Invert the colours for a moment at a drop' },
 
-  { kind: 'section', id: 'camera', label: 'Camera', tab: 'sound', about: 'Punches, shakes, cuts, dollies, pans, rolls and spins in time with the music.',
+  { kind: 'heading', label: 'View', tab: 'music' },
+  { kind: 'section', id: 'camera', label: 'View moves', tab: 'music', about: 'Punches, shakes, cuts, dollies, pans, rolls and spins in time with the music.',
     lock: ['audioCam', 'audioSpin', 'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip'],
     power: { on: () => settings.audioCam > 0 || settings.audioSpin !== 'off' || settings.audioCuts !== 'off' || settings.audioDolly || settings.audioPan > 0 || settings.audioRoll > 0 || settings.audioFlip,
       off: { audioCam: 0, audioSpin: 'off', audioCuts: 'off', audioDolly: false, audioPan: 0, audioRoll: 0, audioFlip: false }, start: { audioCam: 0.6 } },
@@ -5062,7 +4996,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'audioDolly', label: 'Dolly in through a build-up, snap back at the drop' },
   { kind: 'toggle', key: 'audioFlip', label: 'Mirror the view at each drop' },
 
-  { kind: 'section', id: 'viewfx', label: 'View effects', tab: 'sound', about: 'Feedback tunnel, kaleidoscope and echoes of the last kick.',
+  { kind: 'section', id: 'viewfx', label: 'View effects', tab: 'music', about: 'Feedback tunnel, kaleidoscope and echoes of the last kick.',
     lock: ['audioTunnel', 'audioTunnelTurn', 'audioKaleido', 'audioKaleidoDrop', 'audioEcho'],
     power: { on: () => settings.audioTunnel > 0 || settings.audioKaleido > 0 || settings.audioKaleidoDrop || settings.audioEcho > 0,
       off: { audioTunnel: 0, audioKaleido: 0, audioKaleidoDrop: false, audioEcho: 0 }, start: { audioTunnel: 0.5 } },
@@ -5074,7 +5008,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioEcho', label: 'Echo of the last kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'note', text: 'The tunnel and kaleidoscope also work without music. The tunnel shortens trails so the streaming shows.' },
 
-  { kind: 'section', id: 'mmotion', label: 'Music motion', tab: 'sound', about: 'Freeze frames on snares, gravity that flips at drops, trails and sway with the bass.',
+  { kind: 'heading', label: 'Motion & words', tab: 'music' },
+  { kind: 'section', id: 'mmotion', label: 'Music motion', tab: 'music', about: 'Freeze frames on snares, gravity that flips at drops, trails and sway with the bass.',
     lock: ['audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway'],
     power: { on: () => settings.audioStutter || settings.audioGravFlip || settings.audioTrailEnergy > 0 || settings.audioSway > 0,
       off: { audioStutter: false, audioGravFlip: false, audioTrailEnergy: 0, audioSway: 0 }, start: { audioSway: 0.6 } },
@@ -5085,17 +5020,99 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'audioStutter', label: 'Freeze for a split second on snares' },
   { kind: 'toggle', key: 'audioGravFlip', label: 'Gravity flips at each drop' },
 
-  { kind: 'section', id: 'mwords', label: 'Music words', tab: 'sound', about: 'A text pattern that changes word with the music, pulses and hops letter by letter.',
+  { kind: 'section', id: 'mwords', label: 'Music words', tab: 'music', about: 'A text pattern that changes word with the music, pulses and hops letter by letter.',
     lock: ['audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop'],
     power: { on: () => settings.audioWordsOn || settings.audioWordPulse > 0 || settings.audioLetterHop > 0,
       off: { audioWordsOn: false, audioWordPulse: 0, audioLetterHop: 0 }, start: { audioWordsOn: true, audioWords: 'LOVE, PEACE, UNITY', audioWordPulse: 0.5 } },
     summary: () => [settings.audioWordsOn && settings.audioWords.trim() ? 'words' : '', settings.audioWordPulse > 0 ? 'pulse' : '', settings.audioLetterHop > 0 ? 'hop' : ''].filter(Boolean).join(' · ') || 'off' },
-  { kind: 'note', text: 'Changing words needs a Text shape (Shape card on the Life tab) or a Words preset. Pulse and hop work with any shape, your face too.', show: () => settings.shape !== 'text' },
+  { kind: 'note', text: 'Changing words needs a Text shape (Shape tab) or a Words scene. Pulse and hop work with any shape, your face too.', show: () => settings.shape !== 'text' },
   { kind: 'toggle', key: 'audioWordsOn', label: 'Change word with the music' },
   { kind: 'text', key: 'audioWords', label: 'Words (comma separated)', placeholder: 'LOVE, PEACE, UNITY', show: () => settings.audioWordsOn },
   { kind: 'select', key: 'audioWordsEvery', label: 'Next word', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['drop', 'Only on drops']], show: () => settings.audioWordsOn },
   { kind: 'range', key: 'audioWordPulse', label: 'Shape pulses with the kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioLetterHop', label: 'Letters hop in turn', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+
+  { kind: 'section', id: 'cam', label: 'Camera', tab: 'camera', about: 'Your webcam. Every card on this tab uses it; the picture stays on this device.',
+    summary: () => (cam.on ? 'on' : camStarting ? 'starting…' : 'off') },
+  { kind: 'buttons', buttons: [['Start camera', () => void startCamera()]], show: () => !cam.on },
+  { kind: 'buttons', buttons: [['Stop camera', stopCamera]], show: () => cam.on },
+  { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie' },
+  { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview' },
+  { kind: 'note', text: 'Switch on any card below and the camera starts by itself (it asks once). Tracking downloads a small model the first time.' },
+
+  { kind: 'section', id: 'camshape', label: 'You as the shape', tab: 'camera', about: 'Your face, hands or body become the shape the particles form.',
+    lock: ['camMode', 'camMix', 'camSnap', 'camCentre', 'camDepth', 'camRate'],
+    power: { on: isCam, off: { shape: 'none' }, start: { shape: 'camera' } },
+    summary: () => (isCam() ? label(CAM_MODES, settings.camMode).replace(/ \(.*\)$/, '') : 'off') },
+  { kind: 'select', key: 'camMode', label: 'Use', options: CAM_MODES },
+  { kind: 'range', key: 'camMix', label: 'Features vs mesh', min: 0.1, max: 0.95, step: 0.05, format: (v) => `${Math.round(v * 100)}% features`, show: () => settings.camMode === 'mixed' },
+  { kind: 'range', key: 'camSnap', label: 'Follow tightness', min: 0, max: 1, step: 0.05, format: (v) => (v < 0.2 ? 'loose' : v > 0.8 ? 'tight' : pct(v)), show: trackMode },
+  { kind: 'toggle', key: 'camCentre', label: 'Keep the face centred and sized', show: faceMode },
+  { kind: 'toggle', key: 'camDepth', label: 'Real depth: near parts bigger (turns on 3D depth)', show: faceMode },
+  { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => !trackMode() },
+  { kind: 'note', text: 'Two people (or two hands) in view each get half the particles. Colour by Face features or Camera colours on the Look tab. Shape size is on the Shape tab.' },
+
+  { kind: 'heading', label: 'Your face', tab: 'camera' },
+  { kind: 'section', id: 'expressions', label: 'Expressions', tab: 'camera', about: 'Choose what each facial expression does (with a camera face).',
+    lock: ['camTriggers', 'exMouth', 'exBlink', 'exSmile', 'exBrows', 'exPucker', 'exWink', 'exTilt', 'exSense'],
+    power: { on: () => settings.camTriggers, off: { camTriggers: false }, start: { camTriggers: true } },
+    summary: () => (settings.camTriggers ? `${EXPRESSIONS.filter(([k]) => settings[k] !== 'off').length} in use` : 'off') },
+  { kind: 'note', text: 'Needs You as the shape (above) with a face mode, or a Camera scene.', show: () => !(isCam() && faceMode()) },
+  { kind: 'exmeters' },
+  { kind: 'note', text: 'Live: how strong each expression is now. The tick is where a moment fires.' },
+  { kind: 'range', key: 'exSense', label: 'Sensitivity', min: 0.5, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×` },
+  ...EXPRESSIONS.map(([k, name]): Control => ({ kind: 'select', key: k, label: name, options: EX_ACTIONS })),
+  { kind: 'note', text: 'A moment fires once as the expression starts. While held lasts as long as you hold it. An amount follows how strong the expression is.' },
+
+  { kind: 'section', id: 'facefx', label: 'Face extras', tab: 'camera', about: 'Flames, a crown or tears on your face; your gaze and voice move particles.',
+    lock: ['maskFx', 'maskShare', 'gaze', 'voice'],
+    power: { on: faceExtras, off: { maskFx: 'none', gaze: 'off', voice: false }, start: { maskFx: 'flames' } },
+    summary: () => [settings.maskFx !== 'none' ? settings.maskFx : '', settings.gaze !== 'off' ? 'gaze' : '', settings.voice ? 'voice' : ''].filter(Boolean).join(', ') || 'off' },
+  { kind: 'select', key: 'maskFx', label: 'Mask', options: [['none', 'None'], ['flames', 'Flame hair'], ['crown', 'Crown of sparks'], ['tears', 'Tears'], ['beard', 'Rainbow beard'], ['halo', 'Halo'], ['lasers', 'Laser eyes']] },
+  { kind: 'range', key: 'maskShare', label: 'Particles for the mask and voice', min: 0.1, max: 0.8, step: 0.05, format: pct, show: () => settings.maskFx !== 'none' || settings.voice },
+  { kind: 'select', key: 'gaze', label: 'Your gaze', options: [['off', 'Nothing'], ['drift', 'Particles drift where you look'], ['eyes', 'Your eyes pull particles in']] },
+  { kind: 'toggle', key: 'voice', label: 'Voice: sing or talk and particles stream from your mouth' },
+  { kind: 'buttons', buttons: [['Use the microphone', () => void audio.start('mic')]], show: () => settings.voice && audio.source === 'off' },
+  { kind: 'note', text: 'Voice colours follow your pitch: low notes one end of the palette, high notes the other. Works with any look; with Shape → Your camera → a face mode the effects sit on the particle face.' },
+
+  { kind: 'heading', label: 'Your hands', tab: 'camera' },
+  { kind: 'section', about: 'Your hands, seen by the camera, push, pull or swirl the particles. Pinch to grab.', id: 'hands', label: 'Hands', tab: 'camera', lock: ['camHands', 'camHandReach', 'camHandForce'],
+    power: { on: handsOn, off: { camHands: 'off' }, start: { camHands: 'repel' } },
+    summary: () => (handsOn() ? `${settings.camHands}${cam.hands.length ? ` · ${cam.hands.length} hand${cam.hands.length > 1 ? 's' : ''}` : ''}` : 'off') },
+  { kind: 'select', key: 'camHands', label: 'Hands', options: [['repel', 'Push away'], ['attract', 'Pull in'], ['vortex', 'Swirl'], ['draw', 'Draw (pinch is the pen)'], ['spray', 'Spray from your index fingers']] },
+  { kind: 'range', key: 'camHandReach', label: 'Reach', min: 40, max: 400, step: 10, format: (v) => `${v}px`, show: () => !isPaint() },
+  { kind: 'range', key: 'camHandForce', label: 'Strength', min: 0.1, max: 3, step: 0.05, format: pct, show: () => !isPaint() },
+  { kind: 'select', key: 'drawColour', label: 'Colour', options: [['flow', 'Rainbow along the stroke'], ['finger', 'A colour per finger']], show: () => settings.camHands === 'draw' },
+  { kind: 'toggle', key: 'drawWidth', label: 'Brush width: spread index and middle finger', show: () => settings.camHands === 'draw' },
+  { kind: 'toggle', key: 'drawErase', label: 'Open palm erases', show: () => settings.camHands === 'draw' },
+  { kind: 'buttons', buttons: [['Clear the drawing', () => { paintParked = false; syncPaint(); }]], show: isPaint },
+  { kind: 'note', text: 'Draw: pinch your thumb and index finger to put the pen down, open them to lift it. With a colour per finger, pinch the thumb to any finger. The oldest strokes are reused when you run out of particles (Count, Particles card). Spray: point your index finger.', show: isPaint },
+  { kind: 'note', show: () => !isPaint(), text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them; flick and let go to throw them. Uses the camera (asks once); the picture stays on this device.' },
+
+  { kind: 'section', id: 'gestures', label: 'Gestures', tab: 'camera', about: 'Hand signs as switches, and two hands as dials.',
+    lock: ['gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle'],
+    power: { on: () => settings.gestOn, off: { gestOn: false }, start: { gestOn: true } },
+    summary: () => (settings.gestOn ? gestShown || `${GESTURES.filter(([k]) => settings[k] !== 'off').length} signs` : 'off') },
+  ...GESTURES.map(([k, , name]): Control => ({ kind: 'select', key: k, label: name, options: G_ACTIONS })),
+  { kind: 'sub', label: 'Two hands' },
+  { kind: 'select', key: 'twoDist', label: 'Hands apart', options: [['off', 'Nothing'], ['zoom', 'Zoom the view'], ['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed']] },
+  { kind: 'select', key: 'twoAngle', label: 'Tilt between them', options: [['off', 'Nothing'], ['turn', 'Turn the view'], ['hue', 'Shift the colours']] },
+  { kind: 'note', text: 'Hold a sign for a moment: it fires once (hold it again for another go). Freeze and Gather last while you hold them. Two hands a shoulder width apart and level is neutral; move them apart, together or tilt them. Works with any look; uses the camera.' },
+
+  { kind: 'heading', label: 'Your body', tab: 'camera' },
+  { kind: 'section', id: 'body', label: 'Body', tab: 'camera', about: 'Your arms sweep the particles; jump for a moment.',
+    lock: ['poseOn', 'poseSweep', 'poseJump'],
+    power: { on: () => settings.poseOn, off: { poseOn: false }, start: { poseOn: true } },
+    summary: () => (settings.poseOn ? (cam.poses.length ? 'tracking you' : 'on') : 'off') },
+  { kind: 'range', key: 'poseSweep', label: 'Arms sweep', min: 0, max: 3, step: 0.1, format: (v) => (v === 0 ? 'off' : `${v.toFixed(1)}×`) },
+  { kind: 'select', key: 'poseJump', label: 'A jump does', options: [['off', 'Nothing'], ['explode', 'Explode'], ['shockwave', 'Shockwave'], ['colours', 'New colours'], ['scatter', 'Scatter']] },
+  { kind: 'note', text: 'Step back so the camera sees you from the hips up (the whole body for jumps). Shape → Your camera → Your body makes you the shape; Obstacles → Your silhouette makes particles flow round you.' },
+
+  { kind: 'section', id: 'mirror', label: 'Silhouette & mirror world', tab: 'camera', about: 'Particles flow round you, or the left half is reflected.',
+    summary: () => [settings.obstacles === 'body' ? 'silhouette' : '', settings.mirrorWorld ? 'mirror world' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'buttons', buttons: [['Particles flow round your silhouette', () => set('obstacles', settings.obstacles === 'body' ? 'none' : 'body')]], active: () => settings.obstacles === 'body' },
+  { kind: 'toggle', key: 'mirrorWorld', label: 'Mirror world: the left half reflected in other colours' },
+  { kind: 'note', text: 'The silhouette is an obstacle: Push and how often it updates are in Obstacles on the Motion tab.' },
 
   { kind: 'section', id: 'actions', label: 'Actions', fixed: true },
   {
@@ -5823,7 +5840,47 @@ const conditional: [HTMLElement, () => boolean][] = [];
 function refresh() {
   for (const r of refreshers) r();
   for (const [el, show] of conditional) el.hidden = !show();
+  for (const r of afterShow) r();
 }
+// Runs after the show/hide pass (Fine-tune counts).
+const afterShow: (() => void)[] = [];
+
+// Essentials: the controls a card shows first, picked from what the scenes
+// and vibes set most (plus each card's main choice). The rest wait under
+// Fine-tune. Cards with 4 or fewer settings show everything.
+const ESSENTIALS: Record<string, (keyof Settings)[]> = {
+  transitions: ['homeStrength', 'morph'],
+  look: ['render', 'mixStyles', 'size', 'trail', 'glow'],
+  colour: ['palette', 'colorBy', 'customColors'],
+  shape: ['shape', 'shapeText', 'imageMode', 'shapeSize'],
+  life: ['lifespan', 'emitter', 'launchSpeed'],
+  particles: ['count', 'friction', 'jitter'],
+  forces: ['gravity', 'wind', 'windDir'],
+  swarm: ['flock', 'space'],
+  obstacles: ['obstacles', 'obsText', 'obsShow', 'obsForce'],
+  pointer: ['pointerMode', 'click', 'radius'],
+  drums: ['audioKick', 'audioPulse', 'audioSpeed'],
+  mcolour: ['audioHue', 'audioHueAmt', 'audioBright'],
+  camera: ['audioCam', 'audioSpin', 'audioCuts'],
+  viewfx: ['audioTunnel', 'audioEcho', 'audioKaleido'],
+  mwords: ['audioWordsOn', 'audioWords', 'audioWordPulse'],
+  camshape: ['camMode', 'camSnap', 'camCentre'],
+  expressions: ['exMouth', 'exBlink', 'exSmile', 'exBrows', 'exPucker', 'exWink', 'exTilt'],
+  hands: ['camHands', 'camHandReach', 'camHandForce', 'drawColour'],
+  gestures: ['gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove'],
+};
+// Settings you pinned from Fine-tune to a card's essentials (this device).
+const PINS_KEY = 'particle-field:pins';
+const pins = new Set<string>(readJson<string[]>(PINS_KEY, []));
+const PIN_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 4h6l-1 6 4 4H6l4-4-1-6z"/><path d="M12 14v6"/></svg>';
+// Extra words search should find a setting by.
+const SEARCH_WORDS: Partial<Record<keyof Settings, string>> = {
+  trail: 'blur fade motion', glow: 'bright bloom', size: 'big small', count: 'number amount many', gravity: 'fall drop down',
+  audioCam: 'zoom shake punch', mirrorWorld: 'mirror symmetry reflect', camMirror: 'mirror flip selfie', audioFlip: 'mirror flip',
+  audioKaleido: 'mirror symmetry', palette: 'theme', render: 'look shape dots', morph: 'transition fade glide', homeStrength: 'spring',
+  shapeText: 'word letters', audioWords: 'text letters', camHands: 'draw paint spray', lifespan: 'age die', speed: 'fast slow',
+  audioTunnel: 'zoom feedback', depth: '3d', audioSpin: 'rotate turn', twoDist: 'zoom', twoAngle: 'rotate turn',
+};
 
 const TAB_KEY = 'particle-field:tab';
 const MORE_KEY = 'particle-field:more';
@@ -5874,6 +5931,89 @@ function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
 const COLLAPSE_KEY = 'particle-field:folded';
 
 const lockSyncs: (() => void)[] = [];
+
+// --- search ----------------------------------------------------------------------
+// Finds any setting by its name, its options, its card or a few extra words,
+// across all tabs. Typing shows only the matching cards and settings.
+const norm = (t: string) => t.toLowerCase().replace(/colou?r/g, 'colour').replace(/\s+/g, ' ');
+function searchItem(to: HTMLElement, el: HTMLElement, words = '') {
+  el.classList.add('si');
+  if (words) el.dataset.words = words;
+  to.append(el);
+}
+function renderSearch() {
+  const wrap = document.createElement('div');
+  wrap.className = 'search';
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.placeholder = 'Search all settings';
+  input.setAttribute('aria-label', 'Search settings');
+  const empty = document.createElement('p');
+  empty.className = 'search-empty';
+  empty.hidden = true;
+  wrap.append(input);
+  queueMicrotask(() => controls.prepend(empty));
+  const run = () => {
+    const words = norm(input.value).trim().split(' ').filter(Boolean);
+    const on = words.join('').length >= 2;
+    controls.classList.toggle('searching', on);
+    document.body.classList.toggle('searching', on);
+    for (const el of controls.querySelectorAll('.hit, .all')) el.classList.remove('hit', 'all');
+    empty.hidden = true;
+    if (!on) return;
+    const has = (t: string) => words.every((w) => t.includes(w));
+    // Names first; only when no name matches, look inside the options too.
+    let found = 0;
+    for (const full of [false, true]) {
+      for (const g of controls.querySelectorAll<HTMLElement>(':scope > .group')) {
+        if (g.hidden) continue;
+        if (has(norm(g.dataset.label ?? ''))) {
+          g.classList.add('hit', 'all');
+          found++;
+          continue;
+        }
+        for (const it of g.querySelectorAll<HTMLElement>('.si')) {
+          if (it.hidden || it.closest('[hidden]:not(.more-body)')) continue;
+          const key = it.querySelector<HTMLElement>('[data-key]')?.dataset.key ?? '';
+          const name = it.querySelector('.name')?.textContent ?? '';
+          if (!full && !name) continue;
+          const text = full ? it.textContent : name;
+          if (has(norm(`${text} ${key} ${it.dataset.words ?? ''}`))) {
+            it.classList.add('hit');
+            g.classList.add('hit');
+            found++;
+          }
+        }
+      }
+      if (found) break;
+    }
+    if (!found) {
+      empty.hidden = false;
+      empty.textContent = `Nothing called “${input.value.trim()}”. Try another word.`;
+    }
+  };
+  input.addEventListener('input', run);
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      input.value = '';
+      run();
+      input.blur();
+    }
+  });
+  // Picking a tab ends the search.
+  queueMicrotask(() =>
+    document.querySelectorAll('.tabs button').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (!input.value) return;
+        input.value = '';
+        run();
+      }),
+    ),
+  );
+  return wrap;
+}
+
 function renderControls() {
   let collapsed: Record<string, boolean> = {};
   try {
@@ -5890,6 +6030,14 @@ function renderControls() {
   let body: HTMLElement = controls;
   let sectionBody: HTMLElement = controls;
   let sectionId = '';
+  // Essentials mode: the card's key settings, then a Fine-tune fold with the rest.
+  let essBody: HTMLElement | null = null;
+  let fineBody: HTMLElement | null = null;
+  let essKeys = new Set<string>();
+  let dest: HTMLElement = controls;
+  const keyed = (c: Control): c is Extract<Control, { key: keyof Settings }> => 'key' in c;
+  // Where a keyed control of the current card goes.
+  const destFor = (key: string) => (essBody && fineBody ? (essKeys.has(key) || pins.has(key) ? essBody : fineBody) : body);
 
   // Tabs along the top; Actions get their own bar at the bottom.
   const tabBar = document.createElement('div');
@@ -5905,9 +6053,19 @@ function renderControls() {
     tabButtons.push([t, b]);
   }
   controls.before(tabBar);
+  tabBar.before(renderSearch());
   const actionBar = document.getElementById('actionbar')!;
 
-  for (const ctl of CONTROLS) {
+  for (const [ci, ctl] of CONTROLS.entries()) {
+    if (ctl.kind === 'heading') {
+      // A small title between groups of cards inside a tab.
+      const h = document.createElement('h2');
+      h.className = 'tab-heading';
+      h.textContent = ctl.label;
+      controls.append(h);
+      sectionTabs.push([h, ctl.tab]);
+      continue;
+    }
     if (ctl.kind === 'section') {
       const section = document.createElement('section');
       section.className = 'group';
@@ -5923,6 +6081,52 @@ function renderControls() {
       body.id = `group-${ctl.id}`;
       sectionBody = body;
       sectionId = ctl.id;
+      section.dataset.label = ctl.label;
+      essBody = fineBody = null;
+      {
+        let count = 0;
+        for (let j = ci + 1; j < CONTROLS.length && CONTROLS[j].kind !== 'section' && CONTROLS[j].kind !== 'heading'; j++) if (keyed(CONTROLS[j])) count++;
+        const ess = ESSENTIALS[ctl.id];
+        if (ess && count > 4) {
+          essKeys = new Set(ess);
+          essBody = document.createElement('div');
+          essBody.className = 'ess-body';
+          fineBody = document.createElement('div');
+          fineBody.className = 'more-body fine-body';
+          fineBody.id = `fine-${ctl.id}`;
+          const fine = fineBody;
+          const id = ctl.id;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'more-toggle fine-toggle';
+          btn.innerHTML = `<span class="chev" aria-hidden="true"></span><span></span>`;
+          btn.setAttribute('aria-controls', fine.id);
+          const setOpen = (open: boolean) => {
+            fine.hidden = !open;
+            btn.classList.toggle('open', open);
+            btn.setAttribute('aria-expanded', String(open));
+          };
+          setOpen(!!moreOpen[id]);
+          btn.addEventListener('click', () => {
+            const open = btn.getAttribute('aria-expanded') !== 'true';
+            moreOpen[id] = open;
+            setOpen(open);
+            try {
+              localStorage.setItem(MORE_KEY, JSON.stringify(moreOpen));
+            } catch {
+              /* not persisted */
+            }
+          });
+          afterShow.push(() => {
+            const n = fine.querySelectorAll(':scope > .prow:not([hidden])').length;
+            btn.hidden = n === 0;
+            btn.lastElementChild!.textContent = `Fine-tune · ${n} more`;
+          });
+          body.append(essBody, btn, fine);
+          body = essBody;
+        }
+      }
+      dest = body;
       const top = document.createElement('div');
       top.className = 'group-top';
       top.append(head);
@@ -5974,7 +6178,7 @@ function renderControls() {
         about.textContent = ctl.about;
         section.append(about);
       }
-      section.append(body);
+      section.append(sectionBody);
       if (ctl.fixed) {
         // Actions: a bar pinned under the cards, no header.
         section.classList.add('fixed');
@@ -5986,7 +6190,7 @@ function renderControls() {
       sectionTabs.push([section, ctl.tab ?? 'look']);
       {
         const id = ctl.id;
-        head.setAttribute('aria-controls', body.id);
+        head.setAttribute('aria-controls', sectionBody.id);
         const setOpen = (open: boolean) => {
           section.classList.toggle('closed', !open);
           head.setAttribute('aria-expanded', String(open));
@@ -6009,6 +6213,8 @@ function renderControls() {
     }
 
     if (ctl.kind === 'more') {
+      // Essentials cards have Fine-tune instead.
+      if (fineBody) continue;
       // Everything after this in the card hides behind a "More" link.
       const id = sectionId;
       const btn = document.createElement('button');
@@ -6037,7 +6243,7 @@ function renderControls() {
         }
       });
       sectionBody.append(btn, more);
-      body = more;
+      body = dest = more;
       continue;
     }
 
@@ -6086,22 +6292,23 @@ function renderControls() {
         chips.append(c);
       }
       drawVibes();
-      body.append(chips, grid);
+      body.append(chips);
+      searchItem(body, grid);
       continue;
     }
 
     if (ctl.kind === 'mypresets') {
-      body.append(renderMyPresets());
+      searchItem(body, renderMyPresets());
       continue;
     }
 
     if (ctl.kind === 'exmeters') {
-      body.append(renderExMeters());
+      searchItem(body, renderExMeters());
       continue;
     }
 
     if (ctl.kind === 'presetlib') {
-      body.append(renderPresetLibrary());
+      searchItem(body, renderPresetLibrary());
       continue;
     }
 
@@ -6109,7 +6316,7 @@ function renderControls() {
       const pEl = document.createElement('p');
       pEl.className = 'note';
       pEl.textContent = ctl.text;
-      body.append(pEl);
+      dest.append(pEl);
       if (ctl.show) conditional.push([pEl, ctl.show]);
       continue;
     }
@@ -6117,13 +6324,22 @@ function renderControls() {
     if (ctl.kind === 'sub') {
       const h = document.createElement('h3');
       h.textContent = ctl.label;
-      body.append(h);
+      // Goes with the next setting (essentials or Fine-tune).
+      let to = dest;
+      for (let j = ci + 1; j < CONTROLS.length && CONTROLS[j].kind !== 'section'; j++) {
+        const c = CONTROLS[j];
+        if (keyed(c)) {
+          to = destFor(c.key);
+          break;
+        }
+      }
+      to.append(h);
       if (ctl.show) conditional.push([h, ctl.show]);
       continue;
     }
 
     if (ctl.kind === 'audio') {
-      body.append(renderAudio());
+      searchItem(body, renderAudio());
       continue;
     }
 
@@ -6153,7 +6369,7 @@ function renderControls() {
         if (fn === toggleGather) gatherButtons.push(b);
         row.append(b);
       }
-      body.append(row);
+      searchItem(body, row);
       continue;
     }
 
@@ -6167,10 +6383,10 @@ function renderControls() {
         const all = document.createElement('button');
         all.type = 'button';
         all.className = 'show-all';
-        all.textContent = `All ${ctl.buttons.length} presets`;
+        all.textContent = `All ${ctl.buttons.length} scenes`;
         all.addEventListener('click', () => {
           const short = row.classList.toggle('short');
-          all.textContent = short ? `All ${ctl.buttons.length} presets` : 'Fewer presets';
+          all.textContent = short ? `All ${ctl.buttons.length} scenes` : 'Fewer scenes';
           row.append(all);
         });
         queueMicrotask(() => row.append(all));
@@ -6184,7 +6400,7 @@ function renderControls() {
         if (ctl.active) refreshers.push(() => b.classList.toggle('on', ctl.active!(text)));
         row.append(b);
       });
-      body.append(row);
+      searchItem(body, row);
       if (ctl.show) conditional.push([row, ctl.show]);
       continue;
     }
@@ -6309,8 +6525,50 @@ function renderControls() {
       row.prepend(input);
       refreshers.push(() => (input.checked = Boolean(settings[k])));
     }
-    body.append(row);
-    if (ctl.show) conditional.push([row, ctl.show]);
+    let item: HTMLElement = row;
+    if (essBody && fineBody) {
+      // Wrapped with a pin: pin a Fine-tune setting to keep it with the essentials.
+      const wrap = document.createElement('div');
+      wrap.className = 'prow';
+      wrap.dataset.idx = String(ci);
+      const ess = essBody;
+      const fine = fineBody;
+      if (essKeys.has(k)) wrap.classList.add('core');
+      else {
+        const pin = document.createElement('button');
+        pin.type = 'button';
+        pin.className = 'pin';
+        pin.innerHTML = PIN_SVG;
+        const sync = () => {
+          const on = pins.has(k);
+          pin.classList.toggle('on', on);
+          pin.title = on ? 'Unpin: back to Fine-tune' : 'Pin to the essentials';
+          pin.setAttribute('aria-label', `${on ? 'Unpin' : 'Pin'} ${ctl.label}`);
+          pin.setAttribute('aria-pressed', String(on));
+        };
+        pin.addEventListener('click', () => {
+          if (pins.has(k)) {
+            pins.delete(k);
+            // Back in its place in Fine-tune.
+            const after = [...fine.children].find((c) => Number((c as HTMLElement).dataset.idx ?? -1) > ci);
+            fine.insertBefore(wrap, after ?? null);
+          } else {
+            pins.add(k);
+            ess.append(wrap);
+          }
+          writeJson(PINS_KEY, [...pins]);
+          sync();
+          refresh();
+        });
+        sync();
+        wrap.append(pin);
+      }
+      wrap.prepend(row);
+      item = wrap;
+    }
+    dest = destFor(k);
+    searchItem(dest, item, SEARCH_WORDS[k]);
+    if (ctl.show) conditional.push([item, ctl.show]);
   }
 
   const stats = document.createElement('p');
@@ -6322,7 +6580,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your presets (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · H hide panel · I debug info. Hold a number key to play it only while held.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · H hide panel · I debug info. Hold a number key to play it only while held.';
   controls.append(keys);
 }
 
@@ -6531,7 +6789,7 @@ function shuffle() {
   // Wild shuffle: each unlocked card with an on/off switch flips a coin first.
   if (settings.shuffleCards) {
     for (const ctl of CONTROLS) {
-      if (ctl.kind !== 'section' || !ctl.power || locks.has(ctl.id) || ctl.tab === 'sound') continue;
+      if (ctl.kind !== 'section' || !ctl.power || locks.has(ctl.id) || ctl.tab === 'music' || ctl.tab === 'camera') continue;
       setPower(ctl, Math.random() < (ctl.id === 'shape' ? 0.3 : 0.5));
     }
   }
@@ -6575,7 +6833,7 @@ function shuffle() {
   const keys = new Set<keyof Settings>();
   const S = settings as unknown as Record<string, unknown>;
   for (const ctl of CONTROLS) {
-    if (ctl.kind !== 'section' || !ctl.lock || locks.has(ctl.id) || ctl.tab === 'sound') continue;
+    if (ctl.kind !== 'section' || !ctl.lock || locks.has(ctl.id) || ctl.tab === 'music' || ctl.tab === 'camera') continue;
     if (ctl.power && !ctl.power.on()) continue;
     const before = Object.fromEntries(ctl.lock.map((k) => [k, S[k]]));
     for (const k of ctl.lock) S[k] = k in r ? r[k] : ctl.power ? S[k] : DEFAULTS[k];
@@ -6583,6 +6841,7 @@ function shuffle() {
     for (const k of ctl.lock) keys.add(k);
   }
   if (keys.size) changed(keys);
+  showToast('New scene');
 }
 
 // --- locks & own presets -------------------------------------------------------
@@ -6591,7 +6850,7 @@ const LOCK_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="t
 const LOCKS_KEY = 'particle-field:locks';
 const locks = new Set<string>(readJson<string[]>(LOCKS_KEY, []));
 // Cards that were merged or split keep their old locks.
-for (const [from, to] of [['click', 'pointer'], ['emitter', 'life'], ['look', 'depth']]) {
+for (const [from, to] of [['click', 'pointer'], ['emitter', 'life'], ['look', 'depth'], ['shape', 'camshape']]) {
   if (locks.has(from)) locks.add(to);
 }
 locks.delete('click');
@@ -6650,12 +6909,12 @@ function renderMyPresets() {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = p.name;
-        b.title = 'Load this preset';
+        b.title = 'Load this scene';
         b.addEventListener('click', () => playMine(p));
         // Which number key plays it.
         const key = document.createElement('select');
         key.className = 'keysel';
-        key.title = 'Number key that plays this preset';
+        key.title = 'Number key that plays this scene';
         key.innerHTML = ['<option value="">⌨</option>', ...KEY_ORDER.map((d) => `<option value="${d}">${d}</option>`)].join('');
         key.value = p.key ?? '';
         key.addEventListener('change', () => {
@@ -6671,7 +6930,7 @@ function renderMyPresets() {
         del.textContent = '×';
         del.title = `Delete “${p.name}”`;
         del.addEventListener('click', () => {
-          if (!confirm(`Delete the preset “${p.name}”?`)) return;
+          if (!confirm(`Delete the scene “${p.name}”?`)) return;
           myPresets.splice(idx, 1);
           writeJson(MY_PRESETS_KEY, myPresets);
           draw();
@@ -6698,13 +6957,13 @@ function renderMyPresets() {
       up.type = 'button';
       up.className = 'update-mine';
       up.textContent = `Save changes to ${cur.key ? cur.key + ' · ' : ''}${cur.name}`;
-      up.title = cur.key ? `Saves the current look over this preset (Shift+${cur.key} does the same)` : 'Saves the current look over this preset';
+      up.title = cur.key ? `Saves the current scene over this one (Shift+${cur.key} does the same)` : 'Saves the current scene over this one';
       up.addEventListener('click', () => updateMine(cur));
       wrap.append(up);
     }
     const form = document.createElement('form');
     form.className = 'save';
-    form.innerHTML = '<input type="text" maxlength="8000" placeholder="Name this look…" aria-label="Preset name" /><button type="submit">Save</button>';
+    form.innerHTML = '<input type="text" maxlength="8000" placeholder="Name this scene…" aria-label="Scene name" /><button type="submit">Save scene</button>';
     const input = form.querySelector('input')!;
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -6718,11 +6977,11 @@ function renderMyPresets() {
           draw();
           return;
         } catch {
-          showToast('That preset text is not valid');
+          showToast('That scene text is not valid');
           return;
         }
       }
-      const name = raw.slice(0, 40) || `My look ${myPresets.length + 1}`;
+      const name = raw.slice(0, 40) || `My scene ${myPresets.length + 1}`;
       const existing = myPresets.findIndex((p) => p.name === name);
       if (existing >= 0) myPresets[existing].settings = snapshot();
       else myPresets.push({ name, settings: snapshot() });
@@ -6750,7 +7009,7 @@ function presetFromUrl(first: boolean) {
   const built = PRESETS.find(([name]) => name.toLowerCase() === lw);
   const p = mine?.settings ?? built?.[1];
   if (!p) {
-    showToast(`No preset called “${want}”`);
+    showToast(`No scene called “${want}”`);
     return;
   }
   if (first) {
@@ -7070,7 +7329,7 @@ renderControls();
       return null;
     }
   })();
-  showTab(TABS.some(([t]) => t === saved) ? (saved as Tab) : 'look');
+  showTab(TABS.some(([t]) => t === saved) ? (saved as Tab) : 'presets');
   syncTabDots();
 }
 resize();

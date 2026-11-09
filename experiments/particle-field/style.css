@@ -63,6 +63,7 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-act
 }
 .panel.collapsed .panel-body,
 .panel.collapsed .tabs,
+.panel.collapsed .search,
 .panel.collapsed .actionbar,
 .panel.collapsed h1 { display: none; }
 .panel.collapsed header { border: none; }
@@ -390,8 +391,8 @@ button:hover, select:hover { border-color: #3c3f46; }
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 3px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
   margin: 10px 10px 0;
   padding: 3px;
   background: #1c1d22;
@@ -400,13 +401,15 @@ button:hover, select:hover { border-color: #3c3f46; }
 }
 .tabs button {
   position: relative;
+  min-width: 0;
   padding: 6px 0;
+  letter-spacing: -0.01em;
   border: none;
   border-radius: 7px;
   background: none;
   color: var(--muted);
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 .tabs button:hover { color: var(--text); }
 .tabs button.on { background: #2a2c33; color: var(--text); }
@@ -603,3 +606,66 @@ body.no-input .cam-preview { display: none; }
 .ex-row b { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); opacity: 0.6; transition: width 80ms linear; }
 .ex-row b.hot { opacity: 1; }
 .ex-row em { position: absolute; top: 0; bottom: 0; width: 1px; background: currentColor; opacity: 0.7; }
+
+/* --- search, tab headings, essentials + Fine-tune, pins ------------------------ */
+
+.search { margin: 10px 10px 0; }
+.search input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px 0 30px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #1c1d22 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239a9cab' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E") no-repeat 10px center;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.search-empty { margin: 4px 2px; color: var(--muted); font-size: 12px; }
+.search-empty[hidden] { display: none; }
+
+.tab-heading {
+  margin: 8px 2px -2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tab-heading.other-tab { display: none; }
+
+.prow { display: flex; align-items: center; gap: 4px; }
+.prow[hidden] { display: none; }
+.prow > .row { flex: 1; min-width: 0; }
+.pin {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-right: -8px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #5c5f6b;
+}
+.pin:hover { color: var(--text); }
+.pin.on { color: var(--accent); }
+.ess-body .pin:not(.on) { display: none; }
+.fine-toggle[hidden] { display: none; }
+
+/* Searching: only matching cards and settings, from every tab. */
+.searching .tab-heading,
+.searching .group:not(.hit),
+.searching .more-toggle { display: none; }
+.searching .group.hit { display: block; }
+.searching .group.hit .group-body,
+.searching .group.hit .more-body[hidden] { display: block; }
+.searching .group.hit:not(.all) .si:not(.hit),
+.searching .group.hit:not(.all) :is(.note, h3) { display: none; }
+.searching .group .more-body { border-top: none; }
+body.searching .tabs button.on { background: none; color: var(--muted); }
+/* The switch already says off; leave the room for the title. */
+.group.off:has(.power) .group-summary { display: none; }
