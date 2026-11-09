@@ -1,6 +1,7 @@
 import './style.css';
 import { AudioInput, tabAudioSupported, type Genre, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
+import { Camera } from './camera.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -10,7 +11,8 @@ type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
 type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex' | 'emitter';
 type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointer';
 type EmitMode = 'steady' | 'burst' | 'beat';
-type Shape = 'none' | 'text' | 'image' | 'grid' | 'sunflower' | 'ring';
+type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring';
+type CamMode = 'face' | 'features' | 'edges' | 'bright' | 'dark';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
@@ -69,6 +71,11 @@ interface Settings {
   shape: Shape;
   shapeText: string;
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
+  camMode: CamMode;
+  camMirror: boolean;
+  camCentre: boolean;
+  camRate: number;
+  camTriggers: boolean;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -284,6 +291,11 @@ const DEFAULTS: Settings = {
   shape: 'none',
   shapeText: 'HELLO',
   imageMode: 'auto',
+  camMode: 'face',
+  camMirror: true,
+  camCentre: true,
+  camRate: 6,
+  camTriggers: false,
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
@@ -1151,7 +1163,9 @@ function step(dt: number) {
     const cyc = settings.shapeCycle;
     const phase = cyc > 0 ? (t % cyc) / cyc : 0;
     const formed = cyc > 0 ? Math.max(0, Math.min(1, Math.cos(phase * Math.PI * 2) * 1.6 + 0.4)) : 1;
-    homeK = settings.homeStrength * 0.004 * formed * (1 - blastK);
+    // A tracked face moves all the time: hold on tighter so it keeps up.
+    const live = settings.shape === 'camera' ? (faceMode() ? 3 : 2) : 1;
+    homeK = settings.homeStrength * 0.004 * formed * (1 - blastK) * live;
   }
   const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
   const cxW = w / 2;
@@ -1678,6 +1692,183 @@ imageInput.addEventListener('change', () => {
   img.src = URL.createObjectURL(f);
 });
 
+// --- camera shape ----------------------------------------------------------------
+// Picture modes sample the webcam like an image a few times a second. Face
+// modes pin every particle to a spot on one edge of the tracked face mesh,
+// so the homes move with your face each frame.
+const cam = new Camera();
+const camCanvas = document.createElement('canvas');
+const camCtx = camCanvas.getContext('2d', { willReadFrequently: true })!;
+let camFrameNo = 0;
+let camLast = 0;
+const faceMode = () => settings.camMode === 'face' || settings.camMode === 'features';
+const isCam = () => settings.shape === 'camera';
+
+function grabCamera() {
+  if (!cam.ready) return;
+  camCanvas.width = cam.width;
+  camCanvas.height = cam.height;
+  camCtx.save();
+  if (settings.camMirror) {
+    camCtx.translate(cam.width, 0);
+    camCtx.scale(-1, 1);
+  }
+  camCtx.drawImage(cam.video, 0, 0);
+  camCtx.restore();
+}
+
+let camStarting = false;
+async function startCamera() {
+  if (camStarting) return;
+  if (!cam.on) {
+    camStarting = true;
+    showToast('Starting the camera…');
+    const ok = await cam.start();
+    camStarting = false;
+    if (!ok) {
+      showToast(cam.error);
+      refresh();
+      return;
+    }
+  }
+  if (faceMode()) loadFace();
+  shapeKey = '';
+  buildShape();
+  refresh();
+  showToast('Camera on');
+}
+
+function stopCamera() {
+  cam.stop();
+  shapeKey = '';
+  refresh();
+}
+
+function loadFace() {
+  if (cam.faceStatus === 'ready' || cam.faceStatus === 'loading') return;
+  showToast('Loading face tracking…');
+  void cam.loadFace().then(() => {
+    showToast(cam.faceStatus === 'ready' ? 'Face tracking on: look at the camera' : 'Face tracking could not load');
+    refresh();
+  });
+}
+
+// Each particle's spot on the face: an edge, how far along it, a tiny offset.
+let faceEdge = new Int32Array(0);
+let faceT = new Float32Array(0);
+let faceJx = new Float32Array(0);
+let faceJy = new Float32Array(0);
+let faceKey = '';
+let faceSx = new Float32Array(0);
+let faceSy = new Float32Array(0);
+const faceBox = { x: 0, y: 0, s: 0 };
+const faceFlags = { mouth: false, blink: false, brows: false, at: 0 };
+
+function faceHomes(now: number) {
+  const f = cam.face;
+  const edges = settings.camMode === 'face' ? cam.mesh : cam.features;
+  if (!f || !edges.length) return;
+  const key = `${settings.camMode}|${n}`;
+  if (key !== faceKey || faceEdge.length < n) {
+    faceKey = key;
+    faceEdge = new Int32Array(n);
+    faceT = new Float32Array(n);
+    faceJx = new Float32Array(n);
+    faceJy = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      faceEdge[i] = (Math.random() * edges.length) | 0;
+      faceT[i] = Math.random();
+      faceJx[i] = (Math.random() - 0.5) * 2;
+      faceJy[i] = (Math.random() - 0.5) * 2;
+    }
+  }
+  // Smooth the landmarks a little so the shape doesn't jitter.
+  const L = f.x.length;
+  if (faceSx.length !== L) {
+    faceSx = f.x.slice();
+    faceSy = f.y.slice();
+  }
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let k = 0; k < L; k++) {
+    faceSx[k] += (f.x[k] - faceSx[k]) * 0.6;
+    faceSy[k] += (f.y[k] - faceSy[k]) * 0.6;
+    if (faceSx[k] < x0) x0 = faceSx[k];
+    if (faceSx[k] > x1) x1 = faceSx[k];
+    if (faceSy[k] < y0) y0 = faceSy[k];
+    if (faceSy[k] > y1) y1 = faceSy[k];
+  }
+  const vw = cam.width;
+  const vh = cam.height;
+  const mir = settings.camMirror ? -1 : 1;
+  let ox: number, oy: number, sc: number;
+  if (settings.camCentre) {
+    // Frame the face: centred, its height a share of the screen.
+    const bx = (x0 + x1) / 2;
+    const by = (y0 + y1) / 2;
+    const bs = (h * settings.shapeSize * 0.85) / Math.max(1, y1 - y0);
+    if (!faceBox.s) Object.assign(faceBox, { x: bx, y: by, s: bs });
+    faceBox.x += (bx - faceBox.x) * 0.15;
+    faceBox.y += (by - faceBox.y) * 0.15;
+    faceBox.s += (bs - faceBox.s) * 0.1;
+    ox = faceBox.x;
+    oy = faceBox.y;
+    sc = faceBox.s;
+  } else {
+    // Follow: the camera picture fills the screen and the face moves in it.
+    ox = vw / 2;
+    oy = vh / 2;
+    sc = Math.max(w / vw, h / vh) * settings.shapeSize;
+  }
+  const cx = w / 2;
+  const cy = h / 2;
+  const len = Math.min(n, faceEdge.length);
+  for (let i = 0; i < len; i++) {
+    const e = edges[faceEdge[i] % edges.length];
+    const t = faceT[i];
+    const x = faceSx[e.start] + (faceSx[e.end] - faceSx[e.start]) * t;
+    const y = faceSy[e.start] + (faceSy[e.end] - faceSy[e.start]) * t;
+    hx[i] = cx + (x - ox) * sc * mir + faceJx[i];
+    hy[i] = cy + (y - oy) * sc + faceJy[i];
+  }
+  // Expressions: open mouth explodes, a blink changes the palette, raised
+  // brows send a ripple from the face.
+  if (settings.camTriggers) {
+    const b = f.blend;
+    const mouth = (b.jawOpen ?? 0) > 0.5;
+    const blink = (b.eyeBlinkLeft ?? 0) > 0.55 && (b.eyeBlinkRight ?? 0) > 0.55;
+    const brows = (b.browInnerUp ?? 0) > 0.6;
+    if (now - faceFlags.at > 900) {
+      const fx = cx + (((x0 + x1) / 2) - ox) * sc * mir;
+      const fy = cy + (((y0 + y1) / 2) - oy) * sc;
+      if (mouth && !faceFlags.mouth) {
+        explode();
+        faceFlags.at = now;
+      } else if (blink && !faceFlags.blink) {
+        newPalette(now);
+        faceFlags.at = now;
+      } else if (brows && !faceFlags.brows) {
+        addWave('ripple', fx, fy);
+        faceFlags.at = now;
+      }
+    }
+    Object.assign(faceFlags, { mouth, blink, brows });
+  }
+}
+
+// Called every frame: picture modes re-sample at their rate, face modes track.
+function cameraTick(now: number) {
+  if (!isCam() || !cam.on) return;
+  if (faceMode()) {
+    if (cam.faceStatus === 'off') loadFace();
+    cam.detect(now);
+    faceHomes(now);
+  } else if (now - camLast > 1000 / settings.camRate) {
+    camLast = now;
+    camFrameNo++;
+    buildShape();
+  }
+}
+
 // Sample the lit pixels of an offscreen drawing, then give every particle one
 // of them (spread evenly, so each part of the shape gets its share).
 function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number) => boolean): [number, number][] {
@@ -1700,20 +1891,24 @@ function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number)
 // particles), then pick points with probability proportional to it, like a
 // stipple drawing.
 function sampleImage(): [number, number][] {
-  if (!shapeImage) return [];
+  const camOn = settings.shape === 'camera';
+  if (camOn) grabCamera();
+  const src: { width: number; height: number } | null = camOn ? (cam.ready ? camCanvas : null) : shapeImage;
+  if (!src) return [];
   const step = 2;
   const W = Math.max(1, Math.round(w / step));
   const H = Math.max(1, Math.round(h / step));
-  const sc = Math.min((W * settings.shapeSize) / shapeImage.width, (H * settings.shapeSize) / shapeImage.height);
-  const iw = Math.max(2, Math.round(shapeImage.width * sc));
-  const ih = Math.max(2, Math.round(shapeImage.height * sc));
+  // The camera fills the screen (like a video call); images fit inside it.
+  const sc = (camOn ? Math.max : Math.min)((W * settings.shapeSize) / src.width, (H * settings.shapeSize) / src.height);
+  const iw = Math.max(2, Math.round(src.width * sc));
+  const ih = Math.max(2, Math.round(src.height * sc));
   const ix = Math.round((W - iw) / 2);
   const iy = Math.round((H - ih) / 2);
   const c = document.createElement('canvas');
   c.width = iw;
   c.height = ih;
   const g = c.getContext('2d', { willReadFrequently: true })!;
-  g.drawImage(shapeImage, 0, 0, iw, ih);
+  g.drawImage(src as CanvasImageSource, 0, 0, iw, ih);
   const d = g.getImageData(0, 0, iw, ih).data;
   const N = iw * ih;
   const lum = new Float32Array(N);
@@ -1735,7 +1930,7 @@ function sampleImage(): [number, number][] {
     }
     return cover / N;
   };
-  let mode = settings.imageMode;
+  let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode;
   if (mode === 'auto') {
     // A logo on a plain background covers part of the frame; a photo
     // "differs" almost everywhere, so fall back to brightness.
@@ -1766,7 +1961,9 @@ function sampleImage(): [number, number][] {
         wt[k] = Math.hypot(gx, gy) * alpha[k];
         if (wt[k] > max) max = wt[k];
       }
-    for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 2.5) ** 0.8;
+    // Camera pictures are busy and noisy: keep only the strongest lines.
+    if (camOn) for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 1.6) ** 2.2;
+    else for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 2.5) ** 0.8;
   }
   const pts: [number, number][] = [];
   for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
@@ -1778,8 +1975,17 @@ function sampleImage(): [number, number][] {
 
 function buildShape() {
   const S = settings;
-  const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? ''].join('|');
+  const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : ''].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
+  if (S.shape === 'camera' && faceMode()) {
+    // Face modes: the homes follow the tracked face every frame (faceHomes).
+    shapeKey = key;
+    if (!cam.face) for (let i = 0; i < n; i++) {
+      hx[i] = px[i];
+      hy[i] = py[i];
+    }
+    return;
+  }
   shapeKey = key;
   if (!glideHomes) homeGlide = null;
   const cx = w / 2;
@@ -1827,7 +2033,7 @@ function buildShape() {
     }
     return false;
   });
-  if (S.shape === 'image') pts.push(...sampleImage());
+  if (S.shape === 'image' || S.shape === 'camera') pts.push(...sampleImage());
   if (!pts.length) {
     for (let i = 0; i < n; i++) {
       hx[i] = px[i];
@@ -1865,7 +2071,7 @@ let entrance: { start: number; dur: number } | null = null;
 function playEntrance() {
   const S = settings;
   if (S.shape === 'none' || S.emitter !== 'none' || S.entrance === 'scatter') return;
-  if (S.shape === 'image' && !shapeImage) return;
+  if ((S.shape === 'image' && !shapeImage) || S.shape === 'camera') return;
   buildShape();
   const cx = w / 2;
   const cy = h / 2;
@@ -3019,6 +3225,7 @@ function frame(now: number) {
   audio.update(now);
   if (!frozen) {
     updateGlyphs();
+    cameraTick(now);
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
     // Stutter: a split-second freeze frame on each snare.
@@ -3327,7 +3534,7 @@ const ENTRANCES: [string, string][] = [
   ['edges', 'Fly in from the edges'],
   ['scatter', 'Scattered (free spring)'],
 ];
-const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['image', 'An image'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
+const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['image', 'An image'], ['camera', 'Your camera'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
 const hasPointer = () => settings.pointerMode !== 'none';
@@ -3498,7 +3705,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'camMode', 'camMirror', 'camCentre', 'camRate', 'camTriggers', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -3506,11 +3713,20 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
+  { kind: 'buttons', buttons: [['Start camera', () => void startCamera()]], show: () => isCam() && !cam.on },
+  { kind: 'buttons', buttons: [['Stop camera', stopCamera]], show: () => isCam() && cam.on },
+  { kind: 'select', key: 'camMode', label: 'Use', options: [['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts']], show: isCam },
+  { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie', show: isCam },
+  { kind: 'toggle', key: 'camCentre', label: 'Keep the face centred and sized', show: () => isCam() && faceMode() },
+  { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => isCam() && !faceMode() },
+  { kind: 'toggle', key: 'camTriggers', label: 'Expressions do things', show: () => isCam() && faceMode() },
+  { kind: 'note', text: 'Open your mouth to explode, blink to change colours, raise your eyebrows to send a ripple.', show: () => isCam() && faceMode() && settings.camTriggers },
+  { kind: 'note', text: 'The camera picture stays on this device. Face tracking downloads a 4 MB model the first time.', show: isCam },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
-  { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: hasShape },
-  { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
-  { kind: 'buttons', buttons: [['Play entrance', () => playEntrance()]], show: () => hasShape() && settings.entrance !== 'scatter' },
-  { kind: 'note', text: 'How the shape forms when the page opens. Scattered is the old free-for-all.', show: hasShape },
+  { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
+  { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && !isCam() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
+  { kind: 'buttons', buttons: [['Play entrance', () => playEntrance()]], show: () => hasShape() && !isCam() && settings.entrance !== 'scatter' },
+  { kind: 'note', text: 'How the shape forms when the page opens. Scattered is the old free-for-all.', show: () => hasShape() && !isCam() },
   { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'shapeCycle', label: 'Form & dissolve', min: 0, max: 20, step: 0.5, format: (v) => (v === 0 ? 'always formed' : `every ${v}s`), show: hasShape },
   { kind: 'note', text: 'Push particles with the pointer, clicks or the beat; they spring back home. Flow and forces still act, so lower them for a crisp shape.', show: hasShape },
@@ -3713,6 +3929,9 @@ const PRESETS: [string, Partial<Settings>][] = [
   // --- Patterns ---
   ['Mandala', { count: 3000, size: 1.5, render: 'sparkles', shape: 'sunflower', shapeSize: 0.9, entrance: 'centre', entranceTime: 3, flow: 0, trail: 0.6, friction: 0.04, jitter: 0, palette: 'candy', colorBy: 'cycle', glow: true, pointerMode: 'vortex', radius: 260, force: 1, click: 'ripple' }],
   ['Pond', { count: 1800, size: 2.6, render: 'dots', shape: 'grid', shapeSize: 1, entrance: 'formed', flow: 0, trail: 0.3, friction: 0.04, jitter: 0, palette: 'ocean', colorBy: 'radial', glow: true, pointerMode: 'repel', radius: 100, force: 0.8, click: 'ripple', clickForce: 1.6 }],
+  ['Face mesh', { count: 4000, size: 1.5, render: 'dots', shape: 'camera', camMode: 'face', camCentre: true, shapeSize: 0.9, homeStrength: 2, flow: 0, trail: 0.35, friction: 0.12, jitter: 0, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave', camTriggers: true }],
+  ['Glow face', { count: 2500, size: 1.6, render: 'glow', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.9, homeStrength: 2, flow: 0.05, flowType: 'curl', trail: 0.6, friction: 0.12, jitter: 0.01, palette: 'cyber', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'ripple', camTriggers: true }],
+  ['Live sketch', { count: 5000, size: 1.3, render: 'dots', shape: 'camera', camMode: 'edges', camRate: 5, shapeSize: 1, homeStrength: 1.6, flow: 0, trail: 0.2, friction: 0.1, jitter: 0.02, palette: 'paper', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'none' }],
   ['Portrait', { count: 6000, size: 1.2, render: 'dots', shape: 'image', imageMode: 'auto', shapeSize: 0.9, entrance: 'drift', flow: 0.05, flowType: 'curl', trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave' }],
   // --- Currents ---
   ['Marbled paper', { count: 3000, size: 1.2, render: 'streaks', flow: 1.2, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.06, trail: 0.97, friction: 0.06, jitter: 0.01, palette: 'paper', colorBy: 'direction', glow: false, pointerMode: 'vortex', radius: 180, force: 0.5, click: 'none' }],
@@ -3749,7 +3968,7 @@ const FAMILIES: [Family, string][] = [
 const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
   ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
-  ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait'],
+  ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait, Face mesh, Glow face, Live sketch'],
   ['currents', 'Drift, Silk, Dusk, Ink, Prism, Neon storm, Silk ribbons, Heat, Marbled paper, Northern lights'],
   ['weather', 'Snowfall, Embers, Fireflies, Bubbles, Rainstorm, Sandstorm, Pollen'],
   ['swarms', 'Starlings, Marbles, School of fish, Midges, Crowd'],
@@ -3982,6 +4201,15 @@ const darkPalettes = () =>
     return r * 0.3 + g * 0.59 + b * 0.11 < 100;
   });
 
+// Crossfade to a random dark palette.
+function newPalette(now: number) {
+  const list = darkPalettes().filter((k) => k !== settings.palette);
+  if (!list.length || !cardAllows('palette')) return;
+  palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur: 1500, tick: 0 };
+  settings.palette = pick(list);
+  changed(new Set(['palette']), true);
+}
+
 function musicVisuals(now: number) {
   const dt = lastVisual ? Math.min(0.1, (now - lastVisual) / 1000) : 0;
   lastVisual = now;
@@ -4096,12 +4324,7 @@ function musicVisuals(now: number) {
 
   // Palette per section: a new colour scheme every N bars (crossfaded).
   if (on && S.audioPalEvery > 0 && L.bar && musicBars % S.audioPalEvery === 0 && cardAllows('palette')) {
-    const list = darkPalettes().filter((k) => k !== S.palette);
-    if (list.length) {
-      palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur: 1500, tick: 0 };
-      S.palette = pick(list);
-      changed(new Set(['palette']), true);
-    }
+    newPalette(now);
   }
 
   // Motion.
@@ -4295,6 +4518,11 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
     buildShape();
     if (g && fx && fy && shapeKey !== before) homeGlide = { fx, fy, tx: hx.slice(0, n), ty: hy.slice(0, n), start: performance.now(), dur: g.ms };
     else if (!g) homeGlide = null;
+  }
+  // The camera turns on with the camera shape and off without it.
+  if (keys.has('shape')) {
+    if (settings.shape === 'camera' && !cam.on) void startCamera();
+    else if (settings.shape !== 'camera' && cam.on) stopCamera();
   }
   if (keys.has('emitter') && settings.emitter !== prevEmitter) {
     prevEmitter = settings.emitter;
@@ -5561,5 +5789,6 @@ resize();
 refresh();
 presetFromUrl(true);
 playEntrance();
+if (settings.shape === 'camera' && !cam.on) void startCamera();
 window.addEventListener('hashchange', () => presetFromUrl(false));
 requestAnimationFrame(frame);
