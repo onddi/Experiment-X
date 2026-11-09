@@ -688,21 +688,27 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 .link-add > button { width: 100%; margin: 6px 0; }
 .link-ideas button { font-size: 11px; }
 
-/* --- Play mode: invisible touch zones at the bottom and the knobs while playing -------- */
-.fader {
+/* --- Play mode: knobs A–D along the bottom, each over its own touch zone ------------- */
+.play-row {
   position: absolute;
+  left: 8px;
+  right: 8px;
   bottom: 22px;
-  height: 140px;
+  height: 150px;
+  max-width: 560px;
+  margin: 0 auto;
   z-index: 3;
-  touch-action: none;
-  cursor: ns-resize;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  pointer-events: none;
 }
+.fader { position: relative; pointer-events: auto; touch-action: none; cursor: ns-resize; }
 .fader[hidden] { display: none; }
-.fader.left { left: 8px; right: 50%; }
-.fader.right { left: 50%; right: 8px; }
 .knob {
   position: absolute;
-  bottom: 40px;
+  left: 50%;
+  bottom: 18px;
   z-index: 4;
   display: grid;
   justify-items: center;
@@ -714,12 +720,8 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
   transform: translateY(6px) scale(0.92);
   transition: opacity 0.35s, transform 0.35s;
 }
-/* A row along the bottom: left edge, ⌘ wheel, two fingers, ⌥ wheel, right edge. */
-.knob.left { left: 25%; }
-.knob.w3 { left: 37.5%; }
-.knob.centre { left: 50%; }
-.knob.w4 { left: 62.5%; }
-.knob.right { left: 75%; }
+/* Two fingers: a knob in the middle, above the row. */
+.knob.centre { bottom: 190px; }
 .knob.show { opacity: 1; transform: none; transition-duration: 0.12s; }
 .knob svg { width: 64px; height: 64px; grid-area: 2 / 1; filter: drop-shadow(0 1px 6px rgb(0 0 0 / 0.5)); }
 .knob .track { fill: rgb(0 0 0 / 0.35); stroke: rgb(255 255 255 / 0.15); stroke-width: 4; }
@@ -729,6 +731,7 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 body.no-input .knob, body.no-input .fader { display: none; }
 /* Phones: leave the shortcut buttons (bottom right) clear. */
 @media (max-width: 720px) {
-  .fader.right { right: 76px; }
-  .knob.right { left: calc(50% + (50% - 76px) / 2); }
+  .play-row { right: 76px; bottom: 16px; }
+  .knob { width: 80px; margin-left: -40px; }
+  .knob span { font-size: 10px; }
 }

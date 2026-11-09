@@ -4519,13 +4519,14 @@ const CONTROLS: Control[] = [
     about: 'Play settings like an instrument with the menu closed.',
     summary: () => (settings.playOn ? [settings.playLeft, settings.playRight].map(playName).join(' · ') : 'off'),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
-  { kind: 'select', key: 'playLeft', label: 'Bottom left', options: PLAYABLE },
-  { kind: 'select', key: 'playRight', label: 'Bottom right', options: PLAYABLE },
-  { kind: 'select', key: 'playTwo', label: 'Two-finger drag', options: PLAYABLE },
+  { kind: 'select', key: 'playLeft', label: 'Knob A', options: PLAYABLE },
+  { kind: 'select', key: 'playWheel3', label: 'Knob B', options: PLAYABLE },
+  { kind: 'select', key: 'playWheel4', label: 'Knob C', options: PLAYABLE },
+  { kind: 'select', key: 'playRight', label: 'Knob D', options: PLAYABLE },
+  { kind: 'note', text: 'Knobs A–D sit along the bottom of the field, left to right: slide a thumb up or down over one to play it. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D (Ctrl or Alt on Windows).' },
+  { kind: 'sub', label: 'Two fingers' },
+  { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
-  { kind: 'select', key: 'playWheel3', label: '⇧⌘ + wheel', options: PLAYABLE },
-  { kind: 'select', key: 'playWheel4', label: '⇧⌥ + wheel', options: PLAYABLE },
-  { kind: 'note', text: 'Slide a thumb up or down at the bottom left or bottom right of the field, or use two fingers. With a mouse: the wheel plays bottom left, Shift + wheel bottom right, and Shift with ⌘ or ⌥ the other two (Ctrl or Alt on Windows).' },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -6776,23 +6777,27 @@ function playName(key: string) {
   return rangeOf(key)?.label ?? key;
 }
 const stage = document.querySelector<HTMLElement>('.stage')!;
-// A knob (0–100% ring) shows while you play a setting, then fades away:
-// a row along the bottom, each above where you play it.
-type KnobAt = 'left' | 'w3' | 'centre' | 'w4' | 'right';
+// Knobs A–D sit in a row along the bottom, left to right. Each has a touch
+// zone (slide up/down) and a wheel combo; its 0–100% ring shows while you
+// play it, then fades away. Two-finger drag and pinch get a knob of their own.
+type KnobAt = 'a' | 'b' | 'c' | 'd' | 'centre';
+const KNOB_KEYS: [KnobAt, 'playLeft' | 'playWheel3' | 'playWheel4' | 'playRight'][] = [['a', 'playLeft'], ['b', 'playWheel3'], ['c', 'playWheel4'], ['d', 'playRight']];
 const RING = 2 * Math.PI * 26;
 const knobs = {} as Record<KnobAt, { el: HTMLElement; arc: SVGCircleElement; pct: HTMLElement; name: HTMLElement; timer: number }>;
-for (const at of ['left', 'w3', 'centre', 'w4', 'right'] as const) {
+const playRow = document.createElement('div');
+playRow.className = 'play-row';
+stage.append(playRow);
+for (const at of ['a', 'b', 'c', 'd', 'centre'] as const) {
   const el = document.createElement('div');
   el.className = `knob ${at}`;
   el.innerHTML = `<span></span><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="26"/><circle class="arc" cx="32" cy="32" r="26" stroke-dasharray="${RING.toFixed(2)}" transform="rotate(-90 32 32)"/></svg><b></b>`;
-  stage.append(el);
   knobs[at] = { el, arc: el.querySelector('.arc')!, pct: el.querySelector('b')!, name: el.querySelector('span')!, timer: 0 };
+  if (at === 'centre') stage.append(el);
 }
 function playShow(key: string) {
   const r = rangeOf(key);
   if (!r) return;
-  const S = settings;
-  const at: KnobAt = key === S.playLeft ? 'left' : key === S.playRight ? 'right' : key === S.playWheel3 ? 'w3' : key === S.playWheel4 ? 'w4' : 'centre';
+  const at: KnobAt = KNOB_KEYS.find(([, sk]) => settings[sk] === key)?.[0] ?? 'centre';
   const k = knobs[at];
   const share = (playBase(key) - r.min) / (r.max - r.min);
   k.arc.style.strokeDashoffset = (RING * (1 - share)).toFixed(2);
@@ -6840,10 +6845,11 @@ function playNudge(key: string, from: number, share: number) {
   const r = rangeOf(key);
   if (r) playSet(key, from + share * (r.max - r.min));
 }
-for (const side of ['left', 'right'] as const) {
+for (const [at, sk] of KNOB_KEYS) {
   const f = document.createElement('div');
-  f.className = `fader ${side}`;
-  const key = () => (side === 'left' ? settings.playLeft : settings.playRight);
+  f.className = `fader ${at}`;
+  f.append(knobs[at].el);
+  const key = () => settings[sk];
   let start: { y: number; v: number } | null = null;
   f.addEventListener('pointerdown', (e) => {
     f.setPointerCapture(e.pointerId);
@@ -6864,7 +6870,7 @@ for (const side of ['left', 'right'] as const) {
   };
   refreshers.push(sync);
   sync();
-  stage.append(f);
+  playRow.append(f);
 }
 // Two fingers: drag up/down and pinch.
 const playTouch = new Map<number, { x: number; y: number }>();
