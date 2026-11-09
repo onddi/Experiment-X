@@ -155,9 +155,15 @@ function rebirth(i: number) {
   span[i] = settings.lifespan > 0 ? settings.lifespan * 60 * (0.5 + Math.random()) : 0;
 }
 
+// 3D depth: scale a near/far factor (base, 1 = middle) by the depth amount.
+// Up to 100% it blends linearly; past that it compounds, so 200% exaggerates.
+function depthK(base: number, d: number) {
+  return d <= 1 ? 1 + (base - 1) * d : Math.pow(base, d);
+}
+
 function fadeOf(i: number) {
   if (dead[i]) return 0;
-  return fadeLife(i) * (settings.depth > 0 ? 1 - (1 - (0.3 + pz[i] * 0.7)) * settings.depth : 1);
+  return fadeLife(i) * (settings.depth > 0 ? depthK(0.3 + pz[i] * 0.7, settings.depth) : 1);
 }
 
 function fadeLife(i: number) {
@@ -1003,7 +1009,7 @@ function step(dt: number) {
       const d2 = dx * dx + dy * dy;
       if (d2 < r2) {
         const d = Math.sqrt(d2) + 0.001;
-        const f = (1 - d / radius) * force * (depthOn ? 1 + (pz[i] * 1.5 - 0.75) * settings.depth : 1);
+        const f = (1 - d / radius) * force * (depthOn ? Math.max(0.1, 1 + (pz[i] * 1.5 - 0.75) * settings.depth) : 1);
         const nx = dx / d;
         const ny = dy / d;
         if (pointerMode === 'repel') {
@@ -1099,7 +1105,7 @@ function step(dt: number) {
     vy[i] = (vy[i] + ay * dt) * Math.pow(damp, dt);
     ox[i] = px[i];
     oy[i] = py[i];
-    const zs = depthOn ? 1 + (0.35 + pz[i] * 1.0 - 1) * settings.depth : 1;
+    const zs = depthOn ? depthK(0.35 + pz[i], settings.depth) : 1;
     px[i] += vx[i] * speedNow * zs * dt;
     py[i] += vy[i] * speedNow * zs * dt;
 
@@ -3503,7 +3509,7 @@ function updateSizes() {
       const lt = Math.min(1, age[i] / span[i]);
       z *= ls === 'grow' ? 0.3 + lt * 1.4 : ls === 'shrink' ? 1.7 - lt * 1.4 : 0.3 + Math.sin(Math.PI * lt) * 1.4;
     }
-    if (dp > 0) z *= 1 + (0.3 + pz[i] * 1.4 - 1) * dp;
+    if (dp > 0) z *= depthK(0.3 + pz[i] * 1.4, dp);
     if (bands > 0) z *= bandSize[i % 3];
     psz[i] = z;
   }
@@ -4496,9 +4502,9 @@ const CONTROLS: Control[] = [
   { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
     summary: () => (settings.depth > 0 ? `${pct(settings.depth)}${settings.depthParallax > 0 ? ', parallax' : ''}` : 'off') },
-  { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
-  { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
-  { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
+  { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
+  { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
   { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
