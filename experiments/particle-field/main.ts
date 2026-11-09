@@ -4322,8 +4322,12 @@ function applyVibe(v: VibeDef) {
   const patch: Partial<Settings> = {};
   let look = settings.audioVibeLook ? v.look : {};
   // A vibe that suits another preset family brings a preset from it along.
-  if (settings.audioVibeLook && v.suits && lastPresetFamily !== v.suits) {
-    const list = PRESETS.filter(([nm]) => FAMILY_OF[nm] === v.suits);
+  // Face vibes need your face as the shape, whatever the look switch says.
+  const faceVibe = v.family === 'face';
+  const faceNow = settings.shape === 'camera' && faceMode();
+  const want = faceVibe ? !faceNow : settings.audioVibeLook && v.suits && lastPresetFamily !== v.suits;
+  if (want && v.suits) {
+    const list = PRESETS.filter(([nm, p]) => FAMILY_OF[nm] === v.suits && (!faceVibe || (p.shape === 'camera' && ['face', 'features', 'mixed'].includes(String(p.camMode)))));
     if (list.length) {
       const [nm, p] = pick(list);
       lastPresetFamily = v.suits;
@@ -4338,6 +4342,8 @@ function applyVibe(v: VibeDef) {
   patch.audioVibe = v.name;
   Object.assign(settings, patch);
   changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+  // Vibes are how the music plays the field: without sound they barely show.
+  if (audio.source === 'off') setTimeout(() => showToast(`${v.name} is set. It moves with music: turn on a sound source`), faceVibe ? 2500 : 0);
 }
 
 // Is the vibe still as it was applied (ignoring locked cards and the look)?
@@ -4652,6 +4658,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Tunes how kicks, snares, hats and 808s are picked out.' },
 
   { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
+  { kind: 'note', text: 'Vibes are how the music moves the field, so they show once a sound source is on (above). Face vibes also switch to a camera face scene.', show: () => audio.source === 'off' },
   { kind: 'vibes' },
   { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
   { kind: 'toggle', key: 'audioVibeLook', label: 'Vibes also change style, trails and flow' },
@@ -6702,7 +6709,7 @@ function showToast(text: string) {
   el.textContent = text;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el!.classList.remove('show'), 1600);
+  toastTimer = window.setTimeout(() => el!.classList.remove('show'), Math.max(1600, text.length * 45));
 }
 
 // Reset is a clean slate: default settings and no locked cards, so the
