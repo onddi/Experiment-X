@@ -311,12 +311,13 @@ button:hover, select:hover { border-color: #3c3f46; }
   z-index: 5;
   display: none;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .fab button {
+  position: relative;
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   padding: 0;
   place-items: center;
   border-radius: 50%;
@@ -327,6 +328,9 @@ button:hover, select:hover { border-color: #3c3f46; }
   -webkit-backdrop-filter: blur(6px);
   touch-action: manipulation;
 }
+.fab button svg { width: 22px; height: 22px; }
+/* A bigger invisible hit area than the visible circle (meets the 8px gaps). */
+.fab button::after { content: ''; position: absolute; inset: -4px -10px -4px -14px; border-radius: 12px; }
 .fab button:active { transform: scale(0.92); color: #fff; }
 .fab button.on { color: var(--accent); border-color: color-mix(in oklch, var(--accent) 50%, transparent); }
 .fab { transition: opacity 0.4s; }
