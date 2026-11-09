@@ -67,8 +67,11 @@ export const ACTIONS: ActionDef[] = [
   { id: 'colours', label: 'New colours', kind: 'moment' },
   { id: 'warm', label: 'Warm colours', kind: 'moment' },
   { id: 'flash', label: 'Flash', kind: 'moment' },
-  { id: 'scene', label: 'Next scene', kind: 'moment' },
+  { id: 'scene', label: 'Next scene (same family)', kind: 'moment' },
   { id: 'mine', label: 'Next of my scenes', kind: 'moment' },
+  { id: 'look', label: 'Next face look', kind: 'moment' },
+  { id: 'save', label: 'Save the scene to My scenes', kind: 'moment' },
+  { id: 'clear', label: 'Clear the drawing', kind: 'moment' },
   { id: 'gather', label: 'Gather', kind: 'while' },
   { id: 'freeze', label: 'Freeze', kind: 'while' },
   { id: 'size', label: 'Particle size', kind: 'amount' },
@@ -77,6 +80,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'hue', label: 'Colour shift', kind: 'amount' },
   { id: 'roll', label: 'Roll the view', kind: 'amount' },
   { id: 'zoom', label: 'Zoom', kind: 'amount' },
+  { id: 'emit', label: 'Stream from the mouth', kind: 'amount' },
   { id: 'energy', label: 'Macro: Energy', kind: 'amount' },
   { id: 'order', label: 'Macro: Order', kind: 'amount' },
   { id: 'dream', label: 'Macro: Dream', kind: 'amount' },
@@ -114,12 +118,13 @@ export function linkNeeds(list: Link[]) {
   return need;
 }
 
-export type Signal = { level: number; fire?: boolean; x?: number; y?: number };
-export type Amounts = { size: number; flow: number; speed: number; hue: number; roll: number; zoom: number };
+// `signed`: a level with a direction (-1..1), used to roll the view (head tilt).
+export type Signal = { level: number; fire?: boolean; x?: number; y?: number; signed?: number };
+export type Amounts = { size: number; flow: number; speed: number; hue: number; roll: number; zoom: number; emit: number };
 // Macro offsets (-0.5..0.5) on top of the Macros card's sliders.
 export type MacroPush = { energy: number; order: number; dream: number; heat: number; density: number };
 export type LinkOut = {
-  fired: { act: string; x?: number; y?: number }[];
+  fired: { act: string; src: string; x?: number; y?: number }[];
   gather: boolean;
   freeze: boolean;
   amounts: Amounts;
@@ -127,7 +132,7 @@ export type LinkOut = {
 };
 
 // How far an amount goes at full level and full strength.
-const SPAN: Amounts = { size: 1.5, flow: 3, speed: 2, hue: 180, roll: 45, zoom: 0.8 };
+const SPAN: Amounts = { size: 1.5, flow: 3, speed: 2, hue: 180, roll: 45, zoom: 0.8, emit: 1 };
 
 // Runs the connections each frame: fires moments, holds "while" actions,
 // and eases each amount towards the input's level.
@@ -137,7 +142,7 @@ export class LinkRunner {
   private state: { on: boolean; since: number; at: number; v: number }[] = [];
   private heldSince: Record<string, number> = {};
   levels: Record<string, number> = {};
-  out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
+  out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
 
   sync(text: string) {
     if (text === this.text) return;
@@ -162,7 +167,7 @@ export class LinkRunner {
   }
 
   step(signal: (id: string) => Signal, now: number) {
-    const out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 0, flow: 0, speed: 0, hue: 0, roll: 0, zoom: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
+    const out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 0, flow: 0, speed: 0, hue: 0, roll: 0, zoom: 0, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
     const cache: Record<string, Signal> = {};
     const sig = (id: string) => (cache[id] ??= signal(id));
     this.levels = {};
@@ -174,7 +179,8 @@ export class LinkRunner {
       const kind = actionDef(l.act)!.kind;
       if (kind === 'amount') {
         // Moments as amounts: their level is a short envelope (e.g. the kick's pulse).
-        st.v += ((gate ? s.level : 0) - st.v) * 0.3;
+        const lv = l.act === 'roll' && s.signed !== undefined ? s.signed : s.level;
+        st.v += ((gate ? lv : 0) - st.v) * 0.3;
         if (l.act in out.macros) out.macros[l.act as keyof MacroPush] += st.v * l.amt * 0.5;
         else out.amounts[l.act as keyof Amounts] += st.v * l.amt;
         return;
@@ -190,7 +196,7 @@ export class LinkRunner {
       const rest = sourceDef(l.src)!.kind === 'moment' ? 120 : 500;
       if (on && !was && gate && now - st.at > rest) {
         st.at = now;
-        out.fired.push({ act: l.act, x: s.x, y: s.y });
+        out.fired.push({ act: l.act, src: l.src, x: s.x, y: s.y });
       }
     });
     const a = out.amounts;
@@ -201,6 +207,7 @@ export class LinkRunner {
       hue: a.hue * SPAN.hue,
       roll: a.roll * SPAN.roll,
       zoom: Math.max(0.5, 1 + a.zoom * SPAN.zoom),
+      emit: Math.max(0, a.emit),
     };
     this.out = out;
     return out;
@@ -220,3 +227,55 @@ export const LINK_EXAMPLES: [string, string][] = [
   ['Loudness → Energy', 'loud>energy@0.8'],
   ['Smile → Heat', 'smile>heat@0.8'],
 ];
+
+// --- old per-input menus -------------------------------------------------------------
+// Expressions, hand signs and the jump used to have their own settings
+// (exMouth…, gFist…, poseJump). They are connections now; this turns old
+// scenes and saved settings into connections. Old defaults included.
+const OLD_EX: [string, string, string][] = [
+  ['exMouth', 'mouth', 'explode'], ['exBlink', 'blink', 'colours'], ['exSmile', 'smile', 'warm'], ['exBrows', 'brows', 'ripple'],
+  ['exPucker', 'pucker', 'gather'], ['exWink', 'wink', 'look'], ['exTilt', 'tilt', 'roll'],
+];
+const OLD_G: [string, string, string][] = [
+  ['gFist', 'fist', 'explode'], ['gPalm', 'palm', 'freeze'], ['gPoint', 'point', 'off'], ['gThumbUp', 'thumbUp', 'save'],
+  ['gThumbDown', 'thumbDown', 'off'], ['gVictory', 'victory', 'preset'], ['gLove', 'love', 'shockwave'],
+];
+// How strong an old "amount" was, as a connection strength.
+const OLD_AMT: Record<string, number> = { flow: 0.8, size: 0.6, speed: 0.8, hue: 1, roll: 1, emit: 1 };
+export const LEGACY_KEYS = ['camTriggers', 'poseJump', ...OLD_EX.map(([k]) => k), ...OLD_G.map(([k]) => k)];
+
+export function legacyToLinks(p: Record<string, unknown>): Link[] {
+  const out: Link[] = [];
+  const add = (src: string, act: string) => {
+    if (act === 'off') return;
+    if (act === 'preset') act = 'scene';
+    if (!actionDef(act)) return;
+    out.push({ src, when: '', act, amt: OLD_AMT[act] ?? 0.6 });
+  };
+  if (p.camTriggers === true) for (const [k, src, def] of OLD_EX) add(src, String(p[k] ?? def));
+  if (p.gestOn === true) for (const [k, src, def] of OLD_G) add(src, String(p[k] ?? def));
+  if (p.poseOn === true) add('jump', String(p.poseJump ?? 'explode'));
+  return out;
+}
+
+// Join two connection lists, without repeating a connection.
+export function mergeLinks(a: string, b: string) {
+  const seen = new Set<string>();
+  const list = [...parseLinks(a), ...parseLinks(b)].filter((l) => {
+    const k = formatLinks([l]);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return formatLinks(list);
+}
+
+// Old settings (a scene, saved settings, one of your scenes) → current ones.
+export function migrateLegacy<T extends Record<string, unknown>>(p: T): T {
+  if (!LEGACY_KEYS.some((k) => k in p)) return p;
+  const q: Record<string, unknown> = { ...p };
+  const conv = formatLinks(legacyToLinks(p));
+  for (const k of LEGACY_KEYS) delete q[k];
+  if (conv) q.links = mergeLinks(String(p.links ?? ''), conv);
+  return q as T;
+}

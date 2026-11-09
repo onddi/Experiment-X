@@ -12,7 +12,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 /* No double-tap zoom anywhere (pinch still works outside the canvas). */
-html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+html, body { overscroll-behavior: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 body {
   margin: 0;
   overflow: hidden;

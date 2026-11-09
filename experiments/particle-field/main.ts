@@ -1,10 +1,10 @@
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
-import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, type Emitter, type GAction, type ExAction, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
+import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { VIBE_FAMILIES, vibe, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
-import { LinkRunner, linkNeeds, parseLinks, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
+import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, mergeLinks, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -26,7 +26,7 @@ if ((settings.audioBeat as string) === 'none') settings.audioBeat = 'ripple';
 
 function load(): Partial<Settings> {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+    return migrateLegacy(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'));
   } catch {
     return {};
   }
@@ -682,7 +682,7 @@ function step(dt: number) {
   // Gather: hold the pointer (click mode), or the Gather action, which pulls
   // the whole field into an orb at the centre until pressed again.
   const holdGather = pointer.down && settings.click === 'gather';
-  const gathering = holdGather || gatherAll || faceGather || gestGather || linkRun.out.gather;
+  const gathering = holdGather || gatherAll || linkRun.out.gather;
   const gx = holdGather ? pointer.x : w / 2;
   const gy = holdGather ? pointer.y : h / 2;
   const gatherR = holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
@@ -709,8 +709,8 @@ function step(dt: number) {
   if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
   const lk = linkRun.out.amounts;
   if (lk.flow > 1 && flowNow < 0.15) flowNow = 0.15;
-  flowNow *= (1 - blastK) * faceDial.flow * handDial.flow * lk.flow;
-  speedNow *= faceDial.speed * handDial.speed * lk.speed;
+  flowNow *= (1 - blastK) * handDial.flow * lk.flow;
+  speedNow *= handDial.speed * lk.speed;
   const jitterNow = jitter;
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
@@ -1514,11 +1514,9 @@ let faceJy = new Float32Array(0);
 let partGroup = new Int8Array(0);
 let faceKey = '';
 const faceSmooth: { x: Float32Array; y: Float32Array; z: Float32Array }[] = [];
-// Live expression state.
-const faceDial = { flow: 1, size: 1, speed: 1 };
-let faceGather = false;
-let faceRoll = 0;
+// Live expression state (what they do is up to Connections).
 let mouthIdx = 0;
+let tiltNow = 0;
 const WARM = ['ember', 'sunset', 'gold', 'crimson', 'desert'] as const;
 
 function assignFace() {
@@ -1585,32 +1583,21 @@ function faceHomes() {
   }
 }
 
-// Expressions on the first face. Each one is mapped (Expressions card) to
-// a moment, a "while held" action or an amount.
+// Expressions on the first face: how strong each is (0..1) and whether it's
+// past its mark. Connections decide what they do; the Expressions card is a
+// view of those connections.
 type ExKey = 'exMouth' | 'exBlink' | 'exSmile' | 'exBrows' | 'exPucker' | 'exWink' | 'exTilt';
 const EXPRESSIONS: [ExKey, string, number][] = [
   ['exMouth', 'Open mouth', 0.6], ['exBlink', 'Blink', 0.55], ['exSmile', 'Smile', 0.7], ['exBrows', 'Raise eyebrows', 0.6],
   ['exPucker', 'Pucker', 0.6], ['exWink', 'Wink', 0.5], ['exTilt', 'Tilt your head', 0.5],
 ];
-const EX_ACTIONS: [string, string][] = [
-  ['off', 'Nothing'],
-  ['explode', 'Explode (moment)'], ['ripple', 'Ripple (moment)'], ['shockwave', 'Shockwave (moment)'], ['scatter', 'Scatter (moment)'],
-  ['colours', 'New colours (moment)'], ['warm', 'Warm colours (moment)'], ['look', 'Next face look (moment)'], ['mine', 'Next of my scenes (moment)'],
-  ['gather', 'Gather (while held)'],
-  ['flow', 'More flow (amount)'], ['size', 'Bigger particles (amount)'], ['speed', 'Faster (amount)'], ['hue', 'Shift colour (amount)'],
-  ['roll', 'Roll the view (amount)'], ['emit', 'Stream from the mouth (amount)'],
-];
-const isAmount = (a: ExAction) => a === 'flow' || a === 'size' || a === 'speed' || a === 'hue' || a === 'roll' || a === 'emit';
 const exLevel: Record<ExKey, number> = { exMouth: 0, exBlink: 0, exSmile: 0, exBrows: 0, exPucker: 0, exWink: 0, exTilt: 0 };
 const exOn: Record<ExKey, boolean> = { exMouth: false, exBlink: false, exSmile: false, exBrows: false, exPucker: false, exWink: false, exTilt: false };
-let faceHue = 0;
-let exAt = 0;
 let mineIdx = 0;
 
-function faceExpressions(now: number) {
+function faceExpressions() {
   const f = cam.face;
   const S = settings;
-  const live = !!f && S.camTriggers;
   const b = f?.blend ?? {};
   // How strong each expression is, 0..1.
   let tiltDeg = 0;
@@ -1632,75 +1619,38 @@ function faceExpressions(now: number) {
   // Sensitivity scales every expression up or down.
   for (const [k] of EXPRESSIONS) exLevel[k] = f ? Math.min(1, raw[k] * S.exSense) : 0;
 
-  const amt = { flow: 0, size: 0, speed: 0, hue: 0, roll: 0, emit: 0 };
-  let gather = false;
-  for (const [k, , hi] of EXPRESSIONS) {
-    const act = S[k];
-    const v = live ? exLevel[k] : 0;
-    if (act === 'off' || !live) {
-      exOn[k] = false;
-      continue;
-    }
-    if (isAmount(act)) {
-      // The tilt rolls the view its own way round; others turn one way.
-      if (act === 'roll') amt.roll += k === 'exTilt' ? tiltDeg : v * 25;
-      else amt[act as 'flow'] += v;
-      continue;
-    }
-    // Fires once on crossing the mark, re-arms well below it.
-    const was = exOn[k];
-    const on = was ? v > hi * 0.5 : v > hi;
-    exOn[k] = on;
-    if (act === 'gather') {
-      gather ||= on;
-      continue;
-    }
-    if (on && !was && now - exAt > 600) {
-      exAt = now;
-      exMoment(act, now, f!);
-    }
-  }
-  const ease = (o: number, v: number) => o + (v - o) * 0.4;
-  faceDial.flow = ease(faceDial.flow, 1 + amt.flow * 2.5);
-  faceDial.size = ease(faceDial.size, 1 + amt.size * 0.9);
-  faceDial.speed = ease(faceDial.speed, 1 + amt.speed * 1.6);
-  faceHue = ease(faceHue, amt.hue * 180);
-  faceRoll += (amt.roll - faceRoll) * 0.15;
-  faceGather = gather;
-  // Stream from the mouth (more when the music is loud).
-  if (f && amt.emit > 0.12) {
-    const mx = toSx((f.x[13] + f.x[14]) / 2);
-    const my = toSy((f.y[13] + f.y[14]) / 2);
-    const loud = audio.source !== 'off' ? 0.4 + audio.levels.level * 1.2 : 1;
-    const k = Math.min(n, Math.round(amt.emit * 50 * loud));
-    const sp = Math.min(w, h) / 800;
-    for (let q = 0; q < k; q++) {
-      const i = mouthIdx++ % n;
-      const a = Math.PI / 2 + (Math.random() - 0.5) * 2.4;
-      const v = (2 + Math.random() * 7) * sp * (0.6 + amt.emit);
-      px[i] = ox[i] = mx + (Math.random() - 0.5) * 8;
-      py[i] = oy[i] = my + (Math.random() - 0.5) * 4;
-      vx[i] = Math.cos(a) * v * (Math.random() < 0.5 ? 1 : -1) * 0.8;
-      vy[i] = Math.sin(a) * v;
-    }
+  tiltNow = tiltDeg;
+  // Past the mark (for the meters' glow); re-arms well below it.
+  for (const [k, , hi] of EXPRESSIONS) exOn[k] = exOn[k] ? exLevel[k] > hi * 0.5 : exLevel[k] > hi;
+}
+
+// Stream from the mouth (Connections: "… → Stream from the mouth"), more
+// when the music is loud.
+function mouthStream(amt: number) {
+  const f = cam.on ? cam.face : null;
+  if (!f || amt < 0.12) return;
+  const mx = toSx((f.x[13] + f.x[14]) / 2);
+  const my = toSy((f.y[13] + f.y[14]) / 2);
+  const loud = audio.source !== 'off' ? 0.4 + audio.levels.level * 1.2 : 1;
+  const k = Math.min(n, Math.round(amt * 50 * loud));
+  const sp = Math.min(w, h) / 800;
+  for (let q = 0; q < k; q++) {
+    const i = mouthIdx++ % n;
+    const a = Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+    const v = (2 + Math.random() * 7) * sp * (0.6 + amt);
+    px[i] = ox[i] = mx + (Math.random() - 0.5) * 8;
+    py[i] = oy[i] = my + (Math.random() - 0.5) * 4;
+    vx[i] = Math.cos(a) * v * (Math.random() < 0.5 ? 1 : -1) * 0.8;
+    vy[i] = Math.sin(a) * v;
   }
 }
 
-function exMoment(act: ExAction, now: number, f: { x: Float32Array; y: Float32Array }) {
-  const fx = toSx(f.x[1]);
-  const fy = toSy(f.y[1]);
-  if (act === 'explode') explode();
-  else if (act === 'ripple') addWave('ripple', fx, fy);
-  else if (act === 'shockwave') addWave('shockwave', fx, fy);
-  else if (act === 'scatter') scatter();
-  else if (act === 'colours') newPalette(now);
-  else if (act === 'warm') newPalette(now, WARM);
-  else if (act === 'look') {
-    const order = ['face', 'features', 'mixed'] as const;
-    const k = order.indexOf(settings.camMode as (typeof order)[number]);
-    set('camMode', order[(k + 1) % order.length]);
-    showToast(label(CAM_MODES, settings.camMode));
-  } else if (act === 'mine') nextMine();
+// The next of the face looks (features, mesh, mixed).
+function nextFaceLook() {
+  const order = ['face', 'features', 'mixed'] as const;
+  const k = order.indexOf(settings.camMode as (typeof order)[number]);
+  set('camMode', order[(k + 1) % order.length]);
+  showToast(label(CAM_MODES, settings.camMode));
 }
 function nextMine() {
   if (!myPresets.length) return showToast('No scenes of yours yet');
@@ -2007,74 +1957,36 @@ function sprayFrom(x: number, y: number, dx: number, dy: number) {
   }
 }
 
-// Gestures (Gestures card): each recognised hand sign does something. A
-// sign counts once it's held for a moment; a moment fires once per sign.
+// Hand signs: what they do is up to Connections (the Gestures card is a
+// view of those). This only lists the signs seen, for the card and debug.
 type GKey = 'gFist' | 'gPalm' | 'gPoint' | 'gThumbUp' | 'gThumbDown' | 'gVictory' | 'gLove';
 const GESTURES: [GKey, string, string][] = [
   ['gFist', 'Closed_Fist', 'Fist ✊'], ['gPalm', 'Open_Palm', 'Open palm ✋'], ['gVictory', 'Victory', 'Peace sign ✌️'],
   ['gThumbUp', 'Thumb_Up', 'Thumbs up 👍'], ['gThumbDown', 'Thumb_Down', 'Thumbs down 👎'], ['gPoint', 'Pointing_Up', 'Point up ☝️'], ['gLove', 'ILoveYou', 'Rock on 🤟'],
 ];
-const G_ACTIONS: [string, string][] = [
-  ['off', 'Nothing'], ['explode', 'Explode'], ['ripple', 'Ripple'], ['shockwave', 'Shockwave'], ['scatter', 'Scatter'],
-  ['colours', 'New colours'], ['warm', 'Warm colours'], ['preset', 'Next scene (same family)'], ['mine', 'Next of my scenes'],
-  ['save', 'Save the scene to My scenes'], ['clear', 'Clear the drawing'], ['freeze', 'Freeze (while held)'], ['gather', 'Gather (while held)'],
-];
-const gState: { g: string; since: number; fired: string }[] = [];
-let gestFreeze = false;
-let gestGather = false;
-let gestAt = 0;
 let gestShown = '';
 let presetStep = 0;
-function handGestures(now: number) {
-  gestFreeze = gestGather = false;
-  const seen: string[] = [];
-  if (settings.gestOn) cam.hands.forEach((hd, k) => {
-    const st = gState[k] ?? (gState[k] = { g: 'None', since: now, fired: '' });
-    const g = hd.score > 0.55 ? hd.gesture : 'None';
-    if (g !== st.g) {
-      st.g = g;
-      st.since = now;
-    }
-    if (g === 'None') st.fired = '';
-    const def = GESTURES.find(([, name]) => name === g);
-    if (!def || now - st.since < 150) return;
-    seen.push(def[2]);
-    const act = settings[def[0]];
-    if (act === 'freeze') gestFreeze = true;
-    else if (act === 'gather') gestGather = true;
-    else if (act !== 'off' && st.fired !== g && now - gestAt > 700) {
-      st.fired = g;
-      gestAt = now;
-      gestMoment(act, now, toSx(hd.x[9]), toSy(hd.y[9]));
-      if (act !== 'save' && act !== 'preset' && act !== 'mine') showToast(`${def[2]}  ${label(G_ACTIONS, act)}`);
-    }
-  });
-  for (let k = settings.gestOn ? cam.hands.length : 0; k < gState.length; k++) (gState[k].g = 'None'), (gState[k].fired = '');
-  gestShown = seen.join(' · ');
+function handGestures() {
+  const seen = cam.hands.filter((hd) => hd.score > 0.55).map((hd) => GESTURES.find(([, name]) => name === hd.gesture)?.[2]);
+  gestShown = seen.filter(Boolean).join(' · ');
 }
 
-function gestMoment(act: GAction, now: number, x: number, y: number) {
-  if (act === 'explode') explode();
-  else if (act === 'ripple' || act === 'shockwave') addWave(act, x, y);
-  else if (act === 'scatter') scatter();
-  else if (act === 'colours') newPalette(now);
-  else if (act === 'warm') newPalette(now, WARM);
-  else if (act === 'mine') nextMine();
-  else if (act === 'clear') {
-    paintParked = false;
-    syncPaint();
-  } else if (act === 'preset') {
-    const fam = lastPresetFamily ?? 'camera';
-    const pool = PRESETS.filter(([nm]) => FAMILY_OF[nm] === fam);
-    const [nm, p] = pool[presetStep++ % pool.length];
-    playPreset(nm, p);
-  } else if (act === 'save') {
-    const name = `Gesture ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
-    myPresets.push({ name, settings: snapshot() });
-    writeJson(MY_PRESETS_KEY, myPresets);
-    redrawMine();
-    showToast(`Saved “${name}” to My scenes`);
-  }
+function nextSceneSameFamily() {
+  const fam = lastPresetFamily ?? 'camera';
+  const pool = PRESETS.filter(([nm]) => FAMILY_OF[nm] === fam);
+  const [nm, p] = pool[presetStep++ % pool.length];
+  playPreset(nm, p);
+}
+function saveSceneNow() {
+  const name = `Gesture ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+  myPresets.push({ name, settings: snapshot() });
+  writeJson(MY_PRESETS_KEY, myPresets);
+  redrawMine();
+  showToast(`Saved “${name}” to My scenes`);
+}
+function clearDrawing() {
+  paintParked = false;
+  syncPaint();
 }
 
 // Two hands (Gestures card): how far apart they are and the angle between
@@ -2178,17 +2090,14 @@ function skelHomes() {
 }
 
 // Body (Body card): wrists sweep particles along with them, and a jump (the
-// hips rising fast) fires a moment.
+// hips rising fast) is a Connections input.
 let sweepPts: { x: number; y: number; vx: number; vy: number; r: number }[] = [];
 const wristWas: ({ x: number; y: number; vx: number; vy: number } | null)[] = [null, null];
-let hipHist: { t: number; y: number }[] = [];
-let jumpAt = 0;
-function bodyForces(now: number) {
+function bodyForces() {
   sweepPts = [];
   const p = cam.poses[0];
   if (!settings.poseOn || !p) {
     wristWas[0] = wristWas[1] = null;
-    hipHist = [];
     return;
   }
   const sw = Math.hypot(toSx(p.x[11]) - toSx(p.x[12]), toSy(p.y[11]) - toSy(p.y[12])) || 150;
@@ -2205,22 +2114,6 @@ function bodyForces(now: number) {
     markPts.push({ x, y });
     if (settings.poseSweep > 0 && Math.hypot(v.vx, v.vy) > 0.8) sweepPts.push({ x, y, ...v, r: sw * 0.9 });
   });
-  // Jump: the hips rise by a third of a shoulder width within half a second.
-  if (settings.poseJump === 'off' || p.v[23] < 0.5 || p.v[24] < 0.5) return;
-  const hy = (toSy(p.y[23]) + toSy(p.y[24])) / 2;
-  hipHist.push({ t: now, y: hy });
-  while (hipHist.length && hipHist[0].t < now - 500) hipHist.shift();
-  const low = Math.max(...hipHist.map((q) => q.y));
-  if (low - hy > sw * 0.35 && now - jumpAt > 1200) {
-    jumpAt = now;
-    hipHist = [];
-    const act = settings.poseJump;
-    if (act === 'explode') explode();
-    else if (act === 'shockwave') addWave('shockwave', (toSx(p.x[23]) + toSx(p.x[24])) / 2, hy);
-    else if (act === 'colours') newPalette(now);
-    else scatter();
-    showToast('Jump!');
-  }
 }
 
 // Face extras (Face extras card): a share of the particles leaves the shape
@@ -2548,11 +2441,8 @@ function syncPreview() {
 
 // Called every frame: track, then move the homes or re-sample the picture.
 function faceIdle() {
-  faceDial.flow = faceDial.size = faceDial.speed = 1;
-  faceGather = false;
-  faceRoll *= 0.9;
-  faceHue *= 0.9;
-  for (const [k] of EXPRESSIONS) exLevel[k] = 0;
+  tiltNow = 0;
+  for (const [k] of EXPRESSIONS) (exLevel[k] = 0), (exOn[k] = false);
 }
 function cameraTick(now: number) {
   syncPreview();
@@ -2562,7 +2452,7 @@ function cameraTick(now: number) {
     sweepPts = [];
     pullPts = [];
     fxAx = fxAy = fxJit = 0;
-    gestFreeze = gestGather = false;
+    gestShown = '';
     syncPaint();
     syncPool();
     twoHands();
@@ -2578,14 +2468,14 @@ function cameraTick(now: number) {
   updateCamMap();
   if (isCam() && faceMode()) faceHomes();
   if (isCam() && skelMode()) skelHomes();
-  if (faceOn) faceExpressions(now);
+  if (faceOn) faceExpressions();
   else faceIdle();
   syncPaint();
   syncPool();
   handForces();
-  handGestures(now);
+  handGestures();
   twoHands();
-  bodyForces(now);
+  bodyForces();
   if (faceOn) faceFx(now);
   else {
     fxAx = fxAy = fxJit = 0;
@@ -3801,7 +3691,7 @@ function draw() {
     else if (a > 0) fadeBuckets[Math.min(FADE_LEVELS - 1, (a * FADE_LEVELS) | 0)][shadeIndex(i)].push(i);
   }
 
-  const s = settings.size * audioSizeBoost() * faceDial.size * handDial.size * linkRun.out.amounts.size * macro.size;
+  const s = settings.size * audioSizeBoost() * handDial.size * linkRun.out.amounts.size * macro.size;
   // Parallax: shift each depth layer a little with the camera, drawn by
   // offsetting positions just for this draw and putting them back after.
   const par = settings.depth > 0 && settings.depthParallax > 0;
@@ -4059,6 +3949,7 @@ function linkSignal(id: string, now: number): Signal {
       const f = cam.on ? cam.face : null;
       if (!f) return none;
       const at = { x: toSx(f.x[1]), y: toSy(f.y[1]) };
+      if (id === 'tilt') return { level: exLevel.exTilt, signed: Math.max(-1, Math.min(1, tiltNow / 45)), ...at };
       if (id in EX_OF) return { level: exLevel[EX_OF[id]], ...at };
       if (id === 'faceX') return { level: clamp01(at.x / w), ...at };
       if (id === 'faceY') return { level: clamp01(1 - at.y / h), ...at };
@@ -4192,13 +4083,14 @@ function runLinks(now: number) {
   linkFlash *= 0.82;
   if (!linkRun.list.length) {
     if (linkRun.out.fired.length || linkRun.out.gather || linkRun.out.freeze || linkRun.list !== lastLinkList) {
-      linkRun.out = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
+      linkRun.out = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
       lastLinkList = linkRun.list;
     }
     linkAt = now;
     return;
   }
   const out = linkRun.step((id) => linkSignal(id, now), now);
+  mouthStream(out.amounts.emit);
   linkAt = now;
   for (const f of out.fired) {
     const x = f.x ?? w / 2;
@@ -4209,8 +4101,17 @@ function runLinks(now: number) {
     else if (f.act === 'colours') newPalette(now);
     else if (f.act === 'warm') newPalette(now, WARM);
     else if (f.act === 'flash') linkFlash = 0.25;
-    else if (f.act === 'scene') gestMoment('preset', now, x, y);
+    else if (f.act === 'scene') nextSceneSameFamily();
     else if (f.act === 'mine') nextMine();
+    else if (f.act === 'look') nextFaceLook();
+    else if (f.act === 'save') saveSceneNow();
+    else if (f.act === 'clear') clearDrawing();
+    // Say which sign or move did what (scene changes say it themselves).
+    const sign = GESTURES.find(([, name]) => name === SIGN_OF[f.src]);
+    if (f.act !== 'save' && f.act !== 'scene' && f.act !== 'mine' && f.act !== 'look') {
+      if (sign) showToast(`${sign[2]}  ${actionDef(f.act)?.label ?? f.act}`);
+      else if (f.src === 'jump') showToast('Jump!');
+    }
   }
 }
 
@@ -4242,7 +4143,7 @@ function frame(now: number) {
     // Stutter: a split-second freeze frame on each snare.
     const held = now < stutterUntil;
     const t0 = performance.now();
-    if (!held && !gestFreeze && !linkRun.out.freeze) step(dt);
+    if (!held && !linkRun.out.freeze) step(dt);
     const t1 = performance.now();
     if (!held) {
       draw();
@@ -4303,6 +4204,8 @@ type ControlBody =
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'links' }
+  // One input's connection, as a dropdown (Expressions, Gestures, Body cards).
+  | { kind: 'linkpick'; src: string; label: string }
   | { kind: 'sub'; label: string }
   | { kind: 'heading'; label: string; tab: Tab }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
@@ -4480,6 +4383,32 @@ const ICONS = {
   shuffle: svg('<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>'),
   reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
 };
+
+// Expressions, Gestures and Body cards are views of Connections: their
+// switch adds or removes that group's connections (remembering them).
+const EX_SRCS = ['mouth', 'blink', 'smile', 'brows', 'pucker', 'wink', 'tilt'];
+const SIGN_SRCS = ['fist', 'palm', 'victory', 'thumbUp', 'thumbDown', 'point', 'love'];
+const groupStash: Record<string, string> = {};
+const inGroup = (srcs: string[]) => parseLinks(settings.links).filter((l) => srcs.includes(l.src));
+function groupPower(id: string, srcs: string[], start: string, flag?: 'gestOn' | 'poseOn') {
+  return {
+    on: () => (flag ? settings[flag] : false) || inGroup(srcs).length > 0,
+    get off(): Partial<Settings> {
+      const all = parseLinks(settings.links);
+      groupStash[id] = formatLinks(all.filter((l) => srcs.includes(l.src)));
+      return { links: formatLinks(all.filter((l) => !srcs.includes(l.src))), ...(flag ? { [flag]: false } : {}) };
+    },
+    get start(): Partial<Settings> {
+      return { links: mergeLinks(settings.links, groupStash[id] || start), ...(flag ? { [flag]: true } : {}) };
+    },
+  };
+}
+function groupSummary(srcs: string[], flag?: 'gestOn' | 'poseOn') {
+  const k = inGroup(srcs).length;
+  return k ? `${k} in use` : flag && settings[flag] ? 'on' : 'off';
+}
+const LINKPICK_OPTS: [string, string][] = [['off', 'Nothing'], ...ACTIONS.map((a): [string, string] => [a.id, `${a.label}${a.kind === 'moment' ? '' : a.kind === 'while' ? ' (while held)' : ' (amount)'}`])];
+const PICK_AMT: Record<string, number> = { flow: 0.8, size: 0.6, speed: 0.8, hue: 1, roll: 1, emit: 1 };
 
 // Every slider, for Play mode's pickers (filled once CONTROLS exists).
 const PLAYABLE: [string, string][] = [];
@@ -4848,15 +4777,15 @@ const CONTROLS: Control[] = [
 
   { kind: 'heading', label: 'Your face', tab: 'camera' },
   { kind: 'section', id: 'expressions', label: 'Expressions', tab: 'camera', about: 'Choose what each facial expression does (with a camera face).',
-    lock: ['camTriggers', 'exMouth', 'exBlink', 'exSmile', 'exBrows', 'exPucker', 'exWink', 'exTilt', 'exSense'],
-    power: { on: () => settings.camTriggers, off: { camTriggers: false }, start: { camTriggers: true } },
-    summary: () => (settings.camTriggers ? `${EXPRESSIONS.filter(([k]) => settings[k] !== 'off').length} in use` : 'off') },
+    lock: ['exSense'],
+    power: groupPower('expressions', EX_SRCS, 'mouth>explode;blink>colours;smile>warm;brows>ripple;pucker>gather;wink>look;tilt>roll@1'),
+    summary: () => groupSummary(EX_SRCS) },
   { kind: 'note', text: 'Needs You as the shape (above) with a face mode, or a Camera scene.', show: () => !(isCam() && faceMode()) },
   { kind: 'exmeters' },
   { kind: 'note', text: 'Live: how strong each expression is now. The tick is where a moment fires.' },
   { kind: 'range', key: 'exSense', label: 'Sensitivity', min: 0.5, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×` },
-  ...EXPRESSIONS.map(([k, name]): Control => ({ kind: 'select', key: k, label: name, options: EX_ACTIONS })),
-  { kind: 'note', text: 'A moment fires once as the expression starts. While held lasts as long as you hold it. An amount follows how strong the expression is.' },
+  ...EXPRESSIONS.map(([, name], k): Control => ({ kind: 'linkpick', src: EX_SRCS[k], label: name })),
+  { kind: 'note', text: 'A moment fires once as the expression starts. While held lasts as long as you hold it. An amount follows how strong the expression is. These are connections: the Connections card (Scenes tab) shows them all, with strengths and combos.' },
 
   { kind: 'section', id: 'facefx', label: 'Face extras', tab: 'camera', about: 'Flames, a crown or tears on your face; your gaze and voice move particles.',
     lock: ['maskFx', 'maskShare', 'gaze', 'voice'],
@@ -4884,10 +4813,10 @@ const CONTROLS: Control[] = [
   { kind: 'note', show: () => !isPaint(), text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them; flick and let go to throw them. Uses the camera (asks once); the picture stays on this device.' },
 
   { kind: 'section', id: 'gestures', label: 'Gestures', tab: 'camera', about: 'Hand signs as switches, and two hands as dials.',
-    lock: ['gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle'],
-    power: { on: () => settings.gestOn, off: { gestOn: false }, start: { gestOn: true } },
-    summary: () => (settings.gestOn ? gestShown || `${GESTURES.filter(([k]) => settings[k] !== 'off').length} signs` : 'off') },
-  ...GESTURES.map(([k, , name]): Control => ({ kind: 'select', key: k, label: name, options: G_ACTIONS })),
+    lock: ['twoDist', 'twoAngle'],
+    power: groupPower('gestures', SIGN_SRCS, 'fist>explode;palm>freeze;thumbUp>save;victory>scene;love>shockwave', 'gestOn'),
+    summary: () => gestShown || groupSummary(SIGN_SRCS, 'gestOn') },
+  ...GESTURES.map(([, , name], k): Control => ({ kind: 'linkpick', src: SIGN_SRCS[k], label: name })),
   { kind: 'sub', label: 'Two hands' },
   { kind: 'select', key: 'twoDist', label: 'Hands apart', options: [['off', 'Nothing'], ['zoom', 'Zoom the view'], ['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed']] },
   { kind: 'select', key: 'twoAngle', label: 'Tilt between them', options: [['off', 'Nothing'], ['turn', 'Turn the view'], ['hue', 'Shift the colours']] },
@@ -4895,11 +4824,11 @@ const CONTROLS: Control[] = [
 
   { kind: 'heading', label: 'Your body', tab: 'camera' },
   { kind: 'section', id: 'body', label: 'Body', tab: 'camera', about: 'Your arms sweep the particles; jump for a moment.',
-    lock: ['poseOn', 'poseSweep', 'poseJump'],
-    power: { on: () => settings.poseOn, off: { poseOn: false }, start: { poseOn: true } },
+    lock: ['poseSweep'],
+    power: groupPower('body', ['jump'], 'jump>explode', 'poseOn'),
     summary: () => (settings.poseOn ? (cam.poses.length ? 'tracking you' : 'on') : 'off') },
   { kind: 'range', key: 'poseSweep', label: 'Arms sweep', min: 0, max: 3, step: 0.1, format: (v) => (v === 0 ? 'off' : `${v.toFixed(1)}×`) },
-  { kind: 'select', key: 'poseJump', label: 'A jump does', options: [['off', 'Nothing'], ['explode', 'Explode'], ['shockwave', 'Shockwave'], ['colours', 'New colours'], ['scatter', 'Scatter']] },
+  { kind: 'linkpick', src: 'jump', label: 'A jump does' },
   { kind: 'note', text: 'Step back so the camera sees you from the hips up (the whole body for jumps). Shape → Your camera → Your body makes you the shape; Obstacles → Your silhouette makes particles flow round you.' },
 
   { kind: 'section', id: 'mirror', label: 'Silhouette & mirror world', tab: 'camera', about: 'Particles flow round you, or the left half is reflected.',
@@ -5027,7 +4956,7 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'poseJump', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
@@ -5197,7 +5126,7 @@ function musicVisuals(now: number) {
     if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
     if (S.audioInvert && L.dropEnv > 0.55) parts.push('invert(1)');
   }
-  const hueCam = faceHue + handDial.hue + linkRun.out.amounts.hue;
+  const hueCam = handDial.hue + linkRun.out.amounts.hue;
   if (Math.abs(hueCam) > 0.5) parts.push(`hue-rotate(${hueCam.toFixed(1)}deg)`);
   if (macro.filter) parts.push(macro.filter);
   const filter = parts.join(' ');
@@ -5243,7 +5172,7 @@ function musicVisuals(now: number) {
   if (on && S.audioRoll > 0 && L.snare) rollSign = -rollSign;
   const rollT = on && S.audioRoll > 0 ? rollSign * S.audioRoll * 5 : 0;
   rollNow += (rollT - rollNow) * Math.min(1, dt * 10);
-  const rollAll = rollNow + faceRoll * 0.8 + handDial.roll + linkRun.out.amounts.roll;
+  const rollAll = rollNow + handDial.roll + linkRun.out.amounts.roll;
   const rollZ = 1 + Math.abs(Math.sin((rollAll * Math.PI) / 180)) * (Math.max(w, h) / Math.min(w, h));
   // Flip: mirror the view at each drop.
   if (on && S.audioFlip && L.drop) flipS = -flipS;
@@ -5534,9 +5463,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   viewfx: ['audioTunnel', 'audioEcho', 'audioKaleido'],
   mwords: ['audioWordsOn', 'audioWords', 'audioWordPulse'],
   camshape: ['camMode', 'camSnap', 'camCentre'],
-  expressions: ['exMouth', 'exBlink', 'exSmile', 'exBrows', 'exPucker', 'exWink', 'exTilt'],
   hands: ['camHands', 'camHandReach', 'camHandForce', 'drawColour'],
-  gestures: ['gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove'],
 };
 // Settings you pinned from Fine-tune to a card's essentials (this device).
 const PINS_KEY = 'particle-field:pins';
@@ -5978,6 +5905,33 @@ function renderControls() {
 
     if (ctl.kind === 'links') {
       searchItem(body, renderLinks());
+      continue;
+    }
+
+    if (ctl.kind === 'linkpick') {
+      // The first plain connection from this input; changing it rewrites that one.
+      const row = document.createElement('label');
+      row.className = 'row select';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = ctl.label;
+      const sel = document.createElement('select');
+      for (const [v, t] of LINKPICK_OPTS) sel.add(new Option(t, v));
+      const src = ctl.src;
+      sel.addEventListener('change', () => {
+        const list = parseLinks(settings.links);
+        const k = list.findIndex((l) => l.src === src && !l.when);
+        if (sel.value === 'off') {
+          if (k >= 0) list.splice(k, 1);
+        } else if (k >= 0) list[k] = { ...list[k], act: sel.value, amt: actionDef(list[k].act)?.kind === 'amount' ? list[k].amt : (PICK_AMT[sel.value] ?? 0.6) };
+        else list.push({ src, when: '', act: sel.value, amt: PICK_AMT[sel.value] ?? 0.6 });
+        set('links', formatLinks(list) as never);
+      });
+      refreshers.push(() => {
+        sel.value = parseLinks(settings.links).find((l) => l.src === src && !l.when)?.act ?? 'off';
+      });
+      row.append(name, sel);
+      searchItem(body, row);
       continue;
     }
 
@@ -6535,7 +6489,7 @@ function saveLocks() {
 
 const MY_PRESETS_KEY = 'particle-field:my-presets';
 type MyPreset = { name: string; settings: Partial<Settings>; key?: string };
-let myPresets: MyPreset[] = readJson<MyPreset[]>(MY_PRESETS_KEY, []);
+let myPresets: MyPreset[] = readJson<MyPreset[]>(MY_PRESETS_KEY, []).map((p) => ({ ...p, settings: migrateLegacy(p.settings) }));
 // The preset of yours you played last, so Update can save over it in one tap.
 let currentMine: MyPreset | null = null;
 function updateMine(p: MyPreset) {
@@ -6907,15 +6861,27 @@ const twoEnd = (e: PointerEvent) => {
 };
 canvas.addEventListener('pointerup', twoEnd);
 canvas.addEventListener('pointercancel', twoEnd);
-canvas.addEventListener(
+// Listen on the window, not the canvas, so the wheel still turns a knob while
+// the pointer sits over a knob zone, a toast or the HUD. Only the menu keeps
+// its own scrolling. Every wheel over the field is cancelled, which (with
+// overscroll-behavior in the CSS) keeps a sideways trackpad swipe from
+// becoming the browser's back / forward gesture.
+window.addEventListener(
   'wheel',
   (e) => {
+    const t = e.target as Element | null;
+    if (t?.closest?.('#panel, #toggle')) return;
     if (!settings.playOn) return;
     e.preventDefault();
     const S = settings;
     const key = !e.shiftKey ? S.playLeft : e.metaKey || e.ctrlKey ? S.playWheel3 : e.altKey ? S.playWheel4 : S.playRight;
+    // Plain wheel follows the vertical axis only, so sideways drift on a
+    // trackpad doesn't turn the knob. Shift turns vertical scrolling into
+    // horizontal on macOS, so with Shift take whichever axis moved most.
+    const d = e.shiftKey ? (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) : e.deltaY;
+    if (!d) return;
     // Lines (a mouse wheel) to pixels, like a trackpad.
-    const px = (e.deltaY || e.deltaX) * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const px = d * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
     playNudge(key, playBase(key), -px / 1200);
   },
   { passive: false },

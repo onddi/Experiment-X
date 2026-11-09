@@ -9,11 +9,9 @@ export type EmitMode = 'steady' | 'burst' | 'beat';
 export type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring';
 export type CamMode = 'face' | 'features' | 'mixed' | 'hands' | 'pose' | 'body' | 'edges' | 'bright' | 'dark';
 // What a hand gesture does (Gestures card).
-export type GAction = 'off' | 'explode' | 'ripple' | 'shockwave' | 'scatter' | 'colours' | 'warm' | 'preset' | 'mine' | 'save' | 'clear' | 'freeze' | 'gather';
 export type MaskFx = 'none' | 'flames' | 'crown' | 'tears' | 'beard' | 'halo' | 'lasers';
 // What an expression does: a moment (fires once as the expression starts),
 // "while held", or an amount that follows how strong the expression is.
-export type ExAction = 'off' | 'explode' | 'ripple' | 'shockwave' | 'scatter' | 'colours' | 'warm' | 'look' | 'mine' | 'gather' | 'flow' | 'size' | 'speed' | 'hue' | 'roll' | 'emit';
 export type CamHands = 'off' | 'attract' | 'repel' | 'vortex' | 'draw' | 'spray';
 export type FlowType = 'waves' | 'curl';
 export type Edges = 'wrap' | 'enter' | 'bounce';
@@ -77,17 +75,9 @@ export interface Settings {
   camMirror: boolean;
   camCentre: boolean;
   camRate: number;
-  camTriggers: boolean;
   camMix: number;
   camSnap: number;
   camDepth: boolean;
-  exMouth: ExAction;
-  exBlink: ExAction;
-  exSmile: ExAction;
-  exBrows: ExAction;
-  exPucker: ExAction;
-  exWink: ExAction;
-  exTilt: ExAction;
   exSense: number;
   camPreview: boolean;
   camHands: CamHands;
@@ -97,13 +87,6 @@ export interface Settings {
   drawWidth: boolean;
   drawErase: boolean;
   gestOn: boolean;
-  gFist: GAction;
-  gPalm: GAction;
-  gPoint: GAction;
-  gThumbUp: GAction;
-  gThumbDown: GAction;
-  gVictory: GAction;
-  gLove: GAction;
   twoDist: 'off' | 'zoom' | 'size' | 'flow' | 'speed';
   twoAngle: 'off' | 'turn' | 'hue';
   maskFx: MaskFx;
@@ -112,7 +95,6 @@ export interface Settings {
   voice: boolean;
   poseOn: boolean;
   poseSweep: number;
-  poseJump: 'off' | 'explode' | 'shockwave' | 'colours' | 'scatter';
   mirrorWorld: boolean;
   // Connections card: input → action links (see links.ts).
   links: string;
@@ -342,17 +324,9 @@ export const DEFAULTS: Settings = {
   camMirror: true,
   camCentre: true,
   camRate: 6,
-  camTriggers: false,
   camMix: 0.6,
   camSnap: 0.7,
   camDepth: false,
-  exMouth: 'explode',
-  exBlink: 'colours',
-  exSmile: 'warm',
-  exBrows: 'ripple',
-  exPucker: 'gather',
-  exWink: 'look',
-  exTilt: 'roll',
   exSense: 1,
   camPreview: true,
   camHands: 'off',
@@ -362,13 +336,6 @@ export const DEFAULTS: Settings = {
   drawWidth: false,
   drawErase: true,
   gestOn: false,
-  gFist: 'explode',
-  gPalm: 'freeze',
-  gPoint: 'off',
-  gThumbUp: 'save',
-  gThumbDown: 'off',
-  gVictory: 'preset',
-  gLove: 'shockwave',
   twoDist: 'zoom',
   twoAngle: 'turn',
   maskFx: 'none',
@@ -377,7 +344,6 @@ export const DEFAULTS: Settings = {
   voice: false,
   poseOn: false,
   poseSweep: 1,
-  poseJump: 'explode',
   mirrorWorld: false,
   links: '',
   mEnergy: 0.5,
