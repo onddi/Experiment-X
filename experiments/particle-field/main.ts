@@ -81,6 +81,7 @@ interface Settings {
   camRate: number;
   camTriggers: boolean;
   camMix: number;
+  camSnap: number;
   camDepth: boolean;
   exMouth: ExAction;
   exBlink: ExAction;
@@ -315,6 +316,7 @@ const DEFAULTS: Settings = {
   camRate: 6,
   camTriggers: false,
   camMix: 0.6,
+  camSnap: 0.7,
   camDepth: false,
   exMouth: 'explode',
   exBlink: 'colours',
@@ -1201,10 +1203,13 @@ function step(dt: number) {
     const phase = cyc > 0 ? (t % cyc) / cyc : 0;
     const formed = cyc > 0 ? Math.max(0, Math.min(1, Math.cos(phase * Math.PI * 2) * 1.6 + 0.4)) : 1;
     // A tracked face moves all the time: hold on tighter so it keeps up.
-    const live = settings.shape === 'camera' ? (faceMode() ? 3 : 2) : 1;
+    // Follow tightness: up to 15× the usual pull, so lips and eyes keep up.
+    const live = settings.shape === 'camera' ? (faceMode() ? 3 + settings.camSnap * 12 : 2) : 1;
     homeK = settings.homeStrength * 0.004 * formed * (1 - blastK) * live;
   }
-  const homeDamp = homeK > 0 ? Math.min(0.2, homeK * 12) : 0;
+  // A tracked face needs more damping too, or the stronger pull wobbles.
+  const faceLive = settings.shape === 'camera' && faceMode();
+  const homeDamp = homeK > 0 ? Math.min(faceLive ? 0.5 : 0.2, homeK * (faceLive ? 7 : 12)) : 0;
   const cxW = w / 2;
   const cyH = h / 2;
   // While an entrance plays, particles follow their gliding spot closely, then
@@ -1913,14 +1918,16 @@ function faceHomes() {
   const faces = cam.faces;
   if (!faces.length || !cam.mesh.length) return;
   assignFace();
-  // Smooth the landmarks a little so the shape doesn't jitter.
+  // Smooth the landmarks a little so the shape doesn't jitter (less when
+  // following tightly).
+  const sk = 0.55 + settings.camSnap * 0.4;
   faces.forEach((f, s) => {
     let sm = faceSmooth[s];
     if (!sm || sm.x.length !== f.x.length) sm = faceSmooth[s] = { x: f.x.slice(), y: f.y.slice(), z: f.z.slice() };
     for (let k = 0; k < f.x.length; k++) {
-      sm.x[k] += (f.x[k] - sm.x[k]) * 0.6;
-      sm.y[k] += (f.y[k] - sm.y[k]) * 0.6;
-      sm.z[k] += (f.z[k] - sm.z[k]) * 0.6;
+      sm.x[k] += (f.x[k] - sm.x[k]) * sk;
+      sm.y[k] += (f.y[k] - sm.y[k]) * sk;
+      sm.z[k] += (f.z[k] - sm.z[k]) * sk;
     }
   });
   const nf = faces.length;
@@ -2019,7 +2026,7 @@ function faceExpressions(now: number) {
       exMoment(act, now, f!);
     }
   }
-  const ease = (o: number, v: number) => o + (v - o) * 0.2;
+  const ease = (o: number, v: number) => o + (v - o) * 0.4;
   faceDial.flow = ease(faceDial.flow, 1 + amt.flow * 2.5);
   faceDial.size = ease(faceDial.size, 1 + amt.size * 0.9);
   faceDial.speed = ease(faceDial.speed, 1 + amt.speed * 1.6);
@@ -4215,6 +4222,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'camMix', label: 'Features vs mesh', min: 0.1, max: 0.95, step: 0.05, format: (v) => `${Math.round(v * 100)}% features`, show: () => isCam() && settings.camMode === 'mixed' },
   { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie', show: isCam },
   { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview', show: isCam },
+  { kind: 'range', key: 'camSnap', label: 'Follow tightness', min: 0, max: 1, step: 0.05, format: (v) => (v < 0.2 ? 'loose' : v > 0.8 ? 'tight' : pct(v)), show: () => isCam() && faceMode() },
   { kind: 'toggle', key: 'camCentre', label: 'Keep the face centred and sized', show: () => isCam() && faceMode() },
   { kind: 'toggle', key: 'camDepth', label: 'Real depth: near parts bigger (turns on 3D depth)', show: () => isCam() && faceMode() },
   { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => isCam() && !faceMode() },
