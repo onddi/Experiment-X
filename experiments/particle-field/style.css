@@ -688,14 +688,14 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 .link-add > button { width: 100%; margin: 6px 0; }
 .link-ideas button { font-size: 11px; }
 
-/* --- Play mode: knobs A–D along the bottom, each over its own touch zone ------------- */
+/* --- Play mode: knobs A–E along the bottom, each over its own touch zone ------------- */
 .play-row {
   position: absolute;
   left: 8px;
   right: 8px;
   bottom: 22px;
   height: 150px;
-  max-width: 560px;
+  max-width: 660px;
   margin: 0 auto;
   z-index: 3;
   display: grid;
@@ -723,15 +723,22 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 /* Two fingers: a knob in the middle, above the row. */
 .knob.centre { bottom: 190px; }
 .knob.show { opacity: 1; transform: none; transition-duration: 0.12s; }
-.knob svg { width: 64px; height: 64px; grid-area: 2 / 1; filter: drop-shadow(0 1px 6px rgb(0 0 0 / 0.5)); }
-.knob .track { fill: rgb(0 0 0 / 0.35); stroke: rgb(255 255 255 / 0.15); stroke-width: 4; }
-.knob .arc { fill: none; stroke: #fff; stroke-width: 4; stroke-linecap: round; }
-.knob b { position: relative; z-index: 1; grid-area: 2 / 1; align-self: center; color: #fff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.knob span { color: rgb(255 255 255 / 0.85); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-shadow: 0 1px 4px rgb(0 0 0 / 0.8); }
+/* Hovering the bottom edge reveals every knob, a little dimmer than one in play. */
+@media (hover: hover) {
+  .play-row:hover .knob:not(.show) { opacity: 0.75; transform: none; transition-duration: 0.2s; }
+}
+/* Quiet colours, so the knobs sit back next to the particles. */
+.knob svg { width: 58px; height: 58px; grid-area: 2 / 1; }
+.knob .track { fill: rgb(0 0 0 / 0.18); stroke: rgb(255 255 255 / 0.08); stroke-width: 2.5; }
+.knob .arc { fill: none; stroke: rgb(255 255 255 / 0.55); stroke-width: 2.5; stroke-linecap: round; }
+.knob b { position: relative; z-index: 1; grid-area: 2 / 1; align-self: center; color: rgb(255 255 255 / 0.7); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.knob span { color: rgb(255 255 255 / 0.5); font-size: 10.5px; font-weight: 500; letter-spacing: 0.04em; text-shadow: 0 1px 3px rgb(0 0 0 / 0.6); }
 body.no-input .knob, body.no-input .fader { display: none; }
 /* Phones: leave the shortcut buttons (bottom right) clear. */
 @media (max-width: 720px) {
   .play-row { right: 76px; bottom: 16px; }
-  .knob { width: 80px; margin-left: -40px; }
-  .knob span { font-size: 10px; }
+  .knob { width: 64px; margin-left: -32px; }
+  .knob svg { width: 50px; height: 50px; }
+  .knob b { font-size: 11px; }
+  .knob span { font-size: 9.5px; }
 }

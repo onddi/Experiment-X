@@ -4452,7 +4452,8 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'playWheel3', label: 'Knob B', options: PLAYABLE },
   { kind: 'select', key: 'playWheel4', label: 'Knob C', options: PLAYABLE },
   { kind: 'select', key: 'playRight', label: 'Knob D', options: PLAYABLE },
-  { kind: 'note', text: 'Knobs A–D sit along the bottom of the field, left to right: slide a thumb up or down over one to play it. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D (Ctrl or Alt on Windows).' },
+  { kind: 'select', key: 'playWheel5', label: 'Knob E', options: PLAYABLE },
+  { kind: 'note', text: 'Knobs A–E sit along the bottom of the field, left to right: slide a thumb up or down over one to play it, or hover the bottom edge to see them all. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D, ⌥ + wheel = E (Ctrl or Alt on Windows).' },
   { kind: 'sub', label: 'Two fingers' },
   { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
@@ -6734,29 +6735,35 @@ const stage = document.querySelector<HTMLElement>('.stage')!;
 // Knobs A–D sit in a row along the bottom, left to right. Each has a touch
 // zone (slide up/down) and a wheel combo; its 0–100% ring shows while you
 // play it, then fades away. Two-finger drag and pinch get a knob of their own.
-type KnobAt = 'a' | 'b' | 'c' | 'd' | 'centre';
-const KNOB_KEYS: [KnobAt, 'playLeft' | 'playWheel3' | 'playWheel4' | 'playRight'][] = [['a', 'playLeft'], ['b', 'playWheel3'], ['c', 'playWheel4'], ['d', 'playRight']];
+type KnobAt = 'a' | 'b' | 'c' | 'd' | 'e' | 'centre';
+const KNOB_KEYS: [KnobAt, 'playLeft' | 'playWheel3' | 'playWheel4' | 'playRight' | 'playWheel5'][] = [['a', 'playLeft'], ['b', 'playWheel3'], ['c', 'playWheel4'], ['d', 'playRight'], ['e', 'playWheel5']];
 const RING = 2 * Math.PI * 26;
 const knobs = {} as Record<KnobAt, { el: HTMLElement; arc: SVGCircleElement; pct: HTMLElement; name: HTMLElement; timer: number }>;
 const playRow = document.createElement('div');
 playRow.className = 'play-row';
 stage.append(playRow);
-for (const at of ['a', 'b', 'c', 'd', 'centre'] as const) {
+for (const at of ['a', 'b', 'c', 'd', 'e', 'centre'] as const) {
   const el = document.createElement('div');
   el.className = `knob ${at}`;
   el.innerHTML = `<span></span><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="26"/><circle class="arc" cx="32" cy="32" r="26" stroke-dasharray="${RING.toFixed(2)}" transform="rotate(-90 32 32)"/></svg><b></b>`;
   knobs[at] = { el, arc: el.querySelector('.arc')!, pct: el.querySelector('b')!, name: el.querySelector('span')!, timer: 0 };
   if (at === 'centre') stage.append(el);
 }
-function playShow(key: string) {
+// Draw a knob's ring, % and name (without showing it).
+function playPaint(at: KnobAt, key: string) {
   const r = rangeOf(key);
-  if (!r) return;
-  const at: KnobAt = KNOB_KEYS.find(([, sk]) => settings[sk] === key)?.[0] ?? 'centre';
+  if (!r) return false;
   const k = knobs[at];
   const share = (playBase(key) - r.min) / (r.max - r.min);
   k.arc.style.strokeDashoffset = (RING * (1 - share)).toFixed(2);
   k.pct.textContent = `${Math.round(share * 100)}%`;
   k.name.textContent = r.label;
+  return true;
+}
+function playShow(key: string) {
+  const at: KnobAt = KNOB_KEYS.find(([, sk]) => settings[sk] === key)?.[0] ?? 'centre';
+  if (!playPaint(at, key)) return;
+  const k = knobs[at];
   k.el.classList.add('show');
   clearTimeout(k.timer);
   k.timer = window.setTimeout(() => k.el.classList.remove('show'), 1400);
@@ -6819,8 +6826,11 @@ for (const [at, sk] of KNOB_KEYS) {
   };
   f.addEventListener('pointerup', end);
   f.addEventListener('pointercancel', end);
+  // Keep the knob drawn with its current value, so hovering the row can
+  // reveal all of them at once.
   const sync = () => {
     f.hidden = !settings.playOn || !rangeOf(key());
+    if (!f.hidden) playPaint(at, key());
   };
   refreshers.push(sync);
   sync();
@@ -6874,7 +6884,7 @@ window.addEventListener(
     if (!settings.playOn) return;
     e.preventDefault();
     const S = settings;
-    const key = !e.shiftKey ? S.playLeft : e.metaKey || e.ctrlKey ? S.playWheel3 : e.altKey ? S.playWheel4 : S.playRight;
+    const key = !e.shiftKey ? (e.altKey ? S.playWheel5 : S.playLeft) : e.metaKey || e.ctrlKey ? S.playWheel3 : e.altKey ? S.playWheel4 : S.playRight;
     // Plain wheel follows the vertical axis only, so sideways drift on a
     // trackpad doesn't turn the knob. Shift turns vertical scrolling into
     // horizontal on macOS, so with Shift take whichever axis moved most.
