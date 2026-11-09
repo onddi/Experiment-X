@@ -4486,11 +4486,13 @@ const CONTROLS: Control[] = [
     about: 'Play settings like an instrument with the menu closed.',
     summary: () => (settings.playOn ? [settings.playLeft, settings.playRight].map(playName).join(' · ') : 'off'),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
-  { kind: 'select', key: 'playLeft', label: 'Left edge', options: PLAYABLE },
-  { kind: 'select', key: 'playRight', label: 'Right edge', options: PLAYABLE },
+  { kind: 'select', key: 'playLeft', label: 'Bottom left', options: PLAYABLE },
+  { kind: 'select', key: 'playRight', label: 'Bottom right', options: PLAYABLE },
   { kind: 'select', key: 'playTwo', label: 'Two-finger drag', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
-  { kind: 'note', text: 'Slide a thumb along the left or right edge of the field, or use two fingers. With a mouse: the wheel plays the left edge, Shift + wheel the right.' },
+  { kind: 'select', key: 'playWheel3', label: 'Shift + ⌘/Ctrl + wheel', options: PLAYABLE },
+  { kind: 'select', key: 'playWheel4', label: 'Shift + ⌥/Alt + wheel', options: PLAYABLE },
+  { kind: 'note', text: 'Slide a thumb up or down at the bottom left or bottom right of the field, or use two fingers. With a mouse: the wheel plays bottom left, Shift + wheel bottom right, and Shift with ⌘/Ctrl or ⌥/Alt the other two.' },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -6725,7 +6727,7 @@ function reset() {
 }
 
 // --- play mode ----------------------------------------------------------------------
-// Settings you can play on the field: a fader along each edge, two-finger
+// Settings you can play on the field: a zone at the bottom left and right, two-finger
 // drag and pinch, and the mouse wheel. Moves are relative, so touching never
 // makes a value jump.
 function fillPlayable() {
@@ -6742,21 +6744,22 @@ function playName(key: string) {
 }
 const stage = document.querySelector<HTMLElement>('.stage')!;
 // A knob (0–100% ring) shows while you play a setting, then fades away:
-// on its own side for the edge faders, in the middle for two fingers.
-type KnobAt = 'left' | 'right' | 'centre';
+// a row along the bottom, each above where you play it.
+type KnobAt = 'left' | 'w3' | 'centre' | 'w4' | 'right';
 const RING = 2 * Math.PI * 26;
 const knobs = {} as Record<KnobAt, { el: HTMLElement; arc: SVGCircleElement; pct: HTMLElement; name: HTMLElement; timer: number }>;
-for (const at of ['left', 'right', 'centre'] as const) {
+for (const at of ['left', 'w3', 'centre', 'w4', 'right'] as const) {
   const el = document.createElement('div');
   el.className = `knob ${at}`;
-  el.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="26"/><circle class="arc" cx="32" cy="32" r="26" stroke-dasharray="${RING.toFixed(2)}" transform="rotate(-90 32 32)"/></svg><b></b><span></span>`;
+  el.innerHTML = `<span></span><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="26"/><circle class="arc" cx="32" cy="32" r="26" stroke-dasharray="${RING.toFixed(2)}" transform="rotate(-90 32 32)"/></svg><b></b>`;
   stage.append(el);
   knobs[at] = { el, arc: el.querySelector('.arc')!, pct: el.querySelector('b')!, name: el.querySelector('span')!, timer: 0 };
 }
 function playShow(key: string) {
   const r = rangeOf(key);
   if (!r) return;
-  const at: KnobAt = key === settings.playLeft ? 'left' : key === settings.playRight ? 'right' : 'centre';
+  const S = settings;
+  const at: KnobAt = key === S.playLeft ? 'left' : key === S.playRight ? 'right' : key === S.playWheel3 ? 'w3' : key === S.playWheel4 ? 'w4' : 'centre';
   const k = knobs[at];
   const share = playShare(key);
   k.arc.style.strokeDashoffset = (RING * (1 - share)).toFixed(2);
@@ -6795,7 +6798,7 @@ for (const side of ['left', 'right'] as const) {
   });
   f.addEventListener('pointermove', (e) => {
     if (!start) return;
-    playNudge(key(), start.v, (start.y - e.clientY) / (stage.clientHeight * 0.55));
+    playNudge(key(), start.v, (start.y - e.clientY) / Math.max(200, stage.clientHeight * 0.32));
   });
   const end = () => {
     start = null;
@@ -6849,7 +6852,8 @@ canvas.addEventListener(
   (e) => {
     if (!settings.playOn) return;
     e.preventDefault();
-    const key = e.shiftKey ? settings.playRight : settings.playLeft;
+    const S = settings;
+    const key = !e.shiftKey ? S.playLeft : e.metaKey || e.ctrlKey ? S.playWheel3 : e.altKey ? S.playWheel4 : S.playRight;
     playNudge(key, playVal(key), -(e.deltaY || e.deltaX) / 1500);
   },
   { passive: false },

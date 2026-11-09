@@ -688,47 +688,47 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 .link-add > button { width: 100%; margin: 6px 0; }
 .link-ideas button { font-size: 11px; }
 
-/* --- Play mode: invisible edge faders and the knob while playing --------------------------- */
+/* --- Play mode: invisible touch zones at the bottom and the knobs while playing -------- */
 .fader {
   position: absolute;
-  top: 22%;
-  bottom: 30%;
-  width: 44px;
+  bottom: 22px;
+  height: 140px;
   z-index: 3;
   touch-action: none;
   cursor: ns-resize;
 }
 .fader[hidden] { display: none; }
-/* Inset from the very edge, where phones keep their own back swipe. */
-.fader.left { left: 10px; }
-.fader.right { right: 10px; }
+.fader.left { left: 8px; right: 50%; }
+.fader.right { left: 50%; right: 8px; }
 .knob {
   position: absolute;
-  top: 50%;
+  bottom: 40px;
   z-index: 4;
   display: grid;
   justify-items: center;
   gap: 4px;
+  width: 96px;
+  margin-left: -48px;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(-50%) scale(0.92);
+  transform: translateY(6px) scale(0.92);
   transition: opacity 0.35s, transform 0.35s;
 }
-.knob.left { left: 64px; }
-.knob.right { right: 64px; }
-.knob.centre { left: 50%; transform: translate(-50%, -50%) scale(0.92); }
-.knob.show { opacity: 1; transform: translateY(-50%) scale(1); transition-duration: 0.12s; }
-.knob.centre.show { transform: translate(-50%, -50%) scale(1); }
-.knob svg { width: 64px; height: 64px; grid-area: 1 / 1; filter: drop-shadow(0 1px 6px rgb(0 0 0 / 0.5)); }
+/* A row along the bottom: left edge, ⌘ wheel, two fingers, ⌥ wheel, right edge. */
+.knob.left { left: 25%; }
+.knob.w3 { left: 37.5%; }
+.knob.centre { left: 50%; }
+.knob.w4 { left: 62.5%; }
+.knob.right { left: 75%; }
+.knob.show { opacity: 1; transform: none; transition-duration: 0.12s; }
+.knob svg { width: 64px; height: 64px; grid-area: 2 / 1; filter: drop-shadow(0 1px 6px rgb(0 0 0 / 0.5)); }
 .knob .track { fill: rgb(0 0 0 / 0.35); stroke: rgb(255 255 255 / 0.15); stroke-width: 4; }
 .knob .arc { fill: none; stroke: #fff; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.08s; }
-.knob b { grid-area: 1 / 1; align-self: center; color: #fff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.knob b { position: relative; z-index: 1; grid-area: 2 / 1; align-self: center; color: #fff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .knob span { color: rgb(255 255 255 / 0.85); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-shadow: 0 1px 4px rgb(0 0 0 / 0.8); }
 body.no-input .knob, body.no-input .fader { display: none; }
-/* Phones: keep the faders above the shortcut buttons. */
+/* Phones: leave the shortcut buttons (bottom right) clear. */
 @media (max-width: 720px) {
-  .fader { top: 14%; bottom: 46%; }
-  .knob.left, .knob.right { top: 30%; }
-  .knob.left { left: 58px; }
-  .knob.right { right: 58px; }
+  .fader.right { right: 76px; }
+  .knob.right { left: calc(50% + (50% - 76px) / 2); }
 }

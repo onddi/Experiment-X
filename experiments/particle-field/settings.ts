@@ -127,6 +127,8 @@ export interface Settings {
   playRight: string;
   playTwo: string;
   playPinch: string;
+  playWheel3: string;
+  playWheel4: string;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -384,6 +386,8 @@ export const DEFAULTS: Settings = {
   playRight: 'mDream',
   playTwo: 'mHeat',
   playPinch: 'size',
+  playWheel3: 'mOrder',
+  playWheel4: 'mHeat',
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
