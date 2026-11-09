@@ -121,6 +121,9 @@ export interface Settings {
   mOrder: number;
   mDream: number;
   mHeat: number;
+  mDensity: number;
+  // How Density adds and removes particles: all at once, or trickling in and out.
+  densityMode: 'pop' | 'fade';
   // Play mode: settings you play on the field itself (edge faders, two fingers, wheel).
   playOn: boolean;
   playLeft: string;
@@ -381,6 +384,8 @@ export const DEFAULTS: Settings = {
   mOrder: 0.5,
   mDream: 0.5,
   mHeat: 0.5,
+  mDensity: 0.5,
+  densityMode: 'fade',
   playOn: true,
   playLeft: 'mEnergy',
   playRight: 'mDream',
