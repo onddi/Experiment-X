@@ -25,6 +25,13 @@ const bySlug = (slug: string) => experiments.find((e) => e.slug === slug);
 
 /** What's on screen: the base experiment plus any layers. */
 let view: View = { layers: [], input: -1 };
+/**
+ * Browser features experiments may use inside X-Frame's iframes: autoplay for
+ * synced playback, camera/mic/screen capture for audio and webcam inputs.
+ * They still ask the visitor for permission as usual.
+ */
+const FRAME_ALLOW = 'autoplay; camera; microphone; display-capture; fullscreen';
+
 /** One iframe per layer, keyed by slug (an experiment appears at most once). */
 const frames = new Map<string, HTMLIFrameElement>();
 
@@ -101,7 +108,7 @@ function createFrame(exp: Experiment) {
   frame.className = 'layer';
   frame.title = exp.title;
   // Lets an audio layer start from the toolbar's play button without a tap of its own.
-  frame.allow = 'autoplay';
+  frame.allow = FRAME_ALLOW;
   frame.src = exp.url;
   frame.addEventListener('load', () => tellLayer(frame));
   stack.append(frame);
@@ -446,6 +453,7 @@ function handOver(slug: string, params: Record<string, string>, from: Window) {
   const box = el('div', { class: 'handover' });
   box.style.top = `${stack.offsetTop}px`;
   const inner = el('iframe', { class: 'handover__frame', title: exp.title });
+  inner.allow = FRAME_ALLOW;
   const query = new URLSearchParams(params).toString();
   inner.src = query ? `${exp.url}${exp.url.includes('?') ? '&' : '?'}${query}` : exp.url;
   // Fade in only once it has loaded, so the hand-over stays black until then.
