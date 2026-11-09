@@ -1,7 +1,7 @@
 import './style.css';
 import { AudioInput, tabAudioSupported, type Genre, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
-import { Camera } from './camera.ts';
+import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -12,7 +12,8 @@ type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex' | 'emitter';
 type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointer';
 type EmitMode = 'steady' | 'burst' | 'beat';
 type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring';
-type CamMode = 'face' | 'features' | 'edges' | 'bright' | 'dark';
+type CamMode = 'face' | 'features' | 'mixed' | 'body' | 'edges' | 'bright' | 'dark';
+type CamHands = 'off' | 'attract' | 'repel' | 'vortex';
 type FlowType = 'waves' | 'curl';
 type Edges = 'wrap' | 'enter' | 'bounce';
 type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none';
@@ -23,7 +24,7 @@ type HatAction = 'sparkle' | 'none';
 type SubAction = 'size' | 'flow' | 'speed' | 'none';
 type WaveAt = 'centre' | 'pointer' | 'random' | 'orbit' | 'mirror' | 'corners';
 type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' | 'sweep' | 'mix' | 'random' | 'none';
-type ColorBy = 'band' | 'depth' | 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
+type ColorBy = 'face' | 'camera' | 'band' | 'depth' | 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 type Palette = keyof typeof PALETTES | 'custom';
 type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
 type GlyphPick = 'random' | 'speed' | 'heading' | 'sequence';
@@ -76,6 +77,14 @@ interface Settings {
   camCentre: boolean;
   camRate: number;
   camTriggers: boolean;
+  camMix: number;
+  camDepth: boolean;
+  camDials: boolean;
+  camMouthEmit: boolean;
+  camPreview: boolean;
+  camHands: CamHands;
+  camHandReach: number;
+  camHandForce: number;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -296,6 +305,14 @@ const DEFAULTS: Settings = {
   camCentre: true,
   camRate: 6,
   camTriggers: false,
+  camMix: 0.6,
+  camDepth: false,
+  camDials: false,
+  camMouthEmit: false,
+  camPreview: true,
+  camHands: 'off',
+  camHandReach: 140,
+  camHandForce: 1,
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
@@ -1067,7 +1084,7 @@ function step(dt: number) {
   // Gather: hold the pointer (click mode), or the Gather action, which pulls
   // the whole field into an orb at the centre until pressed again.
   const holdGather = pointer.down && settings.click === 'gather';
-  const gathering = holdGather || gatherAll;
+  const gathering = holdGather || gatherAll || faceGather;
   const gx = holdGather ? pointer.x : w / 2;
   const gy = holdGather ? pointer.y : h / 2;
   const gatherR = holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
@@ -1092,7 +1109,8 @@ function step(dt: number) {
   let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow * I) : flow;
   if (S.audioSub === 'speed') speedNow *= 1 + sub2 * 1.2;
   if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
-  flowNow *= 1 - blastK;
+  flowNow *= (1 - blastK) * faceDial.flow;
+  speedNow *= faceDial.speed;
   const jitterNow = jitter;
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
@@ -1152,6 +1170,9 @@ function step(dt: number) {
   const windX = Math.cos(windA) * settings.wind * 0.05;
   const windY = Math.sin(windA) * settings.wind * 0.05;
   const wellsNow = wellList().map((p) => ({ x: p.x * w, y: p.y * h, kind: p.kind }));
+  const handR = settings.camHandReach;
+  const handR2 = handR * handR;
+  const handF = settings.camHandForce * 0.9;
   const ob = obstacleField();
   const obF = settings.obsForce;
   const wellF = settings.wellForce * 0.12;
@@ -1259,6 +1280,35 @@ function step(dt: number) {
     if (windX !== 0 || windY !== 0) {
       ax += windX;
       ay += windY;
+    }
+    // Hands: each fingertip is a small force; a pinch grabs what's near.
+    for (const hp of handPts) {
+      const dx = px[i] - hp.x;
+      const dy = py[i] - hp.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > handR2) continue;
+      const d = Math.sqrt(d2) + 0.001;
+      const f = handF * (1 - d / handR) * Math.min(1, d / 10);
+      const nx = dx / d;
+      const ny = dy / d;
+      if (settings.camHands === 'attract') {
+        ax -= nx * f;
+        ay -= ny * f;
+      } else if (settings.camHands === 'repel') {
+        ax += nx * f;
+        ay += ny * f;
+      } else {
+        ax += (-ny - nx * 0.2) * f;
+        ay += (nx - ny * 0.2) * f;
+      }
+    }
+    for (const pp of pinchPts) {
+      const dx = pp.x - px[i];
+      const dy = pp.y - py[i];
+      const d2 = dx * dx + dy * dy;
+      if (d2 > handR2 * 4) continue;
+      ax += dx * 0.02 - vx[i] * 0.15;
+      ay += dy * 0.02 - vy[i] * 0.15;
     }
     for (const wl of wellsNow) {
       const dx = px[i] - wl.x;
@@ -1692,17 +1742,20 @@ imageInput.addEventListener('change', () => {
   img.src = URL.createObjectURL(f);
 });
 
-// --- camera shape ----------------------------------------------------------------
-// Picture modes sample the webcam like an image a few times a second. Face
-// modes pin every particle to a spot on one edge of the tracked face mesh,
-// so the homes move with your face each frame.
+// --- camera ----------------------------------------------------------------------
+// The camera can be the shape (face tracking, a body cut-out or the plain
+// picture) and/or a force (hands). Picture modes sample the webcam like an
+// image a few times a second. Face modes pin every particle to a spot on one
+// edge of a tracked face, so the homes move with the face each frame.
 const cam = new Camera();
 const camCanvas = document.createElement('canvas');
 const camCtx = camCanvas.getContext('2d', { willReadFrequently: true })!;
 let camFrameNo = 0;
 let camLast = 0;
-const faceMode = () => settings.camMode === 'face' || settings.camMode === 'features';
+const faceMode = () => settings.camMode === 'face' || settings.camMode === 'features' || settings.camMode === 'mixed';
 const isCam = () => settings.shape === 'camera';
+const handsOn = () => settings.camHands !== 'off';
+const camWanted = () => isCam() || handsOn();
 
 function grabCamera() {
   if (!cam.ready) return;
@@ -1730,140 +1783,329 @@ async function startCamera() {
       refresh();
       return;
     }
+    showToast('Camera on');
   }
-  if (faceMode()) loadFace();
+  syncTrackers();
   shapeKey = '';
   buildShape();
   refresh();
-  showToast('Camera on');
 }
 
 function stopCamera() {
   cam.stop();
   shapeKey = '';
+  camShades = null;
   refresh();
 }
 
-function loadFace() {
-  if (cam.faceStatus === 'ready' || cam.faceStatus === 'loading') return;
-  showToast('Loading face tracking…');
-  void cam.loadFace().then(() => {
-    showToast(cam.faceStatus === 'ready' ? 'Face tracking on: look at the camera' : 'Face tracking could not load');
+// Load the trackers the current settings need.
+function syncTrackers() {
+  if (!cam.on) return;
+  if (isCam() && faceMode()) loadTracker('face', 'Face tracking on: look at the camera');
+  if (isCam() && settings.camMode === 'body') loadTracker('body', 'Body cut-out on');
+  if (handsOn()) loadTracker('hands', 'Hand tracking on: show your hands');
+}
+function loadTracker(task: Task, done: string) {
+  if (cam.status[task] === 'ready' || cam.status[task] === 'loading') return;
+  showToast(task === 'face' ? 'Loading face tracking…' : task === 'hands' ? 'Loading hand tracking…' : 'Loading the body cut-out…');
+  void cam.load(task).then(() => {
+    showToast(cam.status[task] === 'ready' ? done : 'Tracking could not load');
     refresh();
   });
 }
 
-// Each particle's spot on the face: an edge, how far along it, a tiny offset.
-let faceEdge = new Int32Array(0);
-let faceT = new Float32Array(0);
-let faceJx = new Float32Array(0);
-let faceJy = new Float32Array(0);
-let faceKey = '';
-let faceSx = new Float32Array(0);
-let faceSy = new Float32Array(0);
+// Video pixels → screen: screen x = cx + (x - ox) * sc * mir.
+const camMap = { ox: 320, oy: 240, sc: 1, mir: -1 };
 const faceBox = { x: 0, y: 0, s: 0 };
-const faceFlags = { mouth: false, blink: false, brows: false, at: 0 };
+const toSx = (x: number) => w / 2 + (x - camMap.ox) * camMap.sc * camMap.mir;
+const toSy = (y: number) => h / 2 + (y - camMap.oy) * camMap.sc;
 
-function faceHomes(now: number) {
-  const f = cam.face;
-  const edges = settings.camMode === 'face' ? cam.mesh : cam.features;
-  if (!f || !edges.length) return;
-  const key = `${settings.camMode}|${n}`;
-  if (key !== faceKey || faceEdge.length < n) {
-    faceKey = key;
-    faceEdge = new Int32Array(n);
-    faceT = new Float32Array(n);
-    faceJx = new Float32Array(n);
-    faceJy = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      faceEdge[i] = (Math.random() * edges.length) | 0;
-      faceT[i] = Math.random();
-      faceJx[i] = (Math.random() - 0.5) * 2;
-      faceJy[i] = (Math.random() - 0.5) * 2;
-    }
-  }
-  // Smooth the landmarks a little so the shape doesn't jitter.
-  const L = f.x.length;
-  if (faceSx.length !== L) {
-    faceSx = f.x.slice();
-    faceSy = f.y.slice();
-  }
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (let k = 0; k < L; k++) {
-    faceSx[k] += (f.x[k] - faceSx[k]) * 0.6;
-    faceSy[k] += (f.y[k] - faceSy[k]) * 0.6;
-    if (faceSx[k] < x0) x0 = faceSx[k];
-    if (faceSx[k] > x1) x1 = faceSx[k];
-    if (faceSy[k] < y0) y0 = faceSy[k];
-    if (faceSy[k] > y1) y1 = faceSy[k];
-  }
+function updateCamMap() {
   const vw = cam.width;
   const vh = cam.height;
-  const mir = settings.camMirror ? -1 : 1;
-  let ox: number, oy: number, sc: number;
-  if (settings.camCentre) {
-    // Frame the face: centred, its height a share of the screen.
+  camMap.mir = settings.camMirror ? -1 : 1;
+  const faces = cam.faces;
+  if (isCam() && faceMode() && settings.camCentre && faces.length) {
+    // Frame the faces: centred, their height a share of the screen.
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const f of faces)
+      for (let k = 0; k < f.x.length; k++) {
+        if (f.x[k] < x0) x0 = f.x[k];
+        if (f.x[k] > x1) x1 = f.x[k];
+        if (f.y[k] < y0) y0 = f.y[k];
+        if (f.y[k] > y1) y1 = f.y[k];
+      }
     const bx = (x0 + x1) / 2;
     const by = (y0 + y1) / 2;
-    const bs = (h * settings.shapeSize * 0.85) / Math.max(1, y1 - y0);
+    const bs = Math.min((h * settings.shapeSize * 0.85) / Math.max(1, y1 - y0), (w * settings.shapeSize * 0.9) / Math.max(1, x1 - x0));
     if (!faceBox.s) Object.assign(faceBox, { x: bx, y: by, s: bs });
     faceBox.x += (bx - faceBox.x) * 0.15;
     faceBox.y += (by - faceBox.y) * 0.15;
     faceBox.s += (bs - faceBox.s) * 0.1;
-    ox = faceBox.x;
-    oy = faceBox.y;
-    sc = faceBox.s;
+    camMap.ox = faceBox.x;
+    camMap.oy = faceBox.y;
+    camMap.sc = faceBox.s;
   } else {
-    // Follow: the camera picture fills the screen and the face moves in it.
-    ox = vw / 2;
-    oy = vh / 2;
-    sc = Math.max(w / vw, h / vh) * settings.shapeSize;
-  }
-  const cx = w / 2;
-  const cy = h / 2;
-  const len = Math.min(n, faceEdge.length);
-  for (let i = 0; i < len; i++) {
-    const e = edges[faceEdge[i] % edges.length];
-    const t = faceT[i];
-    const x = faceSx[e.start] + (faceSx[e.end] - faceSx[e.start]) * t;
-    const y = faceSy[e.start] + (faceSy[e.end] - faceSy[e.start]) * t;
-    hx[i] = cx + (x - ox) * sc * mir + faceJx[i];
-    hy[i] = cy + (y - oy) * sc + faceJy[i];
-  }
-  // Expressions: open mouth explodes, a blink changes the palette, raised
-  // brows send a ripple from the face.
-  if (settings.camTriggers) {
-    const b = f.blend;
-    const mouth = (b.jawOpen ?? 0) > 0.5;
-    const blink = (b.eyeBlinkLeft ?? 0) > 0.55 && (b.eyeBlinkRight ?? 0) > 0.55;
-    const brows = (b.browInnerUp ?? 0) > 0.6;
-    if (now - faceFlags.at > 900) {
-      const fx = cx + (((x0 + x1) / 2) - ox) * sc * mir;
-      const fy = cy + (((y0 + y1) / 2) - oy) * sc;
-      if (mouth && !faceFlags.mouth) {
-        explode();
-        faceFlags.at = now;
-      } else if (blink && !faceFlags.blink) {
-        newPalette(now);
-        faceFlags.at = now;
-      } else if (brows && !faceFlags.brows) {
-        addWave('ripple', fx, fy);
-        faceFlags.at = now;
-      }
-    }
-    Object.assign(faceFlags, { mouth, blink, brows });
+    // The picture fills the screen, like a video call.
+    camMap.ox = vw / 2;
+    camMap.oy = vh / 2;
+    camMap.sc = Math.max(w / vw, h / vh) * (isCam() ? settings.shapeSize : 1);
   }
 }
 
-// Called every frame: picture modes re-sample at their rate, face modes track.
+// Each particle's spot on a face: which face, which edge list, which edge,
+// how far along it and a tiny offset; and its feature group for colour.
+let faceEdge = new Int32Array(0);
+let faceSrc = new Uint8Array(0);
+let faceT = new Float32Array(0);
+let faceJx = new Float32Array(0);
+let faceJy = new Float32Array(0);
+let partGroup = new Int8Array(0);
+let faceKey = '';
+const faceSmooth: { x: Float32Array; y: Float32Array; z: Float32Array }[] = [];
+// Live expression state.
+const faceDial = { flow: 1, size: 1, speed: 1 };
+let faceGather = false;
+let faceRoll = 0;
+let mouthIdx = 0;
+const faceFlags = { mouth: false, blink: false, brows: false, smile: false, wink: false, at: 0 };
+const WARM = ['ember', 'sunset', 'gold', 'crimson', 'desert'] as const;
+
+function assignFace() {
+  const mode = settings.camMode;
+  const key = `${mode}|${n}|${settings.camMix}`;
+  if (key === faceKey && faceEdge.length >= n) return;
+  faceKey = key;
+  faceEdge = new Int32Array(n);
+  faceSrc = new Uint8Array(n);
+  faceT = new Float32Array(n);
+  faceJx = new Float32Array(n);
+  faceJy = new Float32Array(n);
+  partGroup = new Int8Array(n).fill(-1);
+  for (let i = 0; i < n; i++) {
+    const feat = mode === 'features' || (mode === 'mixed' && Math.random() < settings.camMix);
+    const list = feat ? cam.features : cam.mesh;
+    faceSrc[i] = feat ? 1 : 0;
+    faceEdge[i] = (Math.random() * list.length) | 0;
+    faceT[i] = Math.random();
+    faceJx[i] = (Math.random() - 0.5) * 2;
+    faceJy[i] = (Math.random() - 0.5) * 2;
+    partGroup[i] = (feat ? cam.featureGroup : cam.meshGroup)[faceEdge[i]];
+  }
+}
+
+function faceHomes() {
+  const faces = cam.faces;
+  if (!faces.length || !cam.mesh.length) return;
+  assignFace();
+  // Smooth the landmarks a little so the shape doesn't jitter.
+  faces.forEach((f, s) => {
+    let sm = faceSmooth[s];
+    if (!sm || sm.x.length !== f.x.length) sm = faceSmooth[s] = { x: f.x.slice(), y: f.y.slice(), z: f.z.slice() };
+    for (let k = 0; k < f.x.length; k++) {
+      sm.x[k] += (f.x[k] - sm.x[k]) * 0.6;
+      sm.y[k] += (f.y[k] - sm.y[k]) * 0.6;
+      sm.z[k] += (f.z[k] - sm.z[k]) * 0.6;
+    }
+  });
+  const nf = faces.length;
+  const depthOn = settings.camDepth;
+  const len = Math.min(n, faceEdge.length);
+  for (let i = 0; i < len; i++) {
+    const sm = faceSmooth[nf > 1 ? i % nf : 0];
+    const list = faceSrc[i] ? cam.features : cam.mesh;
+    const e = list[faceEdge[i] % list.length];
+    const t = faceT[i];
+    const x = sm.x[e.start] + (sm.x[e.end] - sm.x[e.start]) * t;
+    const y = sm.y[e.start] + (sm.y[e.end] - sm.y[e.start]) * t;
+    hx[i] = toSx(x) + faceJx[i];
+    hy[i] = toSy(y) + faceJy[i];
+    if (depthOn) {
+      // Nearer points (nose, lips) come forward; the face edge goes back.
+      const z = sm.z[e.start] + (sm.z[e.end] - sm.z[e.start]) * t;
+      const fw = Math.abs(sm.x[454] - sm.x[234]) || 100;
+      pz[i] = Math.max(0, Math.min(1, 0.55 - (z / fw) * 2.2));
+    }
+  }
+}
+
+// Expressions on the first face: dials (continuous) and triggers (moments).
+function faceExpressions(now: number) {
+  const f = cam.face;
+  const S = settings;
+  const b = f?.blend ?? {};
+  const jaw = b.jawOpen ?? 0;
+  const brows = b.browInnerUp ?? 0;
+  const smile = ((b.mouthSmileLeft ?? 0) + (b.mouthSmileRight ?? 0)) / 2;
+  const ease = (o: number, v: number) => o + (v - o) * 0.2;
+  faceDial.flow = ease(faceDial.flow, f && S.camDials ? 1 + jaw * 2.5 : 1);
+  faceDial.size = ease(faceDial.size, f && S.camDials ? 1 + brows * 0.8 : 1);
+  faceDial.speed = ease(faceDial.speed, f && S.camDials ? 1 + smile * 1.5 : 1);
+  faceGather = !!f && S.camTriggers && (b.mouthPucker ?? 0) > 0.6;
+  // Head tilt rolls the view (the eye line, as seen on screen).
+  let roll = 0;
+  if (f && S.camTriggers) {
+    const a = Math.atan2(toSy(f.y[263]) - toSy(f.y[33]), toSx(f.x[263]) - toSx(f.x[33]));
+    const up = Math.abs(a) > Math.PI / 2 ? a - Math.sign(a) * Math.PI : a;
+    roll = (up * 180) / Math.PI;
+  }
+  faceRoll += (roll - faceRoll) * 0.15;
+  if (!f) return;
+  // Mouth emitter: particles stream out while the mouth is open (and,
+  // with music on, more when it's loud).
+  if (S.camMouthEmit && jaw > 0.12) {
+    const mx = toSx((f.x[13] + f.x[14]) / 2);
+    const my = toSy((f.y[13] + f.y[14]) / 2);
+    const loud = audio.source !== 'off' ? 0.4 + audio.levels.level * 1.2 : 1;
+    const k = Math.min(n, Math.round(jaw * 50 * loud));
+    const sp = Math.min(w, h) / 800;
+    for (let q = 0; q < k; q++) {
+      const i = mouthIdx++ % n;
+      const a = Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+      const v = (2 + Math.random() * 7) * sp * (0.6 + jaw);
+      px[i] = ox[i] = mx + (Math.random() - 0.5) * 8;
+      py[i] = oy[i] = my + (Math.random() - 0.5) * 4;
+      vx[i] = Math.cos(a) * v * (Math.random() < 0.5 ? 1 : -1) * 0.8;
+      vy[i] = Math.sin(a) * v;
+    }
+  }
+  if (!S.camTriggers) return;
+  // Each trigger fires once when crossing a high mark and re-arms only after
+  // dropping well below it, so a held expression doesn't keep firing.
+  const hyst = (was: boolean, v: number, hi: number, lo: number) => (was ? v > lo : v > hi);
+  const mouth = hyst(faceFlags.mouth, jaw, 0.6, 0.3);
+  const blink = hyst(faceFlags.blink, Math.min(b.eyeBlinkLeft ?? 0, b.eyeBlinkRight ?? 0), 0.55, 0.3);
+  const browUp = hyst(faceFlags.brows, brows, 0.65, 0.35);
+  const smiling = hyst(faceFlags.smile, smile, 0.75, 0.4);
+  const wink = hyst(faceFlags.wink, Math.abs((b.eyeBlinkLeft ?? 0) - (b.eyeBlinkRight ?? 0)) * (Math.max(b.eyeBlinkLeft ?? 0, b.eyeBlinkRight ?? 0) > 0.6 ? 1 : 0), 0.5, 0.2);
+  if (now - faceFlags.at > 900) {
+    const fx = toSx(f.x[1]);
+    const fy = toSy(f.y[1]);
+    let fired = true;
+    if (mouth && !faceFlags.mouth) explode();
+    else if (blink && !faceFlags.blink) newPalette(now);
+    else if (browUp && !faceFlags.brows) addWave('ripple', fx, fy);
+    else if (smiling && !faceFlags.smile) newPalette(now, WARM);
+    else if (wink && !faceFlags.wink) {
+      // A wink steps through the face looks.
+      const order = ['face', 'features', 'mixed'] as const;
+      const k = order.indexOf(S.camMode as (typeof order)[number]);
+      set('camMode', order[(k + 1) % order.length]);
+      showToast(label(CAM_MODES, S.camMode));
+    } else fired = false;
+    if (fired) faceFlags.at = now;
+  }
+  Object.assign(faceFlags, { mouth, blink, brows: browUp, smile: smiling, wink });
+}
+
+// Hands: fingertips push or pull (or swirl) the particles; a pinch grabs.
+const TIPS = [4, 8, 12, 16, 20];
+let handPts: { x: number; y: number }[] = [];
+let pinchPts: { x: number; y: number }[] = [];
+function handForces() {
+  handPts = [];
+  pinchPts = [];
+  if (!handsOn()) return;
+  for (const hd of cam.hands) {
+    for (const k of TIPS) handPts.push({ x: toSx(hd.x[k]), y: toSy(hd.y[k]) });
+    const tx = toSx(hd.x[4]);
+    const ty = toSy(hd.y[4]);
+    const ix = toSx(hd.x[8]);
+    const iy = toSy(hd.y[8]);
+    const span = Math.hypot(toSx(hd.x[0]) - toSx(hd.x[9]), toSy(hd.y[0]) - toSy(hd.y[9])) || 100;
+    if (Math.hypot(tx - ix, ty - iy) < span * 0.35) pinchPts.push({ x: (tx + ix) / 2, y: (ty + iy) / 2 });
+  }
+}
+
+// Camera colours: the frame's colours ranked by brightness become the
+// shades, and each particle takes the shade of its spot in the picture.
+let camShades: Rgb[] | null = null;
+let camRank = new Float32Array(0);
+const CG_W = 96;
+const CG_H = 72;
+const cgCanvas = document.createElement('canvas');
+cgCanvas.width = CG_W;
+cgCanvas.height = CG_H;
+const cgCtx = cgCanvas.getContext('2d', { willReadFrequently: true })!;
+let camColourAt = 0;
+function camColours(now: number) {
+  if (settings.colorBy !== 'camera' || !cam.ready || now - camColourAt < 400) return;
+  camColourAt = now;
+  cgCtx.drawImage(cam.video, 0, 0, CG_W, CG_H);
+  const d = cgCtx.getImageData(0, 0, CG_W, CG_H).data;
+  const N = CG_W * CG_H;
+  const lum = new Float32Array(N);
+  for (let k = 0; k < N; k++) lum[k] = d[k * 4] * 0.299 + d[k * 4 + 1] * 0.587 + d[k * 4 + 2] * 0.114;
+  const order = Array.from({ length: N }, (_, k) => k).sort((a, b) => lum[a] - lum[b]);
+  if (camRank.length !== N) camRank = new Float32Array(N);
+  const shades: Rgb[] = [];
+  const per = N / SHADES;
+  for (let s = 0; s < SHADES; s++) {
+    let r = 0, g = 0, bl = 0, c = 0;
+    for (let q = Math.floor(s * per); q < Math.floor((s + 1) * per); q++) {
+      const k = order[q];
+      r += d[k * 4];
+      g += d[k * 4 + 1];
+      bl += d[k * 4 + 2];
+      c++;
+      camRank[k] = s / SHADES + 0.5 / SHADES;
+    }
+    // Lift the darkest tones a little so they show on a dark background.
+    const lift = 18 * (1 - s / SHADES);
+    shades.push([r / c + lift, g / c + lift, bl / c + lift]);
+  }
+  camShades = shades;
+  buildShades();
+}
+function camShade(i: number) {
+  if (!camShades) return tone[i];
+  const vxp = camMap.ox + (hx[i] - w / 2) / (camMap.sc * camMap.mir);
+  const vyp = camMap.oy + (hy[i] - h / 2) / camMap.sc;
+  const gx = Math.max(0, Math.min(CG_W - 1, ((vxp / cam.width) * CG_W) | 0));
+  const gy = Math.max(0, Math.min(CG_H - 1, ((vyp / cam.height) * CG_H) | 0));
+  return camRank[gy * CG_W + gx];
+}
+
+// The small preview of what the camera sees.
+cam.video.className = 'cam-preview';
+let previewShown = false;
+function syncPreview() {
+  const show = cam.on && settings.camPreview;
+  if (show !== previewShown) {
+    previewShown = show;
+    if (show) document.querySelector('.stage')?.append(cam.video);
+    else cam.video.remove();
+  }
+  cam.video.classList.toggle('mirror', settings.camMirror);
+}
+
+// Called every frame: track, then move the homes or re-sample the picture.
 function cameraTick(now: number) {
-  if (!isCam() || !cam.on) return;
-  if (faceMode()) {
-    if (cam.faceStatus === 'off') loadFace();
-    cam.detect(now);
-    faceHomes(now);
-  } else if (now - camLast > 1000 / settings.camRate) {
+  syncPreview();
+  if (!cam.on) {
+    handPts = pinchPts = [];
+    faceDial.flow = faceDial.size = faceDial.speed = 1;
+    faceGather = false;
+    faceRoll *= 0.9;
+    return;
+  }
+  const faceOn = isCam() && faceMode();
+  if (faceOn) cam.detectFaces(now);
+  if (handsOn()) cam.detectHands(now);
+  updateCamMap();
+  if (faceOn) {
+    faceHomes();
+    faceExpressions(now);
+  } else {
+    faceDial.flow = faceDial.size = faceDial.speed = 1;
+    faceGather = false;
+    faceRoll *= 0.9;
+  }
+  handForces();
+  camColours(now);
+  if (isCam() && !faceOn && now - camLast > 1000 / settings.camRate) {
     camLast = now;
+    if (settings.camMode === 'body') cam.segmentBody(now);
     camFrameNo++;
     buildShape();
   }
@@ -1930,6 +2172,26 @@ function sampleImage(): [number, number][] {
     }
     return cover / N;
   };
+  if (camOn && settings.camMode === 'body') {
+    // Body cut-out: the tracker's confidence that each pixel is you.
+    const m = cam.body;
+    if (!m) return [];
+    const wt = new Float32Array(N);
+    for (let y = 0; y < ih; y++)
+      for (let x = 0; x < iw; x++) {
+        let u = x / iw;
+        if (settings.camMirror) u = 1 - u;
+        const mx = Math.min(m.w - 1, (u * m.w) | 0);
+        const my = Math.min(m.h - 1, ((y / ih) * m.h) | 0);
+        wt[y * iw + x] = m.data[my * m.w + mx] > 0.5 ? 1 : 0;
+      }
+    const pts: [number, number][] = [];
+    for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
+      const k = (Math.random() * N) | 0;
+      if (wt[k] > 0) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
+    }
+    return pts;
+  }
   let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode;
   if (mode === 'auto') {
     // A logo on a plain background covers part of the frame; a photo
@@ -2427,6 +2689,11 @@ function buildShades() {
   spriteCache.clear();
   scaledCache.clear();
   const stops = pal().stops;
+  if (settings.colorBy === 'camera' && camShades) {
+    shadeRgb = camShades.map((c) => c.map((v) => Math.min(255, v)) as Rgb);
+    shades = shadeRgb.map(([r, g, b]) => `rgb(${r.toFixed(0)} ${g.toFixed(0)} ${b.toFixed(0)})`);
+    return;
+  }
   const target: Rgb[] = [];
   for (let k = 0; k < SHADES; k++) {
     const u = (k / (SHADES - 1)) * (stops.length - 1);
@@ -2501,6 +2768,17 @@ function shadeIndex(i: number) {
       u = (b === 0 ? 0.08 + L.bass * 0.2 : b === 1 ? 0.4 + L.mid * 0.2 : 0.72 + L.treble * 0.25) + tone[i] * 0.06;
       break;
     }
+    case 'face': {
+      // Each face feature its own colour; a second face shifted along.
+      const g = i < partGroup.length && isCam() && faceMode() ? partGroup[i] : -1;
+      if (g < 0) { u = tone[i]; break; }
+      u = (g + 0.5) / FACE_GROUPS;
+      if (cam.faces.length > 1 && i % cam.faces.length === 1) u = (u + 0.5) % 1;
+      break;
+    }
+    case 'camera':
+      u = cam.on ? camShade(i) : tone[i];
+      break;
     case 'audio':
       // Calm colours in quiet passages, the hot end of the palette on loud ones.
       u = Math.min(1, tone[i] * 0.3 + audio.levels.level * 0.85);
@@ -3025,7 +3303,7 @@ function draw() {
     else if (a > 0) fadeBuckets[Math.min(FADE_LEVELS - 1, (a * FADE_LEVELS) | 0)][shadeIndex(i)].push(i);
   }
 
-  const s = settings.size * audioSizeBoost();
+  const s = settings.size * audioSizeBoost() * faceDial.size;
   // Parallax: shift each depth layer a little with the camera, drawn by
   // offsetting positions just for this draw and putting them back after.
   const par = settings.depth > 0 && settings.depthParallax > 0;
@@ -3085,6 +3363,22 @@ function draw() {
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
   if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
+  // Fingertips and pinches, faintly, so you can see where your hands are.
+  if (handPts.length) {
+    ctx.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
+    ctx.beginPath();
+    for (const hp of handPts) {
+      ctx.moveTo(hp.x + 3, hp.y);
+      ctx.arc(hp.x, hp.y, 3, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.strokeStyle = ctx.fillStyle;
+    for (const pp of pinchPts) {
+      ctx.beginPath();
+      ctx.arc(pp.x, pp.y, 14, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
   for (const wv of waves) {
     if (wv.life <= 0 || !wv.ring) continue;
     const a = Math.min(1, wv.life) * (wv.kind === 'ripple' || wv.kind === 'twist' ? 0.12 : 0.22);
@@ -3314,7 +3608,7 @@ const RENDERS: [string, string][] = [
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
   ['links', 'Constellation'], ['mixed', 'Mixed'],
 ];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 // Vibes: how the music moves the particles. They only set the reaction
@@ -3329,8 +3623,8 @@ const quiet: Vibe = {
 // A vibe is a full recipe for how the music plays the field: the drums
 // (what each hit does), the music cards (drops, groups, colour, camera)
 // and, optionally, the look. Locked cards keep their own settings.
-type VibeFamily = 'all' | 'chill' | 'groove' | 'hypnotic' | 'peak' | 'glitch' | 'words';
-const VIBE_FAMILIES: [VibeFamily, string][] = [['all', 'All'], ['chill', 'Chill'], ['groove', 'Groove'], ['hypnotic', 'Hypnotic'], ['peak', 'Peak'], ['glitch', 'Glitch'], ['words', 'Words']];
+type VibeFamily = 'all' | 'chill' | 'groove' | 'hypnotic' | 'peak' | 'glitch' | 'words' | 'face';
+const VIBE_FAMILIES: [VibeFamily, string][] = [['all', 'All'], ['chill', 'Chill'], ['groove', 'Groove'], ['hypnotic', 'Hypnotic'], ['peak', 'Peak'], ['glitch', 'Glitch'], ['words', 'Words'], ['face', 'Face']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
 let vibeFamily: VibeFamily = (() => {
   const v = readJson<string>(VIBE_FAMILY_KEY, 'all');
@@ -3416,6 +3710,13 @@ const VIBES: VibeDef[] = [
     { audioDrop: 0.8, audioWordsOn: true, audioWords: 'LOVE, PEACE, UNITY, RESPECT', audioWordsEvery: 'bar', audioWordPulse: 0.4, audioHue: 'bar', audioHueAmt: 40, audioBright: 0.4 }, {}, 'words', 'words'),
   vibe('Shout', 'Big words punching with the kick', { audioPulse: 1, audioSnare: 'flash', audioHits: 0.8, audioSpeed: 0.3 },
     { audioDrop: 1.4, audioWordsOn: true, audioWords: 'YES, LOUD, NOW, JUMP', audioWordsEvery: '2bars', audioWordPulse: 1, audioCam: 0.8, audioBgFlash: 0.3 }, {}, 'words', 'words'),
+  // --- Face (with the camera) ---
+  vibe('Mask', 'Your face pulses with the kick, colour each bar', { audioPulse: 0.7, audioSpeed: 0.2 },
+    { audioDrop: 1, audioWordPulse: 0.7, audioHue: 'bar', audioHueAmt: 40, audioBright: 0.4, audioCam: 0.4, audioEcho: 0.3 }, {}, 'face', 'camera'),
+  vibe('Face dance', 'Your face sways, rolls and cuts with the beat', { audioKick: 'both', audioPulse: 0.8, audioBeat: 'ripple', audioSpeed: 0.3 },
+    { audioDrop: 1.2, audioWordPulse: 0.5, audioLetterHop: 0.5, audioSway: 0.6, audioRoll: 0.5, audioCuts: '4bars', audioHue: 'beat', audioHueAmt: 30 }, {}, 'face', 'camera'),
+  vibe('Hologram', 'A flickering, glitching projection of you', { audioPulse: 0.6, audioSnare: 'flash', audioHits: 0.8, audioSpeed: 0.3 },
+    { audioDrop: 1, audioWordPulse: 0.4, audioTunnel: 0.3, audioStutter: true, audioMonoBuild: true, audioHue: 'beat', audioHueAmt: 20, audioBgFlash: 0.2 }, { render: 'dots', palette: 'ice' }, 'face', 'camera'),
   vibe('Echo word', 'Letters hop in turn, echoes trail behind', { audioPulse: 0.5, audioSpeed: 0.2 },
     { audioDrop: 0.8, audioWordsOn: true, audioWords: 'HERE, NOW, ALWAYS', audioWordsEvery: '4bars', audioEcho: 0.8, audioWordPulse: 0.6, audioLetterHop: 0.6, audioHue: 'drift', audioHueAmt: 20 }, {}, 'words', 'words'),
 ];
@@ -3533,6 +3834,10 @@ const ENTRANCES: [string, string][] = [
   ['rain', 'Fall from the top'],
   ['edges', 'Fly in from the edges'],
   ['scatter', 'Scattered (free spring)'],
+];
+const CAM_MODES: [string, string][] = [
+  ['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['mixed', 'Features + a light mesh'],
+  ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
 const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['image', 'An image'], ['camera', 'Your camera'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
@@ -3669,6 +3974,16 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
 
+  { kind: 'section', about: 'Your hands, seen by the camera, push, pull or swirl the particles. Pinch to grab.', id: 'hands', label: 'Hands', tab: 'motion', lock: ['camHands', 'camHandReach', 'camHandForce'],
+    power: { on: handsOn, off: { camHands: 'off' }, start: { camHands: 'repel' } },
+    summary: () => (handsOn() ? `${settings.camHands}${cam.hands.length ? ` · ${cam.hands.length} hand${cam.hands.length > 1 ? 's' : ''}` : ''}` : 'off') },
+  { kind: 'select', key: 'camHands', label: 'Fingertips', options: [['repel', 'Push away'], ['attract', 'Pull in'], ['vortex', 'Swirl']] },
+  { kind: 'range', key: 'camHandReach', label: 'Reach', min: 40, max: 400, step: 10, format: (v) => `${v}px` },
+  { kind: 'range', key: 'camHandForce', label: 'Strength', min: 0.1, max: 3, step: 0.05, format: pct },
+  { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie' },
+  { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview' },
+  { kind: 'note', text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them. Uses the camera (asks once); the picture stays on this device.' },
+
   { kind: 'section', about: 'How particles react to your pointer and clicks.', id: 'pointer', label: 'Pointer & click', tab: 'motion', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
     power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
     summary: () => [hasPointer() ? label(POINTER_MODES, settings.pointerMode) : '', hasClick() ? label(CLICK_MODES, settings.click).replace(' (hold)', '') : ''].filter(Boolean).join(' · ') || 'off' },
@@ -3715,13 +4030,19 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'buttons', buttons: [['Start camera', () => void startCamera()]], show: () => isCam() && !cam.on },
   { kind: 'buttons', buttons: [['Stop camera', stopCamera]], show: () => isCam() && cam.on },
-  { kind: 'select', key: 'camMode', label: 'Use', options: [['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts']], show: isCam },
+  { kind: 'select', key: 'camMode', label: 'Use', options: CAM_MODES, show: isCam },
+  { kind: 'range', key: 'camMix', label: 'Features vs mesh', min: 0.1, max: 0.95, step: 0.05, format: (v) => `${Math.round(v * 100)}% features`, show: () => isCam() && settings.camMode === 'mixed' },
   { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie', show: isCam },
+  { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview', show: isCam },
   { kind: 'toggle', key: 'camCentre', label: 'Keep the face centred and sized', show: () => isCam() && faceMode() },
+  { kind: 'toggle', key: 'camDepth', label: 'Real depth: near parts bigger (turns on 3D depth)', show: () => isCam() && faceMode() },
   { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => isCam() && !faceMode() },
+  { kind: 'sub', label: 'Expressions', show: () => isCam() && faceMode() },
   { kind: 'toggle', key: 'camTriggers', label: 'Expressions do things', show: () => isCam() && faceMode() },
-  { kind: 'note', text: 'Open your mouth to explode, blink to change colours, raise your eyebrows to send a ripple.', show: () => isCam() && faceMode() && settings.camTriggers },
-  { kind: 'note', text: 'The camera picture stays on this device. Face tracking downloads a 4 MB model the first time.', show: isCam },
+  { kind: 'note', text: 'Open mouth: explode. Blink: new colours. Smile: warm colours. Raised brows: a ripple. Pucker: gather. Wink: next face look. Tilt your head to roll the view.', show: () => isCam() && faceMode() && settings.camTriggers },
+  { kind: 'toggle', key: 'camDials', label: 'Expressions steer: mouth → flow, brows → size, smile → speed', show: () => isCam() && faceMode() },
+  { kind: 'toggle', key: 'camMouthEmit', label: 'Particles stream out of your mouth', show: () => isCam() && faceMode() },
+  { kind: 'note', text: 'Two people in view each get a face (half the particles each). Colour by Face features or Camera colours on the Look tab. The picture stays on this device; tracking downloads a small model the first time.', show: isCam },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
   { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
   { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && !isCam() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
@@ -3859,11 +4180,11 @@ const CONTROLS: Control[] = [
     power: { on: () => settings.audioWordsOn || settings.audioWordPulse > 0 || settings.audioLetterHop > 0,
       off: { audioWordsOn: false, audioWordPulse: 0, audioLetterHop: 0 }, start: { audioWordsOn: true, audioWords: 'LOVE, PEACE, UNITY', audioWordPulse: 0.5 } },
     summary: () => [settings.audioWordsOn && settings.audioWords.trim() ? 'words' : '', settings.audioWordPulse > 0 ? 'pulse' : '', settings.audioLetterHop > 0 ? 'hop' : ''].filter(Boolean).join(' · ') || 'off' },
-  { kind: 'note', text: 'Needs a Text pattern (Shape card on the Motion tab), or a Words preset.', show: () => settings.shape !== 'text' },
+  { kind: 'note', text: 'Changing words needs a Text shape (Shape card on the Life tab) or a Words preset. Pulse and hop work with any shape, your face too.', show: () => settings.shape !== 'text' },
   { kind: 'toggle', key: 'audioWordsOn', label: 'Change word with the music' },
   { kind: 'text', key: 'audioWords', label: 'Words (comma separated)', placeholder: 'LOVE, PEACE, UNITY', show: () => settings.audioWordsOn },
   { kind: 'select', key: 'audioWordsEvery', label: 'Next word', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['drop', 'Only on drops']], show: () => settings.audioWordsOn },
-  { kind: 'range', key: 'audioWordPulse', label: 'Word pulses with the kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioWordPulse', label: 'Shape pulses with the kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioLetterHop', label: 'Letters hop in turn', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
 
   { kind: 'section', id: 'actions', label: 'Actions', fixed: true },
@@ -3932,6 +4253,13 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Face mesh', { count: 4000, size: 1.5, render: 'dots', shape: 'camera', camMode: 'face', camCentre: true, shapeSize: 0.9, homeStrength: 2, flow: 0, trail: 0.35, friction: 0.12, jitter: 0, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave', camTriggers: true }],
   ['Glow face', { count: 2500, size: 1.6, render: 'glow', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.9, homeStrength: 2, flow: 0.05, flowType: 'curl', trail: 0.6, friction: 0.12, jitter: 0.01, palette: 'cyber', colorBy: 'palette', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'ripple', camTriggers: true }],
   ['Live sketch', { count: 5000, size: 1.3, render: 'dots', shape: 'camera', camMode: 'edges', camRate: 5, shapeSize: 1, homeStrength: 1.6, flow: 0, trail: 0.2, friction: 0.1, jitter: 0.02, palette: 'paper', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'none' }],
+  ['Two faces', { count: 4000, size: 1.6, render: 'glow', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.9, flow: 0, trail: 0.5, friction: 0.12, jitter: 0, palette: 'rainbow', colorBy: 'face', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'ripple', camTriggers: true }],
+  ['Silhouette', { count: 5000, size: 1.2, render: 'glow', shape: 'camera', camMode: 'body', camRate: 10, shapeSize: 1, flow: 0.15, flowType: 'curl', trail: 0.75, friction: 0.08, jitter: 0.02, palette: 'neon', colorBy: 'cycle', glow: true, pointerMode: 'repel', radius: 100, force: 0.8, click: 'shockwave' }],
+  ['Portrait colours', { count: 6000, size: 1.8, render: 'dots', shape: 'camera', camMode: 'face', camCentre: true, shapeSize: 0.9, flow: 0, trail: 0.2, friction: 0.12, jitter: 0, palette: 'mono', colorBy: 'camera', glow: false, pointerMode: 'repel', radius: 80, force: 0.6, click: 'ripple' }],
+  ['Deep face', { count: 4500, size: 1.3, render: 'dots', shape: 'camera', camMode: 'mixed', camMix: 0.5, camDepth: true, depth: 0.9, depthParallax: 0.3, camCentre: true, shapeSize: 0.9, flow: 0, trail: 0.4, friction: 0.12, jitter: 0, palette: 'infra', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave', camTriggers: true }],
+  ['Breath', { count: 3000, size: 1.5, render: 'glow', shape: 'camera', camMode: 'features', camMouthEmit: true, camDials: true, camCentre: true, shapeSize: 0.85, flow: 0.2, flowType: 'curl', trail: 0.8, friction: 0.08, jitter: 0.01, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Hand play', { count: 3500, size: 1.4, render: 'glow', shape: 'text', shapeText: 'HANDS', camHands: 'repel', camHandReach: 170, camHandForce: 1.4, flow: 0, trail: 0.6, friction: 0.08, jitter: 0.01, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
+  ['Hand swirl', { count: 3000, size: 1.1, render: 'streaks', camHands: 'vortex', camHandReach: 220, camHandForce: 1.2, flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.9, friction: 0.04, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
   ['Portrait', { count: 6000, size: 1.2, render: 'dots', shape: 'image', imageMode: 'auto', shapeSize: 0.9, entrance: 'drift', flow: 0.05, flowType: 'curl', trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave' }],
   // --- Currents ---
   ['Marbled paper', { count: 3000, size: 1.2, render: 'streaks', flow: 1.2, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.06, trail: 0.97, friction: 0.06, jitter: 0.01, palette: 'paper', colorBy: 'direction', glow: false, pointerMode: 'vortex', radius: 180, force: 0.5, click: 'none' }],
@@ -3960,15 +4288,16 @@ const PRESETS: [string, Partial<Settings>][] = [
 ];
 
 // Preset families: each built around one engine feature (see the proposal doc).
-type Family = 'all' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+type Family = 'all' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 const FAMILIES: [Family, string][] = [
-  ['all', 'All'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
+  ['all', 'All'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
   ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'],
 ];
 const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
   ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
-  ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait, Face mesh, Glow face, Live sketch'],
+  ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait'],
+  ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl'],
   ['currents', 'Drift, Silk, Dusk, Ink, Prism, Neon storm, Silk ribbons, Heat, Marbled paper, Northern lights'],
   ['weather', 'Snowfall, Embers, Fireflies, Bubbles, Rainstorm, Sandstorm, Pollen'],
   ['swarms', 'Starlings, Marbles, School of fish, Midges, Crowd'],
@@ -4079,7 +4408,10 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   // Your own presets bring their whole Sound setup back too (the music cards
   // included), all but Auto VJ, so a VJ stepping through them keeps going.
   const own = keepAudio ? {} : Object.fromEntries(MUSIC_KEYS.filter((k) => k in p && !k.startsWith('audioVj')).map((k) => [k, p[k]]));
-  const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own } as Settings;
+  // Hands are an input like the pointer: they stay as they are unless the
+  // preset itself sets them.
+  const hands = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
     pendingLook = { target, since: performance.now() };
     return;
@@ -4202,8 +4534,8 @@ const darkPalettes = () =>
   });
 
 // Crossfade to a random dark palette.
-function newPalette(now: number) {
-  const list = darkPalettes().filter((k) => k !== settings.palette);
+function newPalette(now: number, from: readonly string[] = darkPalettes()) {
+  const list = (from as (keyof typeof PALETTES)[]).filter((k) => k !== settings.palette);
   if (!list.length || !cardAllows('palette')) return;
   palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur: 1500, tick: 0 };
   settings.palette = pick(list);
@@ -4290,7 +4622,8 @@ function musicVisuals(now: number) {
   if (on && S.audioRoll > 0 && L.snare) rollSign = -rollSign;
   const rollT = on && S.audioRoll > 0 ? rollSign * S.audioRoll * 5 : 0;
   rollNow += (rollT - rollNow) * Math.min(1, dt * 10);
-  const rollZ = 1 + Math.abs(Math.sin((rollNow * Math.PI) / 180)) * (Math.max(w, h) / Math.min(w, h));
+  const rollAll = rollNow + faceRoll * 0.8;
+  const rollZ = 1 + Math.abs(Math.sin((rollAll * Math.PI) / 180)) * (Math.max(w, h) / Math.min(w, h));
   // Flip: mirror the view at each drop.
   if (on && S.audioFlip && L.drop) flipS = -flipS;
   if (!on || !S.audioFlip) flipS = 1;
@@ -4298,8 +4631,8 @@ function musicVisuals(now: number) {
   tx += cutX + panX;
   ty += cutY + panY;
   let transform = '';
-  if (Math.abs(scale - 1) > 0.0005 || tx || ty || Math.abs(rollNow) > 0.01 || flipS < 0) {
-    transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${rollNow.toFixed(2)}deg) scale(${(scale * flipS).toFixed(3)}, ${scale.toFixed(3)})`;
+  if (Math.abs(scale - 1) > 0.0005 || tx || ty || Math.abs(rollAll) > 0.01 || flipS < 0) {
+    transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${rollAll.toFixed(2)}deg) scale(${(scale * flipS).toFixed(3)}, ${scale.toFixed(3)})`;
   }
   if (transform !== lastTransform) canvas.style.transform = lastTransform = transform;
 
@@ -4520,9 +4853,18 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
     else if (!g) homeGlide = null;
   }
   // The camera turns on with the camera shape and off without it.
-  if (keys.has('shape')) {
-    if (settings.shape === 'camera' && !cam.on) void startCamera();
-    else if (settings.shape !== 'camera' && cam.on) stopCamera();
+  if (keys.has('shape') || keys.has('camHands')) {
+    if (camWanted() && !cam.on) void startCamera();
+    else if (!camWanted() && cam.on) stopCamera();
+  }
+  if (cam.on && (keys.has('camMode') || keys.has('camHands') || keys.has('shape'))) syncTrackers();
+  if (keys.has('camDepth') && settings.camDepth && settings.depth === 0) {
+    settings.depth = 0.7;
+    refresh();
+  }
+  if (keys.has('colorBy')) {
+    camShades = null;
+    camColourAt = 0;
   }
   if (keys.has('emitter') && settings.emitter !== prevEmitter) {
     prevEmitter = settings.emitter;
@@ -5789,6 +6131,6 @@ resize();
 refresh();
 presetFromUrl(true);
 playEntrance();
-if (settings.shape === 'camera' && !cam.on) void startCamera();
+if (camWanted() && !cam.on) void startCamera();
 window.addEventListener('hashchange', () => presetFromUrl(false));
 requestAnimationFrame(frame);
