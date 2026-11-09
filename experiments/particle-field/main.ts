@@ -2,6 +2,7 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type Genre, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
+import { LinkRunner, linkNeeds, parseLinks, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
 
@@ -119,6 +120,8 @@ interface Settings {
   poseSweep: number;
   poseJump: 'off' | 'explode' | 'shockwave' | 'colours' | 'scatter';
   mirrorWorld: boolean;
+  // Connections card: input → action links (see links.ts).
+  links: string;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -375,6 +378,7 @@ const DEFAULTS: Settings = {
   poseSweep: 1,
   poseJump: 'explode',
   mirrorWorld: false,
+  links: '',
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
@@ -533,7 +537,6 @@ app.innerHTML = `
   <main class="stage" id="stage">
     <canvas id="c"></canvas>
     <div class="fab" id="fab" aria-label="Quick actions"></div>
-    <p class="hint" id="hint">Move through the field · click and hold</p>
   </main>
   <aside class="panel" id="panel">
     <header>
@@ -547,7 +550,8 @@ app.innerHTML = `
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
-const hint = document.getElementById('hint')!;
+// The old start hint is gone; the field speaks for itself.
+const hint = document.createElement('p');
 
 // --- particles ---------------------------------------------------------------
 
@@ -944,6 +948,7 @@ function drawObstacles(fade: number, light: boolean) {
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
+  pressAt = performance.now();
   if (settings.obstacles === 'circles' && settings.obsPlace && settings.placeWell === 'off') {
     toggleObstacle(e.offsetX, e.offsetY);
     hint.classList.add('gone');
@@ -1157,7 +1162,7 @@ function step(dt: number) {
   // Gather: hold the pointer (click mode), or the Gather action, which pulls
   // the whole field into an orb at the centre until pressed again.
   const holdGather = pointer.down && settings.click === 'gather';
-  const gathering = holdGather || gatherAll || faceGather || gestGather;
+  const gathering = holdGather || gatherAll || faceGather || gestGather || linkRun.out.gather;
   const gx = holdGather ? pointer.x : w / 2;
   const gy = holdGather ? pointer.y : h / 2;
   const gatherR = holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
@@ -1182,8 +1187,10 @@ function step(dt: number) {
   let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow * I) : flow;
   if (S.audioSub === 'speed') speedNow *= 1 + sub2 * 1.2;
   if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
-  flowNow *= (1 - blastK) * faceDial.flow * handDial.flow;
-  speedNow *= faceDial.speed * handDial.speed;
+  const lk = linkRun.out.amounts;
+  if (lk.flow > 1 && flowNow < 0.15) flowNow = 0.15;
+  flowNow *= (1 - blastK) * faceDial.flow * handDial.flow * lk.flow;
+  speedNow *= faceDial.speed * handDial.speed * lk.speed;
   const jitterNow = jitter;
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
@@ -1862,13 +1869,17 @@ const trackMode = () => faceMode() || skelMode();
 const isCam = () => settings.shape === 'camera';
 const handsOn = () => settings.camHands !== 'off';
 const faceExtras = () => settings.maskFx !== 'none' || settings.gaze !== 'off' || settings.voice;
-const faceTracked = () => (isCam() && faceMode()) || faceExtras();
-const handsTracked = () => handsOn() || settings.gestOn || (isCam() && settings.camMode === 'hands');
-const poseTracked = () => settings.poseOn || (isCam() && settings.camMode === 'pose');
+// Connections (see runLinks): declared early, the camera helpers read them.
+const linkRun = new LinkRunner();
+let linkNeed = linkNeeds([]);
+let linkFlash = 0;
+const faceTracked = () => (isCam() && faceMode()) || faceExtras() || linkNeed.face;
+const handsTracked = () => handsOn() || settings.gestOn || (isCam() && settings.camMode === 'hands') || linkNeed.hands;
+const poseTracked = () => settings.poseOn || (isCam() && settings.camMode === 'pose') || linkNeed.pose;
 const bodyObs = () => settings.obstacles === 'body';
-const camWanted = () => isCam() || handsOn() || settings.gestOn || settings.poseOn || bodyObs() || faceExtras();
+const camWanted = () => isCam() || handsOn() || settings.gestOn || settings.poseOn || bodyObs() || faceExtras() || linkNeed.face || linkNeed.hands || linkNeed.pose;
 // Which keys can turn the camera or a tracker on or off.
-const CAM_KEYS: (keyof Settings)[] = ['shape', 'camMode', 'camHands', 'gestOn', 'poseOn', 'obstacles', 'maskFx', 'gaze', 'voice'];
+const CAM_KEYS: (keyof Settings)[] = ['shape', 'camMode', 'camHands', 'gestOn', 'poseOn', 'obstacles', 'maskFx', 'gaze', 'voice', 'links'];
 
 function grabCamera() {
   if (!cam.ready) return;
@@ -2173,6 +2184,116 @@ function nextMine() {
   const camOnes = myPresets.filter((p) => p.settings.shape === 'camera');
   const list = camOnes.length ? camOnes : myPresets;
   playMine(list[mineIdx++ % list.length]);
+}
+
+// Connections card: one row per link, with a live meter of its input.
+function renderLinks() {
+  const box = document.createElement('div');
+  box.className = 'links';
+  const list = document.createElement('div');
+  const meters: [string, HTMLElement][] = [];
+  let drawn = '\u0000';
+  const select = (opts: [string, string, string][], value: string, change: (v: string) => void, label: string) => {
+    const sel = document.createElement('select');
+    sel.setAttribute('aria-label', label);
+    let group: HTMLOptGroupElement | null = null;
+    for (const [v, text, g] of opts) {
+      if (g && group?.label !== g) {
+        group = document.createElement('optgroup');
+        group.label = g;
+        sel.append(group);
+      }
+      (group ?? sel).append(new Option(text, v));
+    }
+    sel.value = value;
+    sel.addEventListener('change', () => change(sel.value));
+    return sel;
+  };
+  const srcOpts: [string, string, string][] = SOURCES.map((d) => [d.id, d.label, d.group]);
+  const KIND_GROUP = { moment: 'Moment', while: 'While held', amount: 'Amount' } as const;
+  const actOpts: [string, string, string][] = ACTIONS.map((a) => [a.id, a.label, KIND_GROUP[a.kind]]);
+  const whenOpts: [string, string, string][] = [['', 'Any time', ''], ...SOURCES.filter((d) => d.kind !== 'moment').map((d) => [d.id, `Only while: ${d.label}`, d.group] as [string, string, string])];
+  const save = (links: Link[]) => {
+    drawn = formatLinks(links);
+    set('links', drawn as never);
+    draw();
+  };
+  const draw = () => {
+    const links = parseLinks(settings.links);
+    drawn = settings.links;
+    list.innerHTML = '';
+    meters.length = 0;
+    links.forEach((l, k) => {
+      const row = document.createElement('div');
+      row.className = 'link';
+      const top = document.createElement('div');
+      top.className = 'link-top';
+      const meter = document.createElement('i');
+      meter.className = 'meter';
+      meter.innerHTML = '<b></b>';
+      meters.push([l.src, meter.firstElementChild as HTMLElement]);
+      const upd = (patch: Partial<Link>) => save(links.map((x, j) => (j === k ? { ...x, ...patch } : x)));
+      const arrow = document.createElement('span');
+      arrow.className = 'arrow';
+      arrow.textContent = '→';
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'rm';
+      rm.textContent = '×';
+      rm.title = 'Remove this connection';
+      rm.addEventListener('click', () => save(links.filter((_, j) => j !== k)));
+      const act = document.createElement('div');
+      act.className = 'link-act';
+      act.append(arrow, select(actOpts, l.act, (v) => upd({ act: v }), 'Does'));
+      top.append(meter, select(srcOpts, l.src, (v) => upd({ src: v }), 'Input'), rm, act);
+      const bottom = document.createElement('div');
+      bottom.className = 'link-bottom';
+      if (actionDef(l.act)?.kind === 'amount') {
+        const amt = document.createElement('input');
+        Object.assign(amt, { type: 'range', min: -1, max: 1, step: 0.05, value: String(l.amt) });
+        amt.setAttribute('aria-label', 'Strength');
+        const out = document.createElement('output');
+        const fmt = (v: number) => (v < 0 ? `−${Math.round(-v * 100)}% (opposite)` : `${Math.round(v * 100)}%`);
+        out.textContent = fmt(l.amt);
+        amt.addEventListener('input', () => {
+          links[k] = { ...l, amt: Number(amt.value) };
+          out.textContent = fmt(links[k].amt);
+          drawn = formatLinks(links);
+          set('links', drawn as never);
+        });
+        bottom.append(amt, out);
+      }
+      bottom.append(select(whenOpts, l.when, (v) => upd({ when: v }), 'Only while'));
+      row.append(top, bottom);
+      list.append(row);
+    });
+  };
+  const add = document.createElement('div');
+  add.className = 'link-add';
+  const plus = document.createElement('button');
+  plus.type = 'button';
+  plus.textContent = '+ Add a connection';
+  plus.addEventListener('click', () => save([...parseLinks(settings.links), { src: 'bass', when: '', act: 'size', amt: 0.5 }]));
+  const ideas = document.createElement('div');
+  ideas.className = 'chips link-ideas';
+  for (const [text, code] of LINK_EXAMPLES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.addEventListener('click', () => save([...parseLinks(settings.links), ...parseLinks(code)]));
+    ideas.append(b);
+  }
+  add.append(plus, ideas);
+  box.append(list, add);
+  refreshers.push(() => {
+    if (settings.links !== drawn) draw();
+  });
+  const tick = () => {
+    if (box.offsetParent) for (const [src, el] of meters) el.style.height = `${Math.round((linkRun.levels[src] ?? 0) * 100)}%`;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return box;
 }
 
 // Live meters for the Expressions card: how strong each one is right now.
@@ -4134,8 +4255,9 @@ function draw() {
     ctx.restore();
   }
   // Background flash on the kick.
-  if (flashA > 0.004 && !seeThrough && !light) {
-    ctx.fillStyle = `rgb(255 255 255 / ${flashA.toFixed(3)})`;
+  const flashNow = Math.max(flashA, linkFlash);
+  if (flashNow > 0.004 && !seeThrough && !light) {
+    ctx.fillStyle = `rgb(255 255 255 / ${flashNow.toFixed(3)})`;
     ctx.fillRect(0, 0, w, h);
   }
   drawObstacles(fadeA, light);
@@ -4155,7 +4277,7 @@ function draw() {
     else if (a > 0) fadeBuckets[Math.min(FADE_LEVELS - 1, (a * FADE_LEVELS) | 0)][shadeIndex(i)].push(i);
   }
 
-  const s = settings.size * audioSizeBoost() * faceDial.size * handDial.size;
+  const s = settings.size * audioSizeBoost() * faceDial.size * handDial.size * linkRun.out.amounts.size;
   // Parallax: shift each depth layer a little with the camera, drawn by
   // offsetting positions just for this draw and putting them back after.
   const par = settings.depth > 0 && settings.depthParallax > 0;
@@ -4363,6 +4485,126 @@ function drawLinks() {
   }
 }
 
+// --- connections ------------------------------------------------------------------
+// Any input (music, face, hands, body, pointer) to any action or amount; the
+// Connections card edits them. The runner lives in links.ts; this gathers the
+// inputs and does the actions.
+let pressAt = 0;
+let linkAt = 0;
+let linkHips: { t: number; y: number }[] = [];
+let linkJumpAt = 0;
+const EX_OF: Record<string, ExKey> = { mouth: 'exMouth', smile: 'exSmile', brows: 'exBrows', blink: 'exBlink', wink: 'exWink', pucker: 'exPucker', tilt: 'exTilt' };
+const SIGN_OF: Record<string, string> = { fist: 'Closed_Fist', palm: 'Open_Palm', victory: 'Victory', thumbUp: 'Thumb_Up', thumbDown: 'Thumb_Down', point: 'Pointing_Up', love: 'ILoveYou' };
+function syncLinks() {
+  linkRun.sync(settings.links);
+  linkNeed = linkNeeds(linkRun.list);
+}
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+function linkSignal(id: string, now: number): Signal {
+  const L = audio.levels;
+  const music = audio.source !== 'off';
+  const none = { level: 0 };
+  switch (sourceDef(id)?.needs) {
+    case 'audio':
+      if (!music) return none;
+      switch (id) {
+        case 'kick': return { level: clamp01(L.pulse), fire: L.beat };
+        case 'snare': return { level: clamp01(L.snareEnv), fire: L.snare };
+        case 'hat': return { level: L.hat ? 1 : 0, fire: L.hat };
+        case 'bar': return { level: L.bar ? 1 : 0, fire: L.bar };
+        case 'drop': return { level: clamp01(L.dropEnv), fire: L.drop };
+        case 'bass': return { level: clamp01(L.bass) };
+        case 'mid': return { level: clamp01(L.mid) };
+        case 'high': return { level: clamp01(L.treble) };
+        case 'loud': return { level: clamp01(L.level) };
+        case 'pitch': return { level: L.level > 0.05 ? clamp01(audio.pitch) : 0 };
+        case 'build': return { level: clamp01(L.tension) };
+      }
+      return none;
+    case 'face': {
+      const f = cam.on ? cam.face : null;
+      if (!f) return none;
+      const at = { x: toSx(f.x[1]), y: toSy(f.y[1]) };
+      if (id in EX_OF) return { level: exLevel[EX_OF[id]], ...at };
+      if (id === 'faceX') return { level: clamp01(at.x / w), ...at };
+      if (id === 'faceY') return { level: clamp01(1 - at.y / h), ...at };
+      return none;
+    }
+    case 'hands': {
+      const hs = cam.on ? cam.hands : [];
+      if (!hs.length) return none;
+      const palms = hs.map((hd) => ({ x: toSx(hd.x[9]), y: toSy(hd.y[9]) }));
+      if (id in SIGN_OF) {
+        const k = hs.findIndex((hd) => hd.score > 0.55 && hd.gesture === SIGN_OF[id]);
+        return k < 0 ? none : { level: 1, ...palms[k] };
+      }
+      if (id === 'handHeight') return { level: clamp01(1 - Math.min(...palms.map((q) => q.y)) / h), ...palms[0] };
+      if (id === 'handX') return { level: clamp01(palms[0].x / w), ...palms[0] };
+      if (palms.length < 2) return none;
+      const [a, b] = palms.slice(0, 2).sort((p, q) => p.x - q.x);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      if (id === 'handsApart') return { level: clamp01(Math.hypot(b.x - a.x, b.y - a.y) / Math.min(w, h) - 0.1), ...mid };
+      if (id === 'handsAngle') return { level: clamp01(Math.abs(Math.atan2(b.y - a.y, b.x - a.x)) / (Math.PI / 4)), ...mid };
+      return none;
+    }
+    case 'pose': {
+      const p = cam.on ? cam.poses[0] : null;
+      if (!p) return none;
+      const X = (k: number) => toSx(p.x[k]);
+      const Y = (k: number) => toSy(p.y[k]);
+      const sw = Math.hypot(X(11) - X(12), Y(11) - Y(12)) || 150;
+      const hips = { x: (X(23) + X(24)) / 2, y: (Y(23) + Y(24)) / 2 };
+      if (id === 'jump') {
+        // The hips rise by a third of a shoulder width within half a second.
+        if (p.v[23] < 0.5 || p.v[24] < 0.5) return none;
+        linkHips.push({ t: now, y: hips.y });
+        while (linkHips.length && linkHips[0].t < now - 500) linkHips.shift();
+        const low = Math.max(...linkHips.map((q) => q.y));
+        const fire = low - hips.y > sw * 0.35 && now - linkJumpAt > 1200;
+        if (fire) {
+          linkJumpAt = now;
+          linkHips = [];
+        }
+        return { level: fire ? 1 : 0, fire, ...hips };
+      }
+      const shY = (Y(11) + Y(12)) / 2;
+      if (id === 'armsUp') return { level: clamp01(((shY - Y(15)) / sw + (shY - Y(16)) / sw) / 2 + 0.2), x: X(0), y: Y(0) };
+      if (id === 'armsWide') return { level: clamp01((Math.abs(X(15) - X(16)) / sw - 1) / 2.5), x: X(0), y: Y(0) };
+      if (id === 'lean') return { level: clamp01(0.5 + ((X(0) - (X(11) + X(12)) / 2) / sw) * 1.2), ...hips };
+      return none;
+    }
+    case 'pointer':
+      if (id === 'press') return { level: pressAt > linkAt ? 1 : 0, fire: pressAt > linkAt, x: pointer.x, y: pointer.y };
+      if (!pointer.active) return none;
+      if (id === 'pointerX') return { level: clamp01(pointer.x / w), x: pointer.x, y: pointer.y };
+      if (id === 'pointerY') return { level: clamp01(1 - pointer.y / h), x: pointer.x, y: pointer.y };
+  }
+  return none;
+}
+function runLinks(now: number) {
+  syncLinks();
+  linkFlash *= 0.82;
+  if (!linkRun.list.length) {
+    if (linkRun.out.fired.length || linkRun.out.gather || linkRun.out.freeze) linkRun.out = { ...linkRun.out, fired: [], gather: false, freeze: false };
+    linkAt = now;
+    return;
+  }
+  const out = linkRun.step((id) => linkSignal(id, now), now);
+  linkAt = now;
+  for (const f of out.fired) {
+    const x = f.x ?? w / 2;
+    const y = f.y ?? h / 2;
+    if (f.act === 'explode') explode();
+    else if (f.act === 'ripple' || f.act === 'shockwave' || f.act === 'implode') addWave(f.act, x, y);
+    else if (f.act === 'scatter') scatter();
+    else if (f.act === 'colours') newPalette(now);
+    else if (f.act === 'warm') newPalette(now, WARM);
+    else if (f.act === 'flash') linkFlash = 0.25;
+    else if (f.act === 'scene') gestMoment('preset', now, x, y);
+    else if (f.act === 'mine') nextMine();
+  }
+}
+
 // --- loop --------------------------------------------------------------------
 
 let last = performance.now();
@@ -4385,12 +4627,13 @@ function frame(now: number) {
   if (!frozen) {
     updateGlyphs();
     cameraTick(now);
+    runLinks(now);
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
     // Stutter: a split-second freeze frame on each snare.
     const held = now < stutterUntil;
     const t0 = performance.now();
-    if (!held && !gestFreeze) step(dt);
+    if (!held && !gestFreeze && !linkRun.out.freeze) step(dt);
     const t1 = performance.now();
     if (!held) {
       draw();
@@ -4450,6 +4693,7 @@ type ControlBody =
   | { kind: 'mypresets' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
+  | { kind: 'links' }
   | { kind: 'sub'; label: string }
   | { kind: 'heading'; label: string; tab: Tab }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
@@ -4745,6 +4989,17 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'shuffleCards', label: 'Shuffle also switches cards on and off' },
   { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Scenes don\'t change these.' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
+  { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
+    about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
+    lock: ['links'],
+    power: { on: () => settings.links !== '', off: { links: '' }, start: { links: 'kick>size@0.6' } },
+    summary: () => {
+      const n = parseLinks(settings.links).length;
+      return n ? String(n) : 'off';
+    } },
+  { kind: 'links' },
+  { kind: 'note', text: 'Music inputs need a sound source (Music tab).', show: () => linkNeed.audio && audio.source === 'off' },
+  { kind: 'note', text: 'Face, hands and body inputs start the camera by themselves.', show: () => linkNeed.face || linkNeed.hands || linkNeed.pose },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
     lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
@@ -5361,7 +5616,7 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'poseJump'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'poseJump', 'links'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
@@ -5531,7 +5786,7 @@ function musicVisuals(now: number) {
     if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
     if (S.audioInvert && L.dropEnv > 0.55) parts.push('invert(1)');
   }
-  const hueCam = faceHue + handDial.hue;
+  const hueCam = faceHue + handDial.hue + linkRun.out.amounts.hue;
   if (Math.abs(hueCam) > 0.5) parts.push(`hue-rotate(${hueCam.toFixed(1)}deg)`);
   const filter = parts.join(' ');
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
@@ -5576,12 +5831,12 @@ function musicVisuals(now: number) {
   if (on && S.audioRoll > 0 && L.snare) rollSign = -rollSign;
   const rollT = on && S.audioRoll > 0 ? rollSign * S.audioRoll * 5 : 0;
   rollNow += (rollT - rollNow) * Math.min(1, dt * 10);
-  const rollAll = rollNow + faceRoll * 0.8 + handDial.roll;
+  const rollAll = rollNow + faceRoll * 0.8 + handDial.roll + linkRun.out.amounts.roll;
   const rollZ = 1 + Math.abs(Math.sin((rollAll * Math.PI) / 180)) * (Math.max(w, h) / Math.min(w, h));
   // Flip: mirror the view at each drop.
   if (on && S.audioFlip && L.drop) flipS = -flipS;
   if (!on || !S.audioFlip) flipS = 1;
-  const scale = zoom * cutZoom * dollyNow * panZ * rollZ * handDial.zoom;
+  const scale = zoom * cutZoom * dollyNow * panZ * rollZ * handDial.zoom * linkRun.out.amounts.zoom;
   tx += cutX + panX;
   ty += cutY + panY;
   let transform = '';
@@ -5807,6 +6062,7 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
     else if (!g) homeGlide = null;
   }
   // The camera turns on with the camera shape and off without it.
+  if (keys.has('links')) syncLinks();
   if (CAM_KEYS.some((k) => keys.has(k))) {
     if (camWanted() && !cam.on) void startCamera();
     else if (!camWanted() && cam.on) stopCamera();
@@ -6304,6 +6560,11 @@ function renderControls() {
 
     if (ctl.kind === 'exmeters') {
       searchItem(body, renderExMeters());
+      continue;
+    }
+
+    if (ctl.kind === 'links') {
+      searchItem(body, renderLinks());
       continue;
     }
 

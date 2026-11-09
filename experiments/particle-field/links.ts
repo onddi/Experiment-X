@@ -1,0 +1,211 @@
+// Connections: link any input (a moment or a dial) to any action or amount.
+//
+// Inputs come in two shapes, whatever produces them:
+// - Moments: something happened (a kick, a blink, a fist, a jump).
+// - Dials: something is this strong right now (bass, mouth openness, how far
+//   apart your hands are), 0..1.
+// Every input gives a level 0..1 each frame; moments also say when they fire.
+// A dial "fires" when it rises past its mark, so a smile can be a moment too.
+//
+// A connection is stored in a scene as text: `src[+when]>act[@amount]`,
+// joined with ';'. e.g. `kick+fist>explode;smile>hue@0.7`.
+
+export type SourceKind = 'moment' | 'dial' | 'held';
+export type SourceDef = { id: string; label: string; group: string; kind: SourceKind; needs: 'audio' | 'face' | 'hands' | 'pose' | 'pointer'; hi?: number; hold?: number };
+
+export const SOURCES: SourceDef[] = [
+  { id: 'kick', label: 'Kick', group: 'Music', kind: 'moment', needs: 'audio' },
+  { id: 'snare', label: 'Snare', group: 'Music', kind: 'moment', needs: 'audio' },
+  { id: 'hat', label: 'Hi-hat', group: 'Music', kind: 'moment', needs: 'audio' },
+  { id: 'bar', label: 'New bar', group: 'Music', kind: 'moment', needs: 'audio' },
+  { id: 'drop', label: 'Drop', group: 'Music', kind: 'moment', needs: 'audio' },
+  { id: 'bass', label: 'Bass', group: 'Music', kind: 'dial', needs: 'audio', hi: 0.7 },
+  { id: 'mid', label: 'Mids', group: 'Music', kind: 'dial', needs: 'audio', hi: 0.7 },
+  { id: 'high', label: 'Highs', group: 'Music', kind: 'dial', needs: 'audio', hi: 0.7 },
+  { id: 'loud', label: 'Loudness', group: 'Music', kind: 'dial', needs: 'audio', hi: 0.7 },
+  { id: 'pitch', label: 'Pitch (singing)', group: 'Music', kind: 'dial', needs: 'audio', hi: 0.7 },
+  { id: 'build', label: 'Build-up', group: 'Music', kind: 'dial', needs: 'audio', hi: 0.6 },
+  { id: 'mouth', label: 'Open mouth', group: 'Face', kind: 'dial', needs: 'face', hi: 0.6 },
+  { id: 'smile', label: 'Smile', group: 'Face', kind: 'dial', needs: 'face', hi: 0.7 },
+  { id: 'brows', label: 'Raise eyebrows', group: 'Face', kind: 'dial', needs: 'face', hi: 0.6 },
+  { id: 'blink', label: 'Blink', group: 'Face', kind: 'dial', needs: 'face', hi: 0.55 },
+  { id: 'wink', label: 'Wink', group: 'Face', kind: 'dial', needs: 'face', hi: 0.5 },
+  { id: 'pucker', label: 'Pucker', group: 'Face', kind: 'dial', needs: 'face', hi: 0.6 },
+  { id: 'tilt', label: 'Head tilt', group: 'Face', kind: 'dial', needs: 'face', hi: 0.5 },
+  { id: 'faceX', label: 'Face left ↔ right', group: 'Face', kind: 'dial', needs: 'face', hi: 0.8 },
+  { id: 'faceY', label: 'Face low ↔ high', group: 'Face', kind: 'dial', needs: 'face', hi: 0.8 },
+  { id: 'fist', label: 'Fist ✊', group: 'Hands', kind: 'held', needs: 'hands', hold: 150 },
+  { id: 'palm', label: 'Open palm ✋', group: 'Hands', kind: 'held', needs: 'hands', hold: 150 },
+  { id: 'victory', label: 'Peace sign ✌️', group: 'Hands', kind: 'held', needs: 'hands', hold: 150 },
+  { id: 'thumbUp', label: 'Thumbs up 👍', group: 'Hands', kind: 'held', needs: 'hands', hold: 150 },
+  { id: 'thumbDown', label: 'Thumbs down 👎', group: 'Hands', kind: 'held', needs: 'hands', hold: 150 },
+  { id: 'point', label: 'Point up ☝️', group: 'Hands', kind: 'held', needs: 'hands', hold: 150 },
+  { id: 'love', label: 'Rock on 🤟', group: 'Hands', kind: 'held', needs: 'hands', hold: 150 },
+  { id: 'handsApart', label: 'Hands apart', group: 'Hands', kind: 'dial', needs: 'hands', hi: 0.7 },
+  { id: 'handsAngle', label: 'Hands tilted', group: 'Hands', kind: 'dial', needs: 'hands', hi: 0.7 },
+  { id: 'handHeight', label: 'Hand height', group: 'Hands', kind: 'dial', needs: 'hands', hi: 0.75 },
+  { id: 'handX', label: 'Hand left ↔ right', group: 'Hands', kind: 'dial', needs: 'hands', hi: 0.8 },
+  { id: 'jump', label: 'Jump', group: 'Body', kind: 'moment', needs: 'pose' },
+  { id: 'armsUp', label: 'Arms up', group: 'Body', kind: 'dial', needs: 'pose', hi: 0.6 },
+  { id: 'armsWide', label: 'Arms wide', group: 'Body', kind: 'dial', needs: 'pose', hi: 0.7 },
+  { id: 'lean', label: 'Lean left ↔ right', group: 'Body', kind: 'dial', needs: 'pose', hi: 0.8 },
+  { id: 'press', label: 'Tap / click', group: 'Pointer', kind: 'moment', needs: 'pointer' },
+  { id: 'pointerX', label: 'Pointer left ↔ right', group: 'Pointer', kind: 'dial', needs: 'pointer', hi: 0.8 },
+  { id: 'pointerY', label: 'Pointer low ↔ high', group: 'Pointer', kind: 'dial', needs: 'pointer', hi: 0.8 },
+];
+
+// What a connection does. Moments fire once; "while" acts as long as the
+// input is high; amounts follow the input's level.
+export type ActKind = 'moment' | 'while' | 'amount';
+export type ActionDef = { id: string; label: string; kind: ActKind };
+export const ACTIONS: ActionDef[] = [
+  { id: 'explode', label: 'Explode', kind: 'moment' },
+  { id: 'ripple', label: 'Ripple', kind: 'moment' },
+  { id: 'shockwave', label: 'Shockwave', kind: 'moment' },
+  { id: 'implode', label: 'Implode', kind: 'moment' },
+  { id: 'scatter', label: 'Scatter', kind: 'moment' },
+  { id: 'colours', label: 'New colours', kind: 'moment' },
+  { id: 'warm', label: 'Warm colours', kind: 'moment' },
+  { id: 'flash', label: 'Flash', kind: 'moment' },
+  { id: 'scene', label: 'Next scene', kind: 'moment' },
+  { id: 'mine', label: 'Next of my scenes', kind: 'moment' },
+  { id: 'gather', label: 'Gather', kind: 'while' },
+  { id: 'freeze', label: 'Freeze', kind: 'while' },
+  { id: 'size', label: 'Particle size', kind: 'amount' },
+  { id: 'flow', label: 'Flow', kind: 'amount' },
+  { id: 'speed', label: 'Speed', kind: 'amount' },
+  { id: 'hue', label: 'Colour shift', kind: 'amount' },
+  { id: 'roll', label: 'Roll the view', kind: 'amount' },
+  { id: 'zoom', label: 'Zoom', kind: 'amount' },
+];
+
+export type Link = { src: string; when: string; act: string; amt: number };
+
+export const sourceDef = (id: string) => SOURCES.find((s) => s.id === id);
+export const actionDef = (id: string) => ACTIONS.find((a) => a.id === id);
+
+export function parseLinks(text: string): Link[] {
+  const out: Link[] = [];
+  for (const part of text.split(';')) {
+    const m = /^([A-Za-z]+)(?:\+([A-Za-z]+))?>([A-Za-z]+)(?:@(-?[\d.]+))?$/.exec(part.trim());
+    if (!m) continue;
+    const [, src, when = '', act, amt] = m;
+    if (!sourceDef(src) || !actionDef(act) || (when && !sourceDef(when))) continue;
+    out.push({ src, when, act, amt: amt === undefined ? 0.6 : Math.max(-1, Math.min(1, Number(amt) || 0)) });
+  }
+  return out;
+}
+
+export function formatLinks(list: Link[]): string {
+  return list
+    .map((l) => `${l.src}${l.when ? `+${l.when}` : ''}>${l.act}${actionDef(l.act)?.kind === 'amount' ? `@${+l.amt.toFixed(2)}` : ''}`)
+    .join(';');
+}
+
+// What a source needs running (camera tracking, sound).
+export function linkNeeds(list: Link[]) {
+  const need = { audio: false, face: false, hands: false, pose: false, pointer: false };
+  for (const l of list) for (const id of [l.src, l.when]) if (id) need[sourceDef(id)!.needs] = true;
+  return need;
+}
+
+export type Signal = { level: number; fire?: boolean; x?: number; y?: number };
+export type Amounts = { size: number; flow: number; speed: number; hue: number; roll: number; zoom: number };
+export type LinkOut = {
+  fired: { act: string; x?: number; y?: number }[];
+  gather: boolean;
+  freeze: boolean;
+  amounts: Amounts;
+};
+
+// How far an amount goes at full level and full strength.
+const SPAN: Amounts = { size: 1.5, flow: 3, speed: 2, hue: 180, roll: 45, zoom: 0.8 };
+
+// Runs the connections each frame: fires moments, holds "while" actions,
+// and eases each amount towards the input's level.
+export class LinkRunner {
+  list: Link[] = [];
+  private text = '';
+  private state: { on: boolean; since: number; at: number; v: number }[] = [];
+  private heldSince: Record<string, number> = {};
+  levels: Record<string, number> = {};
+  out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1 } };
+
+  sync(text: string) {
+    if (text === this.text) return;
+    this.text = text;
+    this.list = parseLinks(text);
+    this.state = this.list.map(() => ({ on: false, since: 0, at: 0, v: 0 }));
+  }
+
+  // Whether an input counts as "on": above its mark (held signs: held long enough).
+  private isOn(id: string, s: Signal, now: number, was: boolean) {
+    const def = sourceDef(id)!;
+    if (def.kind === 'moment') return !!s.fire;
+    const hi = def.hi ?? 0.5;
+    const on = was ? s.level > hi * 0.6 : s.level > hi;
+    if (def.kind !== 'held') return on;
+    if (!on) {
+      delete this.heldSince[id];
+      return false;
+    }
+    this.heldSince[id] ??= now;
+    return now - this.heldSince[id] >= (def.hold ?? 0);
+  }
+
+  step(signal: (id: string) => Signal, now: number) {
+    const out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 0, flow: 0, speed: 0, hue: 0, roll: 0, zoom: 0 } };
+    const cache: Record<string, Signal> = {};
+    const sig = (id: string) => (cache[id] ??= signal(id));
+    this.levels = {};
+    this.list.forEach((l, k) => {
+      const st = this.state[k];
+      const s = sig(l.src);
+      this.levels[l.src] = s.level;
+      const gate = !l.when || sig(l.when).level > (sourceDef(l.when)!.hi ?? 0.5) * 0.6;
+      const kind = actionDef(l.act)!.kind;
+      if (kind === 'amount') {
+        // Moments as amounts: their level is a short envelope (e.g. the kick's pulse).
+        st.v += ((gate ? s.level : 0) - st.v) * 0.3;
+        out.amounts[l.act as keyof Amounts] += st.v * l.amt;
+        return;
+      }
+      const was = st.on;
+      const on = this.isOn(l.src, s, now, was);
+      st.on = on;
+      if (kind === 'while') {
+        if (on && gate) out[l.act as 'gather' | 'freeze'] = true;
+        return;
+      }
+      // Moments: once per rise, with a short rest so a flickery input can't machine-gun.
+      const rest = sourceDef(l.src)!.kind === 'moment' ? 120 : 500;
+      if (on && !was && gate && now - st.at > rest) {
+        st.at = now;
+        out.fired.push({ act: l.act, x: s.x, y: s.y });
+      }
+    });
+    const a = out.amounts;
+    out.amounts = {
+      size: Math.max(0.15, 1 + a.size * SPAN.size),
+      flow: Math.max(0, 1 + a.flow * SPAN.flow),
+      speed: Math.max(0.1, 1 + a.speed * SPAN.speed),
+      hue: a.hue * SPAN.hue,
+      roll: a.roll * SPAN.roll,
+      zoom: Math.max(0.5, 1 + a.zoom * SPAN.zoom),
+    };
+    this.out = out;
+    return out;
+  }
+}
+
+// Ready-made connections to start from.
+export const LINK_EXAMPLES: [string, string][] = [
+  ['Kick → bigger', 'kick>size@0.6'],
+  ['Bass → flow', 'bass>flow@0.7'],
+  ['Pitch → colour', 'pitch>hue@0.8'],
+  ['Smile → colour', 'smile>hue@0.7'],
+  ['Hands apart → zoom', 'handsApart>zoom@0.7'],
+  ['Kick + fist → explode', 'kick+fist>explode'],
+  ['Palm → gather', 'palm>gather'],
+  ['Jump → shockwave', 'jump>shockwave'],
+];
