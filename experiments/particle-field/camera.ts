@@ -8,7 +8,8 @@ const MP_VERSION = '0.10.14';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const MODELS = {
   face: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-  hands: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+  hands: 'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
+  pose: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
   body: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
 };
 export type Task = keyof typeof MODELS;
@@ -22,19 +23,24 @@ type Runner = {
     faceBlendshapes?: { categories: { categoryName: string; score: number }[] }[];
     landmarks?: Pt[][];
   };
+  recognizeForVideo?(v: HTMLVideoElement, t: number): { landmarks: Pt[][]; gestures: { categoryName: string; score: number }[][] };
   segmentForVideo?(v: HTMLVideoElement, t: number): { confidenceMasks?: Mask[]; close(): void };
 };
 type Maker = { createFromOptions(fs: unknown, o: Record<string, unknown>): Promise<Runner> } & Record<string, Edge[]>;
 type VisionModule = {
   FilesetResolver: { forVisionTasks(base: string): Promise<unknown> };
   FaceLandmarker: Maker;
-  HandLandmarker: Maker;
+  GestureRecognizer: Maker;
+  PoseLandmarker: Maker;
   ImageSegmenter: Maker;
 };
 
 export type Status = 'off' | 'loading' | 'ready' | 'failed';
 export type Face = { x: Float32Array; y: Float32Array; z: Float32Array; blend: Record<string, number> };
-export type Hand = { x: Float32Array; y: Float32Array };
+// A hand: its 21 points and the gesture it is making ('None', 'Closed_Fist',
+// 'Open_Palm', 'Pointing_Up', 'Thumb_Up', 'Thumb_Down', 'Victory', 'ILoveYou').
+export type Hand = { x: Float32Array; y: Float32Array; gesture: string; score: number };
+export type Pose = { x: Float32Array; y: Float32Array; v: Float32Array };
 
 // Face feature groups, for colouring: 0 skin, 1 outline, 2 brows, 3 eyes,
 // 4 irises, 5 lips.
@@ -44,12 +50,16 @@ export class Camera {
   readonly video = document.createElement('video');
   on = false;
   error = '';
-  status: Record<Task, Status> = { face: 'off', hands: 'off', body: 'off' };
+  status: Record<Task, Status> = { face: 'off', hands: 'off', body: 'off', pose: 'off' };
   // Latest tracking, in video pixels (x, y; z for faces, same scale as x).
   faces: Face[] = [];
   faceAt = 0;
   hands: Hand[] = [];
   handsAt = 0;
+  poses: Pose[] = [];
+  poseAt = 0;
+  handEdges: Edge[] = [];
+  poseEdges: Edge[] = [];
   // Body cut-out: confidence 0..1 per pixel of a small grid.
   body: { w: number; h: number; data: Float32Array } | null = null;
   // Edge lists for the face modes, and the feature group of each edge.
@@ -61,7 +71,7 @@ export class Camera {
   private runners: Partial<Record<Task, Runner>> = {};
   private loads: Partial<Record<Task, Promise<void>>> = {};
   private vision: Promise<{ vision: VisionModule; fs: unknown }> | null = null;
-  private lastTime: Record<Task, number> = { face: -1, hands: -1, body: -1 };
+  private lastTime: Record<Task, number> = { face: -1, hands: -1, body: -1, pose: -1 };
 
   constructor() {
     this.video.muted = true;
@@ -104,7 +114,8 @@ export class Camera {
     this.faces = [];
     this.hands = [];
     this.body = null;
-    this.lastTime = { face: -1, hands: -1, body: -1 };
+    this.poses = [];
+    this.lastTime = { face: -1, hands: -1, body: -1, pose: -1 };
   }
 
   private base() {
@@ -135,7 +146,7 @@ export class Camera {
     const p = (async () => {
       try {
         const { vision, fs } = await this.vision!;
-        const maker = task === 'face' ? vision.FaceLandmarker : task === 'hands' ? vision.HandLandmarker : vision.ImageSegmenter;
+        const maker = { face: vision.FaceLandmarker, hands: vision.GestureRecognizer, body: vision.ImageSegmenter, pose: vision.PoseLandmarker }[task];
         const opts = (delegate: string) => ({
           baseOptions: { modelAssetPath: this.model(task), delegate },
           runningMode: 'VIDEO',
@@ -149,6 +160,8 @@ export class Camera {
           this.runners[task] = await maker.createFromOptions(fs, opts('CPU'));
         }
         if (task === 'face') this.faceEdges(vision.FaceLandmarker);
+        if (task === 'hands') this.handEdges = vision.GestureRecognizer.HAND_CONNECTIONS;
+        if (task === 'pose') this.poseEdges = vision.PoseLandmarker.POSE_CONNECTIONS;
         this.status[task] = 'ready';
       } catch (e) {
         console.warn(`Camera ${task} tracking failed to load`, e);
@@ -232,7 +245,7 @@ export class Camera {
     if (!this.fresh('hands')) return;
     let res;
     try {
-      res = this.runners.hands!.detectForVideo!(this.video, now);
+      res = this.runners.hands!.recognizeForVideo!(this.video, now);
     } catch {
       return;
     }
@@ -243,8 +256,34 @@ export class Camera {
     }
     const W = this.width;
     const H = this.height;
-    this.hands = all.map((lm) => ({ x: Float32Array.from(lm, (p) => p.x * W), y: Float32Array.from(lm, (p) => p.y * H) }));
+    this.hands = all.map((lm, k) => {
+      const g = res.gestures?.[k]?.[0];
+      return { x: Float32Array.from(lm, (p) => p.x * W), y: Float32Array.from(lm, (p) => p.y * H), gesture: g?.categoryName ?? 'None', score: g?.score ?? 0 };
+    });
     this.handsAt = now;
+  }
+
+  detectPose(now: number) {
+    if (!this.fresh('pose')) return;
+    let res;
+    try {
+      res = this.runners.pose!.detectForVideo!(this.video, now);
+    } catch {
+      return;
+    }
+    const all = res.landmarks ?? [];
+    if (!all.length) {
+      if (now - this.poseAt > 500) this.poses = [];
+      return;
+    }
+    const W = this.width;
+    const H = this.height;
+    this.poses = all.map((lm) => ({
+      x: Float32Array.from(lm, (p) => p.x * W),
+      y: Float32Array.from(lm, (p) => p.y * H),
+      v: Float32Array.from(lm, (p) => (p as Pt & { visibility?: number }).visibility ?? 1),
+    }));
+    this.poseAt = now;
   }
 
   segmentBody(now: number) {

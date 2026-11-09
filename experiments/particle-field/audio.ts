@@ -111,6 +111,8 @@ export class AudioInput {
   genre: Genre = 'general';
   levels: AudioLevels = { ...ZERO };
   onChange: (status: string) => void = () => {};
+  // Pitch of the loudest tone from 80 Hz to 1 kHz (a voice), 0..1 on a log scale.
+  pitch = 0.5;
 
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
@@ -249,6 +251,14 @@ export class AudioInput {
       bass: band(BANDS.bass), mid: band(BANDS.mid), treble: band(BANDS.treble), sub: band(BANDS.sub), level: 0,
     };
     raw.level = raw.bass * 0.5 + raw.mid * 0.35 + raw.treble * 0.15;
+    {
+      const p0 = Math.max(1, Math.floor(80 / hzPerBin));
+      const p1 = Math.min(this.freq.length - 1, Math.ceil(1000 / hzPerBin));
+      let best = 0;
+      let bi = p0;
+      for (let k = p0; k <= p1; k++) if (this.freq[k] > best) (best = this.freq[k]), (bi = k);
+      if (best > 60) this.pitch += (Math.max(0, Math.min(1, Math.log2((bi * hzPerBin) / 80) / Math.log2(12.5))) - this.pitch) * 0.3;
+    }
 
     for (const k of ['bass', 'mid', 'treble', 'level', 'sub'] as const) {
       // Peaks rise instantly and fall slowly; a floor keeps silence silent.

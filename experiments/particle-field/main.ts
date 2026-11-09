@@ -12,7 +12,10 @@ type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex' | 'emitter';
 type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointer';
 type EmitMode = 'steady' | 'burst' | 'beat';
 type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring';
-type CamMode = 'face' | 'features' | 'mixed' | 'body' | 'edges' | 'bright' | 'dark';
+type CamMode = 'face' | 'features' | 'mixed' | 'hands' | 'pose' | 'body' | 'edges' | 'bright' | 'dark';
+// What a hand gesture does (Gestures card).
+type GAction = 'off' | 'explode' | 'ripple' | 'shockwave' | 'scatter' | 'colours' | 'warm' | 'preset' | 'mine' | 'save' | 'clear' | 'freeze' | 'gather';
+type MaskFx = 'none' | 'flames' | 'crown' | 'tears' | 'beard' | 'halo' | 'lasers';
 // What an expression does: a moment (fires once as the expression starts),
 // "while held", or an amount that follows how strong the expression is.
 type ExAction = 'off' | 'explode' | 'ripple' | 'shockwave' | 'scatter' | 'colours' | 'warm' | 'look' | 'mine' | 'gather' | 'flow' | 'size' | 'speed' | 'hue' | 'roll' | 'emit';
@@ -95,6 +98,27 @@ interface Settings {
   camHands: CamHands;
   camHandReach: number;
   camHandForce: number;
+  drawColour: 'flow' | 'finger';
+  drawWidth: boolean;
+  drawErase: boolean;
+  gestOn: boolean;
+  gFist: GAction;
+  gPalm: GAction;
+  gPoint: GAction;
+  gThumbUp: GAction;
+  gThumbDown: GAction;
+  gVictory: GAction;
+  gLove: GAction;
+  twoDist: 'off' | 'zoom' | 'size' | 'flow' | 'speed';
+  twoAngle: 'off' | 'turn' | 'hue';
+  maskFx: MaskFx;
+  maskShare: number;
+  gaze: 'off' | 'drift' | 'eyes';
+  voice: boolean;
+  poseOn: boolean;
+  poseSweep: number;
+  poseJump: 'off' | 'explode' | 'shockwave' | 'colours' | 'scatter';
+  mirrorWorld: boolean;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -117,7 +141,7 @@ interface Settings {
   wellRange: number;
   placeWell: PlaceWell;
   showWells: boolean;
-  obstacles: 'none' | 'circles' | 'text';
+  obstacles: 'none' | 'circles' | 'text' | 'body';
   obsCircles: string;
   obsRadius: number;
   obsText: string;
@@ -330,6 +354,27 @@ const DEFAULTS: Settings = {
   camHands: 'off',
   camHandReach: 140,
   camHandForce: 1,
+  drawColour: 'flow',
+  drawWidth: false,
+  drawErase: true,
+  gestOn: false,
+  gFist: 'explode',
+  gPalm: 'freeze',
+  gPoint: 'off',
+  gThumbUp: 'save',
+  gThumbDown: 'off',
+  gVictory: 'preset',
+  gLove: 'shockwave',
+  twoDist: 'zoom',
+  twoAngle: 'turn',
+  maskFx: 'none',
+  maskShare: 0.3,
+  gaze: 'off',
+  voice: false,
+  poseOn: false,
+  poseSweep: 1,
+  poseJump: 'explode',
+  mirrorWorld: false,
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
@@ -524,6 +569,7 @@ let hx = new Float32Array(0); // home position (Shape section)
 let hy = new Float32Array(0);
 let pz = new Float32Array(0); // depth: 0 far, 1 near
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
+let free = new Float32Array(0); // 1 for face-effect particles: no home, short life
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
 const FADE_IN = 45;
@@ -544,7 +590,7 @@ function ensureCount() {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free].map(grow);
     cap = want;
   }
   // With a shape on, newcomers appear beside an existing particle, so they
@@ -781,13 +827,22 @@ function traceObstacles(g: CanvasRenderingContext2D) {
     size = Math.min(size, h * 0.6 * S.obsSize + 4);
     g.font = `800 ${size}px system-ui, sans-serif`;
     g.fillText(text, w / 2, h / 2);
+  } else if (S.obstacles === 'body') {
+    // Your silhouette from the camera, where the camera shows you on screen.
+    const m = cam.body;
+    if (!m || !cam.ready) return;
+    g.save();
+    g.translate(toSx(0), toSy(0));
+    g.scale((camMap.sc * camMap.mir * cam.width) / m.w, (camMap.sc * cam.height) / m.h);
+    g.drawImage(bodyMask(String(g.fillStyle)), 0, 0);
+    g.restore();
   }
 }
 
 function obstacleField(): ObField | null {
   const S = settings;
   if (S.obstacles === 'none') return null;
-  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, w, h].join('|');
+  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
   if (key === obKey) return obField;
   obKey = key;
   const W = Math.max(1, Math.ceil(w / OB_CELL));
@@ -1102,7 +1157,7 @@ function step(dt: number) {
   // Gather: hold the pointer (click mode), or the Gather action, which pulls
   // the whole field into an orb at the centre until pressed again.
   const holdGather = pointer.down && settings.click === 'gather';
-  const gathering = holdGather || gatherAll || faceGather;
+  const gathering = holdGather || gatherAll || faceGather || gestGather;
   const gx = holdGather ? pointer.x : w / 2;
   const gy = holdGather ? pointer.y : h / 2;
   const gatherR = holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
@@ -1127,8 +1182,8 @@ function step(dt: number) {
   let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow * I) : flow;
   if (S.audioSub === 'speed') speedNow *= 1 + sub2 * 1.2;
   if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
-  flowNow *= (1 - blastK) * faceDial.flow;
-  speedNow *= faceDial.speed;
+  flowNow *= (1 - blastK) * faceDial.flow * handDial.flow;
+  speedNow *= faceDial.speed * handDial.speed;
   const jitterNow = jitter;
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
@@ -1204,11 +1259,11 @@ function step(dt: number) {
     const formed = cyc > 0 ? Math.max(0, Math.min(1, Math.cos(phase * Math.PI * 2) * 1.6 + 0.4)) : 1;
     // A tracked face moves all the time: hold on tighter so it keeps up.
     // Follow tightness: up to 15× the usual pull, so lips and eyes keep up.
-    const live = settings.shape === 'camera' ? (faceMode() ? 3 + settings.camSnap * 12 : 2) : 1;
+    const live = settings.shape === 'camera' ? (trackMode() ? 3 + settings.camSnap * 12 : 2) : 1;
     homeK = settings.homeStrength * 0.004 * formed * (1 - blastK) * live;
   }
   // A tracked face needs more damping too, or the stronger pull wobbles.
-  const faceLive = settings.shape === 'camera' && faceMode();
+  const faceLive = settings.shape === 'camera' && trackMode();
   const homeDamp = homeK > 0 ? Math.min(faceLive ? 0.5 : 0.2, homeK * (faceLive ? 7 : 12)) : 0;
   const cxW = w / 2;
   const cyH = h / 2;
@@ -1236,7 +1291,15 @@ function step(dt: number) {
   for (let i = 0; i < n; i++) {
     if (dead[i]) continue;
     age[i] += dt;
-    if (lifeOn && (span[i] <= 0 || age[i] >= span[i])) {
+    if (free[i]) {
+      // Face effects: short-lived sparks with their own drift, no home.
+      if (age[i] >= span[i]) {
+        dead[i] = 1;
+        continue;
+      }
+      vx[i] += fxAx + (Math.random() - 0.5) * fxJit;
+      vy[i] += fxAy + (Math.random() - 0.5) * fxJit;
+    } else if (lifeOn && (span[i] <= 0 || age[i] >= span[i])) {
       // End of life (or lifespan just switched on): start again somewhere new.
       if (span[i] > 0 && emitting) {
         dead[i] = 1; // wait for the emitter
@@ -1280,7 +1343,7 @@ function step(dt: number) {
       ax += swx[i];
       ay += swy[i];
     }
-    if (homeK > 0) {
+    if (homeK > 0 && !free[i]) {
       // Spring towards the home position, with a little extra damping so it
       // settles instead of wobbling forever.
       // Word pulse scales the target about the centre with the kick.
@@ -1322,6 +1385,25 @@ function step(dt: number) {
         ax += (-ny - nx * 0.2) * f;
         ay += (nx - ny * 0.2) * f;
       }
+    }
+    // Body: wrists sweep particles along with them. Eyes and gaze pull.
+    for (const sp of sweepPts) {
+      const dx = px[i] - sp.x;
+      const dy = py[i] - sp.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > sp.r * sp.r) continue;
+      const k = (1 - Math.sqrt(d2) / sp.r) * 0.12 * settings.poseSweep;
+      ax += (sp.vx - vx[i]) * k;
+      ay += (sp.vy - vy[i]) * k;
+    }
+    for (const pl of pullPts) {
+      const dx = pl.x - px[i];
+      const dy = pl.y - py[i];
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      if (d > pl.r) continue;
+      const f = pl.f * Math.min(1, d / 12) * (1 - (d / pl.r) * 0.5);
+      ax += (dx / d) * f;
+      ay += (dy / d) * f;
     }
     for (const pp of pinchPts) {
       const dx = pp.x - px[i];
@@ -1774,9 +1856,19 @@ const camCtx = camCanvas.getContext('2d', { willReadFrequently: true })!;
 let camFrameNo = 0;
 let camLast = 0;
 const faceMode = () => settings.camMode === 'face' || settings.camMode === 'features' || settings.camMode === 'mixed';
+const skelMode = () => settings.camMode === 'hands' || settings.camMode === 'pose';
+// Modes whose homes follow tracking every frame.
+const trackMode = () => faceMode() || skelMode();
 const isCam = () => settings.shape === 'camera';
 const handsOn = () => settings.camHands !== 'off';
-const camWanted = () => isCam() || handsOn();
+const faceExtras = () => settings.maskFx !== 'none' || settings.gaze !== 'off' || settings.voice;
+const faceTracked = () => (isCam() && faceMode()) || faceExtras();
+const handsTracked = () => handsOn() || settings.gestOn || (isCam() && settings.camMode === 'hands');
+const poseTracked = () => settings.poseOn || (isCam() && settings.camMode === 'pose');
+const bodyObs = () => settings.obstacles === 'body';
+const camWanted = () => isCam() || handsOn() || settings.gestOn || settings.poseOn || bodyObs() || faceExtras();
+// Which keys can turn the camera or a tracker on or off.
+const CAM_KEYS: (keyof Settings)[] = ['shape', 'camMode', 'camHands', 'gestOn', 'poseOn', 'obstacles', 'maskFx', 'gaze', 'voice'];
 
 function grabCamera() {
   if (!cam.ready) return;
@@ -1822,13 +1914,14 @@ function stopCamera() {
 // Load the trackers the current settings need.
 function syncTrackers() {
   if (!cam.on) return;
-  if (isCam() && faceMode()) loadTracker('face', 'Face tracking on: look at the camera');
-  if (isCam() && settings.camMode === 'body') loadTracker('body', 'Body cut-out on');
-  if (handsOn()) loadTracker('hands', 'Hand tracking on: show your hands');
+  if (faceTracked()) loadTracker('face', 'Face tracking on: look at the camera');
+  if ((isCam() && settings.camMode === 'body') || bodyObs()) loadTracker('body', 'Body cut-out on');
+  if (handsTracked()) loadTracker('hands', 'Hand tracking on: show your hands');
+  if (poseTracked()) loadTracker('pose', 'Body tracking on: step back so the camera sees you');
 }
 function loadTracker(task: Task, done: string) {
   if (cam.status[task] === 'ready' || cam.status[task] === 'loading') return;
-  showToast(task === 'face' ? 'Loading face tracking…' : task === 'hands' ? 'Loading hand tracking…' : 'Loading the body cut-out…');
+  showToast(({ face: 'Loading face tracking…', hands: 'Loading hand tracking…', pose: 'Loading body tracking…', body: 'Loading the body cut-out…' } as const)[task]);
   void cam.load(task).then(() => {
     showToast(cam.status[task] === 'ready' ? done : 'Tracking could not load');
     refresh();
@@ -1838,7 +1931,9 @@ function loadTracker(task: Task, done: string) {
 // Video pixels → screen: screen x = cx + (x - ox) * sc * mir.
 const camMap = { ox: 320, oy: 240, sc: 1, mir: -1 };
 const faceBox = { x: 0, y: 0, s: 0 };
-const toSx = (x: number) => w / 2 + (x - camMap.ox) * camMap.sc * camMap.mir;
+// Mirror world puts the camera in the middle of the left half.
+const camCx = () => (settings.mirrorWorld ? w / 4 : w / 2);
+const toSx = (x: number) => camCx() + (x - camMap.ox) * camMap.sc * camMap.mir;
 const toSy = (y: number) => h / 2 + (y - camMap.oy) * camMap.sc;
 
 function updateCamMap() {
@@ -1858,7 +1953,7 @@ function updateCamMap() {
       }
     const bx = (x0 + x1) / 2;
     const by = (y0 + y1) / 2;
-    const bs = Math.min((h * settings.shapeSize * 0.85) / Math.max(1, y1 - y0), (w * settings.shapeSize * 0.9) / Math.max(1, x1 - x0));
+    const bs = Math.min((h * settings.shapeSize * 0.85) / Math.max(1, y1 - y0), (camCx() * 2 * settings.shapeSize * 0.9) / Math.max(1, x1 - x0));
     if (!faceBox.s) Object.assign(faceBox, { x: bx, y: by, s: bs });
     faceBox.x += (bx - faceBox.x) * 0.15;
     faceBox.y += (by - faceBox.y) * 0.15;
@@ -1870,7 +1965,7 @@ function updateCamMap() {
     // The picture fills the screen, like a video call.
     camMap.ox = vw / 2;
     camMap.oy = vh / 2;
-    camMap.sc = Math.max(w / vw, h / vh) * (isCam() ? settings.shapeSize : 1);
+    camMap.sc = Math.max((camCx() * 2) / vw, h / vh) * (isCam() ? settings.shapeSize : 1);
   }
 }
 
@@ -1933,15 +2028,19 @@ function faceHomes() {
   const nf = faces.length;
   const depthOn = settings.camDepth;
   const len = Math.min(n, faceEdge.length);
+  // Gaze drift: the whole face leans towards where you look.
+  const gdx = settings.gaze === 'drift' ? gaze.x * w * 0.12 : 0;
+  const gdy = settings.gaze === 'drift' ? gaze.y * h * 0.12 : 0;
   for (let i = 0; i < len; i++) {
+    if (free[i]) continue;
     const sm = faceSmooth[nf > 1 ? i % nf : 0];
     const list = faceSrc[i] ? cam.features : cam.mesh;
     const e = list[faceEdge[i] % list.length];
     const t = faceT[i];
     const x = sm.x[e.start] + (sm.x[e.end] - sm.x[e.start]) * t;
     const y = sm.y[e.start] + (sm.y[e.end] - sm.y[e.start]) * t;
-    hx[i] = toSx(x) + faceJx[i];
-    hy[i] = toSy(y) + faceJy[i];
+    hx[i] = toSx(x) + faceJx[i] + gdx;
+    hy[i] = toSy(y) + faceJy[i] + gdy;
     if (depthOn) {
       // Nearer points (nose, lips) come forward; the face edge goes back.
       const z = sm.z[e.start] + (sm.z[e.end] - sm.z[e.start]) * t;
@@ -2066,12 +2165,14 @@ function exMoment(act: ExAction, now: number, f: { x: Float32Array; y: Float32Ar
     const k = order.indexOf(settings.camMode as (typeof order)[number]);
     set('camMode', order[(k + 1) % order.length]);
     showToast(label(CAM_MODES, settings.camMode));
-  } else if (act === 'mine' && myPresets.length) {
-    // Keep the camera look: only presets that use the camera, else all.
-    const camOnes = myPresets.filter((p) => p.settings.shape === 'camera');
-    const list = camOnes.length ? camOnes : myPresets;
-    playMine(list[mineIdx++ % list.length]);
-  }
+  } else if (act === 'mine') nextMine();
+}
+function nextMine() {
+  if (!myPresets.length) return showToast('No presets of yours yet');
+  // Keep the camera look: only presets that use the camera, else all.
+  const camOnes = myPresets.filter((p) => p.settings.shape === 'camera');
+  const list = camOnes.length ? camOnes : myPresets;
+  playMine(list[mineIdx++ % list.length]);
 }
 
 // Live meters for the Expressions card: how strong each one is right now.
@@ -2097,14 +2198,20 @@ function renderExMeters() {
   return box;
 }
 
-// Hands: fingertips push or pull (or swirl) the particles; a pinch grabs.
-// Draw mode: a pinch is the pen. Spray mode: index fingers shoot particles.
+// Hands: fingertips push or pull (or swirl) the particles; a pinch grabs,
+// and a quick release throws what it holds.
+// Draw mode: a pinch is the pen (any finger, with a colour each, in finger
+// colours), an open palm erases. Spray mode: index fingers shoot particles.
 const TIPS = [4, 8, 12, 16, 20];
-let handPts: { x: number; y: number }[] = [];
-let pinchPts: { x: number; y: number }[] = [];
-let markPts: { x: number; y: number }[] = [];
-let penPts: { x: number; y: number }[] = [];
-const penLast: ({ x: number; y: number } | null)[] = [null, null];
+const FINGER_TONES = [0.08, 0.36, 0.64, 0.92];
+type Pt2 = { x: number; y: number };
+let handPts: Pt2[] = [];
+let pinchPts: Pt2[] = [];
+let markPts: Pt2[] = [];
+let penPts: Pt2[] = [];
+let erasePts: { x: number; y: number; r: number }[] = [];
+const penLast: (Pt2 | null)[] = Array(8).fill(null);
+const pinchWas: ({ x: number; y: number; vx: number; vy: number } | null)[] = [null, null];
 let drawIdx = 0;
 const isPaint = () => settings.camHands === 'draw' || settings.camHands === 'spray';
 function handForces() {
@@ -2112,7 +2219,12 @@ function handForces() {
   pinchPts = [];
   markPts = [];
   penPts = [];
-  if (!handsOn()) return;
+  erasePts = [];
+  if (!handsOn()) {
+    // Gestures alone: a dot on each palm so you can see you're tracked.
+    if (settings.gestOn) for (const hd of cam.hands) markPts.push({ x: toSx(hd.x[9]), y: toSy(hd.y[9]) });
+    return;
+  }
   const paint = isPaint();
   cam.hands.forEach((hd, k) => {
     const tx = toSx(hd.x[4]);
@@ -2123,18 +2235,51 @@ function handForces() {
     const pinch = Math.hypot(tx - ix, ty - iy) < span * 0.35;
     if (!paint) {
       for (const q of TIPS) handPts.push({ x: toSx(hd.x[q]), y: toSy(hd.y[q]) });
-      if (pinch) pinchPts.push({ x: (tx + ix) / 2, y: (ty + iy) / 2 });
       markPts = handPts;
+      if (k < 2) {
+        const was = pinchWas[k];
+        if (pinch) {
+          const pt = { x: (tx + ix) / 2, y: (ty + iy) / 2 };
+          pinchPts.push(pt);
+          // Smoothed hand speed, so a flick can throw.
+          pinchWas[k] = was ? { ...pt, vx: was.vx * 0.6 + (pt.x - was.x) * 0.4, vy: was.vy * 0.6 + (pt.y - was.y) * 0.4 } : { ...pt, vx: 0, vy: 0 };
+        } else if (was) {
+          if (Math.hypot(was.vx, was.vy) > 3) throwFrom(was);
+          pinchWas[k] = null;
+        }
+      }
       return;
     }
     markPts.push({ x: ix, y: iy });
     if (settings.camHands === 'draw') {
-      if (pinch) {
-        const pt = { x: (tx + ix) / 2, y: (ty + iy) / 2 };
+      // The finger closest to the thumb (if it touches) is the pen.
+      const pens = settings.drawColour === 'finger' ? [8, 12, 16, 20] : [8];
+      let best = -1;
+      let bestD = span * 0.35;
+      pens.forEach((tip, f) => {
+        const d = Math.hypot(tx - toSx(hd.x[tip]), ty - toSy(hd.y[tip]));
+        if (d < bestD) (bestD = d), (best = f);
+      });
+      // Brush width: how far apart the index and middle fingers are.
+      const wide = settings.drawWidth ? Math.max(0.4, Math.min(5, (Math.hypot(ix - toSx(hd.x[12]), iy - toSy(hd.y[12])) / span) * 4)) : 1;
+      for (let f = 0; f < 4; f++) {
+        const slot = Math.min(1, k) * 4 + f;
+        if (f !== best) {
+          penLast[slot] = null;
+          continue;
+        }
+        const tip = pens[f];
+        const pt = { x: (tx + toSx(hd.x[tip])) / 2, y: (ty + toSy(hd.y[tip])) / 2 };
         penPts.push(pt);
-        drawStroke(penLast[k] ?? pt, pt);
-        penLast[k] = pt;
-      } else penLast[k] = null;
+        drawStroke(penLast[slot] ?? pt, pt, wide, settings.drawColour === 'finger' ? FINGER_TONES[f] : -1);
+        penLast[slot] = pt;
+      }
+      // Erase: an open palm wipes what it touches.
+      if (settings.drawErase && best < 0 && hd.gesture === 'Open_Palm' && hd.score > 0.6) {
+        const e = { x: toSx(hd.x[9]), y: toSy(hd.y[9]), r: span * 1.3 };
+        erasePts.push(e);
+        eraseAt(e.x, e.y, e.r);
+      }
     } else {
       // Spray along the index finger, from its tip.
       const dx = ix - toSx(hd.x[6]);
@@ -2143,29 +2288,63 @@ function handForces() {
       sprayFrom(ix, iy, dx / d, dy / d);
     }
   });
-  for (let k = cam.hands.length; k < penLast.length; k++) penLast[k] = null;
+  for (let s = Math.min(2, cam.hands.length) * 4; s < penLast.length; s++) penLast[s] = null;
+  for (let k = cam.hands.length; k < 2; k++) pinchWas[k] = null;
+}
+
+// A flick on release: what the pinch held flies off with the hand's speed.
+function throwFrom(p: { x: number; y: number; vx: number; vy: number }) {
+  // A cap, so a tracking jump can't fling everything off screen.
+  const sp = Math.hypot(p.vx, p.vy);
+  const cap = Math.min(1, 30 / sp);
+  p = { ...p, vx: p.vx * cap, vy: p.vy * cap };
+  const R = settings.camHandReach * 2;
+  const R2 = R * R;
+  const k = 1.4;
+  for (let i = 0; i < n; i++) {
+    if (dead[i]) continue;
+    const dx = px[i] - p.x;
+    const dy = py[i] - p.y;
+    if (dx * dx + dy * dy > R2) continue;
+    const s = 0.7 + Math.random() * 0.6;
+    vx[i] += p.vx * k * s + (Math.random() - 0.5) * 1.5;
+    vy[i] += p.vy * k * s + (Math.random() - 0.5) * 1.5;
+  }
+  // Ease the springs and friction off for a moment so the throw carries.
+  blastUntil = Math.max(blastUntil, performance.now() + 700);
+}
+
+function eraseAt(x: number, y: number, r: number) {
+  const r2 = r * r;
+  for (let i = 0; i < n; i++) {
+    if (dead[i]) continue;
+    const dx = px[i] - x;
+    const dy = py[i] - y;
+    if (dx * dx + dy * dy < r2) dead[i] = 1;
+  }
 }
 
 // The next particle for drawing: the oldest drawn one (or a parked one).
-function nextInk(x: number, y: number) {
+function nextInk(x: number, y: number, tn = -1) {
   const i = drawIdx++ % n;
   px[i] = ox[i] = x;
   py[i] = oy[i] = y;
   dead[i] = 0;
   rebirth(i);
   age[i] = FADE_IN;
-  // Colour runs along the stroke, so a drawing is a slow rainbow.
-  tone[i] = (performance.now() / 6000) % 1;
+  // Colour runs along the stroke, so a drawing is a slow rainbow (or each
+  // finger has its own colour).
+  tone[i] = tn >= 0 ? Math.max(0, Math.min(0.999, tn + (Math.random() - 0.5) * 0.06)) : (performance.now() / 6000) % 1;
   return i;
 }
 
-function drawStroke(a: { x: number; y: number }, b: { x: number; y: number }) {
+function drawStroke(a: Pt2, b: Pt2, wide = 1, tn = -1) {
   const d = Math.hypot(b.x - a.x, b.y - a.y);
-  const steps = Math.min(60, Math.max(2, Math.round(d / 2)));
-  const thick = 1 + settings.size * 1.5;
+  const steps = Math.min(120, Math.max(2, Math.round((d / 2) * Math.max(1, wide * 0.7))));
+  const thick = (1 + settings.size * 1.5) * wide;
   for (let q = 0; q < steps; q++) {
     const u = q / steps;
-    const i = nextInk(a.x + (b.x - a.x) * u + (Math.random() - 0.5) * thick, a.y + (b.y - a.y) * u + (Math.random() - 0.5) * thick);
+    const i = nextInk(a.x + (b.x - a.x) * u + (Math.random() - 0.5) * thick, a.y + (b.y - a.y) * u + (Math.random() - 0.5) * thick, tn);
     vx[i] = (Math.random() - 0.5) * 0.2;
     vy[i] = (Math.random() - 0.5) * 0.2;
   }
@@ -2181,6 +2360,470 @@ function sprayFrom(x: number, y: number, dx: number, dy: number) {
     vx[i] = Math.cos(a) * v;
     vy[i] = Math.sin(a) * v;
   }
+}
+
+// Gestures (Gestures card): each recognised hand sign does something. A
+// sign counts once it's held for a moment; a moment fires once per sign.
+type GKey = 'gFist' | 'gPalm' | 'gPoint' | 'gThumbUp' | 'gThumbDown' | 'gVictory' | 'gLove';
+const GESTURES: [GKey, string, string][] = [
+  ['gFist', 'Closed_Fist', 'Fist ✊'], ['gPalm', 'Open_Palm', 'Open palm ✋'], ['gVictory', 'Victory', 'Peace sign ✌️'],
+  ['gThumbUp', 'Thumb_Up', 'Thumbs up 👍'], ['gThumbDown', 'Thumb_Down', 'Thumbs down 👎'], ['gPoint', 'Pointing_Up', 'Point up ☝️'], ['gLove', 'ILoveYou', 'Rock on 🤟'],
+];
+const G_ACTIONS: [string, string][] = [
+  ['off', 'Nothing'], ['explode', 'Explode'], ['ripple', 'Ripple'], ['shockwave', 'Shockwave'], ['scatter', 'Scatter'],
+  ['colours', 'New colours'], ['warm', 'Warm colours'], ['preset', 'Next preset (same family)'], ['mine', 'Next of my presets'],
+  ['save', 'Save the look to My presets'], ['clear', 'Clear the drawing'], ['freeze', 'Freeze (while held)'], ['gather', 'Gather (while held)'],
+];
+const gState: { g: string; since: number; fired: string }[] = [];
+let gestFreeze = false;
+let gestGather = false;
+let gestAt = 0;
+let gestShown = '';
+let presetStep = 0;
+function handGestures(now: number) {
+  gestFreeze = gestGather = false;
+  const seen: string[] = [];
+  if (settings.gestOn) cam.hands.forEach((hd, k) => {
+    const st = gState[k] ?? (gState[k] = { g: 'None', since: now, fired: '' });
+    const g = hd.score > 0.55 ? hd.gesture : 'None';
+    if (g !== st.g) {
+      st.g = g;
+      st.since = now;
+    }
+    if (g === 'None') st.fired = '';
+    const def = GESTURES.find(([, name]) => name === g);
+    if (!def || now - st.since < 150) return;
+    seen.push(def[2]);
+    const act = settings[def[0]];
+    if (act === 'freeze') gestFreeze = true;
+    else if (act === 'gather') gestGather = true;
+    else if (act !== 'off' && st.fired !== g && now - gestAt > 700) {
+      st.fired = g;
+      gestAt = now;
+      gestMoment(act, now, toSx(hd.x[9]), toSy(hd.y[9]));
+      if (act !== 'save' && act !== 'preset' && act !== 'mine') showToast(`${def[2]}  ${label(G_ACTIONS, act)}`);
+    }
+  });
+  for (let k = settings.gestOn ? cam.hands.length : 0; k < gState.length; k++) (gState[k].g = 'None'), (gState[k].fired = '');
+  gestShown = seen.join(' · ');
+}
+
+function gestMoment(act: GAction, now: number, x: number, y: number) {
+  if (act === 'explode') explode();
+  else if (act === 'ripple' || act === 'shockwave') addWave(act, x, y);
+  else if (act === 'scatter') scatter();
+  else if (act === 'colours') newPalette(now);
+  else if (act === 'warm') newPalette(now, WARM);
+  else if (act === 'mine') nextMine();
+  else if (act === 'clear') {
+    paintParked = false;
+    syncPaint();
+  } else if (act === 'preset') {
+    const fam = lastPresetFamily ?? 'camera';
+    const pool = PRESETS.filter(([nm]) => FAMILY_OF[nm] === fam);
+    const [nm, p] = pool[presetStep++ % pool.length];
+    playPreset(nm, p);
+  } else if (act === 'save') {
+    const name = `Gesture ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    myPresets.push({ name, settings: snapshot() });
+    writeJson(MY_PRESETS_KEY, myPresets);
+    redrawMine();
+    showToast(`Saved “${name}” to My presets`);
+  }
+}
+
+// Two hands (Gestures card): how far apart they are and the angle between
+// them turn live dials. Level hands a shoulder-width apart are neutral.
+const handDial = { zoom: 1, size: 1, flow: 1, speed: 1, roll: 0, hue: 0 };
+let twoLine: [Pt2, Pt2] | null = null;
+function twoHands() {
+  const S = settings;
+  const tgt = { zoom: 1, size: 1, flow: 1, speed: 1, roll: 0, hue: 0 };
+  twoLine = null;
+  if (cam.on && S.gestOn && cam.hands.length >= 2 && (S.twoDist !== 'off' || S.twoAngle !== 'off')) {
+    const p = cam.hands.slice(0, 2).map((hd) => ({ x: toSx(hd.x[9]), y: toSy(hd.y[9]) })).sort((a, b) => a.x - b.x);
+    twoLine = [p[0], p[1]];
+    const u = Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y) / (Math.min(w, h) * 0.5);
+    const ang = (Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x) * 180) / Math.PI;
+    if (S.twoDist === 'zoom') tgt.zoom = Math.max(0.8, Math.min(2.5, 1 + (u - 1) * 0.8));
+    else if (S.twoDist === 'size') tgt.size = Math.max(0.3, Math.min(3.5, u * u));
+    else if (S.twoDist === 'flow') tgt.flow = Math.max(0, Math.min(4, u * u));
+    else if (S.twoDist === 'speed') tgt.speed = Math.max(0.2, Math.min(3, u * u));
+    if (S.twoAngle === 'turn') tgt.roll = ang;
+    else if (S.twoAngle === 'hue') tgt.hue = ang * 3;
+  }
+  const k = 0.2;
+  for (const key of Object.keys(tgt) as (keyof typeof tgt)[]) handDial[key] += (tgt[key] - handDial[key]) * k;
+}
+
+// Hands or body as the shape: every particle sits on one bone of a tracked
+// skeleton (both hands, or the body with a round head), so the shape moves
+// with you.
+let skelEdge = new Int32Array(0);
+let skelT = new Float32Array(0);
+let skelJ = new Float32Array(0);
+let skelKey = '';
+const skelSmooth: { x: Float32Array; y: Float32Array }[] = [];
+function skelHomes() {
+  const pose = settings.camMode === 'pose';
+  // The body skips the small face lines: a round head reads better.
+  const edges = pose ? cam.poseEdges.filter((e) => e.start > 10 || e.end > 10) : cam.handEdges;
+  const list: { x: Float32Array; y: Float32Array }[] = pose ? cam.poses : cam.hands;
+  if (!edges.length || !list.length) return;
+  const key = `${settings.camMode}|${n}`;
+  if (key !== skelKey || skelEdge.length < n) {
+    skelKey = key;
+    skelEdge = new Int32Array(n);
+    skelT = new Float32Array(n);
+    skelJ = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      skelEdge[i] = pose && Math.random() < 0.18 ? -1 : (Math.random() * edges.length) | 0;
+      skelT[i] = Math.random();
+      skelJ[i] = (Math.random() - 0.5) * 2;
+    }
+  }
+  const sk = 0.55 + settings.camSnap * 0.4;
+  list.forEach((p, s) => {
+    let sm = skelSmooth[s];
+    if (!sm || sm.x.length !== p.x.length) sm = skelSmooth[s] = { x: p.x.slice(), y: p.y.slice() };
+    for (let k = 0; k < p.x.length; k++) {
+      sm.x[k] += (p.x[k] - sm.x[k]) * sk;
+      sm.y[k] += (p.y[k] - sm.y[k]) * sk;
+    }
+  });
+  const nl = Math.min(2, list.length);
+  // Screen positions of each skeleton's points, and its bone thickness.
+  const sx: Float32Array[] = [];
+  const sy: Float32Array[] = [];
+  const thick: number[] = [];
+  for (let s = 0; s < nl; s++) {
+    const sm = skelSmooth[s];
+    sx.push(Float32Array.from(sm.x, toSx));
+    sy.push(Float32Array.from(sm.y, toSy));
+    const a = pose ? 11 : 0;
+    const b = pose ? 12 : 9;
+    thick.push(Math.hypot(sx[s][a] - sx[s][b], sy[s][a] - sy[s][b]) * (pose ? 0.09 : 0.1) || 6);
+  }
+  for (let i = 0; i < n; i++) {
+    if (free[i]) continue;
+    const s = nl > 1 ? i % nl : 0;
+    const X = sx[s];
+    const Y = sy[s];
+    const e = skelEdge[i];
+    if (e < 0) {
+      // The head: a ring round the nose, a shoulder-width across.
+      const R = thick[s] * 3.6;
+      const a = skelT[i] * Math.PI * 2;
+      const r = R * (0.9 + skelJ[i] * 0.1);
+      hx[i] = X[0] + Math.cos(a) * r;
+      hy[i] = Y[0] - R * 0.2 + Math.sin(a) * r * 1.15;
+      continue;
+    }
+    const ed = edges[e % edges.length];
+    const x0 = X[ed.start];
+    const y0 = Y[ed.start];
+    const dx = X[ed.end] - x0;
+    const dy = Y[ed.end] - y0;
+    const d = Math.hypot(dx, dy) || 1;
+    const t = skelT[i];
+    const o = skelJ[i] * thick[s];
+    hx[i] = x0 + dx * t - (dy / d) * o;
+    hy[i] = y0 + dy * t + (dx / d) * o;
+  }
+}
+
+// Body (Body card): wrists sweep particles along with them, and a jump (the
+// hips rising fast) fires a moment.
+let sweepPts: { x: number; y: number; vx: number; vy: number; r: number }[] = [];
+const wristWas: ({ x: number; y: number; vx: number; vy: number } | null)[] = [null, null];
+let hipHist: { t: number; y: number }[] = [];
+let jumpAt = 0;
+function bodyForces(now: number) {
+  sweepPts = [];
+  const p = cam.poses[0];
+  if (!settings.poseOn || !p) {
+    wristWas[0] = wristWas[1] = null;
+    hipHist = [];
+    return;
+  }
+  const sw = Math.hypot(toSx(p.x[11]) - toSx(p.x[12]), toSy(p.y[11]) - toSy(p.y[12])) || 150;
+  [15, 16].forEach((k, s) => {
+    if (p.v[k] < 0.5) {
+      wristWas[s] = null;
+      return;
+    }
+    const x = toSx(p.x[k]);
+    const y = toSy(p.y[k]);
+    const was = wristWas[s];
+    const v = was ? { vx: was.vx * 0.6 + (x - was.x) * 0.4, vy: was.vy * 0.6 + (y - was.y) * 0.4 } : { vx: 0, vy: 0 };
+    wristWas[s] = { x, y, ...v };
+    markPts.push({ x, y });
+    if (settings.poseSweep > 0 && Math.hypot(v.vx, v.vy) > 0.8) sweepPts.push({ x, y, ...v, r: sw * 0.9 });
+  });
+  // Jump: the hips rise by a third of a shoulder width within half a second.
+  if (settings.poseJump === 'off' || p.v[23] < 0.5 || p.v[24] < 0.5) return;
+  const hy = (toSy(p.y[23]) + toSy(p.y[24])) / 2;
+  hipHist.push({ t: now, y: hy });
+  while (hipHist.length && hipHist[0].t < now - 500) hipHist.shift();
+  const low = Math.max(...hipHist.map((q) => q.y));
+  if (low - hy > sw * 0.35 && now - jumpAt > 1200) {
+    jumpAt = now;
+    hipHist = [];
+    const act = settings.poseJump;
+    if (act === 'explode') explode();
+    else if (act === 'shockwave') addWave('shockwave', (toSx(p.x[23]) + toSx(p.x[24])) / 2, hy);
+    else if (act === 'colours') newPalette(now);
+    else scatter();
+    showToast('Jump!');
+  }
+}
+
+// Face extras (Face extras card): a share of the particles leaves the shape
+// to become a mask effect (flames, a crown, tears…) or your voice, streaming
+// from the mouth. They live short lives and are reused round and round.
+let fxAx = 0;
+let fxAy = 0;
+let fxJit = 0;
+let poolFrom = 0;
+let poolTo = 0;
+let poolIdx = 0;
+const gaze = { x: 0, y: 0 };
+let pullPts: { x: number; y: number; r: number; f: number }[] = [];
+const FLAME_IDS = [10, 338, 297, 332, 284, 251, 389, 356, 127, 162, 21, 54, 103, 67, 109];
+const JAW_IDS = [132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361];
+function syncPool() {
+  const S = settings;
+  const want = cam.on && cam.face && (S.maskFx !== 'none' || S.voice) ? Math.round(n * S.maskShare) : 0;
+  const from = n - want;
+  if (from === poolFrom && n === poolTo) return;
+  for (let i = poolFrom; i < Math.min(poolTo, free.length); i++) {
+    if (!free[i]) continue;
+    free[i] = 0;
+    if (i < n) {
+      spawn(i, Math.random() * w, Math.random() * h);
+      dead[i] = paintParked ? 1 : 0;
+    }
+  }
+  for (let i = from; i < n; i++) {
+    free[i] = 1;
+    dead[i] = 1;
+  }
+  poolFrom = from;
+  poolTo = n;
+}
+
+// Next idle effect particle (or the oldest one if all are busy).
+function fxEmit(x: number, y: number, vX: number, vY: number, life: number, tn: number) {
+  const size = poolTo - poolFrom;
+  if (size <= 0) return;
+  let i = -1;
+  for (let q = 0; q < size; q++) {
+    const j = poolFrom + ((poolIdx + q) % size);
+    if (dead[j]) {
+      i = j;
+      poolIdx = (poolIdx + q + 1) % size;
+      break;
+    }
+  }
+  if (i < 0) i = poolFrom + (poolIdx++ % size);
+  dead[i] = 0;
+  px[i] = ox[i] = x;
+  py[i] = oy[i] = y;
+  vx[i] = vX;
+  vy[i] = vY;
+  age[i] = FADE_IN - 4;
+  span[i] = age[i] + Math.max(FADE_OUT * 0.6, life);
+  tone[i] = tn < 0 ? Math.random() : Math.max(0, Math.min(0.999, tn));
+  rnd[i] = Math.random();
+  pz[i] = 0.7 + Math.random() * 0.3;
+}
+
+function faceFx(now: number) {
+  const S = settings;
+  const f = cam.face;
+  fxAx = fxAy = fxJit = 0;
+  pullPts = [];
+  if (!f) return;
+  const X = (k: number) => toSx(f.x[k]);
+  const Y = (k: number) => toSy(f.y[k]);
+  const fw = Math.hypot(X(454) - X(234), Y(454) - Y(234)) || 100;
+  const u = fw / 220;
+  // The face's own up and right, so effects follow a tilt.
+  let upx = X(10) - X(152);
+  let upy = Y(10) - Y(152);
+  const ul = Math.hypot(upx, upy) || 1;
+  upx /= ul;
+  upy /= ul;
+  const rx = -upy;
+  const ry = upx;
+  // Where you look: the irises within the eyes, plus the head turn.
+  const eye = (iris: number, a: number, b: number, top: number, bot: number) => [
+    (X(iris) - (X(a) + X(b)) / 2) / (Math.abs(X(a) - X(b)) / 2 || 1),
+    (Y(iris) - (Y(top) + Y(bot)) / 2) / (Math.abs(Y(top) - Y(bot)) / 2 || 1),
+  ];
+  if (f.x.length > 473) {
+    const [lx, ly] = eye(468, 33, 133, 159, 145);
+    const [qx, qy] = eye(473, 362, 263, 386, 374);
+    const yaw = (X(1) - (X(234) + X(454)) / 2) / (fw * 0.25);
+    const gx = Math.max(-1, Math.min(1, ((lx + qx) / 2) * 1.6 + yaw * 0.8));
+    const gy = Math.max(-1, Math.min(1, ((ly + qy) / 2) * 1.2));
+    gaze.x += (gx - gaze.x) * 0.15;
+    gaze.y += (gy - gaze.y) * 0.15;
+  }
+  if (S.gaze === 'eyes' && f.x.length > 473) {
+    for (const k of [468, 473]) pullPts.push({ x: X(k), y: Y(k), r: fw * 0.9, f: 0.5 });
+  } else if (S.gaze === 'drift' && !(isCam() && faceMode())) {
+    pullPts.push({ x: w / 2 + gaze.x * w * 0.45, y: h / 2 + gaze.y * h * 0.45, r: Math.hypot(w, h), f: 0.05 });
+  }
+  const size = poolTo - poolFrom;
+  if (size <= 0) return;
+  const rate = (life: number, share = 1) => Math.max(1, Math.round((size / life) * share));
+  const rnd2 = () => Math.random() - 0.5;
+  const fx = S.maskFx;
+  if (fx === 'flames') {
+    fxAx = upx * 0.09 * u;
+    fxAy = upy * 0.09 * u;
+    fxJit = 0.25 * u;
+    for (let q = rate(50, S.voice ? 0.6 : 1); q > 0; q--) {
+      const k = FLAME_IDS[(Math.random() * FLAME_IDS.length) | 0];
+      const v = (0.5 + Math.random() * 2) * u;
+      fxEmit(X(k) + rnd2() * 6, Y(k) + rnd2() * 6, upx * v + rnd2() * u, upy * v + rnd2() * u, 30 + Math.random() * 40, Math.random() * 0.4);
+    }
+  } else if (fx === 'crown') {
+    fxJit = 0.05 * u;
+    const cx = X(10) + upx * fw * 0.1;
+    const cy = Y(10) + upy * fw * 0.1;
+    for (let q = rate(40, S.voice ? 0.6 : 1); q > 0; q--) {
+      // Five spikes over a band, the middle and outer ones tallest.
+      const j = ((Math.random() * 5) | 0) - 2;
+      const bx = cx + rx * j * fw * 0.14;
+      const by = cy + ry * j * fw * 0.14;
+      const tall = fw * (j % 2 === 0 ? 0.32 : 0.2);
+      const along = Math.random() < 0.3 ? 0 : Math.random();
+      const side = along === 0 ? rnd2() * fw * 0.14 : rnd2() * fw * 0.07 * (1 - along);
+      fxEmit(bx + upx * tall * along + rx * side, by + upy * tall * along + ry * side, rnd2() * 0.4 * u, rnd2() * 0.4 * u, 25 + Math.random() * 30, 0.7 + Math.random() * 0.29);
+    }
+  } else if (fx === 'tears') {
+    fxAx = -upx * 0.1 * u;
+    fxAy = -upy * 0.1 * u;
+    for (let q = rate(80, S.voice ? 0.5 : 0.8); q > 0; q--) {
+      const k = Math.random() < 0.5 ? 145 : 374;
+      const v = (0.3 + Math.random()) * u;
+      fxEmit(X(k) + rnd2() * fw * 0.08, Y(k) + rnd2() * 3, -upx * v + rnd2() * 0.3 * u, -upy * v + rnd2() * 0.3 * u, 50 + Math.random() * 50, 0.5 + Math.random() * 0.2);
+    }
+  } else if (fx === 'beard') {
+    fxAx = -upx * 0.04 * u;
+    fxAy = -upy * 0.04 * u;
+    fxJit = 0.08 * u;
+    for (let q = rate(90, S.voice ? 0.6 : 1); q > 0; q--) {
+      const t = Math.random() * (JAW_IDS.length - 1);
+      const k0 = JAW_IDS[t | 0];
+      const k1 = JAW_IDS[(t | 0) + 1];
+      const ft = t - (t | 0);
+      const v = (0.2 + Math.random() * 0.9) * u;
+      fxEmit(X(k0) + (X(k1) - X(k0)) * ft, Y(k0) + (Y(k1) - Y(k0)) * ft, -upx * v + rnd2() * 0.2 * u, -upy * v + rnd2() * 0.2 * u, 60 + Math.random() * 60, t / (JAW_IDS.length - 1));
+    }
+  } else if (fx === 'halo') {
+    const cx = X(10) + upx * fw * 0.32;
+    const cy = Y(10) + upy * fw * 0.32;
+    const spin = now / 900;
+    for (let q = rate(45, S.voice ? 0.6 : 1); q > 0; q--) {
+      const a = Math.random() * Math.PI * 2;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const ex = rx * ca * fw * 0.45 + upx * sa * fw * 0.11;
+      const ey = ry * ca * fw * 0.45 + upy * sa * fw * 0.11;
+      const tv = 0.8 * u;
+      fxEmit(cx + ex, cy + ey, (-rx * sa + upx * ca * 0.25) * tv, (-ry * sa + upy * ca * 0.25) * tv, 30 + Math.random() * 25, 0.8 + ((Math.sin(spin + a) + 1) / 2) * 0.19);
+    }
+  } else if (fx === 'lasers' && f.x.length > 473) {
+    // Beams go where you look (or out to the sides when looking ahead).
+    const dl = Math.hypot(gaze.x, gaze.y);
+    for (const k of [468, 473]) {
+      let bx = gaze.x;
+      let by = gaze.y;
+      if (dl < 0.25) {
+        bx = X(k) < (X(468) + X(473)) / 2 ? -1 : 1;
+        by = 0.15;
+      }
+      const bl = Math.hypot(bx, by) || 1;
+      const v = 24 * u;
+      for (let q = rate(50, 0.5); q > 0; q--) {
+        const j = rnd2() * 0.03;
+        fxEmit(X(k) + rnd2() * 2, Y(k) + rnd2() * 2, (bx / bl + j) * v, (by / bl + j) * v, 40 + Math.random() * 20, 0.92 + Math.random() * 0.07);
+      }
+    }
+  }
+  // Voice: the microphone streams particles from your mouth, coloured by pitch.
+  if (S.voice && audio.source !== 'off') {
+    const lvl = audio.levels.level;
+    if (lvl > 0.06) {
+      const mx = (X(13) + X(14)) / 2;
+      const my = (Y(13) + Y(14)) / 2;
+      const open = Math.min(1, Math.hypot(X(13) - X(14), Y(13) - Y(14)) / (fw * 0.15));
+      for (let q = Math.round(rate(60, 0.6) * Math.min(2, lvl * 2.5)); q > 0; q--) {
+        const a = rnd2() * (0.6 + open * 1.4);
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        // Out of the mouth: down the face, fanning wider as it opens.
+        const ddx = -upx * ca + rx * sa;
+        const ddy = -upy * ca + ry * sa;
+        const v = (2 + lvl * 9 + Math.random() * 2) * u;
+        fxEmit(mx + rnd2() * fw * 0.05, my + rnd2() * 3, ddx * v, ddy * v, 40 + Math.random() * 40, audio.pitch + rnd2() * 0.05);
+      }
+    }
+  }
+}
+
+// Silhouette obstacle: the body cut-out as a picture, in a given colour.
+let bodyFrame = 0;
+let bodyAt = 0;
+const bodyMasks = new Map<string, { frame: number; c: HTMLCanvasElement }>();
+function bodyMask(colour: string) {
+  const m = cam.body!;
+  let e = bodyMasks.get(colour);
+  if (!e) bodyMasks.set(colour, (e = { frame: -1, c: document.createElement('canvas') }));
+  if (e.frame === bodyFrame && e.c.width === m.w) return e.c;
+  e.frame = bodyFrame;
+  e.c.width = m.w;
+  e.c.height = m.h;
+  const g = e.c.getContext('2d')!;
+  const img = g.createImageData(m.w, m.h);
+  for (let k = 0; k < m.w * m.h; k++) {
+    img.data[k * 4] = img.data[k * 4 + 1] = img.data[k * 4 + 2] = 255;
+    img.data[k * 4 + 3] = m.data[k] > 0.5 ? 255 : 0;
+  }
+  g.putImageData(img, 0, 0);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = colour;
+  g.fillRect(0, 0, m.w, m.h);
+  return e.c;
+}
+
+// Mirror world: the left half, mirrored onto the right in other colours.
+const mBuf = document.createElement('canvas');
+const mCtx = mBuf.getContext('2d')!;
+function mirrorHalf() {
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const half = Math.floor(cw / 2);
+  if (mBuf.width !== half || mBuf.height !== ch) {
+    mBuf.width = half;
+    mBuf.height = ch;
+  }
+  mCtx.globalCompositeOperation = 'copy';
+  mCtx.drawImage(canvas, 0, 0, half, ch, 0, 0, half, ch);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.beginPath();
+  ctx.rect(cw - half, 0, half, ch);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'copy';
+  ctx.filter = 'hue-rotate(150deg)';
+  ctx.translate(cw, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(mBuf, 0, 0);
+  ctx.restore();
 }
 
 // Painting starts on an empty canvas: every particle waits, parked, until
@@ -2259,38 +2902,60 @@ function syncPreview() {
 }
 
 // Called every frame: track, then move the homes or re-sample the picture.
+function faceIdle() {
+  faceDial.flow = faceDial.size = faceDial.speed = 1;
+  faceGather = false;
+  faceRoll *= 0.9;
+  faceHue *= 0.9;
+  for (const [k] of EXPRESSIONS) exLevel[k] = 0;
+}
 function cameraTick(now: number) {
   syncPreview();
   if (!cam.on) {
     handPts = pinchPts = markPts = penPts = [];
+    erasePts = [];
+    sweepPts = [];
+    pullPts = [];
+    fxAx = fxAy = fxJit = 0;
+    gestFreeze = gestGather = false;
     syncPaint();
-    faceDial.flow = faceDial.size = faceDial.speed = 1;
-    faceGather = false;
-    faceRoll *= 0.9;
-    faceHue *= 0.9;
-    for (const [k] of EXPRESSIONS) exLevel[k] = 0;
+    syncPool();
+    twoHands();
+    faceIdle();
     return;
   }
-  const faceOn = isCam() && faceMode();
+  const faceOn = faceTracked();
   if (faceOn) cam.detectFaces(now);
-  if (handsOn()) cam.detectHands(now);
+  if (handsTracked()) cam.detectHands(now);
+  if (poseTracked()) cam.detectPose(now);
+  if (!handsTracked()) cam.hands = [];
+  if (!poseTracked()) cam.poses = [];
   updateCamMap();
-  if (faceOn) {
-    faceHomes();
-    faceExpressions(now);
-  } else {
-    faceDial.flow = faceDial.size = faceDial.speed = 1;
-    faceGather = false;
-    faceRoll *= 0.9;
-    faceHue *= 0.9;
-    for (const [k] of EXPRESSIONS) exLevel[k] = 0;
-  }
+  if (isCam() && faceMode()) faceHomes();
+  if (isCam() && skelMode()) skelHomes();
+  if (faceOn) faceExpressions(now);
+  else faceIdle();
   syncPaint();
+  syncPool();
   handForces();
+  handGestures(now);
+  twoHands();
+  bodyForces(now);
+  if (faceOn) faceFx(now);
+  else {
+    fxAx = fxAy = fxJit = 0;
+    pullPts = [];
+  }
   camColours(now);
-  if (isCam() && !faceOn && now - camLast > 1000 / settings.camRate) {
+  const rateMs = 1000 / settings.camRate;
+  if (bodyObs() && now - bodyAt > rateMs) {
+    bodyAt = now;
+    cam.segmentBody(now);
+    bodyFrame++;
+  }
+  if (isCam() && !trackMode() && now - camLast > rateMs) {
     camLast = now;
-    if (settings.camMode === 'body') cam.segmentBody(now);
+    if (settings.camMode === 'body' && !bodyObs()) cam.segmentBody(now);
     camFrameNo++;
     buildShape();
   }
@@ -2326,10 +2991,12 @@ function sampleImage(): [number, number][] {
   const W = Math.max(1, Math.round(w / step));
   const H = Math.max(1, Math.round(h / step));
   // The camera fills the screen (like a video call); images fit inside it.
-  const sc = (camOn ? Math.max : Math.min)((W * settings.shapeSize) / src.width, (H * settings.shapeSize) / src.height);
+  // Mirror world: the camera fills the left half (the right is its mirror).
+  const Wv = camOn && settings.mirrorWorld ? W / 2 : W;
+  const sc = (camOn ? Math.max : Math.min)((Wv * settings.shapeSize) / src.width, (H * settings.shapeSize) / src.height);
   const iw = Math.max(2, Math.round(src.width * sc));
   const ih = Math.max(2, Math.round(src.height * sc));
-  const ix = Math.round((W - iw) / 2);
+  const ix = Math.round((Wv - iw) / 2);
   const iy = Math.round((H - ih) / 2);
   const c = document.createElement('canvas');
   c.width = iw;
@@ -2424,8 +3091,8 @@ function buildShape() {
   const S = settings;
   const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : ''].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
-  if (S.shape === 'camera' && faceMode()) {
-    // Face modes: the homes follow the tracked face every frame (faceHomes).
+  if (S.shape === 'camera' && trackMode()) {
+    // Face, hand and body modes: the homes follow the tracking every frame.
     shapeKey = key;
     if (!cam.face) for (let i = 0; i < n; i++) {
       hx[i] = px[i];
@@ -2955,7 +3622,7 @@ function shadeIndex(i: number) {
     }
     case 'face': {
       // Each face feature its own colour; a second face shifted along.
-      const g = i < partGroup.length && isCam() && faceMode() ? partGroup[i] : -1;
+      const g = i < partGroup.length && isCam() && faceMode() && !free[i] ? partGroup[i] : -1;
       if (g < 0) { u = tone[i]; break; }
       u = (g + 0.5) / FACE_GROUPS;
       if (cam.faces.length > 1 && i % cam.faces.length === 1) u = (u + 0.5) % 1;
@@ -3488,7 +4155,7 @@ function draw() {
     else if (a > 0) fadeBuckets[Math.min(FADE_LEVELS - 1, (a * FADE_LEVELS) | 0)][shadeIndex(i)].push(i);
   }
 
-  const s = settings.size * audioSizeBoost() * faceDial.size;
+  const s = settings.size * audioSizeBoost() * faceDial.size * handDial.size;
   // Parallax: shift each depth layer a little with the camera, drawn by
   // offsetting positions just for this draw and putting them back after.
   const par = settings.depth > 0 && settings.depthParallax > 0;
@@ -3562,6 +4229,19 @@ function draw() {
       ctx.beginPath();
       ctx.arc(pp.x, pp.y, penPts.includes(pp) ? 6 : 14, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    for (const e of erasePts) {
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (twoLine) {
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(twoLine[0].x, twoLine[0].y);
+      ctx.lineTo(twoLine[1].x, twoLine[1].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
   for (const wv of waves) {
@@ -3710,11 +4390,12 @@ function frame(now: number) {
     // Stutter: a split-second freeze frame on each snare.
     const held = now < stutterUntil;
     const t0 = performance.now();
-    if (!held) step(dt);
+    if (!held && !gestFreeze) step(dt);
     const t1 = performance.now();
     if (!held) {
       draw();
       if (kaleidoNow >= 2) kaleidoscope(kaleidoNow);
+      if (settings.mirrorWorld) mirrorHalf();
     }
     const t2 = performance.now();
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
@@ -4023,7 +4704,7 @@ const ENTRANCES: [string, string][] = [
 ];
 const CAM_MODES: [string, string][] = [
   ['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['mixed', 'Features + a light mesh'],
-  ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
+  ['hands', 'Your hands (skeleton)'], ['pose', 'Your body (skeleton)'], ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
 const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['image', 'An image'], ['camera', 'Your camera'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
@@ -4150,8 +4831,9 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', about: 'Circles or a word the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow'],
     power: { on: () => settings.obstacles !== 'none', off: { obstacles: 'none' }, start: { obstacles: 'circles' } },
-    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : 'off') },
-  { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word']] },
+    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'body' ? 'your silhouette' : 'off') },
+  { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word'], ['body', 'Your silhouette (camera)']] },
+  { kind: 'range', key: 'camRate', label: 'Silhouette updates per second', min: 1, max: 15, step: 1, show: bodyObs },
   { kind: 'toggle', key: 'obsPlace', label: 'Click places or removes circles', show: () => settings.obstacles === 'circles' },
   { kind: 'range', key: 'obsRadius', label: 'Circle size', min: 15, max: 220, step: 5, format: (v) => `${v}px`, show: () => settings.obstacles === 'circles' },
   { kind: 'text', key: 'obsText', label: 'Word', placeholder: 'Type a word', show: () => settings.obstacles === 'text' },
@@ -4166,11 +4848,32 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'camHands', label: 'Hands', options: [['repel', 'Push away'], ['attract', 'Pull in'], ['vortex', 'Swirl'], ['draw', 'Draw (pinch is the pen)'], ['spray', 'Spray from your index fingers']] },
   { kind: 'range', key: 'camHandReach', label: 'Reach', min: 40, max: 400, step: 10, format: (v) => `${v}px`, show: () => !isPaint() },
   { kind: 'range', key: 'camHandForce', label: 'Strength', min: 0.1, max: 3, step: 0.05, format: pct, show: () => !isPaint() },
+  { kind: 'select', key: 'drawColour', label: 'Colour', options: [['flow', 'Rainbow along the stroke'], ['finger', 'A colour per finger']], show: () => settings.camHands === 'draw' },
+  { kind: 'toggle', key: 'drawWidth', label: 'Brush width: spread index and middle finger', show: () => settings.camHands === 'draw' },
+  { kind: 'toggle', key: 'drawErase', label: 'Open palm erases', show: () => settings.camHands === 'draw' },
   { kind: 'buttons', buttons: [['Clear the drawing', () => { paintParked = false; syncPaint(); }]], show: isPaint },
-  { kind: 'note', text: 'Draw: pinch thumb and index finger to put the pen down, open them to lift it. The oldest strokes are reused when you run out of particles (Count, Particles card). Spray: point your index finger.', show: isPaint },
+  { kind: 'note', text: 'Draw: pinch your thumb and index finger to put the pen down, open them to lift it. With a colour per finger, pinch the thumb to any finger. The oldest strokes are reused when you run out of particles (Count, Particles card). Spray: point your index finger.', show: isPaint },
   { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie' },
   { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview' },
-  { kind: 'note', show: () => !isPaint(), text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them. Uses the camera (asks once); the picture stays on this device.' },
+  { kind: 'note', show: () => !isPaint(), text: 'Works with any look. Pinch thumb and index finger to grab particles and drag them; flick and let go to throw them. Uses the camera (asks once); the picture stays on this device.' },
+
+  { kind: 'section', id: 'gestures', label: 'Gestures', tab: 'motion', about: 'Hand signs as switches, and two hands as dials.',
+    lock: ['gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle'],
+    power: { on: () => settings.gestOn, off: { gestOn: false }, start: { gestOn: true } },
+    summary: () => (settings.gestOn ? gestShown || `${GESTURES.filter(([k]) => settings[k] !== 'off').length} signs` : 'off') },
+  ...GESTURES.map(([k, , name]): Control => ({ kind: 'select', key: k, label: name, options: G_ACTIONS })),
+  { kind: 'sub', label: 'Two hands' },
+  { kind: 'select', key: 'twoDist', label: 'Hands apart', options: [['off', 'Nothing'], ['zoom', 'Zoom the view'], ['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed']] },
+  { kind: 'select', key: 'twoAngle', label: 'Tilt between them', options: [['off', 'Nothing'], ['turn', 'Turn the view'], ['hue', 'Shift the colours']] },
+  { kind: 'note', text: 'Hold a sign for a moment: it fires once (hold it again for another go). Freeze and Gather last while you hold them. Two hands a shoulder width apart and level is neutral; move them apart, together or tilt them. Works with any look; uses the camera.' },
+
+  { kind: 'section', id: 'body', label: 'Body', tab: 'motion', about: 'Your arms sweep the particles; jump for a moment.',
+    lock: ['poseOn', 'poseSweep', 'poseJump'],
+    power: { on: () => settings.poseOn, off: { poseOn: false }, start: { poseOn: true } },
+    summary: () => (settings.poseOn ? (cam.poses.length ? 'tracking you' : 'on') : 'off') },
+  { kind: 'range', key: 'poseSweep', label: 'Arms sweep', min: 0, max: 3, step: 0.1, format: (v) => (v === 0 ? 'off' : `${v.toFixed(1)}×`) },
+  { kind: 'select', key: 'poseJump', label: 'A jump does', options: [['off', 'Nothing'], ['explode', 'Explode'], ['shockwave', 'Shockwave'], ['colours', 'New colours'], ['scatter', 'Scatter']] },
+  { kind: 'note', text: 'Step back so the camera sees you from the hips up (the whole body for jumps). Shape → Your camera → Your body makes you the shape; Obstacles → Your silhouette makes particles flow round you.' },
 
   { kind: 'section', about: 'How particles react to your pointer and clicks.', id: 'pointer', label: 'Pointer & click', tab: 'motion', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
     power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
@@ -4208,7 +4911,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'camMode', 'camMirror', 'camCentre', 'camRate', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'life', lock: ['shape', 'shapeText', 'imageMode', 'camMode', 'camMirror', 'camCentre', 'camRate', 'mirrorWorld', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -4222,11 +4925,12 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'camMix', label: 'Features vs mesh', min: 0.1, max: 0.95, step: 0.05, format: (v) => `${Math.round(v * 100)}% features`, show: () => isCam() && settings.camMode === 'mixed' },
   { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie', show: isCam },
   { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview', show: isCam },
-  { kind: 'range', key: 'camSnap', label: 'Follow tightness', min: 0, max: 1, step: 0.05, format: (v) => (v < 0.2 ? 'loose' : v > 0.8 ? 'tight' : pct(v)), show: () => isCam() && faceMode() },
+  { kind: 'range', key: 'camSnap', label: 'Follow tightness', min: 0, max: 1, step: 0.05, format: (v) => (v < 0.2 ? 'loose' : v > 0.8 ? 'tight' : pct(v)), show: () => isCam() && trackMode() },
   { kind: 'toggle', key: 'camCentre', label: 'Keep the face centred and sized', show: () => isCam() && faceMode() },
   { kind: 'toggle', key: 'camDepth', label: 'Real depth: near parts bigger (turns on 3D depth)', show: () => isCam() && faceMode() },
-  { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => isCam() && !faceMode() },
-  { kind: 'note', text: 'Two people in view each get a face (half the particles each). Colour by Face features or Camera colours on the Look tab. The picture stays on this device; tracking downloads a small model the first time.', show: isCam },
+  { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => isCam() && !trackMode() },
+  { kind: 'toggle', key: 'mirrorWorld', label: 'Mirror world: the left half reflected in other colours', show: isCam },
+  { kind: 'note', text: 'Two people (or two hands) in view each get half the particles. Colour by Face features or Camera colours on the Look tab. The picture stays on this device; tracking downloads a small model the first time.', show: isCam },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
   { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
   { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && !isCam() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
@@ -4246,6 +4950,17 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'exSense', label: 'Sensitivity', min: 0.5, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×` },
   ...EXPRESSIONS.map(([k, name]): Control => ({ kind: 'select', key: k, label: name, options: EX_ACTIONS })),
   { kind: 'note', text: 'A moment fires once as the expression starts. While held lasts as long as you hold it. An amount follows how strong the expression is.' },
+
+  { kind: 'section', id: 'facefx', label: 'Face extras', tab: 'life', about: 'Flames, a crown or tears on your face; your gaze and voice move particles.',
+    lock: ['maskFx', 'maskShare', 'gaze', 'voice'],
+    power: { on: faceExtras, off: { maskFx: 'none', gaze: 'off', voice: false }, start: { maskFx: 'flames' } },
+    summary: () => [settings.maskFx !== 'none' ? settings.maskFx : '', settings.gaze !== 'off' ? 'gaze' : '', settings.voice ? 'voice' : ''].filter(Boolean).join(', ') || 'off' },
+  { kind: 'select', key: 'maskFx', label: 'Mask', options: [['none', 'None'], ['flames', 'Flame hair'], ['crown', 'Crown of sparks'], ['tears', 'Tears'], ['beard', 'Rainbow beard'], ['halo', 'Halo'], ['lasers', 'Laser eyes']] },
+  { kind: 'range', key: 'maskShare', label: 'Particles for the mask and voice', min: 0.1, max: 0.8, step: 0.05, format: pct, show: () => settings.maskFx !== 'none' || settings.voice },
+  { kind: 'select', key: 'gaze', label: 'Your gaze', options: [['off', 'Nothing'], ['drift', 'Particles drift where you look'], ['eyes', 'Your eyes pull particles in']] },
+  { kind: 'toggle', key: 'voice', label: 'Voice: sing or talk and particles stream from your mouth' },
+  { kind: 'buttons', buttons: [['Use the microphone', () => void audio.start('mic')]], show: () => settings.voice && audio.source === 'off' },
+  { kind: 'note', text: 'Voice colours follow your pitch: low notes one end of the palette, high notes the other. Works with any look; with Shape → Your camera → a face mode the effects sit on the particle face.' },
 
   // --- Sound ---
   { kind: 'section', id: 'audio', label: 'Audio', tab: 'sound', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : ` · ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
@@ -4459,6 +5174,23 @@ const PRESETS: [string, Partial<Settings>][] = [
   ['Finger sparks', { count: 2500, size: 1.4, render: 'sparkles', camHands: 'spray', gravity: 1, edges: 'bounce', flow: 0, jitter: 0.02, friction: 0.02, trail: 0.75, renew: 0, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
   ['Hand magnets', { count: 3000, size: 1.2, render: 'comets', camHands: 'attract', camHandReach: 250, camHandForce: 1.4, flow: 0.2, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.1, trail: 0.85, friction: 0.03, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
   ['Force field', { count: 1800, size: 1.6, render: 'links', linkDist: 45, shape: 'grid', shapeSize: 0.95, camHands: 'repel', camHandReach: 130, camHandForce: 2, flow: 0, trail: 0, friction: 0.06, jitter: 0, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 120, force: 1.2, click: 'none' }],
+  ['Gesture DJ', { count: 3500, size: 1.3, render: 'comets', gestOn: true, gFist: 'explode', gPalm: 'freeze', gVictory: 'colours', gThumbUp: 'save', gLove: 'shockwave', gPoint: 'ripple', gThumbDown: 'scatter', twoDist: 'zoom', twoAngle: 'turn', camHands: 'off', flow: 0.5, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.88, friction: 0.03, jitter: 0.01, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Stretch', { count: 3000, size: 1.5, render: 'glow', shape: 'sunflower', shapeSize: 0.7, homeStrength: 1, gestOn: true, gFist: 'gather', gPalm: 'off', gVictory: 'off', gThumbUp: 'off', gLove: 'off', twoDist: 'size', twoAngle: 'hue', flow: 0.1, flowType: 'curl', trail: 0.6, friction: 0.08, jitter: 0, palette: 'aurora', colorBy: 'radial', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Hand skeleton', { count: 3000, size: 1.4, render: 'glow', shape: 'camera', camMode: 'hands', camSnap: 0.8, homeStrength: 2, flow: 0.05, flowType: 'curl', trail: 0.6, friction: 0.1, jitter: 0.01, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Throw', { count: 2500, size: 1.6, render: 'comets', shape: 'grid', shapeSize: 0.85, homeStrength: 0.6, camHands: 'repel', camHandReach: 120, camHandForce: 0.6, flow: 0, trail: 0.8, friction: 0.025, jitter: 0, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Finger paint', { count: 9000, size: 1.6, render: 'circles', camHands: 'draw', drawColour: 'finger', drawWidth: true, drawErase: true, flow: 0, jitter: 0, friction: 0.3, trail: 0.3, renew: 0, palette: 'candy', colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Flame head', { count: 4500, size: 1.4, render: 'glow', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', maskFx: 'flames', maskShare: 0.45, trail: 0.75, palette: 'ember' }],
+  ['Crying rainbow', { count: 4000, size: 1.4, render: 'glow', shape: 'camera', camMode: 'face', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', maskFx: 'tears', maskShare: 0.3, trail: 0.7, palette: 'rainbow' }],
+  ['Laser eyes', { count: 4000, size: 1.3, render: 'streaks', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', maskFx: 'lasers', maskShare: 0.4, trail: 0.7, palette: 'infra' }],
+  ['Wizard beard', { count: 4500, size: 1.3, render: 'glow', shape: 'camera', camMode: 'face', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', maskFx: 'beard', maskShare: 0.45, trail: 0.6, palette: 'rainbow' }],
+  ['Angel halo', { count: 4000, size: 1.3, render: 'sparkles', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', maskFx: 'halo', maskShare: 0.35, trail: 0.7, palette: 'gold' }],
+  ['Crown', { count: 4000, size: 1.3, render: 'sparkles', shape: 'camera', camMode: 'mixed', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', maskFx: 'crown', maskShare: 0.35, trail: 0.6, palette: 'gold' }],
+  ['Singer', { count: 4500, size: 1.4, render: 'glow', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', voice: true, maskShare: 0.45, trail: 0.75, palette: 'aurora' }],
+  ['Eye contact', { count: 3000, size: 1.2, render: 'comets', gaze: 'drift', flow: 0.3, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.1, trail: 0.88, friction: 0.03, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Dancer', { count: 4000, size: 1.5, render: 'glow', shape: 'camera', camMode: 'pose', camSnap: 0.7, homeStrength: 2, poseOn: true, poseSweep: 1, poseJump: 'explode', flow: 0.05, flowType: 'curl', trail: 0.7, friction: 0.08, jitter: 0.01, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Arm sweep', { count: 4000, size: 1.1, render: 'streaks', poseOn: true, poseSweep: 1.6, poseJump: 'shockwave', flow: 0.3, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.1, trail: 0.88, friction: 0.03, jitter: 0.01, palette: 'ocean', colorBy: 'speed', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Rain on me', { count: 3500, size: 1.2, render: 'streaks', obstacles: 'body', obsShow: true, obsForce: 1.6, camRate: 10, emitter: 'line', emitMode: 'steady', emitRate: 0.5, emitX: 0.5, emitY: 0.02, emitSize: 2400, emitAngle: 0, emitOut: false, launchSpeed: 1.5, launchDir: 90, launchSpread: 10, lifespan: 4, lifeFade: 'out', gravity: 1, flow: 0, trail: 0.8, friction: 0.01, jitter: 0.02, palette: 'ocean', colorBy: 'age', glow: true, pointerMode: 'none', click: 'none' }],
+  ['Twins', { count: 4000, size: 1.4, render: 'glow', shape: 'camera', camMode: 'features', camCentre: true, shapeSize: 0.75, homeStrength: 2, flow: 0, friction: 0.08, jitter: 0, colorBy: 'palette', glow: true, pointerMode: 'none', click: 'none', mirrorWorld: true, trail: 0.6, palette: 'cyber', camTriggers: true }],
   ['Hand play', { count: 3500, size: 1.4, render: 'glow', shape: 'text', shapeText: 'HANDS', camHands: 'repel', camHandReach: 170, camHandForce: 1.4, flow: 0, trail: 0.6, friction: 0.08, jitter: 0.01, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Hand swirl', { count: 3000, size: 1.1, render: 'streaks', camHands: 'vortex', camHandReach: 220, camHandForce: 1.2, flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.9, friction: 0.04, jitter: 0.01, palette: 'cosmic', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
   ['Portrait', { count: 6000, size: 1.2, render: 'dots', shape: 'image', imageMode: 'auto', shapeSize: 0.9, entrance: 'drift', flow: 0.05, flowType: 'curl', trail: 0.3, friction: 0.05, jitter: 0.01, palette: 'mono', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 90, force: 0.8, click: 'shockwave' }],
@@ -4498,7 +5230,7 @@ const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
   ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
   ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait'],
-  ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl, Light painting, Smoke drawing, Neon graffiti, Finger sparks, Hand magnets, Force field'],
+  ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl, Light painting, Smoke drawing, Neon graffiti, Finger sparks, Hand magnets, Force field, Gesture DJ, Stretch, Hand skeleton, Throw, Finger paint, Flame head, Crying rainbow, Laser eyes, Wizard beard, Angel halo, Crown, Singer, Eye contact, Dancer, Arm sweep, Rain on me, Twins'],
   ['currents', 'Drift, Silk, Dusk, Ink, Prism, Neon storm, Silk ribbons, Heat, Marbled paper, Northern lights'],
   ['weather', 'Snowfall, Embers, Fireflies, Bubbles, Rainstorm, Sandstorm, Pollen'],
   ['swarms', 'Starlings, Marbles, School of fish, Midges, Crowd'],
@@ -4612,7 +5344,7 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'gFist', 'gPalm', 'gPoint', 'gThumbUp', 'gThumbDown', 'gVictory', 'gLove', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'poseJump'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off') {
@@ -4782,7 +5514,8 @@ function musicVisuals(now: number) {
     if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
     if (S.audioInvert && L.dropEnv > 0.55) parts.push('invert(1)');
   }
-  if (Math.abs(faceHue) > 0.5) parts.push(`hue-rotate(${faceHue.toFixed(1)}deg)`);
+  const hueCam = faceHue + handDial.hue;
+  if (Math.abs(hueCam) > 0.5) parts.push(`hue-rotate(${hueCam.toFixed(1)}deg)`);
   const filter = parts.join(' ');
   if (filter !== lastFilter) canvas.style.filter = lastFilter = filter;
 
@@ -4826,12 +5559,12 @@ function musicVisuals(now: number) {
   if (on && S.audioRoll > 0 && L.snare) rollSign = -rollSign;
   const rollT = on && S.audioRoll > 0 ? rollSign * S.audioRoll * 5 : 0;
   rollNow += (rollT - rollNow) * Math.min(1, dt * 10);
-  const rollAll = rollNow + faceRoll * 0.8;
+  const rollAll = rollNow + faceRoll * 0.8 + handDial.roll;
   const rollZ = 1 + Math.abs(Math.sin((rollAll * Math.PI) / 180)) * (Math.max(w, h) / Math.min(w, h));
   // Flip: mirror the view at each drop.
   if (on && S.audioFlip && L.drop) flipS = -flipS;
   if (!on || !S.audioFlip) flipS = 1;
-  const scale = zoom * cutZoom * dollyNow * panZ * rollZ;
+  const scale = zoom * cutZoom * dollyNow * panZ * rollZ * handDial.zoom;
   tx += cutX + panX;
   ty += cutY + panY;
   let transform = '';
@@ -5057,11 +5790,15 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
     else if (!g) homeGlide = null;
   }
   // The camera turns on with the camera shape and off without it.
-  if (keys.has('shape') || keys.has('camHands')) {
+  if (CAM_KEYS.some((k) => keys.has(k))) {
     if (camWanted() && !cam.on) void startCamera();
     else if (!camWanted() && cam.on) stopCamera();
+    else if (cam.on) syncTrackers();
   }
-  if (cam.on && (keys.has('camMode') || keys.has('camHands') || keys.has('shape'))) syncTrackers();
+  if (keys.has('mirrorWorld') && isCam()) {
+    shapeKey = '';
+    buildShape();
+  }
   if (keys.has('camDepth') && settings.camDepth && settings.depth === 0) {
     settings.depth = 0.7;
     refresh();
