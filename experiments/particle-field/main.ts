@@ -85,6 +85,7 @@ let hy = new Float32Array(0);
 let pz = new Float32Array(0); // depth: 0 far, 1 near
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 let free = new Float32Array(0); // 1 for face-effect particles: no home, short life
+let gone = new Float32Array(0); // seconds when it started fading out (count going down), 0 = staying
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
 const FADE_IN = 45;
@@ -123,7 +124,7 @@ function ensureCount(want = countNow()) {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone].map(grow);
     cap = want;
   }
   // With a shape on, newcomers appear beside an existing particle, so they
@@ -139,9 +140,29 @@ function ensureCount(want = countNow()) {
       hy[i] = hy[j];
     } else spawn(i, Math.random() * w, Math.random() * h);
     dead[i] = settings.emitter !== 'none' ? 1 : 0;
+    gone[i] = 0;
   }
   n = want;
 }
+
+// Fewer particles: the extra ones fade out over a moment and are dropped once
+// faded, instead of vanishing. More: any that were fading come back first.
+const OUT_SEC = 0.9;
+function setCount(want: number) {
+  for (let i = 0; i < Math.min(want, n); i++) gone[i] = 0;
+  if (want >= n) return ensureCount(want);
+  const now = performance.now() / 1000;
+  for (let i = want; i < n; i++) if (!gone[i]) gone[i] = now;
+  trimGone();
+}
+function trimGone() {
+  const now = performance.now() / 1000;
+  const was = n;
+  while (n > 0 && gone[n - 1] && now - gone[n - 1] >= OUT_SEC) gone[--n] = 0;
+  // A shape gave spots to the ones that left: re-fit once they're gone.
+  if (n < was && settings.shape !== 'none') densityFit = performance.now() + 250;
+}
+let fadeClock = 0;
 
 function spawn(i: number, x: number, y: number) {
   px[i] = ox[i] = x;
@@ -181,7 +202,8 @@ function depthK(base: number, d: number) {
 
 function fadeOf(i: number) {
   if (dead[i]) return 0;
-  return fadeLife(i) * (settings.depth > 0 ? depthK(0.3 + pz[i] * 0.7, settings.depth) : 1);
+  const out = gone[i] ? Math.max(0, 1 - (fadeClock - gone[i]) / OUT_SEC) : 1;
+  return out * fadeLife(i) * (settings.depth > 0 ? depthK(0.3 + pz[i] * 0.7, settings.depth) : 1);
 }
 
 function fadeLife(i: number) {
@@ -799,8 +821,11 @@ function step(dt: number) {
   const handR2 = handR * handR;
   const handF = settings.camHandForce * 0.9;
   const ob = obstacleField();
-  const obF = settings.obsForce;
-  const wellF = settings.wellForce * 0.12;
+  const fin = forceIn ? Math.min(1, (performance.now() - forceIn.start) / forceIn.dur) : 1;
+  if (fin >= 1) forceIn = null;
+  const finE = fin * fin * (3 - 2 * fin);
+  const obF = settings.obsForce * finE;
+  const wellF = settings.wellForce * 0.12 * finE;
   const wellReach = settings.wellRange;
   const emitting = settings.emitter !== 'none';
   // Form & dissolve: the pull fades out and back in on a cycle.
@@ -4285,6 +4310,7 @@ function draw() {
   }
   for (const bk of buckets) bk.length = 0;
   for (const lv of fadeBuckets) for (const bk of lv) bk.length = 0;
+  fadeClock = performance.now() / 1000;
   updateSizes();
   for (let i = 0; i < n; i++) {
     const a = fadeOf(i);
@@ -4657,8 +4683,14 @@ function runMacros() {
 // little each frame (fade). A shape is re-fitted once it settles.
 let densityFit = 0;
 function densityTick(now: number) {
+  trimGone();
   const want = countNow();
   if (want === n || morphState) return;
+  if (want < n) {
+    setCount(want);
+    if (settings.shape !== 'none') densityFit = now + 250;
+    return;
+  }
   if (settings.densityMode === 'pop') {
     if (want < n) n = want;
     else ensureCount(want);
@@ -5595,6 +5627,27 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   tlHold([k]);
 }
 
+// Lenses (and the kaleidoscope) are a layer over the scenes: the ones you set
+// yourself carry from scene to scene. One that a scene turns on lasts only
+// for that scene; the next scene goes back to yours.
+const LENS_KEYS = ['lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt', 'audioKaleido', 'audioKaleidoDrop'] as const;
+const MYLENS_KEY = 'particle-field:mylens';
+// Until you set one, yours are the defaults (all off), whatever a scene left on.
+const myLens: Partial<Settings> = readJson<Partial<Settings>>(MYLENS_KEY, Object.fromEntries(LENS_KEYS.map((k) => [k, DEFAULTS[k]])));
+function noteMyLens(keys: Iterable<keyof Settings>) {
+  let any = false;
+  for (const k of keys) {
+    if (!(LENS_KEYS as readonly string[]).includes(k)) continue;
+    (myLens as Record<string, unknown>)[k] = settings[k];
+    any = true;
+  }
+  if (any) {
+    try {
+      localStorage.setItem(MYLENS_KEY, JSON.stringify(myLens));
+    } catch {}
+  }
+}
+
 // Visual presets, shuffle and reset keep the audio settings you've tuned.
 const audioSettings = (): Partial<Settings> =>
   Object.fromEntries(Object.entries(settings).filter(([k]) => k.startsWith('audio')));
@@ -5603,7 +5656,7 @@ const audioSettings = (): Partial<Settings> =>
 // too: no look switches them, so auto VJ can't turn itself off.
 const MUSIC_KEYS = [
   'audioVibeLook', 'audioDrop', 'audioDropBuild', 'audioVj', 'audioVjFrom', 'audioVjDrop', 'audioBands', 'audioHue', 'audioHueAmt', 'audioBright', 'audioCam', 'audioSpin',
-  'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip', 'audioTunnel', 'audioTunnelTurn', 'audioKaleido', 'audioKaleidoDrop', 'audioEcho',
+  'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip', 'audioTunnel', 'audioTunnelTurn', 'audioEcho',
   'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert', 'audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway',
   'audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop',
 ] as const;
@@ -5630,6 +5683,8 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   // Drawing and spraying belong to their look, so they don't carry over.
   const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
+  // Lenses the scene doesn't set go back to your own, not the last scene's.
+  for (const k of LENS_KEYS) if (!(k in p) && k in myLens) (hands as Record<string, unknown>)[k] = myLens[k];
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   // Locked cards keep what they have, whichever scene loads.
   for (const k of lockedKeys()) (target as unknown as Record<string, unknown>)[k] = settings[k];
@@ -5656,6 +5711,7 @@ let pendingLook: { target: Settings; since: number } | null = null;
 let glideHomes: { ms: number; fromFree: boolean } | null = null;
 let homeGlide: { fx: Float32Array; fy: Float32Array; tx: Float32Array; ty: Float32Array; start: number; dur: number; dl?: Float32Array } | null = null;
 
+let forceIn: { start: number; dur: number } | null = null;
 function morphTo(target: Settings, morphSec = settings.morph) {
   const dur = morphSec * 1000;
   if (dur <= 0) {
@@ -5693,6 +5749,10 @@ function morphTo(target: Settings, morphSec = settings.morph) {
     }
     glideHomes = { ms: dur, fromFree: S.shape === 'none' };
   }
+  // New attractor points or obstacles: their pull grows over the morph.
+  if ((['wells', 'obstacles', 'obsCircles', 'obsText'] as const).some((k) => instant.has(k)) && (T.wells || T.obstacles !== 'none')) forceIn = { start: now, dur };
+  // Styles and modes can't glide, so the old picture fades out over the new.
+  if ((['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter'] as const).some((k) => instant.has(k))) pictureFade(Math.min(2.5, Math.max(0.6, morphSec * 0.4)));
   const palChanged = instant.has('palette') || instant.has('customColors') || instant.has('customBg');
   if (palChanged) palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur, tick: 0 };
   for (const k of instant) S[k] = T[k];
@@ -6010,12 +6070,12 @@ function vjNext() {
 // A setlist of scenes, each for a number of bars, changing on the bar. The
 // clock is the music's (once a tempo is found) or a tempo you set or tap.
 // Kept apart from Settings so scenes never overwrite the set.
-type TlHow = 'cut' | 'morph' | 'slow' | 'drop' | 'gather' | 'implode' | 'fade' | 'flash' | 'whirl' | 'grow' | 'wipe' | 'freeze' | 'shatter';
+type TlHow = 'xfade' | 'cut' | 'morph' | 'slow' | 'vslow' | 'drop' | 'gather' | 'implode' | 'fade' | 'flash' | 'whirl' | 'grow' | 'wipe' | 'freeze' | 'shatter';
 type TlClip = { name: string; mine?: boolean; bars: number; how: TlHow; word?: string };
 type Timeline = { words?: string; on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden'; hold: boolean; held: Record<string, unknown> };
 const TL_KEY = 'particle-field:timeline';
 const TL_HOW: [TlHow, string][] = [
-  ['cut', 'Cut'], ['morph', 'Morph'], ['slow', 'Slow morph'], ['drop', 'Drop'], ['gather', 'Gather & burst'], ['implode', 'Implode'],
+  ['cut', 'Cut'], ['morph', 'Morph (1 bar)'], ['slow', 'Slow morph (2 bars)'], ['vslow', 'Very slow (4 bars)'], ['drop', 'Drop'], ['gather', 'Gather & burst'], ['implode', 'Implode'],
   ['fade', 'Fade through black'], ['flash', 'Flash'], ['whirl', 'Whirl'], ['grow', 'Grow'], ['wipe', 'Wipe'], ['freeze', 'Freeze'], ['shatter', 'Shatter'],
 ];
 
@@ -6044,10 +6104,20 @@ function tlSnapshot() {
   g.drawImage(src, 0, 0);
 }
 
+// A plain crossfade of the picture, for morphs whose style can't glide.
+// Leaves any timeline transition that is already drawing alone.
+function pictureFade(sec: number) {
+  if (tlFx && tlFx.how !== 'xfade') return;
+  tlSnapshot();
+  const now = performance.now();
+  tlFx = { how: 'xfade', start: now, dur: sec * 1000, switchAt: now, go: null };
+}
+
 function tlTransition(how: TlHow, go: (morph: number) => void) {
   const bar = tlBarSec;
   const now = performance.now();
-  const morphStd = Math.min(2.5, Math.max(0.5, bar / 2));
+  // Morphs are measured in bars, so they feel the same at any tempo.
+  const morphStd = Math.min(6, Math.max(0.5, bar));
   tlFx = null;
   tlGatherNow = false;
   whirlNow = 0;
@@ -6056,7 +6126,9 @@ function tlTransition(how: TlHow, go: (morph: number) => void) {
     case 'cut':
       return go(0);
     case 'slow':
-      return go(Math.min(4, bar));
+      return go(Math.min(12, Math.max(1, bar * 2)));
+    case 'vslow':
+      return go(Math.min(24, Math.max(2, bar * 4)));
     case 'drop':
       explode();
       return go(morphStd);
@@ -6136,7 +6208,7 @@ function makeShards(W: number, H: number): Shard[] {
 // and draw its overlay.
 function tlFxFrame(now: number) {
   const f = tlFx;
-  const need = !!f && ['fade', 'flash', 'wipe', 'freeze', 'shatter'].includes(f.how);
+  const need = !!f && ['xfade', 'fade', 'flash', 'wipe', 'freeze', 'shatter'].includes(f.how);
   if (fxCanvas.hidden === need) fxCanvas.hidden = !need;
   if (!f) return;
   const u = Math.min(1, (now - f.start) / f.dur);
@@ -6171,6 +6243,9 @@ function tlFxFrame(now: number) {
       lg.addColorStop(1, 'rgb(255 255 255 / 0.3)');
       g.fillStyle = lg;
       g.fillRect(e - 28, 0, 30, H);
+    } else if (f.how === 'xfade') {
+      g.globalAlpha = 1 - u * u * (3 - 2 * u);
+      g.drawImage(fxSnap, 0, 0);
     } else if (f.how === 'freeze') {
       g.globalAlpha = u < 0.3 ? 1 : 1 - (u - 0.3) / 0.7;
       g.drawImage(fxSnap, 0, 0);
@@ -6234,6 +6309,7 @@ const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3',
 let tlChips: (() => void) | null = null;
 // A change you make while the timeline plays sticks for the rest of the set.
 function tlHold(keys: Iterable<keyof Settings>) {
+  noteMyLens(keys);
   if (!tlActive() || !tl.hold) return;
   let any = false;
   for (const k of keys) {
@@ -6843,8 +6919,7 @@ function tickMorph(now: number, beat: boolean) {
   for (const k in m.to) if (intKeys.has(k)) S[k] = Math.round(S[k]);
   if ('count' in m.to) {
     S.count = S.count < 100 ? Math.round(S.count) : Math.round(S.count / 10) * 10;
-    n = Math.min(n, countNow());
-    ensureCount();
+    setCount(countNow());
   }
   if (u >= 1) {
     morphState = null;
@@ -6863,10 +6938,7 @@ function bgNow(): Rgb {
 let prevEmitter: Emitter = settings.emitter;
 function changed(keys: Set<keyof Settings>, morphing = false) {
   save();
-  if (keys.has('count')) {
-    n = Math.min(n, countNow());
-    ensureCount();
-  }
+  if (keys.has('count')) setCount(countNow());
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
   if (keys.has('shape') || keys.has('shapeText') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
     const g = glideHomes && settings.shape !== 'none' ? glideHomes : null;
