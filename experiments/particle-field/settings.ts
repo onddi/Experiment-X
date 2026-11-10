@@ -225,6 +225,13 @@ export interface Settings {
   audioTunnel: number;
   audioTunnelTurn: 'none' | 'left' | 'right' | 'rock';
   audioKaleido: number;
+  // Lens: effects on the finished frame (Look tab).
+  lensMirror: 'off' | 'lr' | 'tb' | 'quad';
+  lensTiles: number;
+  lensZoom: number;
+  lensSplit: number;
+  lensGlitch: number;
+  lensDots: number;
   audioKaleidoDrop: boolean;
   audioEcho: number;
   audioPalEvery: number;
@@ -473,6 +480,12 @@ export const DEFAULTS: Settings = {
   audioTunnel: 0,
   audioTunnelTurn: 'none',
   audioKaleido: 0,
+  lensMirror: 'off',
+  lensTiles: 0,
+  lensZoom: 0,
+  lensSplit: 0,
+  lensGlitch: 0,
+  lensDots: 0,
   audioKaleidoDrop: false,
   audioEcho: 0,
   audioPalEvery: 0,

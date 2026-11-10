@@ -25,6 +25,9 @@ body {
 
 .stage { flex: 1; min-width: 0; position: relative; overflow: hidden; }
 canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+/* Lens: effects drawn over the field (the field canvas hides but still takes input). */
+canvas.lens { position: absolute; inset: 0; pointer-events: none; cursor: auto; }
+canvas.lens[hidden] { display: none; }
 .stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
 .hint {

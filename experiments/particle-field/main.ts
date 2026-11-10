@@ -3638,6 +3638,224 @@ function kaleidoscope(seg: number) {
   ctx.restore();
 }
 
+// --- Lens ------------------------------------------------------------------------
+// Effects on the finished frame. They draw onto a second canvas shown over
+// the real one (which goes invisible but still takes the pointer), so they
+// never feed back into the trails: tiles stay tiles instead of compounding.
+const lensCanvas = document.createElement('canvas');
+lensCanvas.className = 'lens';
+lensCanvas.setAttribute('aria-hidden', 'true');
+lensCanvas.hidden = true;
+canvas.after(lensCanvas);
+const lensCtx = lensCanvas.getContext('2d')!;
+const lensBuf = document.createElement('canvas');
+const lensBufCtx = lensBuf.getContext('2d')!;
+const splitBuf = document.createElement('canvas');
+const splitCtx = splitBuf.getContext('2d')!;
+const dotsSmall = document.createElement('canvas');
+const dotsSmallCtx = dotsSmall.getContext('2d')!;
+let dotsMask: { cell: number; pat: CanvasPattern } | null = null;
+let lensJolt = 0; // colour split kick, 1 → 0
+let glitchBands: { y: number; h: number; dx: number; until: number }[] = [];
+let glitchNext = 0;
+const lensOn = () => {
+  const S = settings;
+  return S.lensMirror !== 'off' || S.lensTiles >= 2 || S.lensZoom > 0 || S.lensSplit > 0 || S.lensGlitch > 0 || S.lensDots > 0;
+};
+
+function lensFrame(now: number) {
+  const on = lensOn();
+  if (lensCanvas.hidden === on) {
+    lensCanvas.hidden = !on;
+    canvas.style.opacity = on ? '0' : '';
+  }
+  if (!on) return;
+  const S = settings;
+  const cw = canvas.width;
+  const ch = canvas.height;
+  for (const c of [lensCanvas, lensBuf]) if (c.width !== cw || c.height !== ch) (c.width = cw), (c.height = ch);
+  if (lensCanvas.style.filter !== canvas.style.filter) lensCanvas.style.filter = canvas.style.filter;
+  if (lensCanvas.style.transform !== canvas.style.transform) lensCanvas.style.transform = canvas.style.transform;
+  const g = lensCtx;
+  const [br, bg, bb] = bgNow();
+  const bgCol = `rgb(${br} ${bg} ${bb})`;
+  const L = audio.levels;
+  const music = audio.source !== 'off';
+  // Each step reads the frame so far and redraws all of lensCanvas.
+  let first = true;
+  const input = (): HTMLCanvasElement => {
+    if (first) {
+      first = false;
+      return canvas;
+    }
+    lensBufCtx.globalCompositeOperation = 'copy';
+    lensBufCtx.drawImage(lensCanvas, 0, 0);
+    return lensBuf;
+  };
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalAlpha = 1;
+  g.filter = 'none';
+
+  // Mirror: one half (or quarter) reflected onto the rest.
+  if (S.lensMirror !== 'off') {
+    const src = input();
+    const hx = S.lensMirror !== 'tb';
+    const hy = S.lensMirror !== 'lr';
+    const qw = hx ? cw / 2 : cw;
+    const qh = hy ? ch / 2 : ch;
+    g.globalCompositeOperation = 'copy';
+    g.drawImage(src, 0, 0, qw, qh, 0, 0, qw, qh);
+    g.globalCompositeOperation = 'source-over';
+    for (const [fx, fy] of [[1, 0], [0, 1], [1, 1]] as const) {
+      if ((fx && !hx) || (fy && !hy)) continue;
+      g.save();
+      g.translate(fx ? cw : 0, fy ? ch : 0);
+      g.scale(fx ? -1 : 1, fy ? -1 : 1);
+      g.drawImage(src, 0, 0, qw, qh, 0, 0, qw, qh);
+      g.restore();
+    }
+  }
+
+  // Tiles: the frame shrunk into an n × n grid, every other tile mirrored.
+  if (S.lensTiles >= 2) {
+    const src = input();
+    const k = Math.round(S.lensTiles);
+    const tw = cw / k;
+    const th = ch / k;
+    g.globalCompositeOperation = 'copy';
+    g.fillStyle = bgCol;
+    g.fillRect(0, 0, cw, ch);
+    g.globalCompositeOperation = 'source-over';
+    for (let yy = 0; yy < k; yy++)
+      for (let xx = 0; xx < k; xx++) {
+        g.save();
+        g.translate(xx * tw + (xx % 2 ? tw : 0), yy * th + (yy % 2 ? th : 0));
+        g.scale(xx % 2 ? -1 : 1, yy % 2 ? -1 : 1);
+        g.drawImage(src, 0, 0, tw + 0.5, th + 0.5);
+        g.restore();
+      }
+  }
+
+  // Infinite zoom: the frame inside itself, again and again, drifting inward.
+  if (S.lensZoom > 0) {
+    const src = input();
+    const s = 0.6;
+    const phase = ((now / 1000) * S.lensZoom * 0.35) % 1;
+    g.globalCompositeOperation = 'copy';
+    g.fillStyle = bgCol;
+    g.fillRect(0, 0, cw, ch);
+    g.globalCompositeOperation = 'source-over';
+    for (let k = 0; k < 9; k++) {
+      const z = Math.pow(s, k - phase);
+      if (z * cw < 4) break;
+      g.save();
+      g.translate(cw / 2, ch / 2);
+      g.rotate((k - phase) * 0.08 * S.lensZoom);
+      g.scale(z, z);
+      g.drawImage(src, -cw / 2, -ch / 2);
+      g.restore();
+    }
+  }
+
+  // Dots: each cell's colour as a round light, like an LED wall.
+  if (S.lensDots > 0) {
+    const src = input();
+    const cell = Math.max(3, Math.round(S.lensDots * dpr));
+    const cols = Math.ceil(cw / cell);
+    const rows = Math.ceil(ch / cell);
+    if (dotsSmall.width !== cols || dotsSmall.height !== rows) (dotsSmall.width = cols), (dotsSmall.height = rows);
+    dotsSmallCtx.imageSmoothingEnabled = true;
+    dotsSmallCtx.globalCompositeOperation = 'copy';
+    dotsSmallCtx.drawImage(src, 0, 0, cols, rows);
+    if (!dotsMask || dotsMask.cell !== cell) {
+      const m = document.createElement('canvas');
+      m.width = m.height = cell;
+      const mc = m.getContext('2d')!;
+      mc.fillStyle = '#fff';
+      mc.beginPath();
+      mc.arc(cell / 2, cell / 2, cell * 0.42, 0, Math.PI * 2);
+      mc.fill();
+      dotsMask = { cell, pat: g.createPattern(m, 'repeat')! };
+    }
+    g.globalCompositeOperation = 'copy';
+    g.imageSmoothingEnabled = false;
+    g.drawImage(dotsSmall, 0, 0, cols * cell, rows * cell);
+    g.imageSmoothingEnabled = true;
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = dotsMask.pat;
+    g.fillRect(0, 0, cw, ch);
+    if (!seeThrough) {
+      g.globalCompositeOperation = 'destination-over';
+      g.fillStyle = bgCol;
+      g.fillRect(0, 0, cw, ch);
+    }
+  }
+
+  // Colour split: red, green and blue drift apart, with a jolt on each kick.
+  if (music && L.beat) lensJolt = 1;
+  else lensJolt *= 0.88;
+  if (S.lensSplit > 0) {
+    const src = input();
+    const d = S.lensSplit * (6 + 14 * lensJolt) * dpr;
+    g.globalCompositeOperation = 'copy';
+    g.fillStyle = seeThrough ? 'rgb(0 0 0 / 0)' : '#000';
+    g.fillRect(0, 0, cw, ch);
+    if (splitBuf.width !== cw || splitBuf.height !== ch) (splitBuf.width = cw), (splitBuf.height = ch);
+    for (const [col, ox, oy] of [['#f00', -d, 0], ['#0f0', 0, d * 0.3], ['#00f', d, 0]] as const) {
+      // One channel: tint a copy (multiply), keep its own alpha, add it shifted.
+      splitCtx.globalCompositeOperation = 'copy';
+      splitCtx.drawImage(src, 0, 0);
+      splitCtx.globalCompositeOperation = 'multiply';
+      splitCtx.fillStyle = col;
+      splitCtx.fillRect(0, 0, cw, ch);
+      splitCtx.globalCompositeOperation = 'destination-in';
+      splitCtx.drawImage(src, 0, 0);
+      g.globalCompositeOperation = 'lighter';
+      g.drawImage(splitBuf, ox, oy);
+    }
+    g.globalCompositeOperation = 'source-over';
+  }
+
+  // Glitch: bands of the picture jump sideways for a moment.
+  if (S.lensGlitch > 0) {
+    const fire = music ? L.beat && Math.random() < 0.35 + S.lensGlitch * 0.5 : now > glitchNext;
+    if (fire || (music && L.drop)) {
+      glitchNext = now + 300 + Math.random() * (1800 - S.lensGlitch * 1400);
+      const k = 1 + Math.round(Math.random() * S.lensGlitch * 7);
+      for (let j = 0; j < k; j++)
+        glitchBands.push({ y: Math.random() * ch, h: (4 + Math.random() * 60) * dpr, dx: (Math.random() - 0.5) * 160 * S.lensGlitch * dpr, until: now + 60 + Math.random() * 180 });
+    }
+    glitchBands = glitchBands.filter((b) => b.until > now);
+    if (glitchBands.length) {
+      const src = input();
+      if (src === canvas) {
+        g.globalCompositeOperation = 'copy';
+        g.drawImage(canvas, 0, 0);
+      }
+      g.globalCompositeOperation = 'copy';
+      for (const b of glitchBands) {
+        g.save();
+        g.beginPath();
+        g.rect(0, b.y, cw, b.h);
+        g.clip();
+        g.drawImage(src, b.dx, 0);
+        g.drawImage(src, b.dx - Math.sign(b.dx) * cw, 0);
+        g.restore();
+      }
+      g.globalCompositeOperation = 'source-over';
+    } else if (first) {
+      g.globalCompositeOperation = 'copy';
+      g.drawImage(canvas, 0, 0);
+      first = false;
+    }
+  }
+  if (first) {
+    g.globalCompositeOperation = 'copy';
+    g.drawImage(canvas, 0, 0);
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+
 function draw() {
   const [r, g, b] = bgNow();
   if (palMix && !seeThrough) document.body.style.background = `rgb(${r} ${g} ${b})`;
@@ -4155,6 +4373,7 @@ function frame(now: number) {
       draw();
       if (kaleidoNow >= 2) kaleidoscope(kaleidoNow);
       if (settings.mirrorWorld) mirrorHalf();
+      lensFrame(now);
     }
     const t2 = performance.now();
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
@@ -4261,21 +4480,15 @@ function cardAllows(k: keyof Settings) {
 function applyVibe(v: VibeDef) {
   const patch: Partial<Settings> = {};
   let look = settings.audioVibeLook ? v.look : {};
-  // A vibe that suits another preset family brings a preset from it along.
-  // Face vibes need your face as the shape, whatever the look switch says.
+  // A vibe only changes the scene when "Vibes also change style" is on: then
+  // one that suits another family brings a scene from it along (a face vibe,
+  // a face scene). Off, it only sets how the music moves the field.
   const faceVibe = v.family === 'face';
-  const faceNow = settings.shape === 'camera' && faceMode();
-  const want = faceVibe ? !faceNow : settings.audioVibeLook && v.suits && lastPresetFamily !== v.suits;
+  const faceNow = faceScene();
+  const want = settings.audioVibeLook && v.suits && (faceVibe ? !faceNow : lastPresetFamily !== v.suits);
   if (want && v.suits) {
-    const list = PRESETS.filter(([nm, p]) => FAMILY_OF[nm] === v.suits && (!faceVibe || (p.shape === 'camera' && ['face', 'features', 'mixed'].includes(String(p.camMode)))));
-    if (list.length) {
-      const [nm, p] = pick(list);
-      lastPresetFamily = v.suits;
-      apply({ ...p, ...v.look });
-      look = {};
-      showToast(`${v.name} · ${nm}`);
-    }
-  }
+    if (vibeScene(v)) look = {};
+  } else if (faceVibe && !faceNow) setTimeout(() => showToast(`${v.name} plays on a face: pick “Use a face scene” in the Vibe card`), 1200);
   const all = { ...v.drums, ...v.cards, ...look };
   if (settings.audioWords.trim() && !VIBE_WORDS.has(settings.audioWords)) delete (all as Partial<Settings>).audioWords;
   for (const [k, x] of Object.entries(all) as [keyof Settings, never][]) if (cardAllows(k)) (patch as Record<string, unknown>)[k] = x;
@@ -4284,6 +4497,19 @@ function applyVibe(v: VibeDef) {
   changed(new Set(Object.keys(patch) as (keyof Settings)[]));
   // Vibes are how the music plays the field: without sound they barely show.
   if (audio.source === 'off') setTimeout(() => showToast(`${v.name} is set. It moves with music: turn on a sound source`), faceVibe ? 2500 : 0);
+}
+
+const faceScene = () => settings.shape === 'camera' && faceMode();
+// Bring a scene from the family the vibe suits (a face scene for face vibes).
+function vibeScene(v: VibeDef) {
+  const faceVibe = v.family === 'face';
+  const list = PRESETS.filter(([nm, p]) => FAMILY_OF[nm] === v.suits && (!faceVibe || (p.shape === 'camera' && ['face', 'features', 'mixed'].includes(String(p.camMode)))));
+  if (!list.length) return false;
+  const [nm, p] = pick(list);
+  lastPresetFamily = v.suits ?? null;
+  apply({ ...p, ...(settings.audioVibeLook ? v.look : {}) });
+  showToast(`${v.name} · ${nm}`);
+  return true;
 }
 
 // Is the vibe still as it was applied (ignoring locked cards and the look)?
@@ -4400,6 +4626,7 @@ const KNOB_SETS: [string, string[], string][] = [
   ['Look', ['size', 'trail', 'sizeVar', 'depth', 'mHeat'], 'Size, trails, size variety, 3D depth, colour heat.'],
   ['Forces', ['gravity', 'wind', 'windDir', 'flow', 'speed'], 'Gravity, wind, wind direction, flow, speed.'],
   ['Shape', ['shapeSize', 'homeStrength', 'shapeCycle', 'size', 'mDensity'], 'Shape size, snap to shape, form & dissolve, particle size, density.'],
+  ['Lens', ['audioKaleido', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch'], 'Kaleidoscope, tiles, infinite zoom, colour split, glitch.'],
   ['Music VJ', ['audioIntensity', 'audioPulse', 'audioCam', 'audioTunnel', 'audioKaleido'], 'Music intensity, pulse, punch & shake, feedback tunnel, kaleidoscope (needs a sound source).'],
 ];
 function knobSetName() {
@@ -4519,6 +4746,21 @@ const CONTROLS: Control[] = [
   { kind: 'color', key: 'customBg', label: 'Background', show: () => settings.palette === 'custom' },
   { kind: 'swatch' },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
+
+  { kind: 'section', id: 'lens', label: 'Lens', tab: 'look', about: 'Reshape the whole picture: kaleidoscope, mirror, tiles, infinite zoom, colour split, glitch, LED dots.',
+    lock: ['audioKaleido', 'audioKaleidoDrop', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots'],
+    power: { on: () => settings.audioKaleido > 0 || settings.audioKaleidoDrop || lensOn(),
+      off: { audioKaleido: 0, audioKaleidoDrop: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0 }, start: { audioKaleido: 6 } },
+    summary: () => [settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.lensMirror !== 'off' ? 'mirror' : '', settings.lensTiles >= 2 ? `tiles ${settings.lensTiles}×${settings.lensTiles}` : '', settings.lensZoom > 0 ? 'infinite zoom' : '', settings.lensSplit > 0 ? 'colour split' : '', settings.lensGlitch > 0 ? 'glitch' : '', settings.lensDots > 0 ? 'LED dots' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'range', key: 'audioKaleido', label: 'Kaleidoscope', min: 0, max: 8, step: 2, format: (v) => (v === 0 ? 'off' : `${v} sides`) },
+  { kind: 'toggle', key: 'audioKaleidoDrop', label: 'Kaleidoscope for 2 bars at each drop (music)', show: () => settings.audioKaleido === 0 },
+  { kind: 'select', key: 'lensMirror', label: 'Mirror', options: [['off', 'Off'], ['lr', 'Left ↔ right'], ['tb', 'Top ↕ bottom'], ['quad', 'Four ways']] },
+  { kind: 'range', key: 'lensTiles', label: 'Tiles', min: 0, max: 6, step: 1, format: (v) => (v < 2 ? 'off' : `${v} × ${v}`) },
+  { kind: 'range', key: 'lensZoom', label: 'Infinite zoom', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'lensSplit', label: 'Colour split', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'lensGlitch', label: 'Glitch', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'lensDots', label: 'LED dots', min: 0, max: 24, step: 1, format: (v) => (v === 0 ? 'off' : `${v}px`) },
+  { kind: 'note', text: 'They stack, in this order. With music the colour split jolts on each kick and the glitch fires on beats and drops; without music the glitch picks its own moments. Every one can go on a knob (Play on the field).' },
 
   { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
@@ -4645,11 +4887,13 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Tunes how kicks, snares, hats and 808s are picked out.' },
 
   { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
-  { kind: 'note', text: 'Vibes are how the music moves the field, so they show once a sound source is on (above). Face vibes also switch to a camera face scene.', show: () => audio.source === 'off' },
+  { kind: 'note', text: 'Vibes are how the music moves the field, so they show once a sound source is on (above).', show: () => audio.source === 'off' },
   { kind: 'vibes' },
   { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
   { kind: 'toggle', key: 'audioVibeLook', label: 'Vibes also change style, trails and flow' },
-  { kind: 'note', text: 'A vibe sets the drums and the cards below (switching them on or off). Lock a card to keep it as it is when you change vibe.' },
+  { kind: 'note', text: 'A vibe sets the drums and the cards below (switching them on or off). Lock a card to keep it as it is when you change vibe. With the switch above off, a vibe never changes the scene.' },
+  { kind: 'note', text: 'This vibe plays on your face, and the scene isn’t a face yet.', show: () => currentVibe()?.family === 'face' && !faceScene() },
+  { kind: 'buttons', buttons: [['Use a face scene', () => { const v = currentVibe(); if (v) vibeScene(v); }]], show: () => currentVibe()?.family === 'face' && !faceScene() },
 
   { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'music', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
     power: { on: () => settings.audioVj > 0, off: { audioVj: 0 }, start: { audioVj: 8 } },
@@ -4741,17 +4985,15 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'audioDolly', label: 'Dolly in through a build-up, snap back at the drop' },
   { kind: 'toggle', key: 'audioFlip', label: 'Mirror the view at each drop' },
 
-  { kind: 'section', id: 'viewfx', label: 'View effects', tab: 'music', about: 'Feedback tunnel, kaleidoscope and echoes of the last kick.',
-    lock: ['audioTunnel', 'audioTunnelTurn', 'audioKaleido', 'audioKaleidoDrop', 'audioEcho'],
-    power: { on: () => settings.audioTunnel > 0 || settings.audioKaleido > 0 || settings.audioKaleidoDrop || settings.audioEcho > 0,
-      off: { audioTunnel: 0, audioKaleido: 0, audioKaleidoDrop: false, audioEcho: 0 }, start: { audioTunnel: 0.5 } },
-    summary: () => [settings.audioTunnel > 0 ? 'tunnel' : '', settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.audioEcho > 0 ? 'echo' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'section', id: 'viewfx', label: 'View effects', tab: 'music', about: 'Feedback tunnel and echoes of the last kick. The kaleidoscope is in Lens (Look tab).',
+    lock: ['audioTunnel', 'audioTunnelTurn', 'audioEcho'],
+    power: { on: () => settings.audioTunnel > 0 || settings.audioEcho > 0,
+      off: { audioTunnel: 0, audioEcho: 0 }, start: { audioTunnel: 0.5 } },
+    summary: () => [settings.audioTunnel > 0 ? 'tunnel' : '', settings.audioEcho > 0 ? 'echo' : ''].filter(Boolean).join(' · ') || 'off' },
   { kind: 'range', key: 'audioTunnel', label: 'Feedback tunnel', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'audioTunnelTurn', label: 'Tunnel turns', options: [['none', 'Straight'], ['left', 'Left'], ['right', 'Right'], ['rock', 'Rocking']], show: () => settings.audioTunnel > 0 },
-  { kind: 'range', key: 'audioKaleido', label: 'Kaleidoscope', min: 0, max: 8, step: 2, format: (v) => (v === 0 ? 'off' : `${v} sides`) },
-  { kind: 'toggle', key: 'audioKaleidoDrop', label: 'Kaleidoscope for 2 bars at each drop', show: () => settings.audioKaleido === 0 },
   { kind: 'range', key: 'audioEcho', label: 'Echo of the last kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'note', text: 'The tunnel and kaleidoscope also work without music. The tunnel shortens trails so the streaming shows.' },
+  { kind: 'note', text: 'The tunnel also works without music, and shortens trails so the streaming shows.' },
 
   { kind: 'heading', label: 'Motion & words', tab: 'music' },
   { kind: 'section', id: 'mmotion', label: 'Music motion', tab: 'music', about: 'Freeze frames on snares, gravity that flips at drops, trails and sway with the bass.',
@@ -4970,7 +5212,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
