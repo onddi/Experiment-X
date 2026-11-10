@@ -5125,13 +5125,13 @@ const CONTROLS: Control[] = [
       },
       get start(): Partial<Settings> {
         // Starting an empty timeline loads a ready-made set to play with.
-        if (!tl.clips.length) tl.clips = TL_SETS[0][1].map((c) => ({ ...c }));
+        if (!tl.clips.length) (tl.clips = TL_SETS[0][1].map((c) => ({ ...c }))), (tl.set = TL_SETS[0][0]);
         tlSetOn(true);
         return {};
       },
     } },
   { kind: 'timeline' },
-  { kind: 'note', text: 'Click a scene’s name to play it next, on the bar. On the field, the ring shows where you are: click it for the next scene, scroll over it to pick one. With music the bars follow its tempo; without, the tempo above. While the timeline runs, Auto VJ waits.' },
+  { kind: 'note', text: 'Changes happen on the bar. On the field, the ring shows where you are: click it for the next scene, scroll over it to pick one. With music the bars follow its tempo; without, the tempo in Edit. While the timeline runs, Auto VJ waits.' },
 
   { kind: 'section', id: 'xfader', label: 'Crossfader', tab: 'presets',
     about: 'Blend between two scenes with a fader: every setting goes partway from A to B.',
@@ -6134,7 +6134,7 @@ function vjNext() {
 // Kept apart from Settings so scenes never overwrite the set.
 type TlHow = 'xfade' | 'cut' | 'morph' | 'slow' | 'vslow' | 'drop' | 'gather' | 'implode' | 'fade' | 'flash' | 'whirl' | 'grow' | 'wipe' | 'freeze' | 'shatter';
 type TlClip = { name: string; mine?: boolean; bars: number; how: TlHow; word?: string };
-type Timeline = { words?: string; on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden'; hold: boolean; held: Record<string, unknown> };
+type Timeline = { words?: string; set?: string; on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden'; hold: boolean; held: Record<string, unknown> };
 const TL_KEY = 'particle-field:timeline';
 const TL_HOW: [TlHow, string][] = [
   ['cut', 'Cut'], ['morph', 'Morph (1 bar)'], ['slow', 'Slow morph (2 bars)'], ['vslow', 'Very slow (4 bars)'], ['drop', 'Drop'], ['gather', 'Gather & burst'], ['implode', 'Implode'],
@@ -6704,6 +6704,7 @@ function tlSetOn(on: boolean) {
   if (on && xf.on) xfSetOn(false);
   // Held tweaks belong to one run of the set.
   if (!on) {
+    tlHolding = false;
     tl.held = {};
     tlChips?.();
   }
@@ -6784,8 +6785,12 @@ function tlTick(now: number) {
   } else if (bar) {
     tlBarsIn++;
     if (tlQueued >= 0) tlGo(tlQueued);
-    else if (tlBarsIn >= tl.clips[tlIdx].bars) tlGo(tlIdx + 1);
-  } else if (music && tl.dropJump && L.drop && tlBarsIn > 0) tlGo(tlQueued >= 0 ? tlQueued : tlIdx + 1);
+    else if (tlBarsIn >= tl.clips[tlIdx].bars) {
+      // Holding: start the scene's bars over instead of moving on.
+      if (tlHolding) tlBarsIn = 0;
+      else tlGo(tlIdx + 1);
+    }
+  } else if (music && tl.dropJump && L.drop && tlBarsIn > 0 && !tlHolding) tlGo(tlQueued >= 0 ? tlQueued : tlIdx + 1);
   tlRing(now);
 }
 // How far through the current clip, 0..1.
@@ -6978,16 +6983,32 @@ function renderRecord() {
   return box;
 }
 
+// The Timeline card has three views: Play (what's on now, the transport and
+// what's next), Edit (the set as one-line rows) and Sets (ready-made sets and
+// the word story).
+type TlView = 'play' | 'edit' | 'sets';
+const TL_VIEW_KEY = 'particle-field:tl-view';
+let tlView: TlView = readJson<TlView>(TL_VIEW_KEY, 'play');
+let tlOpen = -1; // the row open in Edit
+let tlHolding = false; // Hold: stay on this scene until you let go
+const tlShort = (h: TlHow) => (TL_HOW.find(([k]) => k === h)?.[1] ?? h).replace(/ \(.*\)$/, '').replace(' through black', '').replace(' & burst', '');
+const TL_STORIES = new Set(['Seed to tree', 'Big bang', 'Day to night', 'Storm', 'Rain to ocean', 'Life of a star', 'Murmuration']);
+
 function renderTimeline() {
   const box = document.createElement('div');
   box.className = 'timeline';
-  const list = document.createElement('div');
-  list.className = 'tl-list';
   const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
     const el = document.createElement(tag);
     if (cls) el.className = cls;
     if (text) el.textContent = text;
     return el;
+  };
+  const btn = (text: string, cls = '', fn?: () => void, label?: string) => {
+    const b = mk('button', cls, text);
+    b.type = 'button';
+    if (label) b.setAttribute('aria-label', label);
+    if (fn) b.addEventListener('click', fn);
+    return b;
   };
   const sel = (opts: [string, string][], value: string, label: string, change: (v: string) => void) => {
     const s = mk('select');
@@ -6997,74 +7018,220 @@ function renderTimeline() {
     s.addEventListener('change', () => change(s.value));
     return s;
   };
-  let bars: HTMLElement | null = null;
+  const clipName = (c: TlClip) => (c.word ? `“${c.word}” · ${c.name}` : c.name);
+
+  // Play / Edit / Sets
+  const seg = mk('div', 'tl-seg');
+  seg.setAttribute('role', 'tablist');
+  const segBtns: [TlView, HTMLButtonElement][] = [];
+  for (const [v, t] of [['play', 'Play'], ['edit', 'Edit'], ['sets', 'Sets']] as [TlView, string][]) {
+    const b = btn(t, '', () => setView(v));
+    b.setAttribute('role', 'tab');
+    segBtns.push([v, b]);
+    seg.append(b);
+  }
+  const playPane = mk('div', 'tl-pane tl-play');
+  const editPane = mk('div', 'tl-pane tl-edit');
+  const setsPane = mk('div', 'tl-pane tl-sets');
+  const setView = (v: TlView) => {
+    tlView = v;
+    writeJson(TL_VIEW_KEY, v);
+    for (const [k, b] of segBtns) {
+      b.classList.toggle('on', k === v);
+      b.setAttribute('aria-selected', String(k === v));
+    }
+    playPane.hidden = v !== 'play';
+    editPane.hidden = v !== 'edit';
+    setsPane.hidden = v !== 'sets';
+  };
+
+  // --- Play ---
+  const now = mk('div', 'tl-now');
+  const ring = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  ring.setAttribute('viewBox', '0 0 84 84');
+  ring.setAttribute('class', 'tl-bar-ring');
+  ring.innerHTML = '<circle cx="42" cy="42" r="36" class="bg"/><circle cx="42" cy="42" r="36" class="fg" stroke-dasharray="0 227" transform="rotate(-90 42 42)"/><text x="42" y="41" class="n"></text><text x="42" y="56" class="u">bars</text>';
+  const ringFg = ring.querySelector<SVGCircleElement>('.fg')!;
+  const ringN = ring.querySelector<SVGTextElement>('.n')!;
+  const nowTxt = mk('div', 'tl-now-txt');
+  const nowSet = mk('span', 'tl-lbl');
+  const nowName = mk('b');
+  const nowNext = mk('span', 'tl-next');
+  nowTxt.append(nowSet, nowName, nowNext);
+  now.append(ring, nowTxt);
+  const icon = (d: string, fill = false) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="${fill ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round">${d}</svg>`;
+  const transport = mk('div', 'tl-transport');
+  const prev = btn('', '', () => tlQueue((tlQueued >= 0 ? tlQueued : tlIdx) - 1), 'Previous scene (on the bar)');
+  prev.innerHTML = icon('<path d="M18 5l-9 7 9 7z"/><path d="M6 5v14"/>');
+  const playBtn = btn('', 'play', () => {
+    if (!tl.clips.length) return setView('sets');
+    tlSetOn(!tl.on);
+    tlHolding = false;
+    changed(new Set());
+    drawPlay();
+  });
+  const next = btn('', '', () => tlQueue((tlQueued >= 0 ? tlQueued : tlIdx) + 1), 'Next scene (on the bar)');
+  next.innerHTML = icon('<path d="M6 5l9 7-9 7z"/><path d="M18 5v14"/>');
+  const holdBtn = btn('Hold', 'hold', () => {
+    tlHolding = !tlHolding;
+    showToast(tlHolding ? 'Holding this scene' : 'Moving on at the end of this scene');
+    drawPlay();
+  });
+  holdBtn.title = 'Stay on this scene until you let go';
+  transport.append(prev, playBtn, next, holdBtn);
+  const upLbl = mk('div', 'tl-lbl', 'Up next · tap to queue');
+  const upList = mk('div', 'tl-up');
+  const playEmpty = mk('p', 'tl-empty', 'No set yet. Pick one in Sets, or build your own in Edit.');
+  playPane.append(now, transport, upLbl, upList, playEmpty);
+  let lastN = '';
+  const drawPlay = () => {
+    const has = tl.clips.length > 0;
+    now.hidden = transport.hidden = upLbl.hidden = upList.hidden = !has;
+    playEmpty.hidden = has;
+    if (!has) return;
+    const active = tlActive() && tlIdx >= 0;
+    const i = active ? tlIdx : 0;
+    const c = tl.clips[i];
+    nowSet.textContent = `${tl.set ?? 'My set'} · ${i + 1} of ${tl.clips.length}${tlHolding ? ' · holding' : ''}`;
+    nowName.textContent = active ? clipName(c) : `Starts with ${clipName(c)}`;
+    const nx = tlQueued >= 0 ? tlQueued : (i + 1) % tl.clips.length;
+    nowNext.textContent = tl.clips.length > 1 ? `${tlQueued >= 0 ? 'queued' : 'next'}: ${clipName(tl.clips[nx])} · ${tlShort(tl.clips[nx].how)}` : '';
+    playBtn.innerHTML = tl.on ? icon('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>', true) : icon('<path d="M7 4l13 8-13 8z"/>', true);
+    playBtn.setAttribute('aria-label', tl.on ? 'Stop the timeline' : 'Play the timeline');
+    holdBtn.classList.toggle('on', tlHolding);
+    holdBtn.setAttribute('aria-pressed', String(tlHolding));
+    if (!active) setRing(0, c.bars);
+    upList.innerHTML = '';
+    for (let k = 1; k < Math.min(tl.clips.length, 5); k++) {
+      const j = (i + k) % tl.clips.length;
+      const cj = tl.clips[j];
+      const b = btn('', 'tl-up-row', () => tlQueue(j), `Play ${cj.name} next`);
+      b.classList.toggle('queued', j === tlQueued);
+      b.append(mk('span', '', clipName(cj)), mk('i', '', j === 0 && k > 0 && i > 0 ? 'loops back' : `${cj.bars} bar${cj.bars > 1 ? 's' : ''} · ${tlShort(cj.how)}`));
+      upList.append(b);
+    }
+  };
+  const setRing = (frac: number, bars: number) => {
+    ringFg.setAttribute('stroke-dasharray', `${(frac * 226.2).toFixed(1)} 227`);
+    const n = `${Math.min(bars, Math.floor(frac * bars) + 1)}/${bars}`;
+    if (n !== lastN) ringN.textContent = lastN = n;
+  };
+
+  // --- Edit ---
+  const list = mk('div', 'tl-list');
   const draw = () => {
     list.innerHTML = '';
-    bars = null;
-    if (!tl.clips.length) list.append(mk('p', 'tl-empty', 'No scenes yet. Add the one playing, pick one below, or load a ready-made set.'));
+    if (!tl.clips.length) list.append(mk('p', 'tl-empty', 'No scenes yet. Add the one playing, pick one below, or load a set in Sets.'));
     tl.clips.forEach((c, k) => {
       const row = mk('div', 'tl-clip');
-      const live = tl.on && k === tlIdx;
-      row.classList.toggle('on', live);
+      row.classList.toggle('on', tl.on && k === tlIdx);
       row.classList.toggle('queued', k === tlQueued);
-      const name = mk('button', 'tl-name', c.word ? `“${c.word}” · ${c.name}` : c.name);
-      name.type = 'button';
-      name.title = 'Play this one next (on the bar)';
-      name.addEventListener('click', () => tlQueue(k));
-      const how = sel(TL_HOW, c.how, `How ${c.name} comes in`, (v) => {
-        c.how = v as TlHow;
-        tlSave();
+      row.classList.toggle('open', k === tlOpen);
+      const top = mk('div', 'tl-top');
+      const grip = mk('span', 'tl-grip');
+      grip.title = 'Drag to move';
+      grip.setAttribute('aria-hidden', 'true');
+      const name = btn('', 'tl-name', () => {
+        tlOpen = tlOpen === k ? -1 : k;
+        draw();
       });
-      const len = sel(TL_BARS.map((b) => [String(b), `${b} bar${b > 1 ? 's' : ''}`]), String(c.bars), `Bars for ${c.name}`, (v) => {
-        c.bars = Number(v);
-        tlSave();
-      });
-      const move = (d: number) => {
-        const j = k + d;
-        if (j < 0 || j >= tl.clips.length) return;
-        [tl.clips[k], tl.clips[j]] = [tl.clips[j], tl.clips[k]];
-        if (tlIdx === k) tlIdx = j;
-        else if (tlIdx === j) tlIdx = k;
-        tlSave();
-      };
-      const tools = mk('span', 'tl-tools');
-      for (const [t, title, fn] of [['↑', 'Move up', () => move(-1)], ['↓', 'Move down', () => move(1)], ['×', 'Remove', () => {
-        tl.clips.splice(k, 1);
-        if (tlIdx === k) tlIdx = -1;
-        else if (tlIdx > k) tlIdx--;
-        tlQueued = -1;
-        tlSave();
-      }]] as [string, string, () => void][]) {
-        const b = mk('button', '', t);
-        b.type = 'button';
-        b.title = title;
-        b.setAttribute('aria-label', `${title}: ${c.name}`);
-        b.addEventListener('click', fn);
-        tools.append(b);
+      name.setAttribute('aria-expanded', String(k === tlOpen));
+      name.append(mk('span', 'nm', clipName(c)), mk('i', 'tag', tlShort(c.how)), mk('i', 'tag n', String(c.bars)));
+      top.append(grip, name);
+      row.append(top);
+      grip.addEventListener('pointerdown', (e) => dragRow(e, k, row));
+      if (k === tlOpen) {
+        const body = mk('div', 'tl-detail');
+        const acts = mk('div', 'tl-acts');
+        acts.append(
+          btn('Play next', '', () => tlQueue(k)),
+          btn('↑', '', () => move(k, -1), `Move ${c.name} up`),
+          btn('↓', '', () => move(k, 1), `Move ${c.name} down`),
+          btn('Remove', 'rm', () => {
+            tl.clips.splice(k, 1);
+            if (tlIdx === k) tlIdx = -1;
+            else if (tlIdx > k) tlIdx--;
+            tlQueued = -1;
+            tlOpen = -1;
+            tlSave();
+          }),
+        );
+        const chipRow = (label: string, opts: [string, string][], cur: string, pick: (v: string) => void) => {
+          const r = mk('div', 'tl-opt');
+          r.append(mk('span', 'tl-lbl', label));
+          const w = mk('div', 'tl-chips');
+          for (const [v, t] of opts) {
+            const b = btn(t, v === cur ? 'on' : '', () => pick(v));
+            b.setAttribute('aria-pressed', String(v === cur));
+            w.append(b);
+          }
+          r.append(w);
+          return r;
+        };
+        body.append(
+          acts,
+          chipRow('Bars', TL_BARS.map((b) => [String(b), String(b)]), String(c.bars), (v) => {
+            c.bars = Number(v);
+            tlSave();
+          }),
+          chipRow('In', TL_HOW.map(([h]) => [h, tlShort(h)]), c.how, (v) => {
+            c.how = v as TlHow;
+            tlSave();
+          }),
+        );
+        row.append(body);
       }
-      const prog = mk('i', 'tl-prog');
-      const fill = mk('b');
-      prog.append(fill);
-      if (live) bars = fill;
-      row.append(name, tools, how, len, prog);
       list.append(row);
     });
   };
-  tlRedraw = draw;
-  tlProgress = (frac) => {
-    if (bars) bars.style.width = `${(frac * 100).toFixed(1)}%`;
+  const move = (k: number, d: number) => moveTo(k, k + d);
+  const moveTo = (k: number, j: number) => {
+    if (j < 0 || j >= tl.clips.length || j === k) return;
+    const playing = tl.clips[tlIdx];
+    const [c] = tl.clips.splice(k, 1);
+    tl.clips.splice(j, 0, c);
+    if (playing) tlIdx = tl.clips.indexOf(playing);
+    tlQueued = -1;
+    if (tlOpen === k) tlOpen = j;
+    tlSave();
   };
-  draw();
+  // Drag a row by its grip (mouse or finger) to a new place.
+  const dragRow = (e: PointerEvent, k: number, row: HTMLElement) => {
+    e.preventDefault();
+    const rows = [...list.querySelectorAll<HTMLElement>('.tl-clip')];
+    const mids = rows.map((r) => {
+      const b = r.getBoundingClientRect();
+      return b.top + b.height / 2;
+    });
+    const y0 = e.clientY;
+    let to = k;
+    row.classList.add('dragging');
+    const onMove = (ev: PointerEvent) => {
+      const dy = ev.clientY - y0;
+      row.style.transform = `translateY(${dy}px)`;
+      const y = mids[k] + dy;
+      to = mids.filter((m, i) => i !== k && m < y).length;
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      row.classList.remove('dragging');
+      row.style.transform = '';
+      if (to !== k) moveTo(k, to);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
 
   const add = mk('div', 'tl-add');
-  const addThis = mk('button', '', 'Add this scene');
-  addThis.type = 'button';
-  addThis.addEventListener('click', tlAddCurrent);
+  const addThis = btn('+ This scene', '', tlAddCurrent);
   const pick = mk('select');
   pick.setAttribute('aria-label', 'Add a scene');
   const refill = () => {
     pick.innerHTML = '';
-    pick.add(new Option('Add a scene…', ''));
+    pick.add(new Option('+ Pick a scene…', ''));
     if (myPresets.length) {
       const g = mk('optgroup');
       g.label = 'My scenes';
@@ -7086,85 +7253,54 @@ function renderTimeline() {
     pick.value = '';
     tlSave();
   });
-  const sets = sel([['', 'Ready-made set…'], ...TL_SETS.map(([n]): [string, string] => [n, n])], '', 'Load a ready-made set', (v) => {
-    const s = TL_SETS.find(([n]) => n === v);
-    if (!s) return;
-    tl.clips = v === 'Word story' ? wordStory(tl.words ?? 'HELLO WE ARE HERE') : s[1].map((c) => ({ ...c }));
-    tlIdx = -1;
-    tlQueued = -1;
-    if (!tl.on) tl.on = true;
-    tlSave();
-    changed(new Set());
-  });
-  sets.addEventListener('change', () => (sets.value = ''));
-  add.append(addThis, pick, sets);
-  // Word story: type the words, one clip each.
-  const words = mk('input', 'tl-words');
-  words.type = 'text';
-  words.maxLength = 120;
-  words.placeholder = 'Words for a word story';
-  words.setAttribute('aria-label', 'Words for a word story');
-  words.value = tl.words ?? 'HELLO WE ARE HERE';
-  const tell = mk('button', '', 'Tell it');
-  tell.type = 'button';
-  const makeWords = () => {
-    tl.words = words.value.trim() || 'HELLO WE ARE HERE';
-    const c = wordStory(tl.words);
-    if (!c.length) return;
-    tl.clips = c;
-    tlIdx = -1;
-    tlQueued = -1;
-    if (!tl.on) tl.on = true;
-    tlSave();
-    changed(new Set());
-  };
-  tell.addEventListener('click', makeWords);
-  words.addEventListener('keydown', (e) => {
-    e.stopPropagation();
-    if (e.key === 'Enter') makeWords();
-  });
-  const wrow = mk('div', 'tl-wordrow');
-  wrow.append(words, tell);
-  add.append(wrow);
+  add.append(addThis, pick);
 
+  // Tempo and options fold away under the list.
+  const fold = (title: string, summary: () => string) => {
+    const d = mk('details', 'tl-fold');
+    const s = mk('summary');
+    const st = mk('span', 'tl-fold-sum');
+    s.append(mk('span', '', title), st);
+    d.append(s);
+    const sync = () => (st.textContent = summary());
+    sync();
+    return { d, sync };
+  };
+  const tempoF = fold('Tempo', () => (tl.clock === 'music' ? `From the music · ${tl.bpm} BPM until it has one` : `${tl.bpm} BPM`));
   const opts = mk('div', 'tl-opts');
-  const field = (label: string, el: HTMLElement) => {
+  const field = (parent: HTMLElement, label: string, el: HTMLElement) => {
     const l = mk('label', 'row select');
     l.append(mk('span', 'name', label), el);
-    opts.append(l);
+    parent.append(l);
     return l;
   };
-  field('Clock', sel([['music', 'From the music'], ['tempo', 'Tempo below']], tl.clock, 'Clock', (v) => {
+  field(tempoF.d, 'Clock', sel([['music', 'From the music'], ['tempo', 'Tempo below']], tl.clock, 'Clock', (v) => {
     tl.clock = v as Timeline['clock'];
     tlSave(false);
-    syncTempo();
+    tempoF.sync();
   }));
   const tempo = mk('div', 'tl-tempo');
   const bpmIn = mk('input');
   bpmIn.type = 'number';
   bpmIn.min = '50';
   bpmIn.max = '200';
+  bpmIn.value = String(tl.bpm);
   bpmIn.setAttribute('aria-label', 'Tempo in BPM');
   bpmIn.addEventListener('change', () => {
     tl.bpm = Math.max(50, Math.min(200, Number(bpmIn.value) || 120));
     tlSave(false);
+    tempoF.sync();
   });
-  const tap = mk('button', '', 'Tap');
-  tap.type = 'button';
-  tap.title = 'Tap a few times in time with the beat';
-  tap.addEventListener('click', () => {
+  const tap = btn('Tap', '', () => {
     tlTap();
     bpmIn.value = String(tl.bpm);
+    tempoF.sync();
   });
-  const tnote = mk('span', 'tl-tnote');
-  tempo.append(mk('span', 'name', 'Tempo'), bpmIn, mk('span', '', 'BPM'), tap, tnote);
-  opts.append(tempo);
-  const syncTempo = () => {
-    bpmIn.value = String(tl.bpm);
-    const music = tl.clock === 'music';
-    tnote.textContent = music ? 'used until the music has a tempo' : '';
-  };
-  syncTempo();
+  tap.title = 'Tap a few times in time with the beat';
+  tempo.append(mk('span', 'name', 'Tempo'), bpmIn, mk('span', '', 'BPM'), tap);
+  tempoF.d.append(tempo);
+
+  const optF = fold('Options', () => [tl.hold ? 'hold tweaks' : '', tl.ring === 'hidden' ? 'no ring' : tl.ring === 'always' ? 'ring always' : 'ring at changes', tl.dropJump ? 'jump on drops' : ''].filter(Boolean).join(' · '));
   const hold = mk('label', 'row toggle');
   const hcb = mk('input');
   hcb.type = 'checkbox';
@@ -7173,6 +7309,7 @@ function renderTimeline() {
     tl.hold = hcb.checked;
     tlSave(false);
     drawChips();
+    optF.sync();
   });
   hold.append(hcb, mk('span', 'name', 'Hold my tweaks: what I change stays for the whole set'));
   const chips = mk('div', 'tl-held');
@@ -7181,38 +7318,36 @@ function renderTimeline() {
     const keys = Object.keys(tl.held);
     chips.hidden = !tl.hold || !keys.length;
     for (const k of keys) {
-      const b = mk('button', 'tl-chip', `${heldLabel(k, tl.held[k])}  ✕`);
-      b.type = 'button';
-      b.title = 'Stop holding this: scenes set it again';
-      b.addEventListener('click', () => {
+      const b = btn(`${heldLabel(k, tl.held[k])}  ✕`, 'tl-chip', () => {
         delete tl.held[k];
         tlSave(false);
         drawChips();
       });
+      b.title = 'Stop holding this: scenes set it again';
       chips.append(b);
     }
-    if (keys.length > 1) {
-      const all = mk('button', 'tl-chip clear', 'Clear all');
-      all.type = 'button';
-      all.addEventListener('click', () => {
-        tl.held = {};
-        tlSave(false);
-        drawChips();
-      });
-      chips.append(all);
-    }
+    if (keys.length > 1)
+      chips.append(
+        btn('Clear all', 'tl-chip clear', () => {
+          tl.held = {};
+          tlSave(false);
+          drawChips();
+        }),
+      );
   };
   tlChips = drawChips;
   drawChips();
+  optF.d.append(opts);
   opts.append(hold, chips);
-  field('Knobs at a change', sel([['keep', 'Keep where they are'], ['reset', 'Back to the scene']], tl.knobs, 'Knobs at a change', (v) => {
+  field(opts, 'Knobs at a change', sel([['keep', 'Keep where they are'], ['reset', 'Back to the scene']], tl.knobs, 'Knobs at a change', (v) => {
     tl.knobs = v as Timeline['knobs'];
     tlSave(false);
   }));
-  field('Ring on the field', sel([['changes', 'At each change'], ['always', 'Always'], ['hidden', 'Hidden']], tl.ring, 'Ring on the field', (v) => {
+  field(opts, 'Ring on the field', sel([['changes', 'At each change'], ['always', 'Always'], ['hidden', 'Hidden']], tl.ring, 'Ring on the field', (v) => {
     tl.ring = v as Timeline['ring'];
     tlShownAt = performance.now();
     tlSave(false);
+    optF.sync();
   }));
   const drop = mk('label', 'row toggle');
   const cb = mk('input');
@@ -7221,11 +7356,76 @@ function renderTimeline() {
   cb.addEventListener('change', () => {
     tl.dropJump = cb.checked;
     tlSave(false);
+    optF.sync();
   });
   drop.append(cb, mk('span', 'name', 'Jump to the next scene on a drop'));
   opts.append(drop);
+  editPane.append(list, add, tempoF.d, optF.d);
 
-  box.append(list, add, opts);
+  // --- Sets ---
+  const loadSet = (name: string, clips: TlClip[]) => {
+    if (!clips.length) return;
+    tl.clips = clips;
+    tl.set = name;
+    tlIdx = -1;
+    tlQueued = -1;
+    tlOpen = -1;
+    tlHolding = false;
+    if (!tl.on) tl.on = true;
+    tlSave();
+    changed(new Set());
+    setView('play');
+  };
+  const grid = mk('div', 'tl-setgrid');
+  const drawSets = () => {
+    grid.innerHTML = '';
+    for (const [n, clips] of TL_SETS) {
+      if (n === 'Word story') continue;
+      const b = btn('', 'tl-set', () => loadSet(n, clips.map((c) => ({ ...c }))));
+      b.classList.toggle('on', tl.set === n && tl.clips.length > 0);
+      b.append(mk('b', '', n), mk('span', '', `${tl.set === n && tl.on ? 'playing · ' : ''}${TL_STORIES.has(n) ? 'Story' : 'Mix'} · ${clips.length} scenes`));
+      grid.append(b);
+    }
+  };
+  const words = mk('input', 'tl-words');
+  words.type = 'text';
+  words.maxLength = 120;
+  words.placeholder = 'Type words for a story';
+  words.setAttribute('aria-label', 'Words for a word story');
+  words.value = tl.words ?? 'HELLO WE ARE HERE';
+  const makeWords = () => {
+    tl.words = words.value.trim() || 'HELLO WE ARE HERE';
+    loadSet('Word story', wordStory(tl.words));
+  };
+  words.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') makeWords();
+  });
+  const wrow = mk('div', 'tl-wordrow');
+  wrow.append(words, btn('Tell it', '', makeWords));
+  const empty = btn('Start an empty set', 'tl-new', () => {
+    tl.clips = [];
+    tl.set = undefined;
+    tlIdx = -1;
+    tlQueued = -1;
+    tlOpen = -1;
+    tlSave();
+    setView('edit');
+  });
+  setsPane.append(grid, mk('div', 'tl-lbl', 'Tell a word story'), wrow, empty);
+
+  tlRedraw = () => {
+    draw();
+    drawPlay();
+    drawSets();
+  };
+  tlProgress = (frac) => {
+    const c = tl.clips[tlIdx];
+    if (c && tlView === 'play') setRing(frac, c.bars);
+  };
+  tlRedraw();
+  box.append(seg, playPane, editPane, setsPane);
+  setView(tl.clips.length ? tlView : 'sets');
   return box;
 }
 
@@ -8850,9 +9050,39 @@ toggle.addEventListener('click', () => {
   document.body.classList.toggle('panel-open', !collapsed);
   toggle.setAttribute('aria-expanded', String(!collapsed));
   toggle.title = collapsed ? 'Show controls (H)' : 'Hide controls (H)';
-  toggle.textContent = collapsed ? '⟨' : '⟩';
+  toggle.textContent = collapsed ? '⟨' : sheetMode() ? '⌄' : '⟩';
   requestAnimationFrame(resize);
 });
+// Phones: the panel is a bottom sheet; drag its header down to close it.
+function sheetMode() {
+  return matchMedia('(max-width: 720px)').matches;
+}
+{
+  const head = panel.querySelector<HTMLElement>('header')!;
+  let y0 = -1;
+  let dy = 0;
+  head.addEventListener('pointerdown', (e) => {
+    if (!sheetMode() || panel.classList.contains('collapsed') || e.target === toggle) return;
+    y0 = e.clientY;
+    dy = 0;
+    panel.classList.add('dragging');
+    head.setPointerCapture(e.pointerId);
+  });
+  head.addEventListener('pointermove', (e) => {
+    if (y0 < 0) return;
+    dy = Math.max(0, e.clientY - y0);
+    panel.style.transform = `translateY(${dy}px)`;
+  });
+  const end = () => {
+    if (y0 < 0) return;
+    y0 = -1;
+    panel.classList.remove('dragging');
+    panel.style.transform = '';
+    if (dy > 80) toggle.click();
+  };
+  head.addEventListener('pointerup', end);
+  head.addEventListener('pointercancel', end);
+}
 // In X-Frame, only one layer's options panel is open at a time.
 xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click() });
 
