@@ -13,7 +13,7 @@ export type MaskFx = 'none' | 'flames' | 'crown' | 'tears' | 'beard' | 'halo' | 
 // What an expression does: a moment (fires once as the expression starts),
 // "while held", or an amount that follows how strong the expression is.
 export type CamHands = 'off' | 'attract' | 'repel' | 'vortex' | 'draw' | 'spray';
-export type FlowType = 'waves' | 'curl';
+export type FlowType = 'waves' | 'curl' | 'vortex' | 'wind' | 'cells' | 'rise' | 'tide' | 'spiral';
 export type Edges = 'wrap' | 'enter' | 'bounce';
 export type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none' | 'implodeHold';
 export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links';

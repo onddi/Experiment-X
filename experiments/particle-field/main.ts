@@ -695,12 +695,14 @@ function updateFlowFreqs() {
 let fvx = 0;
 let fvy = 0;
 function flowVec(x: number, y: number) {
-  if (settings.flowType !== 'curl') {
+  const type = settings.flowType;
+  if (type === 'waves') {
     const a = flowAngle(x, y);
     fvx = Math.cos(a);
     fvy = Math.sin(a);
     return;
   }
+  if (type !== 'curl' && type !== 'tide') return flowShape(type, x, y);
   const tt = t * settings.flowSpeed;
   const inv = 1 / settings.flowScale;
   // Gradient of the potential: sum of amp * sin(kx*x + ky*y + phase).
@@ -712,6 +714,71 @@ function flowVec(x: number, y: number) {
   const gy = c1 * fk.y1 - c2 * fk.y2 + c3 * fk.y1 + c4 * fk.y2 * 2;
   fvx = gy * inv * 0.8;
   fvy = -gx * inv * 0.8;
+  if (type === 'tide') {
+    // Smoke that breathes: the whole field swells out and draws back in.
+    const dx = x - w / 2;
+    const dy = y - h / 2;
+    const r = Math.sqrt(dx * dx + dy * dy) + 1;
+    const b = Math.sin(t * 1.3);
+    const k = 0.65 + 0.35 * b;
+    fvx = fvx * k + (dx / r) * b * 0.25;
+    fvy = fvy * k + (dy / r) * b * 0.25;
+  }
+}
+
+// The other flow types, each a velocity of about 1 that particles are steered along.
+function flowShape(type: string, x: number, y: number) {
+  const tt = t * settings.flowSpeed;
+  const dx = x - w / 2;
+  const dy = y - h / 2;
+  const r = Math.sqrt(dx * dx + dy * dy) + 1;
+  const ux = dx / r; // outward
+  const uy = dy / r;
+  switch (type) {
+    case 'vortex': {
+      // Orbit the centre, a touch faster near it, with a slow inward pull.
+      const sp = 0.7 + 0.5 / (1 + (r * settings.flowScale) / 2);
+      const wob = 0.15 * Math.sin(r * settings.flowScale * 3 - tt * 1.5);
+      fvx = -uy * sp + ux * (wob - 0.12);
+      fvy = ux * sp + uy * (wob - 0.12);
+      return;
+    }
+    case 'wind': {
+      // One way, slowly veering, in gusts that roll along.
+      const a = 0.35 * Math.sin(tt * 0.3);
+      const gust = 0.55 + 0.45 * Math.sin(x * fk.x2 - tt * 2 + 1.5 * Math.sin(y * fk.y1 + tt * 0.4));
+      const side = 0.25 * Math.sin(x * fk.x1 * 1.7 + y * fk.y2 + tt);
+      fvx = Math.cos(a) * gust - Math.sin(a) * side;
+      fvy = Math.sin(a) * gust + Math.cos(a) * side;
+      return;
+    }
+    case 'cells': {
+      // A grid of eddies, neighbours spinning opposite ways, slowly drifting.
+      const kx = fk.x1 * 2.2;
+      const ky = fk.y1 * 1.7;
+      // Warped a little so it reads as eddies, not a grid.
+      const X = x * kx + tt * 0.4 + 0.8 * Math.sin(y * ky * 0.45 + tt * 0.2);
+      const Y = y * ky - tt * 0.3 + 0.8 * Math.sin(x * kx * 0.45 - tt * 0.25);
+      fvx = Math.sin(X) * Math.cos(Y) * 1.2;
+      fvy = -Math.cos(X) * Math.sin(Y) * 1.2;
+      return;
+    }
+    case 'rise': {
+      // Heat: up, wavering side to side, some columns rising faster.
+      fvx = 0.55 * Math.sin(y * fk.y1 * 2.5 + tt * 2 + Math.sin(x * fk.x2 * 2));
+      fvy = -(0.75 + 0.35 * Math.sin(x * fk.x1 * 1.6 + tt * 0.7));
+      return;
+    }
+    case 'spiral': {
+      // Galaxy arms: orbit, drawn towards two winding ridges.
+      const ang = Math.atan2(dy, dx);
+      const ridge = Math.sin(2 * ang - Math.log(r) * 2.5 * (settings.flowScale / 0.005) + tt * 0.6);
+      fvx = -uy * 0.85 + ux * ridge * 0.55;
+      fvy = ux * 0.85 + uy * ridge * 0.55;
+      return;
+    }
+  }
+  fvx = fvy = 0;
 }
 
 function flowAngle(x: number, y: number) {
@@ -947,7 +1014,7 @@ function step(dt: number) {
 
     if (flowNow > 0) {
       flowVec(px[i], py[i]);
-      if (settings.flowType === 'curl') {
+      if (settings.flowType !== 'waves') {
         // Steer the velocity towards the field (advection) rather than pushing:
         // inertia would fling particles out of the swirls and into streams.
         ax += (fvx * flowNow * 0.9 - vx[i]) * 0.06;
@@ -4934,6 +5001,10 @@ type ControlBody =
   | { kind: 'audio' };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+const FLOW_TYPES: [string, string][] = [
+  ['waves', 'Currents (streams)'], ['curl', 'Smoke (stays spread)'], ['vortex', 'Vortex (orbits the centre)'], ['wind', 'Wind (gusts one way)'],
+  ['cells', 'Cells (spinning eddies)'], ['rise', 'Rise (like heat)'], ['tide', 'Tide (breathes in and out)'], ['spiral', 'Spiral arms (galaxy)'],
+];
 const label = (options: [string, string][], v: unknown) => options.find(([k]) => k === v)?.[1] ?? '';
 
 const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']];
@@ -5359,9 +5430,9 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', about: 'Invisible currents that carry the particles.', id: 'flow', label: 'Flow', tab: 'motion', lock: ['flow', 'flowType', 'flowScale', 'flowSpeed'],
     power: { on: hasFlow, off: { flow: 0 }, start: { flow: 0.6, flowType: 'curl' } },
-    summary: () => (hasFlow() ? `${settings.flowType === 'curl' ? 'smoke' : 'currents'} ${settings.flow.toFixed(2)}` : 'off') },
+    summary: () => (hasFlow() ? `${(label(FLOW_TYPES, settings.flowType).split(' (')[0] || settings.flowType).toLowerCase()} ${settings.flow.toFixed(2)}` : 'off') },
   { kind: 'range', key: 'flow', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : v.toFixed(2)) },
-  { kind: 'select', key: 'flowType', label: 'Type', options: [['waves', 'Currents (streams)'], ['curl', 'Smoke (stays spread)']], show: hasFlow },
+  { kind: 'select', key: 'flowType', label: 'Type', options: FLOW_TYPES, show: hasFlow },
   { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'flowScale', label: 'Scale', min: 0.001, max: 0.02, step: 0.0005, format: (v) => (v * 1000).toFixed(1), show: hasFlow },
   { kind: 'range', key: 'flowSpeed', label: 'Turning', min: 0, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasFlow },
