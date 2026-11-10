@@ -1,5 +1,5 @@
 // Settings: every option's type and its default value. Pure data, no DOM.
-import type { Genre } from './audio.ts';
+import type { Genre, VoxMode } from './audio.ts';
 export type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 export type LifeSize = 'none' | 'grow' | 'shrink' | 'swell';
 export type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
@@ -200,6 +200,8 @@ export interface Settings {
   audioWaveFeel: 'soft' | 'punchy';
   audioWaveRings: boolean;
   audioGenre: Genre;
+  audioVox: VoxMode;
+  audioSync: number;
   audioKick: KickAction;
   audioSnare: SnareAction;
   audioHats: HatAction;
@@ -483,6 +485,8 @@ export const DEFAULTS: Settings = {
   audioWaveFeel: 'soft',
   audioWaveRings: false,
   audioGenre: 'general',
+  audioVox: 'auto',
+  audioSync: 0,
   audioKick: 'pulse',
   audioSnare: 'wave',
   audioHats: 'none',

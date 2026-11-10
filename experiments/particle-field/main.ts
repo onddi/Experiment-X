@@ -3824,16 +3824,27 @@ const recUi: (() => void)[] = [];
 const recorder = new Recorder({
   source: () => (lensCanvas.hidden ? canvas : lensCanvas),
   size: () => [w, h],
+  screen: () => { const r = Math.min(window.devicePixelRatio || 1, 2); return [w * r, h * r]; },
   filter: () => canvas.style.filter,
   transform: () => canvas.style.transform,
   bg: () => {
     const [r, g, b] = bgNow();
     return `rgb(${r} ${g} ${b})`;
   },
-  audio: () => audio.tap(),
+  audio: () => audio.tap() ?? (audio.source === 'feed' ? feedAudioTap() : null),
   overlay: () => (fxCanvas.hidden ? null : fxCanvas),
   onChange: () => recUi.forEach((f) => f()),
 });
+// In X-Frame the sound plays in the player next to us; it hands out a copy.
+function feedAudioTap(): MediaStreamTrack | null {
+  try {
+    for (let i = 0; i < parent.frames.length; i++) {
+      const f = parent.frames[i] as unknown as { xframeAudioTap?: () => MediaStreamTrack | null };
+      if (f !== (window as unknown) && typeof f.xframeAudioTap === 'function') return f.xframeAudioTap();
+    }
+  } catch {}
+  return null;
+}
 function toggleRecord() {
   if (!canRecord()) return showToast('This browser can’t record the canvas');
   const was = recorder.on;
@@ -4883,6 +4894,8 @@ function frame(now: number) {
   const frozen = paused;
   if (!frozen) adaptQuality(dt, rawMs);
   audio.genre = settings.audioGenre;
+  audio.vox = settings.audioVox;
+  audio.sync = settings.audioSync;
   audio.update(now);
   if (!frozen) {
     updateGlyphs();
@@ -5493,6 +5506,13 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: 'Genre' },
   { kind: 'choice', key: 'audioGenre', label: 'Genre', options: GENRES },
   { kind: 'note', text: 'Tunes how kicks, snares, hats and 808s are picked out.' },
+  { kind: 'sub', label: 'Vocals' },
+  { kind: 'choice', key: 'audioVox', label: 'Vocals', options: [['auto', 'Auto'], ['sung', 'Singing'], ['speech', 'Rap & speech']] },
+  { kind: 'note', text: 'Singing follows a held, gliding pitch. Rap & speech also counts syllables. Auto picks Rap & speech for Rap / drill.' },
+  { kind: 'sub', label: 'Sync' },
+  { kind: 'range', key: 'audioSync', label: 'Delay reactions', min: 0, max: 500, step: 10, format: (v) => (v === 0 ? 'off' : `${v} ms`) },
+  { kind: 'buttons', buttons: [['Tap along to set it', () => calibrateSync()]] },
+  { kind: 'note', text: 'Bluetooth headphones play the sound 150–250 ms after the field hears it, so reactions land early. Tap along to the kick and the delay is set for you.' },
 
   { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
   { kind: 'note', text: 'Vibes are how the music moves the field, so they show once a sound source is on (above).', show: () => audio.source === 'off' },
@@ -5849,6 +5869,9 @@ const playSettings = (): Partial<Settings> => ({
   shuffleCards: settings.shuffleCards,
   homeStrength: settings.homeStrength,
   xfPos: settings.xfPos,
+  // Your headphones and how you hear vocals don't change with the scene.
+  audioSync: settings.audioSync,
+  audioVox: settings.audioVox,
   ...Object.fromEntries(MUSIC_KEYS.map((k) => [k, settings[k]])),
 });
 
@@ -10105,6 +10128,65 @@ function numberKey(d: string, save: boolean) {
 }
 
 let toastTimer = 0;
+// --- Sync: tap along to the kick ---------------------------------------------
+// You tap when you hear each kick; the field detected that kick a bit earlier
+// (a lot earlier through Bluetooth). The typical gap becomes the delay.
+function calibrateSync() {
+  if (audio.source === 'off') return showToast('Turn on a sound source first, then tap along');
+  if (document.querySelector('.sync-cal')) return;
+  const NEED = 12;
+  const el = document.createElement('div');
+  el.className = 'sync-cal';
+  el.innerHTML = `<p class="sync-big">Tap on every kick</p><p class="sync-sub">Tap anywhere or press Space · <b>0</b> / ${NEED}</p><button type="button">Cancel</button>`;
+  document.body.append(el);
+  const count = el.querySelector('b')!;
+  const taps: number[] = [];
+  const close = () => {
+    window.removeEventListener('keydown', onKey, true);
+    el.remove();
+  };
+  const finish = () => {
+    close();
+    // Each tap against the latest kick before it (or just after: people tap a touch early).
+    const gaps = taps.slice(2).map((tp) => {
+      let best = Infinity;
+      for (const k of audio.kickLog) {
+        const g = tp - k;
+        if (g >= -60 && g < 700 && g < best) best = g;
+      }
+      return best;
+    }).filter(Number.isFinite).sort((a, b) => a - b);
+    if (gaps.length < 5) return showToast('Couldn’t match your taps to kicks. Try a song with a clear kick drum.');
+    const median = gaps[gaps.length >> 1];
+    const ms = Math.max(0, Math.min(500, Math.round(median / 10) * 10));
+    set('audioSync', ms as never);
+    refresh();
+    showToast(ms ? `Reactions now wait ${ms} ms for your speakers` : 'Already in sync, no delay needed');
+  };
+  const tap = (t: number) => {
+    taps.push(t);
+    count.textContent = String(taps.length);
+    el.classList.remove('hit');
+    void el.offsetWidth;
+    el.classList.add('hit');
+    if (taps.length >= NEED) finish();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.repeat) return;
+    if (e.key === 'Escape') close();
+    else if (e.key === ' ' || e.key === 'Enter') tap(e.timeStamp);
+  };
+  window.addEventListener('keydown', onKey, true);
+  el.querySelector('button')!.addEventListener('click', close);
+  el.addEventListener('pointerdown', (e) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.preventDefault();
+    tap(e.timeStamp);
+  });
+}
+
 function showToast(text: string) {
   let el = document.getElementById('toast');
   if (!el) {

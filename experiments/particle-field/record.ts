@@ -7,7 +7,7 @@
 export interface RecordPrefs {
   secs: number; // 0 = until stopped
   sound: boolean;
-  size: 'hd' | 'full' | 'square';
+  size: 'screen' | 'hd' | 'full' | 'square';
 }
 
 export interface RecordHost {
@@ -15,6 +15,8 @@ export interface RecordHost {
   source: () => HTMLCanvasElement;
   /** The field's size in CSS pixels. */
   size: () => [number, number];
+  /** The field's size in screen pixels (CSS × pixel ratio). */
+  screen: () => [number, number];
   filter: () => string;
   transform: () => string;
   bg: () => string;
@@ -33,6 +35,7 @@ export const RECORD_LENGTHS: [string, string][] = [
   ['0', 'Until I stop it'],
 ];
 export const RECORD_SIZES: [RecordPrefs['size'], string][] = [
+  ['screen', 'Screen (sharpest)'],
   ['hd', 'HD (1280 wide)'],
   ['full', 'Full HD (1920 wide)'],
   ['square', 'Square 1080 (for posts)'],
@@ -64,11 +67,12 @@ export class Recorder {
   private audioTrack: MediaStreamTrack | null = null;
 
   constructor(private host: RecordHost) {
-    let p: Partial<RecordPrefs> = {};
+    let p: Partial<RecordPrefs> & { v?: number } = {};
     try {
       p = JSON.parse(localStorage.getItem(KEY) ?? '{}');
     } catch {}
-    this.prefs = { secs: p.secs ?? 10, sound: p.sound ?? true, size: p.size ?? 'hd' };
+    // v2: Screen size became the default (HD was soft next to screen recordings).
+    this.prefs = { secs: p.secs ?? 10, sound: p.sound ?? true, size: p.v === 2 ? (p.size ?? 'screen') : 'screen' };
   }
 
   get on() {
@@ -78,7 +82,7 @@ export class Recorder {
   setPrefs(p: Partial<RecordPrefs>) {
     Object.assign(this.prefs, p);
     try {
-      localStorage.setItem(KEY, JSON.stringify(this.prefs));
+      localStorage.setItem(KEY, JSON.stringify({ ...this.prefs, v: 2 }));
     } catch {}
     this.host.onChange();
   }
@@ -95,7 +99,13 @@ export class Recorder {
     let W: number;
     let H: number;
     if (this.prefs.size === 'square') W = H = 1080;
-    else {
+    else if (this.prefs.size === 'screen') {
+      // Pixel for pixel with the screen, the long side capped at 2560.
+      const [sw, sh] = this.host.screen();
+      const k = Math.min(1, 2560 / Math.max(sw, sh, 1));
+      W = Math.round(sw * k);
+      H = Math.round(sh * k);
+    } else {
       W = this.prefs.size === 'full' ? 1920 : 1280;
       H = Math.round((W * h) / Math.max(1, w));
       // Portrait screens: the long side gets the size instead.
@@ -104,12 +114,15 @@ export class Recorder {
     this.cv.width = W & ~1;
     this.cv.height = H & ~1;
     this.paint();
-    const stream = this.cv.captureStream(30);
+    // 60 fps: particles move fast, and 30 looks choppy next to the screen.
+    const stream = this.cv.captureStream(60);
     this.audioTrack = this.prefs.sound ? this.host.audio() : null;
     if (this.audioTrack) stream.addTrack(this.audioTrack);
     const mimeType = pickType();
     const px = this.cv.width * this.cv.height;
-    this.rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: Math.round(px * 30 * 0.18), audioBitsPerSecond: 192000 });
+    // Fine moving dots are the hardest thing to compress: give them plenty
+    // (about 14 Mbit/s for HD, capped at 50).
+    this.rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: Math.min(50e6, Math.round(px * 60 * 0.22)), audioBitsPerSecond: 192000 });
     this.chunks = [];
     this.rec.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
     this.rec.onstop = () => this.finish(mimeType || this.rec?.mimeType || 'video/webm');
@@ -193,6 +206,7 @@ export class Recorder {
     const [w, h] = this.host.size();
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.filter = 'none';
+    g.imageSmoothingQuality = 'high';
     g.fillStyle = this.host.bg();
     g.fillRect(0, 0, W, H);
     if (!src.width || !w) return;

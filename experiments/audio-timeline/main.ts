@@ -236,6 +236,10 @@ const audio = new Audio();
 audio.preload = 'auto';
 let actx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
+// Short-window analyser for drum timing only: ~21 ms of sound, no smoothing,
+// so a kick shows up in the very next frame (the 4096 one smears it over ~85 ms).
+let fastAnalyser: AnalyserNode | null = null;
+let fastBins = new Uint8Array(512);
 let gainNode: GainNode | null = null;
 let bins = new Uint8Array(2048);
 let wave = new Uint8Array(4096).fill(128);
@@ -262,6 +266,16 @@ function ensureGraph() {
   wave = new Uint8Array(analyser.fftSize).fill(128);
   gainNode = ctx.createGain();
   src.connect(analyser);
+  fastAnalyser = ctx.createAnalyser();
+  fastAnalyser.fftSize = 1024;
+  fastAnalyser.smoothingTimeConstant = 0;
+  fastBins = new Uint8Array(fastAnalyser.frequencyBinCount);
+  src.connect(fastAnalyser);
+  // A layer recording a clip in X-Frame (same origin) takes the sound from
+  // here, since it can't hear the player otherwise.
+  const tap = ctx.createMediaStreamDestination();
+  src.connect(tap);
+  (window as unknown as { xframeAudioTap: () => MediaStreamTrack | null }).xframeAudioTap = () => tap.stream.getAudioTracks()[0]?.clone() ?? null;
   src.connect(gainNode).connect(ctx.destination);
   applyVolume();
 }
@@ -374,6 +388,13 @@ function publishBus(now: number, playing: boolean) {
       smoothing: analyser.smoothingTimeConstant,
       minDecibels: analyser.minDecibels,
       maxDecibels: analyser.maxDecibels,
+      // Drum timing: the short-window bins, when they were measured (epoch ms,
+      // so another frame can compare with its own clock), and how long the
+      // sound takes from here to the speakers (Bluetooth adds a lot).
+      fast: fastBins,
+      fastFftSize: fastAnalyser?.fftSize ?? 0,
+      at: performance.timeOrigin + performance.now(),
+      outputLatency: (actx?.outputLatency ?? 0) + (actx?.baseLatency ?? 0),
     });
     xframe.publish('audio.levels', { level: meter.level, bass: meter.bass, mid: meter.mid, treble: meter.treble });
     if (now - lastTransport > 250) {
@@ -1357,6 +1378,7 @@ function frame(now: number) {
   if (analyser) {
     analyser.getByteFrequencyData(bins);
     analyser.getByteTimeDomainData(wave);
+    fastAnalyser?.getByteFrequencyData(fastBins);
     meter.update(bins, sr);
   } else meter.decay();
   liveBands(sr);
