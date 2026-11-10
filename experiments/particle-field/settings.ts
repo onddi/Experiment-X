@@ -271,6 +271,12 @@ export interface Settings {
   audioBuildScatter: number;
   audioEnergyShake: number;
   audioEnergyWords: number;
+  audioNoteRipple: number;
+  audioNoteHue: number;
+  audioNoteHop: number;
+  audioVoxGlow: number;
+  audioVoxZoom: number;
+  audioVoxSwell: number;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -547,4 +553,10 @@ export const DEFAULTS: Settings = {
   audioBuildScatter: 0,
   audioEnergyShake: 0,
   audioEnergyWords: 0,
+  audioNoteRipple: 0,
+  audioNoteHue: 0,
+  audioNoteHop: 0,
+  audioVoxGlow: 0,
+  audioVoxZoom: 0,
+  audioVoxSwell: 0,
 };

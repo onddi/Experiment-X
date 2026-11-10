@@ -72,12 +72,23 @@ export interface AudioLevels {
   // Bars, assuming 4/4: from the tempo once known, else every 4 kicks.
   bar: boolean; // true on the frame a new bar starts
   bars: number; // bars counted since the music started
+  // Melody: the strongest clear tone in 200 Hz-2 kHz. A note fires when it
+  // jumps to a new pitch or is struck again; notePc is its pitch class
+  // (0 = C … 11 = B), roughly. melody is how much clear tone there is.
+  note: boolean;
+  noteEnv: number;
+  notePc: number;
+  melody: number;
+  // Vocals, roughly: clear, wandering tones in the voice range over the music.
+  // A synth lead in the same range reads as a voice too.
+  voice: number;
 }
 
 const ZERO: AudioLevels = {
   level: 0, bass: 0, mid: 0, treble: 0, sub: 0, liftLevel: 0, liftMid: 0,
   pulse: 0, snareEnv: 0, beat: false, snare: false, hat: false, bpm: 0,
   tension: 0, drop: false, dropEnv: 0, bar: false, bars: 0,
+  note: false, noteEnv: 0, notePc: 0, melody: 0, voice: 0,
 };
 
 const BANDS = { bass: [25, 160], mid: [160, 2000], treble: [2000, 9000], sub: [28, 60], snare: [1500, 5000], hat: [7000, 14000] } as const;
@@ -141,6 +152,7 @@ export class AudioInput {
   private onsets = { kick: new Onset(), snare: new Onset(), hat: new Onset() };
   private kickTimes: number[] = []; // kick and snare hit times, for tempo
   private lastKick = 0;
+  private mel = { prev: 0, midi: 0, at: 0, drift: 0 };
   private kickHits: number[] = []; // full kicks in the last 2 s
   private kickAvg = 0; // typical kick strength, so bass notes don't count as the kick coming back
   private lastFrame = 0;
@@ -240,7 +252,7 @@ export class AudioInput {
   update(now: number) {
     const a = this.analyser;
     const L = this.levels;
-    L.beat = L.snare = L.hat = L.drop = L.bar = false;
+    L.beat = L.snare = L.hat = L.drop = L.bar = L.note = false;
     let hzPerBin: number;
     if (this.source === 'feed') {
       // Same analysis on bins someone else measured. All-zero bins = paused.
@@ -273,6 +285,7 @@ export class AudioInput {
       for (let k = p0; k <= p1; k++) if (this.freq[k] > best) (best = this.freq[k]), (bi = k);
       if (best > 60) this.pitch += (Math.max(0, Math.min(1, Math.log2((bi * hzPerBin) / 80) / Math.log2(12.5))) - this.pitch) * 0.3;
     }
+    this.melodyAndVoice(now, hzPerBin);
 
     for (const k of ['bass', 'mid', 'treble', 'level', 'sub'] as const) {
       // Peaks rise instantly and fall slowly; a floor keeps silence silent.
@@ -321,6 +334,49 @@ export class AudioInput {
     const fullKick = kick > 0 && kick >= this.kickAvg * 0.6 && kickSig > band(BANDS.snare) * 2;
     if (fullKick) this.kickAvg = this.kickAvg ? this.kickAvg * 0.9 + kick * 0.1 : kick;
     this.structure(now, fullKick, snare > 0);
+  }
+
+  // Melody and vocals from the shape of the mid spectrum: a clear tone is a
+  // peak standing well above its neighbourhood (drums are broad noise).
+  private melodyAndVoice(now: number, hz: number) {
+    const L = this.levels;
+    const F = this.freq;
+    const p0 = Math.max(2, Math.floor(200 / hz));
+    const p1 = Math.min(F.length - 2, Math.ceil(2000 / hz));
+    let best = 0;
+    let bi = p0;
+    let sum = 0;
+    for (let k = p0; k <= p1; k++) {
+      sum += F[k];
+      if (F[k] > best) (best = F[k]), (bi = k);
+    }
+    const mean = sum / (p1 - p0 + 1);
+    const tonal = best > 90 && best > mean * 2.2;
+    // Between bins: a parabola through the peak and its neighbours.
+    const a = F[bi - 1];
+    const c = F[bi + 1];
+    const den = a - 2 * best + c;
+    const f = (bi + (den ? (0.5 * (a - c)) / den : 0)) * hz;
+    const midi = 69 + 12 * Math.log2(f / 440);
+    L.melody = L.melody * 0.9 + (tonal ? best / 255 : 0) * 0.1;
+    const struck = best - this.mel.prev > 28;
+    this.mel.prev = best;
+    if (tonal) {
+      const step = Math.abs(midi - this.mel.midi);
+      // Voices glide and wobble: small, constant pitch movement.
+      this.mel.drift = this.mel.drift * 0.92 + (step > 0.1 && step < 1.5 ? 1 : 0) * 0.08;
+      if ((step >= 0.8 || struck) && now - this.mel.at > 120) {
+        L.note = true;
+        L.noteEnv = 1;
+        L.notePc = ((Math.round(midi) % 12) + 12) % 12;
+        this.mel.at = now;
+      }
+      this.mel.midi = midi;
+    } else this.mel.drift *= 0.97;
+    L.noteEnv *= 0.9;
+    // Vocals: clear tone in the voice range that keeps wandering in pitch.
+    const vox = tonal && f < 1100 ? Math.min(1, this.mel.drift * 1.6) * Math.min(1, best / 180) : 0;
+    L.voice = L.voice * 0.94 + vox * 0.06;
   }
 
   // Build-ups, drops and bars.
