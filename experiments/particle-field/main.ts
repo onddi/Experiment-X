@@ -4903,6 +4903,7 @@ type ControlBody =
   | { kind: 'xfader' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
+  | { kind: 'mixgrid'; which: 'music' | 'camera' }
   | { kind: 'links' }
   | { kind: 'sub'; label: string }
   | { kind: 'heading'; label: string; tab: Tab }
@@ -5416,6 +5417,8 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'This vibe plays on your face, and the scene isn’t a face yet.', show: () => currentVibe()?.family === 'face' && !faceScene() },
   { kind: 'buttons', buttons: [['Use a face scene', () => { const v = currentVibe(); if (v) vibeScene(v); }]], show: () => currentVibe()?.family === 'face' && !faceScene() },
 
+  { kind: 'section', id: 'mgmusic', label: 'Reactions', tab: 'music', about: 'What each part of the music does to the field. Tap a cell to step it, slide sideways for exact strength, hold for flavours.' },
+  { kind: 'mixgrid', which: 'music' },
   { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'music', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
     power: { on: () => settings.audioVj > 0, off: { audioVj: 0 }, start: { audioVj: 8 } },
     summary: () => (settings.audioVj > 0 ? `every ${settings.audioVj} bars` : 'off') },
@@ -5560,6 +5563,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'camRate', label: 'Updates per second', min: 1, max: 15, step: 1, show: () => !trackMode() },
   { kind: 'note', text: 'Two people (or two hands) in view each get half the particles. Colour by Face features or Camera colours on the Look tab. Shape size is on the Shape tab.' },
 
+  { kind: 'section', id: 'mgcam', label: 'Reactions', tab: 'camera', about: 'What your hands, face, voice and body do to the field. Tap a cell to step it, slide sideways for exact strength, hold for flavours.' },
+  { kind: 'mixgrid', which: 'camera' },
   { kind: 'heading', label: 'Your face', tab: 'camera' },
   { kind: 'section', id: 'facefx', label: 'Face extras', tab: 'camera', about: 'Flames, a crown or tears on your face; your gaze and voice move particles.',
     lock: ['maskFx', 'maskShare', 'gaze', 'voice'],
@@ -7759,6 +7764,676 @@ function renderSearch() {
   return wrap;
 }
 
+// --- mix grid (Music and Camera) ---------------------------------------------
+// One screen for how the music and the camera move the field: triggers down
+// the side, families of reactions across the top. Each cell holds one or more
+// flavours that map straight onto the settings the classic cards use, so the
+// two views always agree. Tap steps off · low · mid · high, a sideways swipe
+// turns the row into a strength bar, a long press opens the flavours and
+// their fine settings.
+
+type MgFlav = {
+  label: string;
+  get: () => number; // 0..1
+  put: (v: number) => void;
+  // Pick-one flavours: which variant (Snare: swirl, ripple or flash).
+  choice?: { options: [string, string][]; get: () => string; put: (v: string) => void };
+  fine?: (keyof Settings)[];
+  note?: string;
+  action?: [string, () => void];
+};
+type MgRow = { name: string; live?: () => boolean; cells: (MgFlav[] | null)[] };
+type MgGrid = { cols: string[]; rows: MgRow[] };
+
+const ctlOf = (k: keyof Settings) => CONTROLS.find((c) => 'key' in c && c.key === k) as Extract<Control, { key: keyof Settings }> | undefined;
+function mgPut(k: keyof Settings, v: number) {
+  const c = ctlOf(k);
+  if (c && c.kind === 'range') {
+    v = Math.round(v / c.step) * c.step;
+    v = Math.min(c.max, Math.max(c.min, +v.toFixed(4)));
+  }
+  set(k, v as never);
+}
+const num = (k: keyof Settings) => settings[k] as unknown as number;
+// A plain amount: 0 is off.
+const mgRange = (label: string, k: keyof Settings, hi: number, more: Partial<MgFlav> = {}): MgFlav => ({
+  label, get: () => clamp01(num(k) / hi), put: (v) => mgPut(k, v * hi), ...more,
+});
+// An on/off switch.
+const mgToggle = (label: string, k: keyof Settings, more: Partial<MgFlav> = {}): MgFlav => ({
+  label, get: () => (settings[k] ? 1 : 0), put: (v) => set(k, (v > 0.05) as never), ...more,
+});
+// A mode that is on at one value, with an amount for how much.
+function mgMode(label: string, k: keyof Settings, on: string, off: string, amt: keyof Settings | null, hi = 1, more: Partial<MgFlav> = {}): MgFlav {
+  return {
+    label,
+    get: () => (settings[k] === on ? (amt ? clamp01(num(amt) / hi) : 1) : 0),
+    put: (v) => {
+      if (v <= 0.05) {
+        if (settings[k] === on) set(k, off as never);
+        return;
+      }
+      set(k, on as never);
+      if (amt) mgPut(amt, Math.max(v * hi, 0.05 * hi));
+    },
+    ...more,
+  };
+}
+// A mode with several "on" values (pick one), plus an amount.
+function mgPick(label: string, k: keyof Settings, options: [string, string][], off: string, amt: keyof Settings | null, hi = 1, more: Partial<MgFlav> = {}): MgFlav {
+  const ons = options.map(([o]) => o);
+  let last = ons.includes(settings[k] as string) ? (settings[k] as string) : ons[0];
+  return {
+    label,
+    get: () => (ons.includes(settings[k] as string) ? (amt ? clamp01(num(amt) / hi) : 1) : 0),
+    put: (v) => {
+      if (v <= 0.05) {
+        if (ons.includes(settings[k] as string)) {
+          last = settings[k] as string;
+          set(k, off as never);
+        }
+        return;
+      }
+      if (!ons.includes(settings[k] as string)) set(k, last as never);
+      if (amt) mgPut(amt, Math.max(v * hi, 0.05 * hi));
+    },
+    choice: {
+      options,
+      get: () => (ons.includes(settings[k] as string) ? (settings[k] as string) : last),
+      put: (o) => {
+        last = o;
+        set(k, o as never);
+      },
+    },
+    ...more,
+  };
+}
+// The kick can pulse, send waves, or both (one setting for the two).
+function mgKick(part: 'pulse' | 'wave', label: string, amt: keyof Settings, hi: number, more: Partial<MgFlav> = {}): MgFlav {
+  const has = () => settings.audioKick === part || settings.audioKick === 'both';
+  return {
+    label,
+    get: () => (has() ? clamp01(num(amt) / hi) : 0),
+    put: (v) => {
+      const other = part === 'pulse' ? 'wave' : 'pulse';
+      const otherOn = settings.audioKick === other || settings.audioKick === 'both';
+      if (v <= 0.05) {
+        if (has()) set('audioKick', otherOn ? other : 'none');
+        return;
+      }
+      set('audioKick', otherOn ? 'both' : part);
+      mgPut(amt, Math.max(v * hi, 0.05 * hi));
+    },
+    ...more,
+  };
+}
+
+const PERIODS: [string, string][] = [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars']];
+const SPINS: [string, string][] = [['sway', 'Sway'], ['rock', 'Rock'], ['step', 'Step each bar'], ['turn', 'Full turn / 32 bars']];
+const hueAmt = (on: string, label: string) => mgMode(label, 'audioHue', on, 'off', 'audioHueAmt', 180);
+const levelsNow = () => audio.levels;
+// Hits are moments: keep them lit for a beat so the eye catches them.
+const mgSeen: Record<string, number> = {};
+const lit = (id: string, now: boolean) => {
+  const t = performance.now();
+  if (now) mgSeen[id] = t;
+  return t - (mgSeen[id] ?? -1e9) < 160;
+};
+
+const MUSIC_GRID: MgGrid = {
+  cols: ['Push', 'Colour', 'View', 'Flow', 'Words', 'Scene'],
+  rows: [
+    {
+      name: 'Kick',
+      live: () => lit('kick', levelsNow().beat),
+      cells: [
+        [
+          mgKick('pulse', 'Pulse', 'audioPulse', 2),
+          mgKick('wave', 'Wave', 'audioWaveForce', 3, { fine: ['audioBeat', 'audioWaveAt', 'audioWaveEvery', 'audioWaveSpeed', 'audioWaveReach', 'audioWaveWidth', 'audioWaveFeel', 'audioWaveRings', 'audioWaveAccent'] }),
+        ],
+        [mgRange('Flash', 'audioBgFlash', 1), hueAmt('beat', 'Shift')],
+        [mgRange('Punch', 'audioCam', 1.5), mgRange('Echo', 'audioEcho', 1)],
+        null,
+        [mgRange('Pulse', 'audioWordPulse', 1), mgRange('Hop', 'audioLetterHop', 1)],
+        null,
+      ],
+    },
+    {
+      name: 'Snare',
+      live: () => lit('snare', levelsNow().snare),
+      cells: [
+        [mgPick('Hit', 'audioSnare', [['swirl', 'Swirl'], ['wave', 'Ripple'], ['flash', 'Flash']], 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })],
+        null,
+        [mgRange('Roll', 'audioRoll', 1)],
+        [mgToggle('Freeze', 'audioStutter')],
+        null,
+        null,
+      ],
+    },
+    {
+      name: 'Hi-hats',
+      live: () => lit('hat', levelsNow().hat),
+      cells: [[mgMode('Sparkle', 'audioHats', 'sparkle', 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })], null, null, null, null, null],
+    },
+    {
+      name: 'Bass',
+      live: () => levelsNow().sub > 0.55,
+      cells: [
+        null,
+        null,
+        null,
+        [mgPick('Swell', 'audioSub', [['size', 'Size'], ['flow', 'Flow'], ['speed', 'Speed']], 'none', 'audioSubAmt', 2), mgRange('Sway', 'audioSway', 1)],
+        null,
+        null,
+      ],
+    },
+    {
+      name: 'Bars',
+      live: () => lit('bar', levelsNow().bar),
+      cells: [
+        null,
+        [mgRange('Palette', 'audioPalEvery', 32, {
+          get: () => (settings.audioPalEvery > 0 ? 1 : 0),
+          put: (v) => set('audioPalEvery', v > 0.05 ? settings.audioPalEvery || 8 : 0),
+          fine: ['audioPalEvery'],
+        }), hueAmt('bar', 'Shift')],
+        [mgPick('Cut', 'audioCuts', PERIODS, 'off', null), mgPick('Spin', 'audioSpin', SPINS, 'off', null)],
+        null,
+        [mgPick('Next', 'audioWordsEvery', PERIODS, 'drop', null, 1, {
+          get: () => (settings.audioWordsOn && settings.audioWordsEvery !== 'drop' ? 1 : 0),
+          put: (v) => {
+            set('audioWordsOn', v > 0.05);
+            if (v > 0.05 && settings.audioWordsEvery === 'drop') set('audioWordsEvery', 'bar');
+          },
+          fine: ['audioWords'],
+        })],
+        [mgRange('Switch', 'audioVj', 32, {
+          get: () => (settings.audioVj > 0 ? 1 : 0),
+          put: (v) => set('audioVj', v > 0.05 ? settings.audioVj || 8 : 0),
+          fine: ['audioVj', 'audioVjFrom'],
+        })],
+      ],
+    },
+    {
+      name: 'Build-up',
+      live: () => levelsNow().tension > 0.3,
+      cells: [[mgToggle('Pull in', 'audioDropBuild')], [mgToggle('Drain', 'audioMonoBuild')], [mgToggle('Dolly', 'audioDolly')], null, null, null],
+    },
+    {
+      name: 'Drop',
+      live: () => levelsNow().dropEnv > 0.25,
+      cells: [
+        [mgRange('Burst', 'audioDrop', 2)],
+        [mgToggle('Invert', 'audioInvert'), hueAmt('drop', 'Shift')],
+        [mgToggle('Mirror', 'audioFlip'), mgMode('Cut', 'audioCuts', 'drop', 'off', null)],
+        [mgToggle('Gravity', 'audioGravFlip')],
+        [{
+          label: 'Next',
+          get: () => (settings.audioWordsOn && settings.audioWordsEvery === 'drop' ? 1 : 0),
+          put: (v) => {
+            set('audioWordsOn', v > 0.05);
+            if (v > 0.05) set('audioWordsEvery', 'drop');
+          },
+          fine: ['audioWords'],
+        }],
+        [mgToggle('Switch', 'audioVjDrop', { fine: ['audioVjFrom'] })],
+      ],
+    },
+    {
+      name: 'Energy',
+      live: () => levelsNow().liftLevel > 0.45,
+      cells: [
+        null,
+        [mgRange('Bright', 'audioBright', 1), hueAmt('drift', 'Drift')],
+        [mgRange('Pan', 'audioPan', 1), mgMode('Spin', 'audioSpin', 'energy', 'off', null), mgRange('Tunnel', 'audioTunnel', 1, { fine: ['audioTunnelTurn'] })],
+        [mgRange('Speed', 'audioSpeed', 2), mgRange('Stir', 'audioFlow', 2), mgRange('Trails', 'audioTrailEnergy', 1), mgRange('Split', 'audioBands', 1)],
+        null,
+        null,
+      ],
+    },
+  ],
+};
+
+const handsSeen = () => cam.hands.length > 0;
+const CAMERA_GRID: MgGrid = {
+  cols: ['Move', 'Draw', 'Burst', 'View', 'Colour', 'Mask'],
+  rows: [
+    {
+      name: 'Hands',
+      live: handsSeen,
+      cells: [[mgPick('Hands', 'camHands', [['repel', 'Push'], ['attract', 'Pull'], ['vortex', 'Swirl'], ['spray', 'Spray']], 'off', 'camHandForce', 3, { fine: ['camHandReach'] })], null, null, null, null, null],
+    },
+    {
+      name: 'Pinch',
+      live: handsSeen,
+      cells: [null, [mgMode('Pen', 'camHands', 'draw', 'off', null, 1, { fine: ['drawColour'], note: 'Drawing takes over your hands from Move.' })], null, null, null, null],
+    },
+    { name: 'Two fingers', live: handsSeen, cells: [null, [mgToggle('Width', 'drawWidth', { note: 'Works while Pinch draws.' })], null, null, null, null] },
+    { name: 'Open palm', live: handsSeen, cells: [null, [mgToggle('Erase', 'drawErase', { note: 'Works while Pinch draws.' })], null, null, null, null] },
+    {
+      name: 'Two hands',
+      live: () => cam.hands.length > 1,
+      cells: [
+        null,
+        null,
+        null,
+        [{
+          label: 'Dials',
+          get: () => (settings.gestOn ? 1 : 0),
+          put: (v) => set('gestOn', v > 0.05),
+          fine: ['twoDist', 'twoAngle'],
+        }],
+        null,
+        null,
+      ],
+    },
+    { name: 'Arms', cells: [[{ ...mgRange('Sweep', 'poseSweep', 3), get: () => (settings.poseOn ? clamp01(settings.poseSweep / 3) : 0), put: (v) => { set('poseOn', v > 0.05); if (v > 0.05) mgPut('poseSweep', v * 3); } }], null, null, null, null, null] },
+    {
+      name: 'Face',
+      live: () => cam.faces.length > 0,
+      cells: [null, null, null, null, null, [mgPick('Mask', 'maskFx', [['flames', 'Flame hair'], ['crown', 'Crown'], ['tears', 'Tears'], ['beard', 'Rainbow beard'], ['halo', 'Halo'], ['lasers', 'Laser eyes']], 'none', 'maskShare', 0.8)]],
+    },
+    { name: 'Gaze', live: () => cam.faces.length > 0, cells: [[mgPick('Gaze', 'gaze', [['drift', 'Drift where you look'], ['eyes', 'Eyes pull in']], 'off', null)], null, null, null, null, null] },
+    { name: 'Voice', live: () => cam.faces.length > 0 && audio.levels.level > 0.3, cells: [null, null, [mgToggle('Stream', 'voice', { fine: ['maskShare'] })], null, null, null] },
+    {
+      name: 'Expressions',
+      live: () => cam.faces.length > 0,
+      cells: [null, null, [mgRange('Sensitivity', 'exSense', 2.5, { note: 'What each expression, hand sign or jump does is picked in Connections.', action: ['Open Connections', () => openConnections()] })], null, null, null],
+    },
+    {
+      name: 'Body',
+      cells: [
+        [{ label: 'Flow round', get: () => (settings.obstacles === 'body' ? 1 : 0), put: (v) => set('obstacles', v > 0.05 ? 'body' : 'none') }],
+        null,
+        null,
+        null,
+        [mgToggle('Mirror', 'mirrorWorld')],
+        null,
+      ],
+    },
+  ],
+};
+
+const MG_SHOW_KEY = 'particle-field:classic-cards';
+// The classic cards these grids replace: hidden unless asked for (search still finds them).
+const CLASSIC_SECS = new Set(['vj', 'drums', 'drops', 'bands', 'mcolour', 'camera', 'viewfx', 'mmotion', 'mwords', 'facefx', 'hands', 'caminputs', 'mirror']);
+const CLASSIC_HEADINGS = new Set(['music:Hits', 'music:Colour', 'music:View', 'music:Motion & words', 'camera:Your face', 'camera:Your hands', 'camera:Inputs', 'camera:Your body']);
+document.body.classList.toggle('show-classic', readJson<boolean>(MG_SHOW_KEY, false));
+
+const MG_LEVELS = [0, 1 / 3, 2 / 3, 1];
+const levelOf = (v: number) => (v <= 0.02 ? 0 : v < 0.45 ? 1 : v < 0.8 ? 2 : 3);
+const cellValue = (fl: MgFlav[]) => Math.max(...fl.map((f) => f.get()));
+
+function renderMixGrid(which: 'music' | 'camera') {
+  const grid = which === 'music' ? MUSIC_GRID : CAMERA_GRID;
+  const wrap = document.createElement('div');
+  wrap.className = 'mixgrid';
+  wrap.style.setProperty('--mg-cols', String(grid.cols.length));
+  const table = document.createElement('div');
+  table.className = 'mg-table';
+  table.setAttribute('role', 'grid');
+  const head = document.createElement('div');
+  head.className = 'mg-row mg-head';
+  head.append(document.createElement('span'));
+  for (const c of grid.cols) {
+    const s = document.createElement('span');
+    s.title = c;
+    s.innerHTML = '<b></b><i></i>';
+    s.querySelector('b')!.textContent = c;
+    s.querySelector('i')!.textContent = c === 'Colour' ? 'Col' : c === 'Words' ? 'Word' : c;
+    head.append(s);
+  }
+  table.append(head);
+  const detail = document.createElement('div');
+  detail.className = 'mg-detail';
+  detail.hidden = true;
+  const draws: (() => void)[] = [];
+  const lives: [HTMLElement, () => boolean][] = [];
+  let open: { r: number; c: number } | null = null;
+
+  const flavLabel = (fl: MgFlav[]) => {
+    const on = fl.filter((f) => f.get() > 0.02);
+    const f = on[0] ?? fl[0];
+    const pick = f.choice?.options.find(([o]) => o === f.choice!.get())?.[1];
+    // Short variant names read better than the flavour; long ones stay in the detail.
+    return pick && pick.length <= 7 ? pick : f.label;
+  };
+  const apply = (fl: MgFlav[], v: number) => {
+    const on = fl.filter((f) => f.get() > 0.02);
+    for (const f of on.length ? on : [fl[0]]) f.put(v);
+  };
+
+  grid.rows.forEach((row, ri) => {
+    const r = document.createElement('div');
+    r.className = 'mg-row';
+    r.setAttribute('role', 'row');
+    const name = document.createElement('span');
+    name.className = 'mg-name';
+    name.innerHTML = '<i></i><b></b>';
+    name.querySelector('b')!.textContent = row.name;
+    r.append(name);
+    if (row.live) lives.push([r, row.live]);
+    const bar = document.createElement('div');
+    bar.className = 'mg-bar';
+    bar.innerHTML = '<i></i><span></span><b></b>';
+    r.append(bar);
+    row.cells.forEach((fl, ci) => {
+      if (!fl) {
+        r.append(document.createElement('span'));
+        return;
+      }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mg-cell';
+      b.innerHTML = '<i></i><span></span>';
+      const lbl = b.querySelector('span')!;
+      const draw = () => {
+        const lv = levelOf(cellValue(fl));
+        b.dataset.lv = String(lv);
+        lbl.textContent = flavLabel(fl);
+        const more = fl.filter((f) => f.get() > 0.02).length - 1;
+        if (more > 0) b.dataset.more = `+${more}`;
+        else delete b.dataset.more;
+        b.title = fl.map((f) => f.label).join(', ');
+        b.classList.toggle('open', !!open && open.r === ri && open.c === ci);
+        b.setAttribute('aria-label', `${row.name}, ${grid.cols[ci]}: ${lbl.textContent}${more > 0 ? ` and ${more} more` : ''}, ${['off', 'low', 'mid', 'high'][lv]}`);
+      };
+      draws.push(draw);
+      draw();
+      // Tap steps; a sideways drag sets the strength along the row; a long press opens the flavours.
+      let x0 = 0;
+      let y0 = 0;
+      let mode: '' | 'wait' | 'swipe' | 'held' = '';
+      let timer = 0;
+      const rowRect = () => r.getBoundingClientRect();
+      const showBar = (v: number) => {
+        bar.querySelector<HTMLElement>('i')!.style.width = `${Math.round(v * 100)}%`;
+        bar.querySelector('span')!.textContent = `${row.name} › ${grid.cols[ci]} · ${flavLabel(fl)}`;
+        bar.querySelector('b')!.textContent = v <= 0.02 ? 'off' : `${Math.round(v * 100)}%`;
+      };
+      b.addEventListener('pointerdown', (e) => {
+        if (e.button > 0) return;
+        x0 = e.clientX;
+        y0 = e.clientY;
+        mode = 'wait';
+        clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          if (mode !== 'wait') return;
+          mode = 'held';
+          openDetail(ri, ci);
+        }, 450);
+      });
+      b.addEventListener('pointermove', (e) => {
+        if (mode !== 'wait' && mode !== 'swipe') return;
+        const dx = e.clientX - x0;
+        const dy = e.clientY - y0;
+        if (mode === 'wait') {
+          if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+            mode = '';
+            clearTimeout(timer);
+            return;
+          }
+          if (Math.abs(dx) < 8) return;
+          mode = 'swipe';
+          clearTimeout(timer);
+          try {
+            b.setPointerCapture(e.pointerId);
+          } catch {
+            /* fine */
+          }
+          r.classList.add('swiping');
+        }
+        const rr = rowRect();
+        const v = clamp01((e.clientX - rr.left - 8) / (rr.width - 16));
+        apply(fl, v);
+        showBar(v);
+        redraw();
+      });
+      const end = () => {
+        clearTimeout(timer);
+        if (mode === 'swipe') {
+          r.classList.remove('swiping');
+          b.dataset.eat = '1';
+          setTimeout(() => delete b.dataset.eat, 0);
+        }
+        if (mode === 'held') {
+          b.dataset.eat = '1';
+          setTimeout(() => delete b.dataset.eat, 0);
+        }
+        mode = '';
+      };
+      b.addEventListener('pointerup', end);
+      b.addEventListener('pointercancel', () => {
+        r.classList.remove('swiping');
+        mode = '';
+        clearTimeout(timer);
+      });
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+      b.addEventListener('click', () => {
+        if (b.dataset.eat) return;
+        const next = MG_LEVELS[(levelOf(cellValue(fl)) + 1) % 4];
+        apply(fl, next);
+        redraw();
+      });
+      b.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.shiftKey) {
+          e.preventDefault();
+          openDetail(ri, ci);
+        }
+      });
+      r.append(b);
+    });
+    table.append(r);
+  });
+
+  const hint = document.createElement('p');
+  hint.className = 'mg-hint';
+  hint.textContent = 'Tap: off · low · mid · high. Slide sideways: exact strength. Hold: flavours and fine settings.';
+
+  function openDetail(ri: number, ci: number) {
+    open = { r: ri, c: ci };
+    const fl = grid.rows[ri].cells[ci]!;
+    detail.hidden = false;
+    detail.innerHTML = '';
+    const top = document.createElement('div');
+    top.className = 'mg-dtop';
+    top.innerHTML = '<span></span><b></b>';
+    top.querySelector('span')!.textContent = grid.rows[ri].name;
+    top.querySelector('b')!.textContent = grid.cols[ci];
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.textContent = 'Done';
+    done.addEventListener('click', () => {
+      open = null;
+      detail.hidden = true;
+      redraw();
+    });
+    top.append(done);
+    detail.append(top);
+    const fineKeys = new Set<keyof Settings>();
+    const notes = new Set<string>();
+    for (const f of fl) {
+      const fb = document.createElement('div');
+      fb.className = 'mg-fbar';
+      fb.innerHTML = '<i></i><span></span><b></b>';
+      fb.querySelector('span')!.textContent = f.label;
+      const paint = () => {
+        const v = f.get();
+        fb.querySelector<HTMLElement>('i')!.style.width = `${Math.round(v * 100)}%`;
+        fb.querySelector('b')!.textContent = v <= 0.02 ? 'off' : `${Math.round(v * 100)}%`;
+        fb.classList.toggle('on', v > 0.02);
+      };
+      paint();
+      draws.push(paint);
+      // Drag along the bar to set; a tap toggles off / mid.
+      let down = false;
+      let moved = false;
+      let sx = 0;
+      const at = (e: PointerEvent) => {
+        const rr = fb.getBoundingClientRect();
+        f.put(clamp01((e.clientX - rr.left) / rr.width));
+        redraw();
+      };
+      fb.addEventListener('pointerdown', (e) => {
+        down = true;
+        moved = false;
+        sx = e.clientX;
+        try {
+          fb.setPointerCapture(e.pointerId);
+        } catch {
+          /* fine */
+        }
+      });
+      fb.addEventListener('pointermove', (e) => {
+        if (!down) return;
+        if (!moved && Math.abs(e.clientX - sx) < 6) return;
+        moved = true;
+        at(e);
+      });
+      fb.addEventListener('pointerup', () => {
+        if (down && !moved) {
+          f.put(f.get() > 0.02 ? 0 : 2 / 3);
+          redraw();
+        }
+        down = false;
+      });
+      fb.addEventListener('pointercancel', () => (down = false));
+      fb.tabIndex = 0;
+      fb.setAttribute('role', 'slider');
+      fb.setAttribute('aria-label', f.label);
+      fb.addEventListener('keydown', (e) => {
+        const step = e.key === 'ArrowRight' ? 0.05 : e.key === 'ArrowLeft' ? -0.05 : 0;
+        if (!step) return;
+        e.preventDefault();
+        f.put(clamp01(f.get() + step));
+        redraw();
+      });
+      detail.append(fb);
+      if (f.choice) {
+        const seg = document.createElement('div');
+        seg.className = 'mg-seg';
+        for (const [o, t] of f.choice.options) {
+          const sb = document.createElement('button');
+          sb.type = 'button';
+          sb.textContent = t;
+          sb.addEventListener('click', () => {
+            f.choice!.put(o);
+            if (f.get() <= 0.02) f.put(2 / 3);
+            redraw();
+          });
+          draws.push(() => sb.classList.toggle('on', f.choice!.get() === o && f.get() > 0.02));
+          seg.append(sb);
+        }
+        detail.append(seg);
+      }
+      for (const k of f.fine ?? []) fineKeys.add(k);
+      if (f.note) notes.add(f.note);
+      if (f.action) {
+        const ab = document.createElement('button');
+        ab.type = 'button';
+        ab.className = 'mg-action';
+        ab.textContent = f.action[0];
+        ab.addEventListener('click', f.action[1]);
+        detail.append(ab);
+      }
+    }
+    if (fineKeys.size) {
+      const h = document.createElement('p');
+      h.className = 'mg-sub';
+      h.textContent = 'Fine settings';
+      detail.append(h);
+      for (const k of fineKeys) detail.append(mgFine(k, draws));
+    }
+    for (const n of notes) {
+      const p = document.createElement('p');
+      p.className = 'mg-note';
+      p.textContent = n;
+      detail.append(p);
+    }
+    redraw();
+    detail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function redraw() {
+    for (const d of draws) d();
+  }
+  refreshers.push(redraw);
+
+  // Live: rows light up as the music (or the camera) fires them.
+  const tick = () => {
+    if (!wrap.isConnected) return;
+    if (wrap.offsetParent) for (const [el, on] of lives) el.classList.toggle('live', on());
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+
+  const classic = document.createElement('button');
+  classic.type = 'button';
+  classic.className = 'mg-classic';
+  const label = () => (classic.textContent = document.body.classList.contains('show-classic') ? 'Hide the classic cards' : 'Show the classic cards');
+  label();
+  classic.addEventListener('click', () => {
+    const on = document.body.classList.toggle('show-classic');
+    writeJson(MG_SHOW_KEY, on);
+    label();
+  });
+  refreshers.push(label);
+
+  wrap.append(table, hint, detail, classic);
+  return wrap;
+}
+
+// One fine setting, drawn small, from the classic control's own definition.
+function mgFine(k: keyof Settings, draws: (() => void)[]) {
+  const c = ctlOf(k);
+  const row = document.createElement('label');
+  row.className = 'mg-fine';
+  const name = document.createElement('span');
+  name.textContent = c?.label ?? String(k);
+  row.append(name);
+  if (!c) return row;
+  if (c.kind === 'range') {
+    const out = document.createElement('b');
+    const inp = document.createElement('input');
+    inp.type = 'range';
+    inp.min = String(c.min);
+    inp.max = String(c.max);
+    inp.step = String(c.step);
+    inp.addEventListener('input', () => set(k, +inp.value as never));
+    draws.push(() => {
+      inp.value = String(settings[k]);
+      out.textContent = c.format ? c.format(num(k)) : String(settings[k]);
+    });
+    row.classList.add('range');
+    row.append(out, inp);
+  } else if (c.kind === 'select' || c.kind === 'choice') {
+    const sel = document.createElement('select');
+    for (const [v, t] of c.options) sel.append(new Option(t, v));
+    sel.addEventListener('change', () => set(k, sel.value as never));
+    draws.push(() => (sel.value = String(settings[k])));
+    row.append(sel);
+  } else if (c.kind === 'toggle') {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.addEventListener('change', () => set(k, cb.checked as never));
+    draws.push(() => (cb.checked = !!settings[k]));
+    row.classList.add('toggle');
+    row.prepend(cb);
+  } else if (c.kind === 'text') {
+    const t = document.createElement('input');
+    t.type = 'text';
+    t.placeholder = c.placeholder ?? '';
+    t.addEventListener('change', () => set(k, t.value as never));
+    t.addEventListener('keydown', (e) => e.stopPropagation());
+    draws.push(() => {
+      if (document.activeElement !== t) t.value = String(settings[k]);
+    });
+    row.classList.add('text');
+    row.append(t);
+  }
+  return row;
+}
+
 function renderControls() {
   let collapsed: Record<string, boolean> = {};
   try {
@@ -7863,6 +8538,7 @@ function renderControls() {
       const h = document.createElement('h2');
       h.className = 'tab-heading';
       h.textContent = ctl.label;
+      if (CLASSIC_HEADINGS.has(`${ctl.tab}:${ctl.label}`)) h.classList.add('classic');
       controls.append(h);
       sectionTabs.push([h, ctl.tab]);
       continue;
@@ -7992,6 +8668,7 @@ function renderControls() {
       }
       controls.append(section);
       section.dataset.sec = ctl.id;
+      if (CLASSIC_SECS.has(ctl.id)) section.classList.add('classic');
       sectionTabs.push([section, pageOf(ctl)]);
       {
         const id = ctl.id;
@@ -8109,6 +8786,11 @@ function renderControls() {
 
     if (ctl.kind === 'exmeters') {
       searchItem(body, renderExMeters());
+      continue;
+    }
+
+    if (ctl.kind === 'mixgrid') {
+      searchItem(body, renderMixGrid(ctl.which));
       continue;
     }
 
