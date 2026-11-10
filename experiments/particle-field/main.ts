@@ -71,6 +71,7 @@ app.innerHTML = `
       <button type="button" class="icon sheet-btn" id="sheet-more" aria-label="Actions" title="Actions" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" class="dots"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       <button class="icon" id="toggle" aria-expanded="true" title="Hide controls (H)">⟩</button>
     </header>
+    <button type="button" class="scene-now" id="scene-now" hidden><span class="sn-label">Scene</span><b></b><em>edited</em></button>
     <div class="panel-body" id="controls"></div>
     <div class="actionbar" id="actionbar"></div>
   </aside>
@@ -5079,10 +5080,26 @@ function applyVibe(v: VibeDef) {
   } else if (faceVibe && !faceNow) setTimeout(() => showToast(`${v.name} plays on a face: pick “Use a face scene” in the Vibe card`), 1200);
   const all = { ...v.drums, ...v.cards, ...look };
   if (settings.audioWords.trim() && !VIBE_WORDS.has(settings.audioWords)) delete (all as Partial<Settings>).audioWords;
+  // The Lens (kaleidoscope included) belongs to the look: a vibe only
+  // touches it when "Vibes also change style" is on.
+  if (!settings.audioVibeLook) for (const k of LENS_KEYS) delete (all as Partial<Settings>)[k];
   for (const [k, x] of Object.entries(all) as [keyof Settings, never][]) if (cardAllows(k)) (patch as Record<string, unknown>)[k] = x;
   patch.audioVibe = v.name;
+  const before = Object.fromEntries(Object.keys(patch).map((k) => [k, settings[k as keyof Settings]])) as Partial<Settings>;
   Object.assign(settings, patch);
   changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+  // Say what it switched on, with an Undo.
+  const turnedOn = (Object.keys(patch) as (keyof Settings)[]).filter((k) => {
+    const x = patch[k] as unknown;
+    return k !== 'audioVibe' && before[k] !== x && x !== 0 && x !== false && x !== 'none' && x !== 'off';
+  });
+  const names = [...new Set(turnedOn.map((k) => CONTROLS.find((c) => 'key' in c && c.key === k && 'label' in c)).filter(Boolean).map((c) => (c as { label: string }).label))];
+  const what = names.length ? `: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''}` : '';
+  if (audio.source !== 'off') showToast(`${v.name}${what}`, ['Undo', () => {
+    Object.assign(settings, before);
+    changed(new Set(Object.keys(before) as (keyof Settings)[]));
+    refresh();
+  }]);
   // Vibes are how the music plays the field: without sound they barely show.
   if (audio.source === 'off') setTimeout(() => showToast(`${v.name} is set. It moves with music: turn on a sound source`), faceVibe ? 2500 : 0);
 }
@@ -5912,6 +5929,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
     redrawMine();
   }
   const target = sceneTarget(p, keepAudio);
+  sceneBase = target;
   if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
     pendingLook = { target, since: performance.now() };
     return;
@@ -6406,7 +6424,10 @@ const TL_HOW: [TlHow, string][] = [
 // --- crossfader ----------------------------------------------------------------
 // The fader sets how far between scene A and scene B the field is: numbers
 // sit partway, the palette is a fixed mix of the two, and settings that can't
-// be partway take B's value past the middle (with a quick picture crossfade).
+// be partway switch one by one between 35% and 65% (each at its own point),
+// so the picture changes in small steps. The big ones (style, shape, flow
+// type…) switch at 50% inside a short dip to dark that follows the fader,
+// so even a slow push never shows a hard cut.
 let xfLast = -1;
 let xfAuto: { from: number; to: number; start: number; dur: number } | null = null;
 const xfMoved = new Set<keyof Settings>();
@@ -6414,6 +6435,15 @@ let xfSettle = 0;
 const xfPalCache = new Map<string, { shades: Rgb[]; bg: Rgb }>();
 const XF_PAL = ['palette', 'customColors', 'customBg'] as const;
 let xfUi: (() => void)[] = [];
+let xfDip = 0; // 0..1, darkening around the middle when A and B differ in a big way
+const XF_BIG = new Set<string>(['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter', 'shape', 'shapeText', 'pointerMode']);
+// Where each switch-only setting changes over: spread over 35-65% by name.
+const xfFlipAt = (k: string) => {
+  if (XF_BIG.has(k)) return 0.5;
+  let hsh = 0;
+  for (let i = 0; i < k.length; i++) hsh = (hsh * 31 + k.charCodeAt(i)) >>> 0;
+  return 0.35 + ((hsh % 1000) / 1000) * 0.3;
+};
 
 function xfSave() {
   try {
@@ -6456,8 +6486,8 @@ function xfApply(pos: number) {
   const S = settings as unknown as Record<string, unknown>;
   const a = A as unknown as Record<string, unknown>;
   const b = B as unknown as Record<string, unknown>;
-  const side = pos < 0.5 ? a : b;
   const flips = new Set<keyof Settings>();
+  let big = false;
   for (const k of Object.keys(DEFAULTS) as (keyof Settings)[]) {
     if (k === 'xfPos' || (XF_PAL as readonly string[]).includes(k)) continue;
     const va = a[k];
@@ -6467,7 +6497,10 @@ function xfApply(pos: number) {
       let n2 = va + (vb - va) * pos;
       if (intKeys.has(k)) n2 = Math.round(n2);
       v = n2;
-    } else v = side[k];
+    } else {
+      v = pos < xfFlipAt(k) ? va : vb;
+      if (XF_BIG.has(k) && va !== vb) big = true;
+    }
     if (S[k] === v) continue;
     S[k] = v;
     if (typeof v === 'number') xfMoved.add(k);
@@ -6484,8 +6517,11 @@ function xfApply(pos: number) {
     settings.count = c < 100 ? Math.round(c) : Math.round(c / 10) * 10;
     setCount(countNow());
   }
+  // The dip: dark at 50%, clear by 38% and 62%, eased.
+  const d = Math.max(0, 1 - Math.abs(pos - 0.5) / 0.12);
+  xfDip = big ? 0.92 * d * d * (3 - 2 * d) : 0;
   if (flips.size) {
-    if ((['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter'] as const).some((k) => flips.has(k))) pictureFade(0.5);
+    if ([...flips].some((k) => XF_BIG.has(k)) && !big) pictureFade(0.5);
     glideHomes = { ms: 700, fromFree: false };
     changed(flips);
     glideHomes = null;
@@ -6573,10 +6609,19 @@ function xfOptions(sel: HTMLSelectElement) {
     for (const p of myPresets) g.append(new Option(p.name, `my:${p.name}`));
     sel.append(g);
   }
-  const g2 = document.createElement('optgroup');
-  g2.label = 'Scene library';
-  for (const [nm] of [...PRESETS].sort(([x], [y]) => x.localeCompare(y))) g2.append(new Option(nm, nm));
-  sel.append(g2);
+  libraryGroups(sel);
+}
+// The scene library in the same families as the Scenes tab, A-Z in each.
+function libraryGroups(sel: HTMLSelectElement) {
+  for (const [fam, label] of FAMILIES) {
+    if (fam === 'all') continue;
+    const names = PRESETS.map(([nm]) => nm).filter((nm) => (FAMILY_OF[nm] ?? 'stories') === fam).sort((x, y) => x.localeCompare(y));
+    if (!names.length) continue;
+    const g = document.createElement('optgroup');
+    g.label = label;
+    for (const nm of names) g.append(new Option(nm, nm));
+    sel.append(g);
+  }
 }
 
 function renderXfader() {
@@ -6818,9 +6863,22 @@ function makeShards(W: number, H: number): Shard[] {
 // and draw its overlay.
 function tlFxFrame(now: number) {
   const f = tlFx;
-  const need = !!f && ['xfade', 'fade', 'flash', 'wipe', 'freeze', 'shatter'].includes(f.how);
+  const dip = xf.on ? xfDip : 0;
+  const need = (!!f && ['xfade', 'fade', 'flash', 'wipe', 'freeze', 'shatter'].includes(f.how)) || dip > 0.01;
   if (fxCanvas.hidden === need) fxCanvas.hidden = !need;
-  if (!f) return;
+  if (!f) {
+    // Crossfader dip: dark around the middle so the big switches happen unseen.
+    if (dip > 0.01) {
+      if (fxCanvas.width !== canvas.width || fxCanvas.height !== canvas.height) (fxCanvas.width = canvas.width), (fxCanvas.height = canvas.height);
+      fxCtx.setTransform(1, 0, 0, 1, 0, 0);
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      fxCtx.globalAlpha = dip;
+      fxCtx.fillStyle = `rgb(${pal().bg.join(' ')})`;
+      fxCtx.fillRect(0, 0, fxCanvas.width, fxCanvas.height);
+      fxCtx.globalAlpha = 1;
+    }
+    return;
+  }
   const u = Math.min(1, (now - f.start) / f.dur);
   if (f.go && now >= f.switchAt) {
     const go = f.go;
@@ -7499,10 +7557,7 @@ function renderTimeline() {
       for (const p of myPresets) g.append(new Option(p.name, `my:${p.name}`));
       pick.append(g);
     }
-    const g2 = mk('optgroup');
-    g2.label = 'Scene library';
-    for (const [nm] of [...PRESETS].sort(([a], [b]) => a.localeCompare(b))) g2.append(new Option(nm, nm));
-    pick.append(g2);
+    libraryGroups(pick);
   };
   pick.addEventListener('focus', refill);
   pick.addEventListener('pointerdown', refill);
@@ -9797,6 +9852,51 @@ function renderControls() {
   controls.append(keys);
 }
 
+// --- the scene now -------------------------------------------------------------
+// Under the header: which scene is playing, and "edited" once you've changed
+// anything it set. Tap to open Scenes.
+let sceneBase: Settings | null = null;
+// Settings that move by themselves or aren't part of a scene's look.
+const SCENE_IGNORE = new Set<string>(['xfPos']);
+function sceneEdited() {
+  if (!sceneBase) return false;
+  const S = settings as unknown as Record<string, unknown>;
+  const B = sceneBase as unknown as Record<string, unknown>;
+  const palAuto = settings.audioPalEvery > 0 && audio.source !== 'off';
+  for (const k of Object.keys(DEFAULTS)) {
+    if (SCENE_IGNORE.has(k) || (palAuto && (XF_PAL as readonly string[]).includes(k))) continue;
+    const a = S[k];
+    const b = B[k];
+    if (a === b) continue;
+    if (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1e-6) continue;
+    if (typeof a === 'object' && JSON.stringify(a) === JSON.stringify(b)) continue;
+    return true;
+  }
+  return false;
+}
+function syncSceneNow() {
+  const el = document.getElementById('scene-now');
+  if (!el) return;
+  let name = '';
+  let edited = false;
+  if (xf.on) name = `${xf.a.name} ↔ ${xf.b.name}`;
+  else if (tl.on && tlActive()) name = currentMine?.name ?? lastSceneName;
+  else {
+    name = currentMine?.name ?? lastSceneName;
+    // Mid-morph or waiting for the beat, it isn't "edited" yet.
+    if (name && !morphState && !pendingLook) edited = sceneEdited();
+  }
+  el.hidden = !name;
+  el.querySelector('b')!.textContent = name;
+  el.classList.toggle('edited', edited);
+  el.title = edited ? `${name}, changed since you picked it` : name;
+}
+setInterval(syncSceneNow, 500);
+document.getElementById('scene-now')!.addEventListener('click', () => {
+  showTab('presets');
+  if (panel.classList.contains('collapsed')) toggle.click();
+});
+
 const statsEl = () => document.getElementById('stats');
 setInterval(() => {
   const el = statsEl();
@@ -10330,7 +10430,7 @@ function calibrateSync() {
   });
 }
 
-function showToast(text: string) {
+function showToast(text: string, action?: [string, () => void]) {
   let el = document.getElementById('toast');
   if (!el) {
     el = document.createElement('div');
@@ -10339,9 +10439,20 @@ function showToast(text: string) {
     document.querySelector('.stage')!.append(el);
   }
   el.textContent = text;
+  el.classList.toggle('has-act', !!action);
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = action[0];
+    b.addEventListener('click', () => {
+      action[1]();
+      el!.classList.remove('show');
+    });
+    el.append(b);
+  }
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el!.classList.remove('show'), Math.max(1600, text.length * 45));
+  toastTimer = window.setTimeout(() => el!.classList.remove('show'), Math.max(action ? 5000 : 1600, text.length * 45));
 }
 
 // Reset is a clean slate: default settings and no locked cards, so the

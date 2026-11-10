@@ -1204,3 +1204,31 @@ body:not(.searching):not(.show-classic) .group[data-sec="lens"] .group-body > :n
 .sync-cal button { margin-top: 12px; }
 .sync-cal.hit .sync-big { animation: sync-hit 0.25s ease-out; }
 @keyframes sync-hit { from { transform: scale(1.12); color: #ffb347; } to { transform: none; } }
+
+/* The scene now: which scene is playing, and whether you've changed it. */
+.scene-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.scene-now[hidden], .panel.collapsed .scene-now { display: none; }
+.scene-now .sn-label { color: var(--muted); }
+.scene-now b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scene-now em { display: none; font-style: normal; color: #ffb070; white-space: nowrap; }
+.scene-now.edited em { display: inline-flex; align-items: center; gap: 5px; }
+.scene-now.edited em::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #ff9a3c; }
+.scene-now:hover b { text-decoration: underline; }
+.toast.has-act { display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); white-space: normal; padding: 4px 4px 4px 12px; }
+.toast.has-act.show { pointer-events: auto; }
+.toast button { height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 0.14); color: #fff; font: inherit; cursor: pointer; }
