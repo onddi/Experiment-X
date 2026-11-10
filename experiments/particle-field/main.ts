@@ -4773,12 +4773,13 @@ let shapeInfo = { targets: 0, ms: 0 };
 
 function frame(now: number) {
   // dt is in 60fps frames, clamped so a background tab doesn't explode the sim.
+  const rawMs = Math.min(250, now - last);
   const dt = Math.min(3, (now - last) / (1000 / 60));
   last = now;
   fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
   // Frozen by the user (Space) or by the audio player pausing with "hold" on.
   const frozen = paused;
-  if (!frozen) adaptQuality(dt);
+  if (!frozen) adaptQuality(dt, rawMs);
   audio.genre = settings.audioGenre;
   audio.update(now);
   if (!frozen) {
@@ -4817,29 +4818,31 @@ function frame(now: number) {
 // lines and, if that isn't enough, a lower canvas resolution. Fast ones
 // climb back up.
 let renderScale = 1;
-let slowFrames = 0;
-let fastFrames = 0;
+// Counted in time, not frames: a slow phone at 8 fps steps down in about a
+// second and a half, not the 8 seconds sixty slow frames would take.
+let slowMs = 0;
+let fastMs = 0;
 
-function adaptQuality(dt: number) {
+function adaptQuality(dt: number, ms: number) {
   if (settings.render === 'links') {
     if (dt > 1.3) linkBudget = Math.max(400, linkBudget * 0.92);
     else if (dt < 1.1) linkBudget = Math.min(6000, linkBudget * 1.02);
   }
   if (dt > 1.4) {
-    slowFrames++;
-    fastFrames = 0;
+    slowMs += ms;
+    fastMs = 0;
   } else if (dt < 1.1) {
-    fastFrames++;
-    slowFrames = Math.max(0, slowFrames - 1);
+    fastMs += ms;
+    slowMs = Math.max(0, slowMs - ms);
   }
-  // ~2 s mostly slow → drop resolution a step; ~6 s smooth → raise it.
-  if (slowFrames > 60 && renderScale > 0.5) {
+  // ~1.5 s mostly slow → drop resolution a step; ~6 s smooth → raise it.
+  if (slowMs > 1500 && renderScale > 0.5) {
     renderScale = Math.max(0.5, renderScale - 0.25);
-    slowFrames = 0;
+    slowMs = 0;
     resize();
-  } else if (fastFrames > 360 && renderScale < 1) {
+  } else if (fastMs > 6000 && renderScale < 1) {
     renderScale = Math.min(1, renderScale + 0.25);
-    fastFrames = 0;
+    fastMs = 0;
     resize();
   }
 }
