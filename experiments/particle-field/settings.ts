@@ -233,6 +233,15 @@ export interface Settings {
   lensGlitch: number;
   lensDots: number;
   lensMusic: number;
+  lensTwirl: number;
+  lensWave: number;
+  lensRipple: number;
+  lensFan: number;
+  lensShatter: number;
+  lensSlices: number;
+  lensEcho: number;
+  lensGlow: number;
+  lensCrt: number;
   audioKaleidoDrop: boolean;
   audioEcho: number;
   audioPalEvery: number;
@@ -488,6 +497,15 @@ export const DEFAULTS: Settings = {
   lensGlitch: 0,
   lensDots: 0,
   lensMusic: 0.6,
+  lensTwirl: 0,
+  lensWave: 0,
+  lensRipple: 0,
+  lensFan: 0,
+  lensShatter: 0,
+  lensSlices: 0,
+  lensEcho: 0,
+  lensGlow: 0,
+  lensCrt: 0,
   audioKaleidoDrop: false,
   audioEcho: 0,
   audioPalEvery: 0,

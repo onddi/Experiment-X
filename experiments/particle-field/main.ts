@@ -3657,7 +3657,8 @@ const dotsSmallCtx = dotsSmall.getContext('2d')!;
 const dotsMasks = new Map<string, CanvasPattern>();
 let lensJolt = 0; // colour split kick, 1 → 0
 // Lenses moving with the music ("Moves with the music" on the Lens card).
-const lm = { t: 0, kick: 0, zoom: 0, turn: 0, turnDir: 1, tilesStep: 0, mirrorStep: 0, bars: 0, sidesUntil: 0 };
+const lm = { t: 0, kick: 0, zoom: 0, turn: 0, turnDir: 1, tilesStep: 0, mirrorStep: 0, bars: 0, sidesUntil: 0,
+  twirl: 0, wave: 0, fan: 0, burst: 0, glow: 0, ripples: [] as number[], nextRipple: 0 };
 const MIRROR_CYCLE = ['lr', 'tb', 'quad'] as const;
 // Runs every frame before the kaleidoscope and the lens are drawn.
 function lensMusicTick(now: number) {
@@ -3679,6 +3680,18 @@ function lensMusicTick(now: number) {
     lm.sidesUntil = now + (480 / (L.bpm || 120)) * 1000;
     lm.mirrorStep++;
   }
+  // The newer lenses: twirl spin, wave and fan phase, shatter burst, glow.
+  lm.twirl += dt * (0.25 + m * (L.bass * 1.5 + lm.kick * 2.5));
+  lm.wave += dt * (1.2 + m * (L.bass * 3 + lm.kick * 4));
+  lm.fan += dt * (0.8 + m * (L.bass * 2 + lm.kick * 3));
+  lm.burst = m > 0 && L.drop ? 1 : m > 0 && L.beat ? Math.max(lm.burst, 0.25 * m) : lm.burst * 0.94;
+  lm.glow = music ? lm.glow * 0.9 + (L.level * m + lm.kick * m * 0.5) * 0.1 : 0;
+  // Ripples: one per kick with music, a steady one otherwise.
+  if (S.lensRipple > 0 && ((m > 0 && L.beat) || (!m && now > lm.nextRipple))) {
+    lm.ripples.push(now);
+    lm.nextRipple = now + 1400;
+  }
+  lm.ripples = lm.ripples.filter((t0) => now - t0 < 2600);
   // Tiles: step through counts every few bars.
   if (m > 0 && L.bar && ++lm.bars % (m > 0.6 ? 2 : 4) === 0) lm.tilesStep++;
   if (m === 0) lm.tilesStep = lm.mirrorStep = 0;
@@ -3693,9 +3706,32 @@ let glitchBands: { y: number; h: number; dx: number; until: number }[] = [];
 let glitchNext = 0;
 const lensOn = () => {
   const S = settings;
-  return S.lensMirror !== 'off' || S.lensTiles >= 2 || S.lensZoom > 0 || S.lensSplit > 0 || S.lensGlitch > 0 || S.lensDots > 0;
+  return S.lensMirror !== 'off' || S.lensTiles >= 2 || S.lensZoom > 0 || S.lensSplit > 0 || S.lensGlitch > 0 || S.lensDots > 0 || S.lensTwirl > 0 || S.lensWave > 0 || S.lensRipple > 0 || S.lensFan > 0 || S.lensShatter > 0 || S.lensSlices > 0 || S.lensEcho > 0 || S.lensGlow > 0 || S.lensCrt > 0;
 };
 
+
+// Draw src into g with a transform about the centre, clipped by a path.
+function lensClipDraw(g: CanvasRenderingContext2D, src: HTMLCanvasElement, clip: (g: CanvasRenderingContext2D) => void, rot: number, sc: number) {
+  const cw = src.width;
+  const ch = src.height;
+  g.save();
+  g.beginPath();
+  clip(g);
+  g.clip();
+  g.translate(cw / 2, ch / 2);
+  g.rotate(rot);
+  g.scale(sc, sc);
+  g.drawImage(src, -cw / 2, -ch / 2);
+  g.restore();
+}
+// Slices: a short history of frames at half size.
+const sliceHist: HTMLCanvasElement[] = [];
+let sliceAt = 0;
+const SLICE_FRAMES = 8;
+let shards: { dx: number; dy: number; r: number }[] = [];
+let crtPat: { dpr: number; pat: CanvasPattern } | null = null;
+const glowBuf = document.createElement('canvas');
+const glowCtx = glowBuf.getContext('2d')!;
 function lensFrame(now: number) {
   const on = lensOn();
   if (lensCanvas.hidden === on) {
@@ -3770,6 +3806,108 @@ function lensFrame(now: number) {
       }
   }
 
+
+  const mus = music ? S.lensMusic : 0;
+  const fill = (col: string) => {
+    g.globalCompositeOperation = 'copy';
+    g.fillStyle = col;
+    g.fillRect(0, 0, cw, ch);
+    g.globalCompositeOperation = 'source-over';
+  };
+  const R = Math.hypot(cw, ch) / 2;
+
+  // Spiral twirl: rings, each turned a little more toward the centre.
+  if (S.lensTwirl > 0) {
+    const src = input();
+    fill(bgCol);
+    const N = 14;
+    const tw = S.lensTwirl * (2.4 + lm.kick * mus * 1.2);
+    for (let k = 0; k < N; k++) {
+      const u = 1 - k / N; // 1 outside → 0 centre
+      const rr = R * u;
+      const ang = tw * Math.pow(1 - u, 1.6) + lm.twirl * S.lensTwirl * (1 - u);
+      lensClipDraw(g, src, (c) => c.arc(cw / 2, ch / 2, rr, 0, Math.PI * 2), ang, 1);
+    }
+  }
+
+  // Fan: pie slices swinging alternately, like an iris or a hand fan.
+  if (S.lensFan > 0) {
+    const src = input();
+    fill(bgCol);
+    const N = 12;
+    const sl = (Math.PI * 2) / N;
+    const swing = S.lensFan * 0.35 * Math.sin(lm.fan) + lm.kick * mus * S.lensFan * 0.15;
+    for (let k = 0; k < N; k++) {
+      const a0 = k * sl;
+      lensClipDraw(g, src, (c) => {
+        c.moveTo(cw / 2, ch / 2);
+        c.arc(cw / 2, ch / 2, R * 1.1, a0 - 0.004, a0 + sl + 0.004);
+        c.closePath();
+      }, k % 2 ? swing : -swing, 1);
+    }
+  }
+
+  // Wave warp: rows slide on a sine wave, like liquid or heat haze.
+  if (S.lensWave > 0) {
+    const src = input();
+    fill(bgCol);
+    const rowH = Math.max(2, Math.round(3 * dpr));
+    const amp = S.lensWave * (40 + mus * (L.bass * 50 + lm.kick * 30)) * dpr;
+    const freq = (Math.PI * 2) / (180 * dpr);
+    for (let y = 0; y < ch; y += rowH) {
+      const dx = amp * Math.sin(y * freq + lm.wave) + amp * 0.35 * Math.sin(y * freq * 2.7 - lm.wave * 1.3);
+      g.drawImage(src, 0, y, cw, rowH, dx, y, cw, rowH);
+    }
+  }
+
+  // Ripple: rings travelling out from the centre, like a drop in water.
+  if (S.lensRipple > 0 && lm.ripples.length) {
+    const src = input();
+    fill(bgCol);
+    g.drawImage(src, 0, 0);
+    const N = 26;
+    const speed = R / 1800; // px per ms
+    for (let k = N - 1; k >= 1; k--) {
+      const rr = (R * k) / N;
+      let disp = 0;
+      for (const t0 of lm.ripples) {
+        const front = (now - t0) * speed;
+        const life = 1 - (now - t0) / 2600;
+        const d = (rr - front) / (R * 0.08);
+        disp += Math.exp(-d * d) * Math.sin(d * 3) * life;
+      }
+      if (Math.abs(disp) < 0.01) continue;
+      const sc = 1 + (disp * S.lensRipple * 70 * dpr) / Math.max(rr, 1);
+      lensClipDraw(g, src, (c) => c.arc(cw / 2, ch / 2, rr, 0, Math.PI * 2), 0, sc);
+    }
+  }
+
+  // Shatter: shards that drift apart, burst at a drop, then pull back.
+  if (S.lensShatter > 0) {
+    const src = input();
+    fill(bgCol);
+    const cols = 8;
+    const rows = 5;
+    if (shards.length !== cols * rows) shards = Array.from({ length: cols * rows }, () => ({ dx: Math.random() - 0.5, dy: Math.random() - 0.5, r: Math.random() - 0.5 }));
+    const sw = cw / cols;
+    const sh = ch / rows;
+    const spread = S.lensShatter * (0.12 + 0.05 * Math.sin(now / 900) + lm.burst * 0.9);
+    for (let yy = 0; yy < rows; yy++)
+      for (let xx = 0; xx < cols; xx++) {
+        const s = shards[yy * cols + xx];
+        const cx = (xx + 0.5) * sw;
+        const cy = (yy + 0.5) * sh;
+        const ox = (cx - cw / 2) * spread * 0.6 + s.dx * sw * spread * 2;
+        const oy = (cy - ch / 2) * spread * 0.6 + s.dy * sh * spread * 2;
+        g.save();
+        g.translate(cx + ox, cy + oy);
+        g.rotate(s.r * spread * 1.5);
+        g.scale(1 - spread * 0.15, 1 - spread * 0.15);
+        g.drawImage(src, xx * sw, yy * sh, sw, sh, -sw / 2, -sh / 2, sw, sh);
+        g.restore();
+      }
+  }
+
   // Infinite zoom: the frame inside itself, again and again, drifting inward.
   if (S.lensZoom > 0) {
     const src = input();
@@ -3789,6 +3927,34 @@ function lensFrame(now: number) {
       g.drawImage(src, -cw / 2, -ch / 2);
       g.restore();
     }
+  }
+
+
+  // Slices: vertical blinds, each showing a slightly older moment.
+  if (S.lensSlices > 0) {
+    const src = input();
+    const hw = Math.ceil(cw / 2);
+    const hh = Math.ceil(ch / 2);
+    while (sliceHist.length < SLICE_FRAMES) sliceHist.push(document.createElement('canvas'));
+    const cur = sliceHist[sliceAt % SLICE_FRAMES];
+    if (cur.width !== hw || cur.height !== hh) (cur.width = hw), (cur.height = hh);
+    const cc = cur.getContext('2d')!;
+    cc.globalCompositeOperation = 'copy';
+    cc.drawImage(src, 0, 0, hw, hh);
+    const N = 16;
+    const stripW = cw / N;
+    const maxLag = Math.round(S.lensSlices * (SLICE_FRAMES - 1));
+    fill(bgCol);
+    for (let i = 0; i < N; i++) {
+      const lag = Math.round((maxLag * Math.abs(i + 0.5 - N / 2)) / (N / 2));
+      const x = i * stripW;
+      if (!lag) g.drawImage(src, x, 0, stripW + 1, ch, x, 0, stripW + 1, ch);
+      else {
+        const old = sliceHist[(sliceAt - Math.min(lag, sliceAt) + SLICE_FRAMES * 4) % SLICE_FRAMES];
+        if (old.width === hw) g.drawImage(old, x / 2, 0, stripW / 2 + 1, hh, x, 0, stripW + 1, ch);
+      }
+    }
+    sliceAt++;
   }
 
   // Dots: each cell's colour as a round light, like an LED wall.
@@ -3829,6 +3995,45 @@ function lensFrame(now: number) {
       g.fillStyle = bgCol;
       g.fillRect(0, 0, cw, ch);
     }
+  }
+
+
+  // Echo copies: a few bigger, fainter copies, flashing out on a kick.
+  if (S.lensEcho > 0) {
+    const src = input();
+    g.globalCompositeOperation = 'copy';
+    g.drawImage(src, 0, 0);
+    g.globalCompositeOperation = 'lighter';
+    for (let k = 1; k <= 4; k++) {
+      const sc = 1 + k * (0.05 + S.lensEcho * 0.06 + lm.kick * mus * 0.05);
+      g.globalAlpha = (S.lensEcho * 0.45) / k;
+      g.save();
+      g.translate(cw / 2, ch / 2);
+      g.scale(sc, sc);
+      g.drawImage(src, -cw / 2, -ch / 2);
+      g.restore();
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+  }
+
+  // Glow: a soft bloom round everything bright, breathing with the music.
+  if (S.lensGlow > 0) {
+    const src = input();
+    const gw = Math.ceil(cw / 4);
+    const gh = Math.ceil(ch / 4);
+    if (glowBuf.width !== gw || glowBuf.height !== gh) (glowBuf.width = gw), (glowBuf.height = gh);
+    glowCtx.globalCompositeOperation = 'copy';
+    glowCtx.filter = `blur(${(3 + S.lensGlow * 5).toFixed(1)}px)`;
+    glowCtx.drawImage(src, 0, 0, gw, gh);
+    glowCtx.filter = 'none';
+    g.globalCompositeOperation = 'copy';
+    g.drawImage(src, 0, 0);
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = Math.min(1, S.lensGlow * (0.7 + lm.glow * 1.5));
+    g.drawImage(glowBuf, 0, 0, cw, ch);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
   }
 
   // Colour split: red, green and blue drift apart, with a jolt on each kick.
@@ -3886,6 +4091,38 @@ function lensFrame(now: number) {
       g.drawImage(canvas, 0, 0);
       first = false;
     }
+  }
+  // CRT: scanlines, a dark vignette and a little flicker, over everything.
+  if (S.lensCrt > 0) {
+    if (first) {
+      g.globalCompositeOperation = 'copy';
+      g.drawImage(canvas, 0, 0);
+      first = false;
+    }
+    const step = Math.max(2, Math.round(3 * dpr));
+    if (!crtPat || crtPat.dpr !== step) {
+      const p0 = document.createElement('canvas');
+      p0.width = 4;
+      p0.height = step;
+      const pc = p0.getContext('2d')!;
+      pc.fillStyle = 'rgb(0 0 0 / 0.55)';
+      pc.fillRect(0, step - Math.max(1, Math.round(step / 2.5)), 4, Math.max(1, Math.round(step / 2.5)));
+      crtPat = { dpr: step, pat: g.createPattern(p0, 'repeat')! };
+    }
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = S.lensCrt;
+    g.fillStyle = crtPat.pat;
+    g.fillRect(0, 0, cw, ch);
+    const vg = g.createRadialGradient(cw / 2, ch / 2, R * 0.45, cw / 2, ch / 2, R * 1.05);
+    vg.addColorStop(0, 'rgb(0 0 0 / 0)');
+    vg.addColorStop(1, 'rgb(0 0 0 / 0.85)');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, cw, ch);
+    const flick = 0.04 + (mus && L.snare ? 0.12 : 0) + Math.random() * 0.03;
+    g.globalAlpha = S.lensCrt * flick;
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, cw, ch);
+    g.globalAlpha = 1;
   }
   if (first) {
     g.globalCompositeOperation = 'copy';
@@ -4657,6 +4894,13 @@ const ICONS = {
 
 // Every slider, for Play mode's pickers (filled once CONTROLS exists).
 const PLAYABLE: [string, string][] = [];
+// The newer lenses, in the order the card lists them.
+const LENS_MORE: [('lensTwirl' | 'lensWave' | 'lensRipple' | 'lensFan' | 'lensShatter' | 'lensSlices' | 'lensEcho' | 'lensGlow' | 'lensCrt'), string][] = [
+  ['lensTwirl', 'Spiral twirl'], ['lensWave', 'Wave warp'], ['lensRipple', 'Ripple'], ['lensFan', 'Fan'],
+  ['lensShatter', 'Shatter'], ['lensSlices', 'Slices'],
+  ['lensEcho', 'Echo copies'], ['lensGlow', 'Glow'], ['lensCrt', 'CRT'],
+];
+
 // Knob sets: five settings for knobs A–E in one go.
 const KNOB_SLOTS = ['playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5'] as const;
 const KNOB_SETS: [string, string[], string][] = [
@@ -4666,6 +4910,7 @@ const KNOB_SETS: [string, string[], string][] = [
   ['Forces', ['gravity', 'wind', 'windDir', 'flow', 'speed'], 'Gravity, wind, wind direction, flow, speed.'],
   ['Shape', ['shapeSize', 'homeStrength', 'shapeCycle', 'size', 'mDensity'], 'Shape size, snap to shape, form & dissolve, particle size, density.'],
   ['Lens', ['audioKaleido', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch'], 'Kaleidoscope, tiles, infinite zoom, colour split, glitch.'],
+  ['Warp', ['lensTwirl', 'lensWave', 'lensRipple', 'lensShatter', 'lensGlow'], 'Spiral twirl, wave warp, ripple, shatter, glow.'],
   ['Music VJ', ['audioIntensity', 'audioPulse', 'audioCam', 'audioTunnel', 'audioKaleido'], 'Music intensity, pulse, punch & shake, feedback tunnel, kaleidoscope (needs a sound source).'],
 ];
 function knobSetName() {
@@ -4786,11 +5031,11 @@ const CONTROLS: Control[] = [
   { kind: 'swatch' },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
-  { kind: 'section', id: 'lens', label: 'Lens', tab: 'look', about: 'Reshape the whole picture: kaleidoscope, mirror, tiles, infinite zoom, colour split, glitch, LED dots.',
-    lock: ['audioKaleido', 'audioKaleidoDrop', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic'],
+  { kind: 'section', id: 'lens', label: 'Lens', tab: 'look', about: 'Reshape the whole picture: kaleidoscope, mirror, tiles, zoom, twirl, waves, ripples, shatter, glow and more.',
+    lock: ['audioKaleido', 'audioKaleidoDrop', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'],
     power: { on: () => settings.audioKaleido > 0 || settings.audioKaleidoDrop || lensOn(),
-      off: { audioKaleido: 0, audioKaleidoDrop: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0 }, start: { audioKaleido: 6 } },
-    summary: () => [settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.lensMirror !== 'off' ? 'mirror' : '', settings.lensTiles >= 2 ? `tiles ${settings.lensTiles}×${settings.lensTiles}` : '', settings.lensZoom > 0 ? 'infinite zoom' : '', settings.lensSplit > 0 ? 'colour split' : '', settings.lensGlitch > 0 ? 'glitch' : '', settings.lensDots > 0 ? 'LED dots' : ''].filter(Boolean).join(' · ') || 'off' },
+      off: { audioKaleido: 0, audioKaleidoDrop: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0 }, start: { audioKaleido: 6 } },
+    summary: () => [settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.lensMirror !== 'off' ? 'mirror' : '', settings.lensTiles >= 2 ? `tiles ${settings.lensTiles}×${settings.lensTiles}` : '', settings.lensZoom > 0 ? 'infinite zoom' : '', settings.lensSplit > 0 ? 'colour split' : '', settings.lensGlitch > 0 ? 'glitch' : '', settings.lensDots > 0 ? 'LED dots' : '', ...LENS_MORE.filter(([k]) => settings[k] > 0).map(([, n]) => n.toLowerCase())].filter(Boolean).join(' · ') || 'off' },
   { kind: 'range', key: 'audioKaleido', label: 'Kaleidoscope', min: 0, max: 8, step: 2, format: (v) => (v === 0 ? 'off' : `${v} sides`) },
   { kind: 'toggle', key: 'audioKaleidoDrop', label: 'Kaleidoscope for 2 bars at each drop (music)', show: () => settings.audioKaleido === 0 },
   { kind: 'select', key: 'lensMirror', label: 'Mirror', options: [['off', 'Off'], ['lr', 'Left ↔ right'], ['tb', 'Top ↕ bottom'], ['quad', 'Four ways']] },
@@ -4799,8 +5044,15 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'lensSplit', label: 'Colour split', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'lensGlitch', label: 'Glitch', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'lensDots', label: 'LED dots', min: 0, max: 24, step: 1, format: (v) => (v === 0 ? 'off' : `${v}px`) },
+  { kind: 'sub', label: 'Twists and warps' },
+  ...LENS_MORE.slice(0, 4).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) })),
+  { kind: 'sub', label: 'Breaking it up' },
+  ...LENS_MORE.slice(4, 6).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) })),
+  { kind: 'sub', label: 'Light' },
+  ...LENS_MORE.slice(6).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) })),
+  { kind: 'sub', label: 'Music' },
   { kind: 'range', key: 'lensMusic', label: 'Moves with the music', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. Without music the glitch picks its own moments. Every one can go on a knob (Play on the field).' },
+  { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. The twirl spins and winds tighter on kicks, waves swell with the bass, a ripple goes out on each kick, shards burst at a drop, echoes flash and the glow breathes. Without music they drift by themselves. Every one can go on a knob (Play on the field).' },
 
   { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
@@ -5252,7 +5504,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
