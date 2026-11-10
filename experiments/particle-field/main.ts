@@ -7969,8 +7969,10 @@ function mgPut(k: keyof Settings, v: number) {
 }
 const num = (k: keyof Settings) => settings[k] as unknown as number;
 // A plain amount: 0 is off.
+// Sliding to the far left is off (0), even where the classic slider starts
+// higher because its card switch is the way off (Drop strength, Separation).
 const mgRange = (label: string, k: keyof Settings, hi: number, more: Partial<MgFlav> = {}): MgFlav => ({
-  label, get: () => clamp01(num(k) / hi), put: (v) => mgPut(k, v * hi), ...more,
+  label, get: () => clamp01(num(k) / hi), put: (v) => (v <= 0.02 ? set(k, 0 as never) : mgPut(k, v * hi)), ...more,
 });
 // An on/off switch.
 const mgToggle = (label: string, k: keyof Settings, more: Partial<MgFlav> = {}): MgFlav => ({
