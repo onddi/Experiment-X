@@ -9169,80 +9169,104 @@ addEventListener('resize', () => {
 });
 applySheet();
 {
+  // The drag moves the sheet with a transform only (no layout per frame, so it
+  // stays smooth on phones); the new height is set once, on release.
   const head = panel.querySelector<HTMLElement>('header')!;
   let y0 = -1;
   let h0 = 0;
   let hNow = 0;
+  let top = 0;
   let moved = false;
   let wasClosed = false;
   let lastY = 0;
   let lastT = 0;
   let vy = 0;
+  let eatClick = false;
   head.addEventListener('pointerdown', (e) => {
-    if (!sheetMode()) return;
+    if (!sheetMode() || e.button > 0) return;
     wasClosed = panel.classList.contains('collapsed');
-    if (!wasClosed && (e.target as HTMLElement).closest('button')) return;
     y0 = lastY = e.clientY;
     lastT = e.timeStamp;
     vy = 0;
     moved = false;
     h0 = wasClosed ? 0 : panel.getBoundingClientRect().height;
     hNow = h0;
-    head.setPointerCapture(e.pointerId);
+    try {
+      head.setPointerCapture(e.pointerId);
+    } catch {
+      /* fine without */
+    }
   });
+  // iOS: keep the page itself from scrolling or bouncing under the drag.
+  head.addEventListener('touchmove', (e) => { if (y0 >= 0) e.preventDefault(); }, { passive: false });
   head.addEventListener('pointermove', (e) => {
     if (y0 < 0) return;
     if (!moved && Math.abs(e.clientY - y0) < 6) return;
     if (!moved) {
       moved = true;
-      if (wasClosed) {
-        toggle.click();
-        panel.classList.remove('peek');
-      }
+      if (wasClosed) toggle.click();
       panel.classList.add('dragging');
+      panel.classList.remove('peek', 'picking');
+      top = sheetMax();
+      panel.style.height = `${top}px`;
     }
     const dt = Math.max(1, e.timeStamp - lastT);
-    vy = vy * 0.6 + ((e.clientY - lastY) / dt) * 0.4;
+    vy = vy * 0.5 + ((e.clientY - lastY) / dt) * 0.5;
     lastY = e.clientY;
     lastT = e.timeStamp;
-    hNow = Math.max(40, Math.min(sheetMax(), h0 - (e.clientY - y0)));
-    panel.classList.remove('peek');
-    panel.style.height = `${hNow}px`;
+    hNow = Math.max(0, Math.min(top, h0 - (e.clientY - y0)));
+    panel.style.transform = `translate3d(0, ${top - hNow}px, 0)`;
   });
+  const settle = (fn: () => void) => {
+    // Release: swap the transform for the real height in one frame, no jump.
+    fn();
+    panel.style.transform = '';
+    requestAnimationFrame(() => panel.classList.remove('dragging'));
+  };
   const end = () => {
     if (y0 < 0) return;
     y0 = -1;
-    panel.classList.remove('dragging');
     if (!moved) {
       // A tap on the closed handle opens the sheet where it was.
       if (wasClosed) toggle.click();
-      applySheet();
       return;
     }
+    eatClick = true;
+    setTimeout(() => (eatClick = false), 0);
     // Where the peek would sit: the bar plus the actions row.
-    panel.style.height = '';
     panel.classList.add('peek');
+    panel.style.height = '';
     const peekH = panel.getBoundingClientRect().height;
     panel.classList.remove('peek');
-    panel.style.height = `${hNow}px`;
-    if (vy > 1.2 || hNow < peekH * 0.6) {
-      applySheet();
-      if (!panel.classList.contains('collapsed')) toggle.click();
+    panel.style.height = `${top}px`;
+    if (vy > 0.9 || hNow < peekH * 0.6) {
+      // Slide the rest of the way down, then close.
+      panel.classList.remove('dragging');
+      panel.style.transform = `translate3d(0, ${top}px, 0)`;
+      setTimeout(() => {
+        panel.classList.add('dragging');
+        if (!panel.classList.contains('collapsed')) toggle.click();
+        settle(applySheet);
+      }, 180);
       return;
     }
-    if (vy < -1.2) {
-      sheet.peek = false;
-      sheet.h = sheetMax();
-    } else if (hNow < peekH + 70) {
-      sheet.peek = true;
-    } else {
-      sheet.peek = false;
-      sheet.h = Math.round(hNow);
-    }
-    applySheet();
+    settle(() => {
+      if (vy < -0.9) {
+        sheet.peek = false;
+        sheet.h = sheetMax();
+      } else if (hNow < peekH + 70) {
+        sheet.peek = true;
+      } else {
+        sheet.peek = false;
+        sheet.h = Math.round(hNow);
+      }
+      applySheet();
+    });
   };
   head.addEventListener('pointerup', end);
   head.addEventListener('pointercancel', end);
+  // A drag that started on the title or a button shouldn't also press it.
+  head.addEventListener('click', (e) => { if (eatClick) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
 // In X-Frame, only one layer's options panel is open at a time.
 xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click() });

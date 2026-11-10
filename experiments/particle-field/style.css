@@ -207,7 +207,8 @@ button:hover, select:hover { border-color: #3c3f46; }
     border-top: 1px solid var(--line);
     border-radius: 18px 18px 0 0;
     box-shadow: 0 -10px 30px rgb(0 0 0 / 0.45);
-    transition: height 0.22s ease;
+    transition: height 0.22s ease, transform 0.18s ease-out;
+    will-change: transform;
   }
   .panel.dragging { transition: none; }
   .panel header { position: relative; gap: 6px; padding: 16px 10px 8px 16px; touch-action: none; }
@@ -248,9 +249,9 @@ button:hover, select:hover { border-color: #3c3f46; }
   .panel.peek .panel-body, .panel.peek .search, .panel.peek .picker { display: none; }
 
   /* Closed: no buttons on the field, only a faint handle to tap or swipe up. */
-  .panel.collapsed { top: auto; left: 50%; right: auto; bottom: 0; width: 160px; height: auto; margin-left: -80px; border: none; border-radius: 0; box-shadow: none; background: none; }
-  .panel.collapsed header { height: 34px; padding: 0; border: none; cursor: pointer; }
-  .panel.collapsed header::before { top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); width: 48px; margin-left: -24px; height: 4px; background: rgb(255 255 255 / 0.28); transition: opacity 0.4s; }
+  .panel.collapsed { top: auto; left: 50%; right: auto; bottom: 0; width: 280px; height: auto; margin-left: -140px; border: none; border-radius: 0; box-shadow: none; background: none; }
+  .panel.collapsed header { height: calc(64px + env(safe-area-inset-bottom)); padding: 0; border: none; cursor: pointer; }
+  .panel.collapsed header::before { top: auto; bottom: calc(14px + env(safe-area-inset-bottom)); width: 56px; margin-left: -28px; height: 4px; background: rgb(255 255 255 / 0.28); transition: opacity 0.4s; }
   .panel.collapsed header > * { display: none; }
   .panel.collapsed .picker, .panel.collapsed .actionbar { display: none; }
   body.field-idle .panel.collapsed header::before { opacity: 0.35; }
