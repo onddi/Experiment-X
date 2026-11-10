@@ -1110,7 +1110,7 @@ body:not(.show-classic):not(.searching) .classic { display: none !important; }
 .mg-list { display: flex; flex-direction: column; }
 .mg-lhead { display: flex; justify-content: space-between; padding: 0 2px 4px; font: 600 10px/1 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #7d808a; }
 .mg-lrow { position: relative; display: flex; align-items: flex-start; gap: 8px; min-height: 42px; padding: 7px 2px; border-top: 1px solid #1f2127; border-radius: 8px; transition: background .25s; }
-.mg-lrow .mg-name { flex: none; width: 118px; min-height: 28px; }
+.mg-lrow .mg-name { flex: none; width: 138px; min-height: 28px; }
 .mg-lrow .mg-name b { font-size: 13px; white-space: normal; line-height: 1.15; }
 .mg-lrow.live { background: rgba(240,163,107,0.07); }
 .mg-lrow.live .mg-name i { background: #f0a36b; box-shadow: 0 0 6px #f0a36b; }
@@ -1137,3 +1137,14 @@ body:not(.show-classic):not(.searching) .classic { display: none !important; }
 .mg-none { display: grid; place-items: center; height: 44px; }
 .mg-none::before { content: ""; width: 8px; height: 1.5px; border-radius: 1px; background: #2b2e36; }
 @container (max-width: 330px) { .mg-none { height: 34px; } }
+.mg-group { margin: 12px 0 2px; font: 600 11px/1 system-ui, sans-serif; color: var(--text); }
+.mg-lrow .mg-name { flex-wrap: wrap; row-gap: 3px; align-content: center; }
+.mg-meter { display: block; position: relative; flex: 0 0 100%; height: 3px; margin-left: 13px; max-width: 80px; border-radius: 2px; background: #2b2e36; overflow: visible; }
+.mg-meter u { display: block; height: 100%; width: 0; border-radius: 2px; background: #6d7079; transition: width .08s; }
+.mg-lrow.live .mg-meter u { background: #f0a36b; }
+.mg-meter:not(.nohi)::after { content: ""; position: absolute; left: var(--hi); top: -2px; width: 1.5px; height: 7px; background: #8c8f97; }
+.mg-sens { margin-top: 10px; padding-top: 8px; border-top: 1px solid #1f2127; }
+.mg-pick { width: 100%; height: 34px; border-radius: 8px; }
+.mg-fbar[hidden] { display: none; }
+.mg-lrow .mg-name { display: grid; grid-template-columns: 7px minmax(0, 1fr); column-gap: 6px; row-gap: 4px; align-items: center; align-content: center; }
+.mg-lrow .mg-meter { grid-column: 2; margin-left: 0; }
