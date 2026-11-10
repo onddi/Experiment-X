@@ -5750,7 +5750,9 @@ function tlRingBuild() {
   }
 }
 function tlRing(now: number) {
-  const on = tlActive() && tl.ring !== 'hidden' && settings.playOn !== undefined;
+  // The card's progress bar follows along even with the ring hidden.
+  if (tlActive() && tlIdx >= 0) tlProgress?.(tlFrac(now));
+  const on = tlActive() && tl.ring !== 'hidden';
   tlRingEl.hidden = !on;
   if (!on) return;
   const show = tl.ring === 'always' || tlHover || now - tlShownAt < 3500;
@@ -5768,7 +5770,6 @@ function tlRing(now: number) {
   tlBar.textContent = `bar ${Math.min(c.bars, tlBarsIn + 1)} / ${c.bars}`;
   const nx = tlQueued >= 0 ? tlQueued : (tlIdx + 1) % tl.clips.length;
   tlNext.textContent = tl.clips.length > 1 ? `${tlQueued >= 0 ? 'queued' : 'next'}: ${tl.clips[nx].name}` : '';
-  tlProgress?.(frac);
 }
 tlRingEl.addEventListener('pointerenter', () => (tlHover = true));
 tlRingEl.addEventListener('pointerleave', () => (tlHover = false));
