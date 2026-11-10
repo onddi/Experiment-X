@@ -1232,3 +1232,51 @@ body:not(.searching):not(.show-classic) .group[data-sec="lens"] .group-body > :n
 .toast.has-act { display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); white-space: normal; padding: 4px 4px 4px 12px; }
 .toast.has-act.show { pointer-events: auto; }
 .toast button { height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 0.14); color: #fff; font: inherit; cursor: pointer; }
+
+/* --- overview: the whole scene at a glance ---------------------------------- */
+.scene-now .sn-more { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.scene-now .sn-more::after { content: ' ›'; }
+.overview {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: rgb(12 13 17 / 0.96);
+  color: var(--text);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.ov-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.ov-head div { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.ov-head small { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.ov-head b { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-head em { font-style: normal; font-size: 12px; color: #ffb070; }
+.ov-head .icon { width: 44px; height: 44px; flex: none; }
+.ov-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.ov-recipe { max-width: 720px; display: flex; flex-direction: column; gap: 6px; }
+.ov-recipe h3, .ov-maphead h3 { margin: 10px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.ov-recipe p { margin: 0; font-size: 17px; line-height: 1.7; color: #c9cbd4; }
+.ov-link { display: inline; padding: 0; border: 0; background: none; font: inherit; color: #ffb070; text-decoration: underline; text-decoration-color: rgb(255 176 112 / 0.35); text-underline-offset: 3px; cursor: pointer; }
+.ov-link:hover { color: #ffd2a8; }
+.ov-maphead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ov-maphead span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.ov-maphead i { width: 10px; height: 10px; border-radius: 3px; background: #17181d; border: 1px solid #2c2e36; }
+.ov-maphead i.on { background: #2a1d10; border-color: #ff9a3c; margin-left: 0; }
+.ov-maphead i:not(.on) { margin-left: 10px; }
+.ov-map { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.ov-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ov-colhead { display: flex; justify-content: space-between; align-items: baseline; padding: 0 2px 4px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.ov-colhead span { font-size: 12px; color: var(--muted); }
+.ov-card { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 10px; border: 1px solid #24262d; background: #17181d; color: #7d808c; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.ov-card b { font-weight: 500; }
+.ov-card.on { border-color: #ff9a3c; background: #2a1d10; color: #fff; }
+.ov-card.on b { font-weight: 600; }
+.ov-card span { font-size: 12px; line-height: 1.4; color: #ffcf9e; }
+.ov-all { display: none; }
+@media (max-width: 899px) {
+  .ov-map { grid-template-columns: minmax(0, 1fr); }
+  .ov-map:not(.all) .ov-card:not(.on) { display: none; }
+  .ov-all { display: block; height: 44px; border-radius: 10px; border: 1px solid #2c2e36; background: #1c1d23; color: var(--text); font: inherit; font-size: 14px; }
+  .ov-col { gap: 6px; }
+}

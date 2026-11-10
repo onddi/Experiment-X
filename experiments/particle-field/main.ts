@@ -71,7 +71,7 @@ app.innerHTML = `
       <button type="button" class="icon sheet-btn" id="sheet-more" aria-label="Actions" title="Actions" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" class="dots"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       <button class="icon" id="toggle" aria-expanded="true" title="Hide controls (H)">⟩</button>
     </header>
-    <button type="button" class="scene-now" id="scene-now" hidden><span class="sn-label">Scene</span><b></b><em>edited</em></button>
+    <button type="button" class="scene-now" id="scene-now" hidden><span class="sn-label">Scene</span><b></b><em>edited</em><span class="sn-more">Overview</span></button>
     <div class="panel-body" id="controls"></div>
     <div class="actionbar" id="actionbar"></div>
   </aside>
@@ -9893,10 +9893,191 @@ function syncSceneNow() {
   el.title = edited ? `${name}, changed since you picked it` : name;
 }
 setInterval(syncSceneNow, 500);
-document.getElementById('scene-now')!.addEventListener('click', () => {
-  showTab('presets');
+document.getElementById('scene-now')!.addEventListener('click', () => openOverview());
+
+// --- overview ------------------------------------------------------------------
+// Everything that makes up the picture right now, in one place: a recipe in
+// plain sentences, then every card from every tab, lit when it does
+// something. Tap anything to go to it.
+const OV_COLS: [string, Tab[]][] = [
+  ['Look', ['look']], ['Shape', ['shape']], ['Motion', ['motion']], ['Music', ['music']], ['Camera', ['camera']],
+  ['Play', ['presets', 'timeline', 'xfader', 'knobs', 'record', 'links']],
+];
+const OV_SKIP = new Set(['actions', 'presets', 'mine', 'record', 'vibe', 'mgmusic', 'mgcam']);
+function sectionKeys() {
+  const out = new Map<string, (keyof Settings)[]>();
+  let cur = '';
+  for (const c of CONTROLS) {
+    if (c.kind === 'section') cur = c.id;
+    else if ('key' in c && cur) {
+      const list = out.get(cur) ?? [];
+      list.push(c.key);
+      out.set(cur, list);
+    }
+  }
+  return out;
+}
+function openSection(id: string) {
+  closeOverview();
+  const c = CONTROLS.find((x) => x.kind === 'section' && x.id === id) as Extract<Control, { kind: 'section' }> | undefined;
+  if (!c) return;
   if (panel.classList.contains('collapsed')) toggle.click();
-});
+  showTab(pageOf(c));
+  const sec = document.querySelector<HTMLElement>(`[data-sec="${id}"]`);
+  if (!sec) return;
+  if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+const optLabel = (opts: [string, string][], v: unknown) => opts.find(([k]) => k === v)?.[1] ?? String(v);
+// The recipe: [text, section id] pieces, a section id of '' for plain words.
+function recipe(): { title: string; parts: [string, string][] }[] {
+  const S = settings;
+  const lc = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+  const out: { title: string; parts: [string, string][] }[] = [];
+  const look: [string, string][] = [];
+  look.push([`${S.count.toLocaleString()} ${lc(optLabel(RENDERS, S.render))}`, 'look']);
+  look.push([' in ', '']);
+  look.push([`${S.palette === 'custom' ? 'your own' : optLabel(Object.entries(PALETTES).map(([k, p]) => [k, p.label]), S.palette)} colours`, 'colour']);
+  if (S.glow) look.push([' with glow', 'look']);
+  if (S.shape !== 'none') look.push([', forming ', ''], [lc(optLabel(SHAPES, S.shape)), 'shape']);
+  if (S.flow > 0) look.push([', drifting on ', ''], [`${S.flow < 0.3 ? 'gentle' : S.flow < 0.9 ? 'steady' : 'strong'} ${lc(optLabel(FLOW_TYPES, S.flowType))} flow`.replace(/ \(.*\)/, ''), 'flow']);
+  if (S.trail > 0.5) look.push([' with ', ''], [S.trail > 0.8 ? 'long trails' : 'trails', 'look']);
+  look.push(['.', '']);
+  if (S.pointerMode !== 'none' || S.click !== 'none') {
+    look.push([' Pointer: ', '']);
+    if (S.pointerMode !== 'none') look.push([lc(optLabel(POINTER_MODES, S.pointerMode)), 'pointer']);
+    if (S.click !== 'none') look.push([`${S.pointerMode !== 'none' ? ', ' : ''}click to `, ''], [lc(optLabel(CLICK_MODES, S.click)), 'pointer']);
+    look.push(['.', '']);
+  }
+  out.push({ title: '', parts: look });
+  const fromGrid = (g: MgGrid, sec: string, prefix = true) => {
+    const parts: [string, string][] = [];
+    for (const r of g.rows) for (const cell of r.cells) for (const f of cell ?? []) {
+      let on = false;
+      try {
+        on = f.get() > 0.01;
+      } catch {}
+      if (on) parts.push([`${prefix && r.name ? r.name.toLowerCase() + ' ' : ''}${f.label.toLowerCase()}`, sec]);
+    }
+    return parts;
+  };
+  const join = (parts: [string, string][]) => parts.flatMap((p, i) => (i ? [[i === parts.length - 1 ? ' and ' : ', ', ''] as [string, string], p] : [p]));
+  const lens = fromGrid(LENS_GRID, 'lens', false);
+  if (lens.length) out.push({ title: 'Lens', parts: [...join(lens), ['.', '']] });
+  const music = fromGrid(MUSIC_GRID, 'mgmusic');
+  if (music.length) out.push({ title: audio.source === 'off' ? 'With music (no sound on)' : 'With the music', parts: [...join(music.slice(0, 10)), [music.length > 10 ? `, and ${music.length - 10} more.` : '.', '']] });
+  const camParts = fromGrid(CAMERA_GRID, 'mgcam');
+  const links = parseLinks(settings.links).length;
+  if (camParts.length || links) out.push({ title: cam.on ? 'With the camera' : 'With the camera (off)', parts: [...join(camParts.slice(0, 8)), [links ? `${camParts.length ? '; ' : ''}${links} connection${links > 1 ? 's' : ''}.` : '.', links ? 'links' : '']] });
+  return out;
+}
+let ovEl: HTMLElement | null = null;
+function closeOverview() {
+  ovEl?.remove();
+  ovEl = null;
+}
+function openOverview() {
+  closeOverview();
+  const keys = sectionKeys();
+  const el = document.createElement('div');
+  el.className = 'overview';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Overview');
+  const name = document.querySelector('#scene-now b')?.textContent || 'Your mix';
+  const edited = document.getElementById('scene-now')?.classList.contains('edited');
+  const head = document.createElement('div');
+  head.className = 'ov-head';
+  head.innerHTML = `<div><small>Overview</small><b></b>${edited ? '<em>edited</em>' : ''}</div><button type="button" class="icon" aria-label="Close">✕</button>`;
+  head.querySelector('b')!.textContent = name;
+  head.querySelector('button')!.addEventListener('click', closeOverview);
+  const body = document.createElement('div');
+  body.className = 'ov-body';
+  // A: the recipe.
+  const rec = document.createElement('div');
+  rec.className = 'ov-recipe';
+  for (const para of recipe()) {
+    if (para.title) {
+      const t = document.createElement('h3');
+      t.textContent = para.title;
+      rec.append(t);
+    }
+    const p = document.createElement('p');
+    for (const [text, sec] of para.parts) {
+      if (!sec) p.append(text);
+      else {
+        const a = document.createElement('button');
+        a.type = 'button';
+        a.className = 'ov-link';
+        a.textContent = text.trim();
+        a.addEventListener('click', () => openSection(sec));
+        if (text.startsWith(' ')) p.append(' ');
+        p.append(a);
+      }
+    }
+    rec.append(p);
+  }
+  // C: every card, lit when it does something.
+  const map = document.createElement('div');
+  map.className = 'ov-map';
+  let lit = 0;
+  let total = 0;
+  for (const [label, tabs] of OV_COLS) {
+    const col = document.createElement('div');
+    col.className = 'ov-col';
+    const cards = CONTROLS.filter((c): c is Extract<Control, { kind: 'section' }> => c.kind === 'section' && !c.fixed && !OV_SKIP.has(c.id) && tabs.includes(pageOf(c)));
+    let n = 0;
+    const items = cards.map((c) => {
+      const ks = keys.get(c.id) ?? [];
+      let on = false;
+      try {
+        on = c.id === 'audio' ? audio.source !== 'off' : c.power ? c.power.on() : ks.some((k) => JSON.stringify(settings[k]) !== JSON.stringify(DEFAULTS[k]));
+      } catch {}
+      if (on) n++;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = on ? 'ov-card on' : 'ov-card';
+      const t = document.createElement('b');
+      t.textContent = c.label;
+      b.append(t);
+      if (on && c.summary) {
+        const sm = document.createElement('span');
+        try {
+          sm.textContent = c.summary();
+        } catch {}
+        if (sm.textContent && sm.textContent !== 'off') b.append(sm);
+      }
+      b.addEventListener('click', () => openSection(c.id));
+      return b;
+    });
+    lit += n;
+    total += cards.length;
+    const h = document.createElement('div');
+    h.className = 'ov-colhead';
+    h.innerHTML = `<b></b><span>${n} / ${cards.length}</span>`;
+    h.querySelector('b')!.textContent = label;
+    col.append(h, ...items);
+    map.append(col);
+  }
+  const mapHead = document.createElement('div');
+  mapHead.className = 'ov-maphead';
+  mapHead.innerHTML = `<h3>Every card</h3><span><i class="on"></i>does something (${lit}) <i></i>default or off (${total - lit})</span>`;
+  const showAll = document.createElement('button');
+  showAll.type = 'button';
+  showAll.className = 'ov-all';
+  showAll.textContent = 'Show the ones that are off too';
+  showAll.addEventListener('click', () => {
+    map.classList.toggle('all');
+    showAll.textContent = map.classList.contains('all') ? 'Only the ones doing something' : 'Show the ones that are off too';
+  });
+  body.append(rec, mapHead, map, showAll);
+  el.append(head, body);
+  document.body.append(el);
+  ovEl = el;
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeOverview();
+  });
+  head.querySelector<HTMLElement>('button')!.focus();
+}
 
 const statsEl = () => document.getElementById('stats');
 setInterval(() => {
