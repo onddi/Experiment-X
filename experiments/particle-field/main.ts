@@ -4982,7 +4982,7 @@ type ControlBody =
   | { kind: 'xfader' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
-  | { kind: 'mixgrid'; which: 'music' | 'camera' }
+  | { kind: 'mixgrid'; which: 'music' | 'camera' | 'lens' }
   | { kind: 'links' }
   | { kind: 'sub'; label: string }
   | { kind: 'heading'; label: string; tab: Tab }
@@ -5349,6 +5349,7 @@ const CONTROLS: Control[] = [
     power: { on: () => settings.audioKaleido > 0 || settings.audioKaleidoDrop || lensOn(),
       off: { audioKaleido: 0, audioKaleidoDrop: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0 }, start: { audioKaleido: 6 } },
     summary: () => [settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.lensMirror !== 'off' ? 'mirror' : '', settings.lensTiles >= 2 ? `tiles ${settings.lensTiles}×${settings.lensTiles}` : '', settings.lensZoom > 0 ? 'infinite zoom' : '', settings.lensSplit > 0 ? 'colour split' : '', settings.lensGlitch > 0 ? 'glitch' : '', settings.lensDots > 0 ? 'LED dots' : '', ...LENS_MORE.filter(([k]) => settings[k] > 0).map(([, n]) => n.toLowerCase())].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'mixgrid', which: 'lens' },
   { kind: 'range', key: 'audioKaleido', label: 'Kaleidoscope', min: 0, max: 8, step: 2, format: (v) => (v === 0 ? 'off' : `${v} sides`) },
   { kind: 'toggle', key: 'audioKaleidoDrop', label: 'Kaleidoscope for 2 bars at each drop (music)', show: () => settings.audioKaleido === 0 },
   { kind: 'select', key: 'lensMirror', label: 'Mirror', options: [['off', 'Off'], ['lr', 'Left ↔ right'], ['tb', 'Top ↕ bottom'], ['quad', 'Four ways']] },
@@ -7930,7 +7931,8 @@ type MgFlav = {
 // src: a Connections input; its connections show as reactions in the list too.
 type MgRow = { name: string; when?: string; group?: string; src?: string; level?: () => number; live?: () => boolean; cells: (MgFlav[] | null)[] };
 // list: draw as "When you… → …the particles" rows instead of a matrix (for sparse grids).
-type MgGrid = { cols: string[]; rows: MgRow[]; list?: boolean };
+// chips: one row of effects with no trigger (a card full of off-by-default effects); cols are the groups.
+type MgGrid = { cols: string[]; rows: MgRow[]; list?: boolean; chips?: boolean };
 
 const ctlOf = (k: keyof Settings) => CONTROLS.find((c) => 'key' in c && c.key === k) as Extract<Control, { key: keyof Settings }> | undefined;
 function mgPut(k: keyof Settings, v: number) {
@@ -8279,6 +8281,34 @@ const CAMERA_GRID: MgGrid = {
   ],
 };
 
+const LENS_GRID: MgGrid = {
+  list: true,
+  chips: true,
+  cols: ['Basics', 'Twists and warps', 'Breaking it up', 'Light', 'Music'],
+  rows: [{
+    name: 'Lens',
+    cells: [
+      [
+        mgRange('Kaleidoscope', 'audioKaleido', 8, { fine: ['audioKaleidoDrop'] }),
+        mgPick('Mirror', 'lensMirror', [['lr', 'Left ↔ right'], ['tb', 'Top ↕ bottom'], ['quad', 'Four ways']], 'off', null),
+        {
+          label: 'Tiles',
+          get: () => (settings.lensTiles < 2 ? 0 : settings.lensTiles / 6),
+          put: (v) => set('lensTiles', v <= 0.05 ? 0 : Math.max(2, Math.round(v * 6))),
+        },
+        mgRange('Infinite zoom', 'lensZoom', 1),
+        mgRange('Colour split', 'lensSplit', 1),
+        mgRange('Glitch', 'lensGlitch', 1),
+        mgRange('LED dots', 'lensDots', 24),
+      ],
+      LENS_MORE.slice(0, 4).map(([k, l]) => mgRange(l, k, 1)),
+      LENS_MORE.slice(4, 6).map(([k, l]) => mgRange(l, k, 1)),
+      LENS_MORE.slice(6).map(([k, l]) => mgRange(l, k, 1)),
+      [mgRange('Moves with the music', 'lensMusic', 1, { note: 'Effects stack in the order of the + menu. With music the zoom surges on kicks, the kaleidoscope turns with the bass, tiles step every few bars.' })],
+    ],
+  }],
+};
+
 const MG_SHOW_KEY = 'particle-field:classic-cards';
 // The classic cards these grids replace: hidden unless asked for (search still finds them).
 const CLASSIC_SECS = new Set(['vj', 'drums', 'drops', 'bands', 'mcolour', 'camera', 'viewfx', 'mmotion', 'mwords', 'facefx', 'hands', 'caminputs', 'mirror']);
@@ -8370,8 +8400,8 @@ function mgGesture(el: HTMLElement, row: HTMLElement, bar: HTMLElement, fl: MgFl
   });
 }
 
-function renderMixGrid(which: 'music' | 'camera') {
-  const grid = which === 'music' ? MUSIC_GRID : CAMERA_GRID;
+function renderMixGrid(which: 'music' | 'camera' | 'lens') {
+  const grid = which === 'music' ? MUSIC_GRID : which === 'camera' ? CAMERA_GRID : LENS_GRID;
   const wrap = document.createElement('div');
   wrap.className = 'mixgrid';
   wrap.style.setProperty('--mg-cols', String(grid.cols.length));
@@ -8470,10 +8500,11 @@ function renderMixGrid(which: 'music' | 'camera') {
   list.className = 'mg-list';
   if (grid.list) {
     hint.textContent = 'Tap a reaction for its settings. Slide it sideways: strength. + adds one.';
+    if (grid.chips) hint.textContent = 'Tap an effect for its settings. Slide it sideways: strength. + adds one.';
     const cap = document.createElement('div');
     cap.className = 'mg-lhead';
     cap.innerHTML = '<span>When you…</span><span>…the particles</span>';
-    list.append(cap);
+    if (!grid.chips) list.append(cap);
     let group = '';
     grid.rows.forEach((row, ri) => {
       if (row.group && row.group !== group) {
@@ -8494,7 +8525,7 @@ function renderMixGrid(which: 'music' | 'camera') {
           .map((l) => ({ f: Object.values(linkCache).find((f) => f.choice!.get() === l.act) ?? (linkCache[l.act] = linkFlav(row.src!, l.act)), col: 'Connection', key: `${ri}:L:${l.act}` }));
       };
       const r = document.createElement('div');
-      r.className = 'mg-lrow';
+      r.className = grid.chips ? 'mg-lrow mg-chips' : 'mg-lrow';
       const name = document.createElement('span');
       name.className = 'mg-name';
       name.innerHTML = '<i></i><b></b>';
@@ -8524,7 +8555,8 @@ function renderMixGrid(which: 'music' | 'camera') {
       const menu = document.createElement('div');
       menu.className = 'mg-menu';
       menu.hidden = true;
-      r.append(name, fx, bar);
+      if (grid.chips) r.append(fx, bar);
+      else r.append(name, fx, bar);
       const chipName = (f: MgFlav) => {
         const pick = f.choice && f.get() > 0.02 ? f.choice.options.find(([o]) => o === f.choice!.get())?.[1] : '';
         return pick || f.label;
@@ -8586,8 +8618,17 @@ function renderMixGrid(which: 'music' | 'camera') {
                 m.addEventListener('click', go);
                 menu.append(m);
               };
+              let lastCol = '';
               for (const { f, col, key } of off) {
-                item(f.label, col, () => {
+                // Effect cards: the groups as small headings instead of a tag on each item.
+                if (grid.chips && col !== lastCol) {
+                  lastCol = col;
+                  const g = document.createElement('p');
+                  g.className = 'mg-mgroup';
+                  g.textContent = col;
+                  menu.append(g);
+                }
+                item(f.label, grid.chips ? '' : col, () => {
                   f.put(2 / 3);
                   menu.hidden = true;
                   redraw();
@@ -8608,11 +8649,13 @@ function renderMixGrid(which: 'music' | 'camera') {
       build();
       list.append(r, menu);
     });
-    // Expressions need a nudge on some faces.
-    const sens = document.createElement('div');
-    sens.className = 'mg-sens';
-    sens.append(mgFine('exSense', draws));
-    list.append(sens);
+    if (grid === CAMERA_GRID) {
+      // Expressions need a nudge on some faces.
+      const sens = document.createElement('div');
+      sens.className = 'mg-sens';
+      sens.append(mgFine('exSense', draws));
+      list.append(sens);
+    }
   }
 
   // anchor: show the panel right under this (the list), not at the end.
@@ -8794,7 +8837,8 @@ function renderMixGrid(which: 'music' | 'camera') {
   });
   refreshers.push(label);
 
-  wrap.append(grid.list ? list : table, hint, detail, classic);
+  wrap.append(grid.list ? list : table, hint, detail);
+  if (!grid.chips) wrap.append(classic);
   return wrap;
 }
 

@@ -1167,3 +1167,11 @@ body:not(.show-classic):not(.searching) .classic { display: none !important; }
 }
 @keyframes live-dot { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .tabs button.is-live::before, .picker button.is-live::before, .sheet-title.is-live small::before { animation: none; } }
+/* Effect cards (Lens): only the chips; the sliders show when searching or with the classic cards on. */
+body:not(.searching):not(.show-classic) .group[data-sec="lens"] .group-body > :not(.mixgrid) { display: none; }
+.mg-lrow.mg-chips { border-top: 0; padding: 2px 0; }
+.mg-chips .mg-fx { gap: 6px; }
+.mg-chips .mg-chip, .mg-chips .mg-add { height: 32px; border-radius: 16px; font-size: 13px; }
+.mg-chips + .mg-menu { margin-left: 0; max-height: 320px; overflow-y: auto; }
+.group.off[data-sec="lens"]:not(.closed) .group-body { display: block; }
+.mg-mgroup { margin: 6px 8px 2px; font: 600 10px/1 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #7d808a; }
