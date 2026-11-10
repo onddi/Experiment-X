@@ -546,9 +546,22 @@ canvas.addEventListener('pointerdown', (e) => {
   pointer.down = true;
   const c = settings.click;
   if (c === 'shockwave' || c === 'ripple' || c === 'implode') addWave(c, e.offsetX, e.offsetY, { force: settings.clickForce });
+  if (c === 'implodeHold') {
+    holdImplodeAt = performance.now();
+    holdRingAt = 0;
+  }
   hint.classList.add('gone');
 });
+// Implode & burst: holding pulls the particles in under the finger (with
+// rings closing in), letting go bursts them out; longer holds burst harder.
+let holdImplodeAt = 0;
+let holdRingAt = 0;
+const holdCharge = () => Math.min(1, (performance.now() - holdImplodeAt) / 2000);
 const release = (e: PointerEvent) => {
+  if (pointer.down && holdImplodeAt && settings.click === 'implodeHold') {
+    explode(pointer.x, pointer.y, (0.45 + holdCharge() * 0.9) * settings.clickForce);
+    holdImplodeAt = 0;
+  }
   pointer.down = false;
   // Touch has no hover, so a lifted finger stops influencing the field.
   if (e.pointerType !== 'mouse') {
@@ -741,11 +754,17 @@ function step(dt: number) {
   const cf = settings.clickForce;
   // Gather: hold the pointer (click mode), or the Gather action, which pulls
   // the whole field into an orb at the centre until pressed again.
-  const holdGather = pointer.down && settings.click === 'gather';
+  const holdImplode = pointer.down && settings.click === 'implodeHold' && holdImplodeAt > 0;
+  const holdGather = (pointer.down && settings.click === 'gather') || holdImplode;
   const gathering = holdGather || gatherAll || linkRun.out.gather || tlGatherNow;
   const gx = holdGather ? pointer.x : w / 2;
   const gy = holdGather ? pointer.y : h / 2;
-  const gatherR = holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
+  // Implode & burst reaches further the longer it's held.
+  const gatherR = holdImplode ? Math.max(220, radius * 3) * (1 + holdCharge() * 1.2) : holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
+  if (holdImplode && performance.now() - holdRingAt > 650) {
+    holdRingAt = performance.now();
+    addWave('implode', pointer.x, pointer.y, { force: 0.8 * settings.clickForce });
+  }
   const gatherMin = holdGather ? 0 : 0.35;
   const gatherCore = holdGather ? 30 : Math.min(w, h) * 0.18;
   if (pointer.down && settings.click === 'emit') emit(dt);
@@ -4902,7 +4921,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const label = (options: [string, string][], v: unknown) => options.find(([k]) => k === v)?.[1] ?? '';
 
 const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']];
-const CLICK_MODES: [string, string][] = [['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
+const CLICK_MODES: [string, string][] = [['implodeHold', 'Implode & burst (hold)'], ['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
 const RENDERS: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
@@ -5596,7 +5615,7 @@ const CONTROLS: Control[] = [
     buttons: [
       ['Pause (Space)', ICONS.pause, togglePause],
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
-      ['Explode from the centre (E)', ICONS.explode, explode],
+      ['Explode from the centre (E)', ICONS.explode, () => explode()],
       ['Scatter (S)', ICONS.scatter, scatter],
       ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle],
       ['Record a clip (V)', ICONS.record, toggleRecord],
@@ -8518,11 +8537,9 @@ function toggleGather() {
 // places and are thrown outward, the nearest ones hardest, so a gathered
 // clump bursts like a firework. Then the look's own forces take over again.
 let blastUntil = 0;
-function explode() {
+function explode(cx = w / 2, cy = h / 2, power = 1) {
   if (gatherAll) toggleGather();
-  const cx = w / 2;
-  const cy = h / 2;
-  const k = Math.min(w, h) / 800;
+  const k = (Math.min(w, h) / 800) * power;
   const reach = Math.hypot(w, h) / 2;
   for (let i = 0; i < n; i++) {
     let dx = px[i] - cx;
@@ -9295,7 +9312,7 @@ function toggleDebug() {
   const quick: [string, string, () => void][] = [
     ['Pause', ICONS.pause, togglePause],
     ['Gather', ICONS.gather, toggleGather],
-    ['Explode', ICONS.explode, explode],
+    ['Explode', ICONS.explode, () => explode()],
     ['Scatter', ICONS.scatter, scatter],
     ['Shuffle (keeps locked sections)', ICONS.shuffle, shuffle],
   ];
