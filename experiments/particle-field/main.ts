@@ -4145,6 +4145,7 @@ function frame(now: number) {
     runLinks(now);
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
+    tlTick(now);
     // Stutter: a split-second freeze frame on each snare.
     const held = now < stutterUntil;
     const t0 = performance.now();
@@ -4206,6 +4207,7 @@ type ControlBody =
   | { kind: 'vibes' }
   | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
+  | { kind: 'timeline' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'links' }
@@ -4416,6 +4418,25 @@ const CONTROLS: Control[] = [
     summary: () => (myPresets.length ? `${myPresets.length} saved` : '') },
   { kind: 'mypresets' },
   { kind: 'note', text: 'Keys 1–9 and 0 play your scenes: pick a key in the list, or press Shift + a number to save the current scene to it. Open straight into one with a link ending ?preset=3 (its key) or ?preset=Smoke (any scene name).' },
+
+  { kind: 'section', id: 'timeline', label: 'Timeline', tab: 'presets',
+    about: 'A setlist of scenes, each for a number of bars, changing on the bar.',
+    summary: () => (tlActive() ? (tlIdx >= 0 && tl.clips[tlIdx] ? `${tl.clips[tlIdx].name} · ${tlIdx + 1}/${tl.clips.length}` : `${tl.clips.length} scenes`) : tl.clips.length ? `${tl.clips.length} scenes · off` : 'off'),
+    power: {
+      on: () => tl.on,
+      get off(): Partial<Settings> {
+        tlSetOn(false);
+        return {};
+      },
+      get start(): Partial<Settings> {
+        // Starting an empty timeline loads a ready-made set to play with.
+        if (!tl.clips.length) tl.clips = TL_SETS[0][1].map((c) => ({ ...c }));
+        tlSetOn(true);
+        return {};
+      },
+    } },
+  { kind: 'timeline' },
+  { kind: 'note', text: 'Click a scene’s name to play it next, on the bar. On the field, the ring shows where you are: click it for the next scene, scroll over it to pick one. With music the bars follow its tempo; without, the tempo above. While the timeline runs, Auto VJ waits.' },
 
   // How switching between looks feels. Not part of any look: presets keep these.
 
@@ -4856,6 +4877,7 @@ let lastPresetFamily: Family | null = null;
 function playPreset(name: string, p: Partial<Settings>) {
   lastPresetFamily = FAMILY_OF[name] ?? null;
   apply(p);
+  lastSceneName = name;
   // The image pattern needs a picture: ask for one (this runs in the click).
   if (p.shape === 'image' && !shapeImage) {
     imageInput.click();
@@ -4936,7 +4958,8 @@ const playSettings = (): Partial<Settings> => ({
 });
 
 // Presets go through here: they glide over (Morph) and can wait for the beat.
-function apply(p: Partial<Settings>, keepAudio = true) {
+function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
+  lastSceneName = '';
   if (currentMine) {
     currentMine = null;
     redrawMine();
@@ -4950,11 +4973,11 @@ function apply(p: Partial<Settings>, keepAudio = true) {
   const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
-  if (settings.beatSnap && audio.source !== 'off') {
+  if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
     pendingLook = { target, since: performance.now() };
     return;
   }
-  morphTo(target);
+  morphTo(target, opts.morph);
 }
 
 // --- morphing between looks ---------------------------------------------------
@@ -4971,8 +4994,8 @@ let pendingLook: { target: Settings; since: number } | null = null;
 let glideHomes: { ms: number; fromFree: boolean } | null = null;
 let homeGlide: { fx: Float32Array; fy: Float32Array; tx: Float32Array; ty: Float32Array; start: number; dur: number; dl?: Float32Array } | null = null;
 
-function morphTo(target: Settings) {
-  const dur = settings.morph * 1000;
+function morphTo(target: Settings, morphSec = settings.morph) {
+  const dur = morphSec * 1000;
   if (dur <= 0) {
     morphState = null;
     palMix = null;
@@ -5257,7 +5280,7 @@ function musicVisuals(now: number) {
   if (!on || S.audioLetterHop <= 0) hopKick = 0;
 
   // Auto VJ: a new look every few bars, and on drops.
-  if (on && S.audioVj > 0) {
+  if (on && S.audioVj > 0 && !tlActive()) {
     if (L.bar) vjBars++;
     if (vjBars >= S.audioVj || (S.audioVjDrop && L.drop)) {
       vjBars = 0;
@@ -5317,7 +5340,426 @@ function vjNext() {
   lastVjName = pool[k][0];
   lastPresetFamily = FAMILY_OF[pool[k][0]] ?? null;
   apply(pool[k][1]);
+  lastSceneName = pool[k][0];
   showToast(pool[k][0]);
+}
+
+// --- scene timeline -----------------------------------------------------------
+// A setlist of scenes, each for a number of bars, changing on the bar. The
+// clock is the music's (once a tempo is found) or a tempo you set or tap.
+// Kept apart from Settings so scenes never overwrite the set.
+type TlHow = 'cut' | 'morph' | 'slow' | 'drop';
+type TlClip = { name: string; mine?: boolean; bars: number; how: TlHow };
+type Timeline = { on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden' };
+const TL_KEY = 'particle-field:timeline';
+const TL_HOW: [TlHow, string][] = [['cut', 'Cut'], ['morph', 'Morph'], ['slow', 'Slow morph'], ['drop', 'Drop']];
+const TL_BARS = [1, 2, 4, 8, 16, 32];
+const clip = (name: string, bars: number, how: TlHow): TlClip => ({ name, bars, how });
+const TL_SETS: [string, TlClip[]][] = [
+  ['Chill', [clip('Silk', 8, 'slow'), clip('Pond', 8, 'slow'), clip('Northern lights', 8, 'morph'), clip('Nebula', 8, 'slow')]],
+  ['Club', [clip('Galaxy', 4, 'cut'), clip('Fireworks', 4, 'drop'), clip('Warp speed', 4, 'cut'), clip('Shatter', 4, 'drop'), clip('Black hole', 8, 'morph'), clip('Neon storm', 4, 'cut')]],
+  ['Journey', [clip('Deep space', 8, 'slow'), clip('Galaxy', 8, 'morph'), clip('Black hole', 4, 'drop'), clip('Mandala', 8, 'morph'), clip('Pollen', 8, 'slow')]],
+];
+const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', ...readJson<Partial<Timeline>>(TL_KEY, {}) };
+let tlIdx = -1; // clip playing, -1 before the start
+let tlBarsIn = 0; // whole bars played of it
+let tlQueued = -1; // clip to start on the next bar
+let tlLastBarAt = 0;
+let tlBarSec = 2;
+let tlShownAt = 0; // when the ring last popped up
+let tlRedraw: (() => void) | null = null; // the card's list, when drawn
+let tlProgress: ((frac: number) => void) | null = null;
+let lastSceneName = ''; // the built-in scene playing, for "Add this scene"
+
+// Options (tempo, ring, …) don't touch the list: redrawing it under a click
+// that blurred the tempo box would swallow the click.
+function tlSave(redraw = true) {
+  writeJson(TL_KEY, tl);
+  tlRingBuild();
+  if (redraw) tlRedraw?.();
+}
+function tlScene(c: TlClip): Partial<Settings> | null {
+  if (c.mine) return myPresets.find((p) => p.name === c.name)?.settings ?? null;
+  return PRESETS.find(([n]) => n === c.name)?.[1] ?? null;
+}
+function tlSetOn(on: boolean) {
+  tl.on = on;
+  tlIdx = -1;
+  tlQueued = -1;
+  tlLastBarAt = 0;
+  tlSave();
+}
+function tlQueue(i: number) {
+  if (!tl.clips.length) return;
+  tlQueued = ((i % tl.clips.length) + tl.clips.length) % tl.clips.length;
+  if (!tl.on) tlSetOn(true);
+  tlShownAt = performance.now();
+  showToast(`Next: ${tl.clips[tlQueued].name} (on the bar)`);
+  tlRedraw?.();
+}
+function tlGo(i: number) {
+  const n = tl.clips.length;
+  // Skip clips whose scene is gone (a deleted My scene).
+  for (let k = 0; k < n; k++) {
+    const j = (i + k) % n;
+    const c = tl.clips[j];
+    const p = tlScene(c);
+    if (!p) continue;
+    tlIdx = j;
+    tlQueued = -1;
+    tlBarsIn = 0;
+    tlShownAt = performance.now();
+    if (tl.knobs === 'reset') for (const [mk] of MACROS) (settings as unknown as Record<string, number>)[mk] = 0.5;
+    const morph = c.how === 'cut' ? 0 : c.how === 'slow' ? Math.min(4, tlBarSec) : Math.min(2.5, Math.max(0.5, tlBarSec / 2));
+    if (c.how === 'drop') explode();
+    if (c.mine) {
+      const mine = myPresets.find((p2) => p2.name === c.name)!;
+      lastPresetFamily = null;
+      apply(p, false, { now: true, morph });
+      currentMine = mine;
+      redrawMine();
+    } else {
+      lastPresetFamily = FAMILY_OF[c.name] ?? null;
+      apply(p, true, { now: true, morph });
+      lastSceneName = c.name;
+    }
+    if (tl.ring === 'hidden') showToast(c.name);
+    tlRedraw?.();
+    return;
+  }
+  showToast('The timeline has no scenes it can play');
+  tlSetOn(false);
+}
+const tlActive = () => tl.on && tl.clips.length > 0;
+
+function tlTick(now: number) {
+  if (!tlActive()) {
+    tlRing(now);
+    return;
+  }
+  const L = audio.levels;
+  const music = tl.clock === 'music' && audio.source !== 'off' && L.bpm > 0;
+  let bar = false;
+  if (music) {
+    tlBarSec = 240 / L.bpm;
+    bar = L.bar;
+    if (bar) tlLastBarAt = now;
+  } else {
+    tlBarSec = 240 / tl.bpm;
+    if (!tlLastBarAt) tlLastBarAt = now;
+    else if (now - tlLastBarAt >= tlBarSec * 1000) {
+      bar = true;
+      tlLastBarAt += tlBarSec * 1000;
+      if (now - tlLastBarAt > tlBarSec * 1000) tlLastBarAt = now;
+    }
+  }
+  if (tlIdx < 0 || tlIdx >= tl.clips.length) {
+    tlLastBarAt = now;
+    tlGo(tlQueued >= 0 ? tlQueued : 0);
+  } else if (bar) {
+    tlBarsIn++;
+    if (tlQueued >= 0) tlGo(tlQueued);
+    else if (tlBarsIn >= tl.clips[tlIdx].bars) tlGo(tlIdx + 1);
+  } else if (music && tl.dropJump && L.drop && tlBarsIn > 0) tlGo(tlQueued >= 0 ? tlQueued : tlIdx + 1);
+  tlRing(now);
+}
+// How far through the current clip, 0..1.
+function tlFrac(now: number) {
+  const c = tl.clips[tlIdx];
+  if (!c) return 0;
+  const inBar = tlLastBarAt ? Math.min(1, (now - tlLastBarAt) / (tlBarSec * 1000)) : 0;
+  return Math.min(1, (tlBarsIn + inBar) / c.bars);
+}
+
+// The loop ring: the whole set as one circle, each arc a clip sized by its
+// bars. A dot travels round; the playing arc is lit.
+const TL_R = 70;
+const tlRingEl = document.createElement('div');
+tlRingEl.className = 'tl-ring';
+tlRingEl.innerHTML = `<svg viewBox="0 0 168 168" aria-hidden="true"><circle class="bg" cx="84" cy="84" r="${TL_R}"/><g class="arcs"></g><circle class="dot" r="4" cx="84" cy="14"/></svg><div class="tl-txt"><b></b><span></span><i></i></div>`;
+tlRingEl.title = 'Timeline: click for the next scene, scroll to pick one';
+document.querySelector('.stage')!.append(tlRingEl);
+const tlArcs = tlRingEl.querySelector<SVGGElement>('.arcs')!;
+const tlDot = tlRingEl.querySelector<SVGCircleElement>('.dot')!;
+const [tlName, tlBar, tlNext] = [...tlRingEl.querySelector('.tl-txt')!.children] as HTMLElement[];
+let tlArcEls: SVGPathElement[] = [];
+let tlHover = false;
+const tlPt = (t: number): [number, number] => {
+  const a = -Math.PI / 2 + t * Math.PI * 2;
+  return [84 + Math.cos(a) * TL_R, 84 + Math.sin(a) * TL_R];
+};
+function tlRingBuild() {
+  tlArcs.innerHTML = '';
+  tlArcEls = [];
+  const total = tl.clips.reduce((a, c) => a + c.bars, 0);
+  if (!total) return;
+  const gap = tl.clips.length > 1 ? 0.012 : 0;
+  let at = 0;
+  for (const c of tl.clips) {
+    const t0 = at / total + gap;
+    const t1 = (at + c.bars) / total - gap;
+    at += c.bars;
+    const [x0, y0] = tlPt(t0);
+    const [x1, y1] = tlPt(Math.max(t0 + 0.001, t1));
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', tl.clips.length === 1 ? `M 84 ${84 - TL_R} A ${TL_R} ${TL_R} 0 1 1 83.99 ${84 - TL_R}` : `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${TL_R} ${TL_R} 0 ${t1 - t0 > 0.5 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`);
+    tlArcs.append(p);
+    tlArcEls.push(p);
+  }
+}
+function tlRing(now: number) {
+  const on = tlActive() && tl.ring !== 'hidden' && settings.playOn !== undefined;
+  tlRingEl.hidden = !on;
+  if (!on) return;
+  const show = tl.ring === 'always' || tlHover || now - tlShownAt < 3500;
+  tlRingEl.classList.toggle('show', show);
+  if (tlIdx < 0) return;
+  const total = tl.clips.reduce((a, c) => a + c.bars, 0);
+  const before = tl.clips.slice(0, tlIdx).reduce((a, c) => a + c.bars, 0);
+  const c = tl.clips[tlIdx];
+  const frac = tlFrac(now);
+  const [x, y] = tlPt((before + frac * c.bars) / total);
+  tlDot.setAttribute('cx', x.toFixed(2));
+  tlDot.setAttribute('cy', y.toFixed(2));
+  tlArcEls.forEach((el, k) => el.classList.toggle('on', k === tlIdx));
+  tlName.textContent = c.name;
+  tlBar.textContent = `bar ${Math.min(c.bars, tlBarsIn + 1)} / ${c.bars}`;
+  const nx = tlQueued >= 0 ? tlQueued : (tlIdx + 1) % tl.clips.length;
+  tlNext.textContent = tl.clips.length > 1 ? `${tlQueued >= 0 ? 'queued' : 'next'}: ${tl.clips[nx].name}` : '';
+  tlProgress?.(frac);
+}
+tlRingEl.addEventListener('pointerenter', () => (tlHover = true));
+tlRingEl.addEventListener('pointerleave', () => (tlHover = false));
+tlRingEl.addEventListener('click', () => tlQueue((tlQueued >= 0 ? tlQueued : tlIdx) + 1));
+let tlWheelAcc = 0;
+tlRingEl.addEventListener(
+  'wheel',
+  (e) => {
+    // The ring's own scroll: step the queued clip; the knobs don't see it.
+    e.preventDefault();
+    e.stopPropagation();
+    tlWheelAcc += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+    if (Math.abs(tlWheelAcc) < 60) return;
+    const step = tlWheelAcc > 0 ? 1 : -1;
+    tlWheelAcc = 0;
+    tlQueue((tlQueued >= 0 ? tlQueued : tlIdx) + step);
+  },
+  { passive: false },
+);
+tlRingBuild();
+
+// Tap tempo: the average gap of the last few taps.
+let tlTaps: number[] = [];
+function tlTap() {
+  const t = performance.now();
+  tlTaps = tlTaps.filter((x) => t - x < 2500).concat(t);
+  if (tlTaps.length >= 2) {
+    const gaps = tlTaps.slice(1).map((x, k) => x - tlTaps[k]);
+    tl.bpm = Math.max(50, Math.min(200, Math.round(60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length))));
+    tlLastBarAt = t;
+    tlSave();
+  }
+}
+
+// "Add this scene": the scene playing; a tweaked or unnamed one is saved to
+// My scenes first so the timeline can come back to it.
+function tlAddCurrent() {
+  let c: TlClip;
+  if (currentMine) c = { name: currentMine.name, mine: true, bars: 8, how: 'morph' };
+  else if (lastSceneName) c = { name: lastSceneName, bars: 8, how: 'morph' };
+  else {
+    const name = `Timeline ${myPresets.length + 1}`;
+    myPresets.push({ name, settings: snapshot() });
+    writeJson(MY_PRESETS_KEY, myPresets);
+    redrawMine();
+    c = { name, mine: true, bars: 8, how: 'morph' };
+    showToast(`Saved to My scenes as ${name}`);
+  }
+  tl.clips.push(c);
+  tlSave();
+}
+
+function renderTimeline() {
+  const box = document.createElement('div');
+  box.className = 'timeline';
+  const list = document.createElement('div');
+  list.className = 'tl-list';
+  const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (text) el.textContent = text;
+    return el;
+  };
+  const sel = (opts: [string, string][], value: string, label: string, change: (v: string) => void) => {
+    const s = mk('select');
+    s.setAttribute('aria-label', label);
+    for (const [v, t] of opts) s.add(new Option(t, v));
+    s.value = value;
+    s.addEventListener('change', () => change(s.value));
+    return s;
+  };
+  let bars: HTMLElement | null = null;
+  const draw = () => {
+    list.innerHTML = '';
+    bars = null;
+    if (!tl.clips.length) list.append(mk('p', 'tl-empty', 'No scenes yet. Add the one playing, pick one below, or load a ready-made set.'));
+    tl.clips.forEach((c, k) => {
+      const row = mk('div', 'tl-clip');
+      const live = tl.on && k === tlIdx;
+      row.classList.toggle('on', live);
+      row.classList.toggle('queued', k === tlQueued);
+      const name = mk('button', 'tl-name', c.name);
+      name.type = 'button';
+      name.title = 'Play this one next (on the bar)';
+      name.addEventListener('click', () => tlQueue(k));
+      const how = sel(TL_HOW, c.how, `How ${c.name} comes in`, (v) => {
+        c.how = v as TlHow;
+        tlSave();
+      });
+      const len = sel(TL_BARS.map((b) => [String(b), `${b} bar${b > 1 ? 's' : ''}`]), String(c.bars), `Bars for ${c.name}`, (v) => {
+        c.bars = Number(v);
+        tlSave();
+      });
+      const move = (d: number) => {
+        const j = k + d;
+        if (j < 0 || j >= tl.clips.length) return;
+        [tl.clips[k], tl.clips[j]] = [tl.clips[j], tl.clips[k]];
+        if (tlIdx === k) tlIdx = j;
+        else if (tlIdx === j) tlIdx = k;
+        tlSave();
+      };
+      const tools = mk('span', 'tl-tools');
+      for (const [t, title, fn] of [['↑', 'Move up', () => move(-1)], ['↓', 'Move down', () => move(1)], ['×', 'Remove', () => {
+        tl.clips.splice(k, 1);
+        if (tlIdx === k) tlIdx = -1;
+        else if (tlIdx > k) tlIdx--;
+        tlQueued = -1;
+        tlSave();
+      }]] as [string, string, () => void][]) {
+        const b = mk('button', '', t);
+        b.type = 'button';
+        b.title = title;
+        b.setAttribute('aria-label', `${title}: ${c.name}`);
+        b.addEventListener('click', fn);
+        tools.append(b);
+      }
+      const prog = mk('i', 'tl-prog');
+      const fill = mk('b');
+      prog.append(fill);
+      if (live) bars = fill;
+      row.append(name, tools, how, len, prog);
+      list.append(row);
+    });
+  };
+  tlRedraw = draw;
+  tlProgress = (frac) => {
+    if (bars) bars.style.width = `${(frac * 100).toFixed(1)}%`;
+  };
+  draw();
+
+  const add = mk('div', 'tl-add');
+  const addThis = mk('button', '', 'Add this scene');
+  addThis.type = 'button';
+  addThis.addEventListener('click', tlAddCurrent);
+  const pick = mk('select');
+  pick.setAttribute('aria-label', 'Add a scene');
+  const refill = () => {
+    pick.innerHTML = '';
+    pick.add(new Option('Add a scene…', ''));
+    if (myPresets.length) {
+      const g = mk('optgroup');
+      g.label = 'My scenes';
+      for (const p of myPresets) g.append(new Option(p.name, `my:${p.name}`));
+      pick.append(g);
+    }
+    const g2 = mk('optgroup');
+    g2.label = 'Scene library';
+    for (const [nm] of [...PRESETS].sort(([a], [b]) => a.localeCompare(b))) g2.append(new Option(nm, nm));
+    pick.append(g2);
+  };
+  pick.addEventListener('focus', refill);
+  pick.addEventListener('pointerdown', refill);
+  refill();
+  pick.addEventListener('change', () => {
+    const v = pick.value;
+    if (!v) return;
+    tl.clips.push(v.startsWith('my:') ? { name: v.slice(3), mine: true, bars: 8, how: 'morph' } : { name: v, bars: 8, how: 'morph' });
+    pick.value = '';
+    tlSave();
+  });
+  const sets = sel([['', 'Ready-made set…'], ...TL_SETS.map(([n]): [string, string] => [n, n])], '', 'Load a ready-made set', (v) => {
+    const s = TL_SETS.find(([n]) => n === v);
+    if (!s) return;
+    tl.clips = s[1].map((c) => ({ ...c }));
+    tlIdx = -1;
+    tlQueued = -1;
+    if (!tl.on) tl.on = true;
+    tlSave();
+    changed(new Set());
+  });
+  sets.addEventListener('change', () => (sets.value = ''));
+  add.append(addThis, pick, sets);
+
+  const opts = mk('div', 'tl-opts');
+  const field = (label: string, el: HTMLElement) => {
+    const l = mk('label', 'row select');
+    l.append(mk('span', 'name', label), el);
+    opts.append(l);
+    return l;
+  };
+  field('Clock', sel([['music', 'From the music'], ['tempo', 'Tempo below']], tl.clock, 'Clock', (v) => {
+    tl.clock = v as Timeline['clock'];
+    tlSave(false);
+    syncTempo();
+  }));
+  const tempo = mk('div', 'tl-tempo');
+  const bpmIn = mk('input');
+  bpmIn.type = 'number';
+  bpmIn.min = '50';
+  bpmIn.max = '200';
+  bpmIn.setAttribute('aria-label', 'Tempo in BPM');
+  bpmIn.addEventListener('change', () => {
+    tl.bpm = Math.max(50, Math.min(200, Number(bpmIn.value) || 120));
+    tlSave(false);
+  });
+  const tap = mk('button', '', 'Tap');
+  tap.type = 'button';
+  tap.title = 'Tap a few times in time with the beat';
+  tap.addEventListener('click', () => {
+    tlTap();
+    bpmIn.value = String(tl.bpm);
+  });
+  const tnote = mk('span', 'tl-tnote');
+  tempo.append(mk('span', 'name', 'Tempo'), bpmIn, mk('span', '', 'BPM'), tap, tnote);
+  opts.append(tempo);
+  const syncTempo = () => {
+    bpmIn.value = String(tl.bpm);
+    const music = tl.clock === 'music';
+    tnote.textContent = music ? 'used until the music has a tempo' : '';
+  };
+  syncTempo();
+  field('Knobs at a change', sel([['keep', 'Keep where they are'], ['reset', 'Back to the scene']], tl.knobs, 'Knobs at a change', (v) => {
+    tl.knobs = v as Timeline['knobs'];
+    tlSave(false);
+  }));
+  field('Ring on the field', sel([['changes', 'At each change'], ['always', 'Always'], ['hidden', 'Hidden']], tl.ring, 'Ring on the field', (v) => {
+    tl.ring = v as Timeline['ring'];
+    tlShownAt = performance.now();
+    tlSave(false);
+  }));
+  const drop = mk('label', 'row toggle');
+  const cb = mk('input');
+  cb.type = 'checkbox';
+  cb.checked = tl.dropJump;
+  cb.addEventListener('change', () => {
+    tl.dropJump = cb.checked;
+    tlSave(false);
+  });
+  drop.append(cb, mk('span', 'name', 'Jump to the next scene on a drop'));
+  opts.append(drop);
+
+  box.append(list, add, opts);
+  return box;
 }
 
 let intKeys: Set<string> | null = null;
@@ -5924,6 +6366,11 @@ function renderControls() {
 
     if (ctl.kind === 'links') {
       searchItem(body, renderLinks());
+      continue;
+    }
+
+    if (ctl.kind === 'timeline') {
+      searchItem(body, renderTimeline());
       continue;
     }
 

@@ -740,10 +740,73 @@ body.searching .tabs button.on { background: none; color: var(--muted); }
 .knob b { position: relative; z-index: 1; grid-area: 2 / 1; align-self: center; color: rgb(255 255 255 / 0.7); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .knob span { color: rgb(255 255 255 / 0.5); font-size: 10.5px; font-weight: 500; letter-spacing: 0.04em; text-shadow: 0 1px 3px rgb(0 0 0 / 0.6); }
 body.no-input .knob, body.no-input .fader { display: none; }
+/* --- Timeline: the setlist card and the loop ring on the field ------------------ */
+.timeline { display: grid; gap: 10px; }
+.tl-list { display: grid; gap: 6px; }
+.tl-empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+.tl-clip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1a1b20;
+}
+.tl-clip.on { border-color: #5a3f2c; background: #2a211b; }
+.tl-clip.queued { border-color: var(--accent); }
+.tl-name { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; background: none; padding: 2px 0; font-weight: 500; text-align: left; }
+.tl-name:hover { color: var(--accent); }
+.tl-tools { display: flex; gap: 2px; }
+.tl-tools button { width: 26px; height: 26px; padding: 0; color: var(--muted); }
+.tl-clip select { min-width: 0; font-size: 12px; }
+.tl-prog { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: #26272d; overflow: hidden; }
+.tl-prog b { display: block; height: 100%; width: 0; background: #f0a36b; }
+.tl-clip:not(.on) .tl-prog b { width: 0 !important; }
+.tl-add { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tl-add button { grid-column: 1 / -1; }
+.tl-add select { min-width: 0; }
+.tl-opts { display: grid; gap: 2px; }
+.tl-tempo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0; font-size: 13px; }
+.tl-tempo .name { color: #c9cad0; margin-right: auto; }
+.tl-tempo input { width: 64px; font: inherit; color: var(--text); background: #22242a; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.tl-tnote { flex-basis: 100%; color: var(--muted); font-size: 11.5px; text-align: right; }
+.tl-tnote:empty { display: none; }
+
+.tl-ring {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 5;
+  width: 132px;
+  height: 132px;
+  opacity: 0.12;
+  transition: opacity 0.5s;
+  cursor: pointer;
+}
+.tl-ring[hidden] { display: none; }
+.tl-ring.show { opacity: 1; transition-duration: 0.15s; }
+.tl-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tl-ring .bg { fill: rgb(0 0 0 / 0.18); stroke: none; }
+.tl-ring path { fill: none; stroke: rgb(255 255 255 / 0.22); stroke-width: 2.5; stroke-linecap: round; }
+.tl-ring path.on { stroke: rgb(240 163 107 / 0.85); stroke-width: 3; }
+.tl-ring .dot { fill: rgb(255 255 255 / 0.85); }
+.tl-txt { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 1px; padding: 0 22px; text-align: center; pointer-events: none; }
+.tl-txt b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: rgb(255 255 255 / 0.8); }
+.tl-txt span { font-size: 10.5px; color: rgb(255 255 255 / 0.5); font-variant-numeric: tabular-nums; }
+.tl-txt i { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-size: 10px; color: rgb(255 255 255 / 0.4); }
+body.no-input .tl-ring { display: none; }
+/* Narrower screens: lift it clear of the knob row. */
+@media (max-width: 1100px) { .tl-ring { bottom: 180px; } }
+
 /* Phones: leave the shortcut buttons (bottom right) clear. */
 @media (max-width: 720px) {
   .play-row { right: 76px; bottom: 16px; }
   .knob { width: 64px; margin-left: -32px; }
+  .tl-ring { top: 14px; left: 14px; right: auto; bottom: auto; width: 100px; height: 100px; }
+  .tl-txt { padding: 0 16px; }
+  .tl-txt b { font-size: 10.5px; }
+  .tl-txt span, .tl-txt i { font-size: 9px; }
   .knob svg { width: 50px; height: 50px; }
   .knob b { font-size: 11px; }
   .knob span { font-size: 9.5px; }
