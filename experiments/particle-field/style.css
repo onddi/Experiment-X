@@ -775,6 +775,10 @@ body.no-input .knob, body.no-input .fader { display: none; }
 .tl-tempo input { width: 64px; font: inherit; color: var(--text); background: #22242a; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
 .tl-tnote { flex-basis: 100%; color: var(--muted); font-size: 11.5px; text-align: right; }
 .tl-tnote:empty { display: none; }
+.tl-held { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 6px; }
+.tl-held[hidden] { display: none; }
+.tl-chip { padding: 3px 8px; border-radius: 999px; font-size: 12px; background: #2a211b; border-color: #5a3f2c; }
+.tl-chip.clear { background: none; border-color: var(--line); color: var(--muted); }
 
 .tl-ring {
   position: absolute;

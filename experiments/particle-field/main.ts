@@ -4747,6 +4747,13 @@ for (const [fam, names] of [
 // Word lists that came with a vibe: another vibe may replace them, yours it keeps.
 const VIBE_WORDS = new Set(VIBES.map((v) => v.cards.audioWords).filter(Boolean));
 
+// Every setting of a locked card.
+function lockedKeys(): (keyof Settings)[] {
+  const out: (keyof Settings)[] = [];
+  for (const c of CONTROLS) if (c.kind === 'section' && c.lock && locks.has(c.id)) out.push(...c.lock);
+  return out;
+}
+
 // May a vibe change this key? Not if the card it belongs to is locked.
 function cardAllows(k: keyof Settings) {
   const sec = CONTROLS.find((c) => c.kind === 'section' && c.lock?.includes(k));
@@ -5469,6 +5476,7 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   if (settings[k] === v) return;
   settings[k] = v;
   changed(new Set([k]));
+  tlHold([k]);
 }
 
 // Visual presets, shuffle and reset keep the audio settings you've tuned.
@@ -5507,6 +5515,10 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
+  // Locked cards keep what they have, whichever scene loads.
+  for (const k of lockedKeys()) (target as unknown as Record<string, unknown>)[k] = settings[k];
+  // Tweaks held by the timeline stay for the rest of the set.
+  if (tlActive() && tl.hold) Object.assign(target, tl.held);
   if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
     pendingLook = { target, since: performance.now() };
     return;
@@ -5884,7 +5896,7 @@ function vjNext() {
 // Kept apart from Settings so scenes never overwrite the set.
 type TlHow = 'cut' | 'morph' | 'slow' | 'drop';
 type TlClip = { name: string; mine?: boolean; bars: number; how: TlHow };
-type Timeline = { on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden' };
+type Timeline = { on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden'; hold: boolean; held: Record<string, unknown> };
 const TL_KEY = 'particle-field:timeline';
 const TL_HOW: [TlHow, string][] = [['cut', 'Cut'], ['morph', 'Morph'], ['slow', 'Slow morph'], ['drop', 'Drop']];
 const TL_BARS = [1, 2, 4, 8, 16, 32];
@@ -5894,7 +5906,31 @@ const TL_SETS: [string, TlClip[]][] = [
   ['Club', [clip('Galaxy', 4, 'cut'), clip('Fireworks', 4, 'drop'), clip('Warp speed', 4, 'cut'), clip('Shatter', 4, 'drop'), clip('Black hole', 8, 'morph'), clip('Neon storm', 4, 'cut')]],
   ['Journey', [clip('Deep space', 8, 'slow'), clip('Galaxy', 8, 'morph'), clip('Black hole', 4, 'drop'), clip('Mandala', 8, 'morph'), clip('Pollen', 8, 'slow')]],
 ];
-const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', ...readJson<Partial<Timeline>>(TL_KEY, {}) };
+const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', hold: true, held: {}, ...readJson<Partial<Timeline>>(TL_KEY, {}) };
+// Not held: they already carry over, or belong to the timeline itself.
+const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
+let tlChips: (() => void) | null = null;
+// A change you make while the timeline plays sticks for the rest of the set.
+function tlHold(keys: Iterable<keyof Settings>) {
+  if (!tlActive() || !tl.hold) return;
+  let any = false;
+  for (const k of keys) {
+    if (TL_NO_HOLD.has(k) || k.startsWith('lens') || k === 'audioKaleido') continue;
+    tl.held[k] = settings[k];
+    any = true;
+  }
+  if (!any) return;
+  writeJson(TL_KEY, tl);
+  tlChips?.();
+}
+// A held value as text, e.g. "Trails 80%".
+function heldLabel(k: string, v: unknown) {
+  const c = CONTROLS.find((x) => 'key' in x && x.key === k);
+  if (!c || !('label' in c)) return `${k} ${String(v)}`;
+  if (c.kind === 'range') return `${c.label} ${c.format ? c.format(v as number) : String(v)}`;
+  if (c.kind === 'select') return `${c.label}: ${c.options.find(([o]) => o === v)?.[1] ?? String(v)}`;
+  return `${c.label}: ${v === true ? 'on' : v === false ? 'off' : String(v)}`;
+}
 let tlIdx = -1; // clip playing, -1 before the start
 let tlBarsIn = 0; // whole bars played of it
 let tlQueued = -1; // clip to start on the next bar
@@ -5918,6 +5954,11 @@ function tlScene(c: TlClip): Partial<Settings> | null {
 }
 function tlSetOn(on: boolean) {
   tl.on = on;
+  // Held tweaks belong to one run of the set.
+  if (!on) {
+    tl.held = {};
+    tlChips?.();
+  }
   tlIdx = -1;
   tlQueued = -1;
   tlLastBarAt = 0;
@@ -6273,6 +6314,46 @@ function renderTimeline() {
     tnote.textContent = music ? 'used until the music has a tempo' : '';
   };
   syncTempo();
+  const hold = mk('label', 'row toggle');
+  const hcb = mk('input');
+  hcb.type = 'checkbox';
+  hcb.checked = tl.hold;
+  hcb.addEventListener('change', () => {
+    tl.hold = hcb.checked;
+    tlSave(false);
+    drawChips();
+  });
+  hold.append(hcb, mk('span', 'name', 'Hold my tweaks: what I change stays for the whole set'));
+  const chips = mk('div', 'tl-held');
+  const drawChips = () => {
+    chips.innerHTML = '';
+    const keys = Object.keys(tl.held);
+    chips.hidden = !tl.hold || !keys.length;
+    for (const k of keys) {
+      const b = mk('button', 'tl-chip', `${heldLabel(k, tl.held[k])}  ✕`);
+      b.type = 'button';
+      b.title = 'Stop holding this: scenes set it again';
+      b.addEventListener('click', () => {
+        delete tl.held[k];
+        tlSave(false);
+        drawChips();
+      });
+      chips.append(b);
+    }
+    if (keys.length > 1) {
+      const all = mk('button', 'tl-chip clear', 'Clear all');
+      all.type = 'button';
+      all.addEventListener('click', () => {
+        tl.held = {};
+        tlSave(false);
+        drawChips();
+      });
+      chips.append(all);
+    }
+  };
+  tlChips = drawChips;
+  drawChips();
+  opts.append(hold, chips);
   field('Knobs at a change', sel([['keep', 'Keep where they are'], ['reset', 'Back to the scene']], tl.knobs, 'Knobs at a change', (v) => {
     tl.knobs = v as Timeline['knobs'];
     tlSave(false);
@@ -6501,6 +6582,7 @@ function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
     patch = { ...patch, ...pw.start };
   }
   changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+  return Object.keys(patch) as (keyof Settings)[];
 }
 
 const COLLAPSE_KEY = 'particle-field:folded';
@@ -6722,7 +6804,7 @@ function renderControls() {
       top.className = 'group-top';
       top.append(head);
       if (ctl.lock) {
-        // Locked cards keep their settings when you press Shuffle.
+        // Locked cards keep their settings through scene changes, Shuffle and vibes.
         const lockBtn = document.createElement('button');
         lockBtn.type = 'button';
         lockBtn.className = 'lock';
@@ -6731,7 +6813,7 @@ function renderControls() {
         const sync = () => {
           const on = locks.has(id);
           lockBtn.classList.toggle('on', on);
-          lockBtn.title = on ? 'Locked: Shuffle keeps these settings' : 'Lock so Shuffle keeps these settings';
+          lockBtn.title = on ? 'Locked: scenes, Shuffle and vibes keep these settings' : 'Lock so scenes, Shuffle and vibes keep these settings';
           lockBtn.setAttribute('aria-pressed', String(on));
           section.classList.toggle('locked', on);
         };
@@ -6753,7 +6835,10 @@ function renderControls() {
         sw.className = 'power';
         sw.setAttribute('role', 'switch');
         sw.setAttribute('aria-label', ctl.label);
-        sw.addEventListener('click', () => setPower(ctl, !ctl.power!.on()));
+        sw.addEventListener('click', () => {
+          const keys = setPower(ctl, !ctl.power!.on());
+          if (keys) tlHold(keys);
+        });
         top.append(sw);
         refreshers.push(() => {
           const on = ctl.power!.on();
@@ -7746,7 +7831,10 @@ const playDirty = new Set<keyof Settings>();
 let playFrame = 0;
 function playFlush() {
   playFrame = 0;
-  if (playDirty.size) changed(new Set(playDirty));
+  if (playDirty.size) {
+    changed(new Set(playDirty));
+    tlHold(playDirty);
+  }
   playDirty.clear();
 }
 // Set a setting from play: the engine sees it at once, the rest next frame.
