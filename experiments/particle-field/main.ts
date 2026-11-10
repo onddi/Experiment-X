@@ -7708,6 +7708,29 @@ function syncTabDots() {
   for (const [i, b] of intentButtons) b.classList.toggle('has-lock', tabButtons.some(([t, tb]) => intentOf(t) === i && tb.classList.contains('has-lock')));
 }
 
+// A live dot on a page (and its group) while something there is running:
+// sound in, camera on, timeline or crossfader playing, recording, connections.
+const LIVE_OF: Partial<Record<Tab, () => boolean>> = {
+  music: () => audio.source !== 'off',
+  camera: () => cam.on,
+  timeline: () => tlActive(),
+  xfader: () => xf.on,
+  record: () => recorder.on,
+  links: () => parseLinks(settings.links).length > 0,
+};
+let liveSig = '';
+function syncLiveDots() {
+  const live = new Set((Object.keys(LIVE_OF) as Tab[]).filter((t) => LIVE_OF[t]!()));
+  const sig = [...live].join();
+  if (sig === liveSig) return;
+  liveSig = sig;
+  for (const [t, b] of tabButtons) b.classList.toggle('is-live', live.has(t));
+  for (const b of document.querySelectorAll<HTMLElement>('.picker button')) b.classList.toggle('is-live', live.has(b.dataset.tab as Tab));
+  for (const [i, b] of intentButtons) b.classList.toggle('is-live', [...live].some((t) => intentOf(t) === i));
+  document.getElementById('sheet-title')?.classList.toggle('is-live', live.size > 0);
+}
+setInterval(syncLiveDots, 400);
+
 function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
   const pw = ctl.power!;
   if (on === pw.on()) return;

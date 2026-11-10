@@ -421,7 +421,7 @@ button:hover, select:hover { border-color: #3c3f46; }
 /* Actions: always open, one row of icon buttons. */
 .group.fixed .chev { display: none; }
 .group.fixed .group-head { cursor: default; color: inherit; }
-.icon-buttons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.icon-buttons { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; }
 .icon-buttons button { display: grid; place-items: center; height: 36px; padding: 0; }
 .icon-buttons button.on { border-color: var(--accent); color: var(--accent); }
 .group.fixed .group-head:hover { background: none; }
@@ -1152,3 +1152,18 @@ body:not(.show-classic):not(.searching) .classic { display: none !important; }
 .mg-lhead { justify-content: flex-start; gap: 8px; padding-left: 2px; }
 .mg-lhead span:first-child { width: 138px; flex: none; }
 @container (max-width: 300px) { .mg-lhead span:first-child { width: 92px; } }
+/* Live: something on this page is running (sound, camera, timeline…). */
+.tabs button.is-live::before, .picker button.is-live::before, .sheet-title.is-live small::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: #f0a36b;
+  box-shadow: 0 0 6px #f0a36b;
+  animation: live-dot 1.6s ease-in-out infinite;
+}
+@keyframes live-dot { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .tabs button.is-live::before, .picker button.is-live::before, .sheet-title.is-live small::before { animation: none; } }
