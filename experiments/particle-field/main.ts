@@ -7782,8 +7782,9 @@ type MgFlav = {
   note?: string;
   action?: [string, () => void];
 };
-type MgRow = { name: string; live?: () => boolean; cells: (MgFlav[] | null)[] };
-type MgGrid = { cols: string[]; rows: MgRow[] };
+type MgRow = { name: string; when?: string; live?: () => boolean; cells: (MgFlav[] | null)[] };
+// list: draw as "When you… → …the particles" rows instead of a matrix (for sparse grids).
+type MgGrid = { cols: string[]; rows: MgRow[]; list?: boolean };
 
 const ctlOf = (k: keyof Settings) => CONTROLS.find((c) => 'key' in c && c.key === k) as Extract<Control, { key: keyof Settings }> | undefined;
 function mgPut(k: keyof Settings, v: number) {
@@ -7996,29 +7997,33 @@ const MUSIC_GRID: MgGrid = {
 
 const handsSeen = () => cam.hands.length > 0;
 const CAMERA_GRID: MgGrid = {
+  list: true,
   cols: ['Move', 'Draw', 'Burst', 'View', 'Colour', 'Mask'],
   rows: [
     {
       name: 'Hands',
+      when: 'Move your hands',
       live: handsSeen,
-      cells: [[mgPick('Hands', 'camHands', [['repel', 'Push'], ['attract', 'Pull'], ['vortex', 'Swirl'], ['spray', 'Spray']], 'off', 'camHandForce', 3, { fine: ['camHandReach'] })], null, null, null, null, null],
+      cells: [[mgPick('Push or swirl', 'camHands', [['repel', 'Push'], ['attract', 'Pull'], ['vortex', 'Swirl'], ['spray', 'Spray']], 'off', 'camHandForce', 3, { fine: ['camHandReach'] })], null, null, null, null, null],
     },
     {
       name: 'Pinch',
+      when: 'Pinch',
       live: handsSeen,
-      cells: [null, [mgMode('Pen', 'camHands', 'draw', 'off', null, 1, { fine: ['drawColour'], note: 'Drawing takes over your hands from Move.' })], null, null, null, null],
+      cells: [null, [mgMode('Draw', 'camHands', 'draw', 'off', null, 1, { fine: ['drawColour'], note: 'Drawing takes over your hands from Move.' })], null, null, null, null],
     },
-    { name: 'Two fingers', live: handsSeen, cells: [null, [mgToggle('Width', 'drawWidth', { note: 'Works while Pinch draws.' })], null, null, null, null] },
-    { name: 'Open palm', live: handsSeen, cells: [null, [mgToggle('Erase', 'drawErase', { note: 'Works while Pinch draws.' })], null, null, null, null] },
+    { name: 'Two fingers', when: 'Two fingers', live: handsSeen, cells: [null, [mgToggle('Pen width', 'drawWidth', { note: 'Works while Pinch draws.' })], null, null, null, null] },
+    { name: 'Open palm', when: 'Open a palm', live: handsSeen, cells: [null, [mgToggle('Erase', 'drawErase', { note: 'Works while Pinch draws.' })], null, null, null, null] },
     {
       name: 'Two hands',
+      when: 'Use two hands',
       live: () => cam.hands.length > 1,
       cells: [
         null,
         null,
         null,
         [{
-          label: 'Dials',
+          label: 'Zoom & turn',
           get: () => (settings.gestOn ? 1 : 0),
           put: (v) => set('gestOn', v > 0.05),
           fine: ['twoDist', 'twoAngle'],
@@ -8027,27 +8032,30 @@ const CAMERA_GRID: MgGrid = {
         null,
       ],
     },
-    { name: 'Arms', cells: [[{ ...mgRange('Sweep', 'poseSweep', 3), get: () => (settings.poseOn ? clamp01(settings.poseSweep / 3) : 0), put: (v) => { set('poseOn', v > 0.05); if (v > 0.05) mgPut('poseSweep', v * 3); } }], null, null, null, null, null] },
+    { name: 'Arms', when: 'Move your arms', cells: [[{ ...mgRange('Sweep', 'poseSweep', 3), get: () => (settings.poseOn ? clamp01(settings.poseSweep / 3) : 0), put: (v) => { set('poseOn', v > 0.05); if (v > 0.05) mgPut('poseSweep', v * 3); } }], null, null, null, null, null] },
     {
       name: 'Face',
+      when: 'Show your face',
       live: () => cam.faces.length > 0,
       cells: [null, null, null, null, null, [mgPick('Mask', 'maskFx', [['flames', 'Flame hair'], ['crown', 'Crown'], ['tears', 'Tears'], ['beard', 'Rainbow beard'], ['halo', 'Halo'], ['lasers', 'Laser eyes']], 'none', 'maskShare', 0.8)]],
     },
-    { name: 'Gaze', live: () => cam.faces.length > 0, cells: [[mgPick('Gaze', 'gaze', [['drift', 'Drift where you look'], ['eyes', 'Eyes pull in']], 'off', null)], null, null, null, null, null] },
-    { name: 'Voice', live: () => cam.faces.length > 0 && audio.levels.level > 0.3, cells: [null, null, [mgToggle('Stream', 'voice', { fine: ['maskShare'] })], null, null, null] },
+    { name: 'Gaze', when: 'Look around', live: () => cam.faces.length > 0, cells: [[mgPick('Follow gaze', 'gaze', [['drift', 'Drift where you look'], ['eyes', 'Eyes pull in']], 'off', null)], null, null, null, null, null] },
+    { name: 'Voice', when: 'Sing or talk', live: () => cam.faces.length > 0 && audio.levels.level > 0.3, cells: [null, null, [mgToggle('Stream from mouth', 'voice', { fine: ['maskShare'] })], null, null, null] },
     {
       name: 'Expressions',
+      when: 'Pull a face',
       live: () => cam.faces.length > 0,
-      cells: [null, null, [mgRange('Sensitivity', 'exSense', 2.5, { note: 'What each expression, hand sign or jump does is picked in Connections.', action: ['Open Connections', () => openConnections()] })], null, null, null],
+      cells: [null, null, [mgRange('Moments', 'exSense', 2.5, { note: 'What each expression, hand sign or jump does is picked in Connections.', action: ['Open Connections', () => openConnections()] })], null, null, null],
     },
     {
       name: 'Body',
+      when: 'Stand in view',
       cells: [
-        [{ label: 'Flow round', get: () => (settings.obstacles === 'body' ? 1 : 0), put: (v) => set('obstacles', v > 0.05 ? 'body' : 'none') }],
+        [{ label: 'Flow round you', get: () => (settings.obstacles === 'body' ? 1 : 0), put: (v) => set('obstacles', v > 0.05 ? 'body' : 'none') }],
         null,
         null,
         null,
-        [mgToggle('Mirror', 'mirrorWorld')],
+        [mgToggle('Mirror world', 'mirrorWorld')],
         null,
       ],
     },
@@ -8063,6 +8071,87 @@ document.body.classList.toggle('show-classic', readJson<boolean>(MG_SHOW_KEY, fa
 const MG_LEVELS = [0, 1 / 3, 2 / 3, 1];
 const levelOf = (v: number) => (v <= 0.02 ? 0 : v < 0.45 ? 1 : v < 0.8 ? 2 : 3);
 const cellValue = (fl: MgFlav[]) => Math.max(...fl.map((f) => f.get()));
+
+// Tap, a sideways slide (the row becomes a strength bar) and a long press, on one element.
+function mgGesture(el: HTMLElement, row: HTMLElement, bar: HTMLElement, fl: MgFlav[], text: () => string, tap: () => void, hold: () => void, redraw: () => void) {
+  let x0 = 0;
+  let y0 = 0;
+  let mode: '' | 'wait' | 'swipe' | 'held' = '';
+  let timer = 0;
+  let eat = false;
+  const put = (v: number) => {
+    const on = fl.filter((f) => f.get() > 0.02);
+    for (const f of on.length ? on : [fl[0]]) f.put(v);
+  };
+  const show = (v: number) => {
+    bar.querySelector<HTMLElement>('i')!.style.width = `${Math.round(v * 100)}%`;
+    bar.querySelector('span')!.textContent = text();
+    bar.querySelector('b')!.textContent = v <= 0.02 ? 'off' : `${Math.round(v * 100)}%`;
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    x0 = e.clientX;
+    y0 = e.clientY;
+    mode = 'wait';
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      if (mode !== 'wait') return;
+      mode = 'held';
+      hold();
+    }, 450);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (mode !== 'wait' && mode !== 'swipe') return;
+    const dx = e.clientX - x0;
+    const dy = e.clientY - y0;
+    if (mode === 'wait') {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+        mode = '';
+        clearTimeout(timer);
+        return;
+      }
+      if (Math.abs(dx) < 8) return;
+      mode = 'swipe';
+      clearTimeout(timer);
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        /* fine */
+      }
+      row.classList.add('swiping');
+    }
+    const rr = row.getBoundingClientRect();
+    const v = clamp01((e.clientX - rr.left - 8) / (rr.width - 16));
+    put(v);
+    show(v);
+    redraw();
+  });
+  el.addEventListener('pointerup', () => {
+    clearTimeout(timer);
+    if (mode === 'swipe' || mode === 'held') {
+      eat = true;
+      setTimeout(() => (eat = false), 0);
+    }
+    row.classList.remove('swiping');
+    if (mode === 'swipe') redraw();
+    mode = '';
+  });
+  el.addEventListener('pointercancel', () => {
+    row.classList.remove('swiping');
+    mode = '';
+    clearTimeout(timer);
+  });
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+  el.addEventListener('click', () => {
+    if (!eat) tap();
+  });
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      hold();
+    }
+  });
+}
 
 function renderMixGrid(which: 'music' | 'camera') {
   const grid = which === 'music' ? MUSIC_GRID : CAMERA_GRID;
@@ -8089,7 +8178,8 @@ function renderMixGrid(which: 'music' | 'camera') {
   detail.hidden = true;
   const draws: (() => void)[] = [];
   const lives: [HTMLElement, () => boolean][] = [];
-  let open: { r: number; c: number } | null = null;
+  let open: string | null = null;
+  let dDraws: (() => void)[] = [];
 
   const flavLabel = (fl: MgFlav[]) => {
     const on = fl.filter((f) => f.get() > 0.02);
@@ -8135,92 +8225,17 @@ function renderMixGrid(which: 'music' | 'camera') {
         if (more > 0) b.dataset.more = `+${more}`;
         else delete b.dataset.more;
         b.title = fl.map((f) => f.label).join(', ');
-        b.classList.toggle('open', !!open && open.r === ri && open.c === ci);
+        b.classList.toggle('open', open === `${ri}:${ci}`);
         b.setAttribute('aria-label', `${row.name}, ${grid.cols[ci]}: ${lbl.textContent}${more > 0 ? ` and ${more} more` : ''}, ${['off', 'low', 'mid', 'high'][lv]}`);
       };
       draws.push(draw);
       draw();
       // Tap steps; a sideways drag sets the strength along the row; a long press opens the flavours.
-      let x0 = 0;
-      let y0 = 0;
-      let mode: '' | 'wait' | 'swipe' | 'held' = '';
-      let timer = 0;
-      const rowRect = () => r.getBoundingClientRect();
-      const showBar = (v: number) => {
-        bar.querySelector<HTMLElement>('i')!.style.width = `${Math.round(v * 100)}%`;
-        bar.querySelector('span')!.textContent = `${row.name} › ${grid.cols[ci]} · ${flavLabel(fl)}`;
-        bar.querySelector('b')!.textContent = v <= 0.02 ? 'off' : `${Math.round(v * 100)}%`;
-      };
-      b.addEventListener('pointerdown', (e) => {
-        if (e.button > 0) return;
-        x0 = e.clientX;
-        y0 = e.clientY;
-        mode = 'wait';
-        clearTimeout(timer);
-        timer = window.setTimeout(() => {
-          if (mode !== 'wait') return;
-          mode = 'held';
-          openDetail(ri, ci);
-        }, 450);
-      });
-      b.addEventListener('pointermove', (e) => {
-        if (mode !== 'wait' && mode !== 'swipe') return;
-        const dx = e.clientX - x0;
-        const dy = e.clientY - y0;
-        if (mode === 'wait') {
-          if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
-            mode = '';
-            clearTimeout(timer);
-            return;
-          }
-          if (Math.abs(dx) < 8) return;
-          mode = 'swipe';
-          clearTimeout(timer);
-          try {
-            b.setPointerCapture(e.pointerId);
-          } catch {
-            /* fine */
-          }
-          r.classList.add('swiping');
-        }
-        const rr = rowRect();
-        const v = clamp01((e.clientX - rr.left - 8) / (rr.width - 16));
-        apply(fl, v);
-        showBar(v);
+      const opener = () => openDetail(row.name, grid.cols[ci], fl, `${ri}:${ci}`);
+      mgGesture(b, r, bar, fl, () => `${row.name} › ${grid.cols[ci]} · ${flavLabel(fl)}`, () => {
+        apply(fl, MG_LEVELS[(levelOf(cellValue(fl)) + 1) % 4]);
         redraw();
-      });
-      const end = () => {
-        clearTimeout(timer);
-        if (mode === 'swipe') {
-          r.classList.remove('swiping');
-          b.dataset.eat = '1';
-          setTimeout(() => delete b.dataset.eat, 0);
-        }
-        if (mode === 'held') {
-          b.dataset.eat = '1';
-          setTimeout(() => delete b.dataset.eat, 0);
-        }
-        mode = '';
-      };
-      b.addEventListener('pointerup', end);
-      b.addEventListener('pointercancel', () => {
-        r.classList.remove('swiping');
-        mode = '';
-        clearTimeout(timer);
-      });
-      b.addEventListener('contextmenu', (e) => e.preventDefault());
-      b.addEventListener('click', () => {
-        if (b.dataset.eat) return;
-        const next = MG_LEVELS[(levelOf(cellValue(fl)) + 1) % 4];
-        apply(fl, next);
-        redraw();
-      });
-      b.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && e.shiftKey) {
-          e.preventDefault();
-          openDetail(ri, ci);
-        }
-      });
+      }, opener, redraw);
       r.append(b);
     });
     table.append(r);
@@ -8230,24 +8245,131 @@ function renderMixGrid(which: 'music' | 'camera') {
   hint.className = 'mg-hint';
   hint.textContent = 'Tap: off · low · mid · high. Slide sideways: exact strength. Hold: flavours and fine settings.';
 
-  function openDetail(ri: number, ci: number) {
-    open = { r: ri, c: ci };
-    const fl = grid.rows[ri].cells[ci]!;
+  // When you… → …the particles: each trigger lists what it does now, + adds more.
+  const list = document.createElement('div');
+  list.className = 'mg-list';
+  if (grid.list) {
+    hint.textContent = 'Tap a reaction for its settings. Slide it sideways: strength. + adds one.';
+    const cap = document.createElement('div');
+    cap.className = 'mg-lhead';
+    cap.innerHTML = '<span>When you…</span><span>…the particles</span>';
+    list.append(cap);
+    grid.rows.forEach((row, ri) => {
+      const all = row.cells.flatMap((fl, ci) => (fl ?? []).map((f, fi) => ({ f, col: grid.cols[ci], key: `${ri}:${ci}:${fi}` })));
+      const r = document.createElement('div');
+      r.className = 'mg-lrow';
+      const name = document.createElement('span');
+      name.className = 'mg-name';
+      name.innerHTML = '<i></i><b></b>';
+      name.querySelector('b')!.textContent = row.when ?? row.name;
+      if (row.live) lives.push([r, row.live]);
+      const bar = document.createElement('div');
+      bar.className = 'mg-bar';
+      bar.innerHTML = '<i></i><span></span><b></b>';
+      const fx = document.createElement('div');
+      fx.className = 'mg-fx';
+      const menu = document.createElement('div');
+      menu.className = 'mg-menu';
+      menu.hidden = true;
+      r.append(name, fx, bar);
+      const chipName = (f: MgFlav) => {
+        const pick = f.choice && f.get() > 0.02 ? f.choice.options.find(([o]) => o === f.choice!.get())?.[1] : '';
+        return pick || f.label;
+      };
+      let sig = '-';
+      const build = () => {
+        const on = all.filter(({ f }) => f.get() > 0.02);
+        const next = on.map(({ key, f }) => key + chipName(f)).join('|') + (open ?? '');
+        if (next !== sig && !r.classList.contains('swiping')) {
+          sig = next;
+          fx.innerHTML = '';
+          for (const { f, col, key } of on) {
+            const c = document.createElement('button');
+            c.type = 'button';
+            c.className = 'mg-chip';
+            c.classList.toggle('open', open === key);
+            c.textContent = chipName(f);
+            const opener = () => openDetail(row.when ?? row.name, `${chipName(f)} · ${col}`, [f], key, () => f.put(0));
+            mgGesture(c, r, bar, [f], () => `${row.when ?? row.name} › ${chipName(f)}`, opener, opener, redraw);
+            fx.append(c);
+          }
+          const off = all.filter(({ f }) => f.get() <= 0.02);
+          if (off.length) {
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'mg-add';
+            add.textContent = on.length ? '+' : '+ Add';
+            add.setAttribute('aria-label', `Add a reaction to ${row.when ?? row.name}`);
+            add.addEventListener('click', () => {
+              if (off.length === 1) {
+                const { f, col, key } = off[0];
+                f.put(2 / 3);
+                menu.hidden = true;
+                redraw();
+                openDetail(row.when ?? row.name, `${chipName(f)} · ${col}`, [f], key, () => f.put(0));
+                return;
+              }
+              menu.hidden = !menu.hidden;
+              menu.innerHTML = '';
+              for (const { f, col, key } of off) {
+                const m = document.createElement('button');
+                m.type = 'button';
+                m.innerHTML = '<b></b><span></span>';
+                m.querySelector('b')!.textContent = f.label;
+                m.querySelector('span')!.textContent = col;
+                m.addEventListener('click', () => {
+                  f.put(2 / 3);
+                  menu.hidden = true;
+                  redraw();
+                  openDetail(row.when ?? row.name, `${chipName(f)} · ${col}`, [f], key, () => f.put(0));
+                });
+                menu.append(m);
+              }
+            });
+            fx.append(add);
+          } else menu.hidden = true;
+        }
+        for (const c of fx.querySelectorAll<HTMLElement>('.mg-chip')) {
+          const k = on[[...fx.children].indexOf(c)];
+          if (k) c.style.setProperty('--v', `${Math.round(k.f.get() * 100)}%`);
+        }
+      };
+      draws.push(build);
+      build();
+      list.append(r, menu);
+    });
+  }
+
+  function openDetail(sup: string, title: string, fl: MgFlav[], key: string, remove?: () => void) {
+    open = key;
+    dDraws = [];
     detail.hidden = false;
     detail.innerHTML = '';
     const top = document.createElement('div');
     top.className = 'mg-dtop';
     top.innerHTML = '<span></span><b></b>';
-    top.querySelector('span')!.textContent = grid.rows[ri].name;
-    top.querySelector('b')!.textContent = grid.cols[ci];
+    top.querySelector('span')!.textContent = sup;
+    top.querySelector('b')!.textContent = title;
     const done = document.createElement('button');
     done.type = 'button';
     done.textContent = 'Done';
-    done.addEventListener('click', () => {
+    const close = () => {
       open = null;
+      dDraws = [];
       detail.hidden = true;
       redraw();
-    });
+    };
+    done.addEventListener('click', close);
+    if (remove) {
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.textContent = 'Remove';
+      rm.addEventListener('click', () => {
+        remove();
+        close();
+      });
+      top.append(rm);
+    }
     top.append(done);
     detail.append(top);
     const fineKeys = new Set<keyof Settings>();
@@ -8264,7 +8386,7 @@ function renderMixGrid(which: 'music' | 'camera') {
         fb.classList.toggle('on', v > 0.02);
       };
       paint();
-      draws.push(paint);
+      dDraws.push(paint);
       // Drag along the bar to set; a tap toggles off / mid.
       let down = false;
       let moved = false;
@@ -8321,7 +8443,7 @@ function renderMixGrid(which: 'music' | 'camera') {
             if (f.get() <= 0.02) f.put(2 / 3);
             redraw();
           });
-          draws.push(() => sb.classList.toggle('on', f.choice!.get() === o && f.get() > 0.02));
+          dDraws.push(() => sb.classList.toggle('on', f.choice!.get() === o && f.get() > 0.02));
           seg.append(sb);
         }
         detail.append(seg);
@@ -8342,7 +8464,7 @@ function renderMixGrid(which: 'music' | 'camera') {
       h.className = 'mg-sub';
       h.textContent = 'Fine settings';
       detail.append(h);
-      for (const k of fineKeys) detail.append(mgFine(k, draws));
+      for (const k of fineKeys) detail.append(mgFine(k, dDraws));
     }
     for (const n of notes) {
       const p = document.createElement('p');
@@ -8356,6 +8478,7 @@ function renderMixGrid(which: 'music' | 'camera') {
 
   function redraw() {
     for (const d of draws) d();
+    for (const d of dDraws) d();
   }
   refreshers.push(redraw);
 
@@ -8379,7 +8502,7 @@ function renderMixGrid(which: 'music' | 'camera') {
   });
   refreshers.push(label);
 
-  wrap.append(table, hint, detail, classic);
+  wrap.append(grid.list ? list : table, hint, detail, classic);
   return wrap;
 }
 

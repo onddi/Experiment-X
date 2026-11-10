@@ -1106,3 +1106,31 @@ body:not(.show-classic):not(.searching) .classic { display: none !important; }
   .mg-cell[data-lv="3"] i { width: 18px; height: 18px; }
   .mg-cell[data-more]::after { top: 2px; right: 2px; }
 }
+/* When you… → …the particles (Camera) */
+.mg-list { display: flex; flex-direction: column; }
+.mg-lhead { display: flex; justify-content: space-between; padding: 0 2px 4px; font: 600 10px/1 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #7d808a; }
+.mg-lrow { position: relative; display: flex; align-items: flex-start; gap: 8px; min-height: 42px; padding: 7px 2px; border-top: 1px solid #1f2127; border-radius: 8px; transition: background .25s; }
+.mg-lrow .mg-name { flex: none; width: 118px; min-height: 28px; }
+.mg-lrow .mg-name b { font-size: 13px; white-space: normal; line-height: 1.15; }
+.mg-lrow.live { background: rgba(240,163,107,0.07); }
+.mg-lrow.live .mg-name i { background: #f0a36b; box-shadow: 0 0 6px #f0a36b; }
+.mg-fx { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 5px; }
+.mg-chip {
+  height: 28px; max-width: 100%; padding: 0 10px; border: 0; border-radius: 14px; cursor: pointer;
+  color: #dfe3ff; font: 500 12px system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: linear-gradient(90deg, rgba(154,168,255,0.3) var(--v, 0%), rgba(154,168,255,0.1) var(--v, 0%));
+  touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.mg-chip.open { box-shadow: inset 0 0 0 1.5px rgba(154,168,255,0.7); }
+.mg-add { height: 28px; min-width: 28px; padding: 0 9px; border-radius: 14px; border: 1px dashed #3a3d46; background: none; color: var(--muted); font: 500 13px system-ui, sans-serif; cursor: pointer; }
+.mg-menu { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px 120px; padding: 4px; border-radius: 10px; background: #1a1b21; border: 1px solid #3a3d46; }
+.mg-menu[hidden] { display: none; }
+.mg-menu button { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: 500 13px system-ui, sans-serif; text-align: left; cursor: pointer; }
+.mg-menu button:hover { background: rgba(255,255,255,0.05); }
+.mg-menu b { flex: 1; font-weight: 500; }
+.mg-menu span { font-size: 11px; color: var(--muted); }
+@container (max-width: 330px) {
+  .mg-lrow .mg-name { width: 92px; }
+  .mg-lrow .mg-name b { font-size: 12px; white-space: normal; line-height: 1.15; }
+  .mg-menu { margin-left: 0; }
+}
