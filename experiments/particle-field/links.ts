@@ -86,6 +86,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'dream', label: 'Macro: Dream', kind: 'amount' },
   { id: 'heat', label: 'Macro: Heat', kind: 'amount' },
   { id: 'density', label: 'Macro: Density', kind: 'amount' },
+  { id: 'xfade', label: 'Crossfader (A → B)', kind: 'amount' },
 ];
 
 export type Link = { src: string; when: string; act: string; amt: number };
@@ -122,7 +123,7 @@ export function linkNeeds(list: Link[]) {
 export type Signal = { level: number; fire?: boolean; x?: number; y?: number; signed?: number };
 export type Amounts = { size: number; flow: number; speed: number; hue: number; roll: number; zoom: number; emit: number };
 // Macro offsets (-0.5..0.5) on top of the Macros card's sliders.
-export type MacroPush = { energy: number; order: number; dream: number; heat: number; density: number };
+export type MacroPush = { energy: number; order: number; dream: number; heat: number; density: number; xfade: number };
 export type LinkOut = {
   fired: { act: string; src: string; x?: number; y?: number }[];
   gather: boolean;
@@ -142,7 +143,7 @@ export class LinkRunner {
   private state: { on: boolean; since: number; at: number; v: number }[] = [];
   private heldSince: Record<string, number> = {};
   levels: Record<string, number> = {};
-  out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
+  out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0, xfade: 0 } };
 
   sync(text: string) {
     if (text === this.text) return;
@@ -167,7 +168,7 @@ export class LinkRunner {
   }
 
   step(signal: (id: string) => Signal, now: number) {
-    const out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 0, flow: 0, speed: 0, hue: 0, roll: 0, zoom: 0, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
+    const out: LinkOut = { fired: [], gather: false, freeze: false, amounts: { size: 0, flow: 0, speed: 0, hue: 0, roll: 0, zoom: 0, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0, xfade: 0 } };
     const cache: Record<string, Signal> = {};
     const sig = (id: string) => (cache[id] ??= signal(id));
     this.levels = {};

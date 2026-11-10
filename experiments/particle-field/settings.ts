@@ -62,6 +62,8 @@ export interface Settings {
   flowSpeed: number;
   flowType: FlowType;
   flock: number;
+  /** Crossfader position: 0 = scene A, 1 = scene B. */
+  xfPos: number;
   /** New particles bud off existing ones instead of appearing anywhere. */
   budding: boolean;
   flockSep: number;
@@ -331,6 +333,7 @@ export const DEFAULTS: Settings = {
   flow: 0.3,
   flowType: 'waves',
   flock: 0,
+  xfPos: 0,
   budding: false,
   flockSep: 1,
   flockAlign: 1,

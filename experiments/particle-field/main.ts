@@ -33,6 +33,20 @@ function load(): Partial<Settings> {
   }
 }
 
+// Crossfader: two scenes and a fader between them (state; the engine is with
+// the timeline further down).
+type XfRef = { name: string; mine?: boolean };
+type Xfader = { on: boolean; a: XfRef; b: XfRef; bars: number; pingpong: boolean };
+const XF_KEY = 'particle-field:xfader';
+const xf: Xfader = (() => {
+  const d: Xfader = { on: false, a: { name: 'Galaxy' }, b: { name: 'Neon storm' }, bars: 4, pingpong: false };
+  try {
+    return { ...d, ...JSON.parse(localStorage.getItem(XF_KEY) ?? '{}'), pingpong: false };
+  } catch {
+    return d;
+  }
+})();
+
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -3149,7 +3163,7 @@ function buildShades() {
     target.push(hslToRgb(mix(0), mix(1), mix(2)));
   }
   // While crossfading, blend from the old palette's colours.
-  const u = palMix ? Math.min(1, (performance.now() - palMix.start) / palMix.dur) : 1;
+  const u = palMix ? (palMix.fixed ?? Math.min(1, (performance.now() - palMix.start) / palMix.dur)) : 1;
   shadeRgb = target.map((c, k) => (palMix && palMix.from[k] ? (c.map((v, i) => palMix!.from[k][i] + (v - palMix!.from[k][i]) * u) as Rgb) : c));
   shades = shadeRgb.map(([r, g, b]) => `rgb(${r.toFixed(0)} ${g.toFixed(0)} ${b.toFixed(0)})`);
 }
@@ -4716,7 +4730,7 @@ function runLinks(now: number) {
   linkFlash *= 0.82;
   if (!linkRun.list.length) {
     if (linkRun.out.fired.length || linkRun.out.gather || linkRun.out.freeze || linkRun.list !== lastLinkList) {
-      linkRun.out = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0 } };
+      linkRun.out = { fired: [], gather: false, freeze: false, amounts: { size: 1, flow: 1, speed: 1, hue: 0, roll: 0, zoom: 1, emit: 0 }, macros: { energy: 0, order: 0, dream: 0, heat: 0, density: 0, xfade: 0 } };
       lastLinkList = linkRun.list;
     }
     linkAt = now;
@@ -4774,6 +4788,7 @@ function frame(now: number) {
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
     tlTick(now);
+    xfTick(now);
     // Stutter: a split-second freeze frame on each snare.
     const held = now < stutterUntil;
     const t0 = performance.now();
@@ -4844,6 +4859,7 @@ type ControlBody =
   | { kind: 'mypresets' }
   | { kind: 'timeline' }
   | { kind: 'record' }
+  | { kind: 'xfader' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'links' }
@@ -5097,6 +5113,24 @@ const CONTROLS: Control[] = [
     } },
   { kind: 'timeline' },
   { kind: 'note', text: 'Click a scene’s name to play it next, on the bar. On the field, the ring shows where you are: click it for the next scene, scroll over it to pick one. With music the bars follow its tempo; without, the tempo above. While the timeline runs, Auto VJ waits.' },
+
+  { kind: 'section', id: 'xfader', label: 'Crossfader', tab: 'presets',
+    about: 'Blend between two scenes with a fader: every setting goes partway from A to B.',
+    summary: () => (xf.on ? `${xf.a.name} ${Math.round((1 - settings.xfPos) * 100)} · ${Math.round(settings.xfPos * 100)} ${xf.b.name}` : 'off'),
+    power: {
+      on: () => xf.on,
+      get off(): Partial<Settings> {
+        xfSetOn(false);
+        return {};
+      },
+      get start(): Partial<Settings> {
+        xfSetOn(true);
+        return {};
+      },
+    } },
+  { kind: 'xfader' },
+  { kind: 'range', key: 'xfPos', label: 'A ↔ B', min: 0, max: 1, step: 0.01, format: (v) => (v <= 0.005 ? 'A' : v >= 0.995 ? 'B' : `${Math.round(v * 100)}% B`) },
+  { kind: 'note', text: 'Numbers glide between the two scenes and the colours mix; things that can’t be partway (particle style, flow type, emitters, the shape) switch at the middle with a quick crossfade. On the field: drag the fader, scroll over it, or ← → (Shift fades all the way). Put “Crossfader” on a knob, or link music or a hand to it in Connections. While it’s on, the timeline and Auto VJ wait.' },
 
   // How switching between looks feels. Not part of any look: presets keep these.
 
@@ -5665,6 +5699,7 @@ const playSettings = (): Partial<Settings> => ({
   beatSnap: settings.beatSnap,
   shuffleCards: settings.shuffleCards,
   homeStrength: settings.homeStrength,
+  xfPos: settings.xfPos,
   ...Object.fromEntries(MUSIC_KEYS.map((k) => [k, settings[k]])),
 });
 
@@ -5675,6 +5710,17 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
     currentMine = null;
     redrawMine();
   }
+  const target = sceneTarget(p, keepAudio);
+  if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
+    pendingLook = { target, since: performance.now() };
+    return;
+  }
+  morphTo(target, opts.morph);
+}
+
+// The full settings a scene ends up as: the scene over the defaults, with
+// what carries over (sound setup, how you play, inputs, your lenses, locks).
+function sceneTarget(p: Partial<Settings>, keepAudio: boolean): Settings {
   // Your own presets bring their whole Sound setup back too (the music cards
   // included), all but Auto VJ, so a VJ stepping through them keeps going.
   const own = keepAudio ? {} : Object.fromEntries(MUSIC_KEYS.filter((k) => k in p && !k.startsWith('audioVj')).map((k) => [k, p[k]]));
@@ -5690,11 +5736,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   for (const k of lockedKeys()) (target as unknown as Record<string, unknown>)[k] = settings[k];
   // Tweaks held by the timeline stay for the rest of the set.
   if (tlActive() && tl.hold) Object.assign(target, tl.held);
-  if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
-    pendingLook = { target, since: performance.now() };
-    return;
-  }
-  morphTo(target, opts.morph);
+  return target;
 }
 
 // --- morphing between looks ---------------------------------------------------
@@ -5704,7 +5746,8 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 
 type Rgb = [number, number, number];
 let morphState: { from: Record<string, number>; to: Record<string, number>; start: number; dur: number } | null = null;
-let palMix: { from: Rgb[]; fromBg: Rgb; start: number; dur: number; tick: number } | null = null;
+// `fixed`: held at that mix (the crossfader) instead of running over time.
+let palMix: { from: Rgb[]; fromBg: Rgb; start: number; dur: number; tick: number; fixed?: number } | null = null;
 let pendingLook: { target: Settings; since: number } | null = null;
 // Set while morphTo applies a shape change; homeGlide then moves each
 // particle's target from where it was to its new spot.
@@ -6002,7 +6045,7 @@ function musicVisuals(now: number) {
   if (!on || S.audioLetterHop <= 0) hopKick = 0;
 
   // Auto VJ: a new look every few bars, and on drops.
-  if (on && S.audioVj > 0 && !tlActive()) {
+  if (on && S.audioVj > 0 && !tlActive() && !xf.on) {
     if (L.bar) vjBars++;
     if (vjBars >= S.audioVj || (S.audioVjDrop && L.drop)) {
       vjBars = 0;
@@ -6078,6 +6121,293 @@ const TL_HOW: [TlHow, string][] = [
   ['cut', 'Cut'], ['morph', 'Morph (1 bar)'], ['slow', 'Slow morph (2 bars)'], ['vslow', 'Very slow (4 bars)'], ['drop', 'Drop'], ['gather', 'Gather & burst'], ['implode', 'Implode'],
   ['fade', 'Fade through black'], ['flash', 'Flash'], ['whirl', 'Whirl'], ['grow', 'Grow'], ['wipe', 'Wipe'], ['freeze', 'Freeze'], ['shatter', 'Shatter'],
 ];
+
+
+// --- crossfader ----------------------------------------------------------------
+// The fader sets how far between scene A and scene B the field is: numbers
+// sit partway, the palette is a fixed mix of the two, and settings that can't
+// be partway take B's value past the middle (with a quick picture crossfade).
+let xfLast = -1;
+let xfAuto: { from: number; to: number; start: number; dur: number } | null = null;
+const xfMoved = new Set<keyof Settings>();
+let xfSettle = 0;
+const xfPalCache = new Map<string, { shades: Rgb[]; bg: Rgb }>();
+const XF_PAL = ['palette', 'customColors', 'customBg'] as const;
+let xfUi: (() => void)[] = [];
+
+function xfSave() {
+  try {
+    localStorage.setItem(XF_KEY, JSON.stringify({ ...xf, pingpong: false }));
+  } catch {}
+}
+function xfScene(r: XfRef): Settings | null {
+  if (r.mine) {
+    const m = myPresets.find((p) => p.name === r.name);
+    return m ? sceneTarget(m.settings, false) : null;
+  }
+  const p = PRESETS.find(([n]) => n === r.name);
+  return p ? sceneTarget(p[1], true) : null;
+}
+// The palette's colours for a scene, worked out without showing them.
+function xfShades(t: Settings) {
+  const key = XF_PAL.map((k) => String(t[k])).join('|');
+  let hit = xfPalCache.get(key);
+  if (!hit) {
+    const S = settings as unknown as Record<string, unknown>;
+    const keep = XF_PAL.map((k) => S[k]);
+    const mix = palMix;
+    palMix = null;
+    XF_PAL.forEach((k) => (S[k] = t[k]));
+    buildShades();
+    hit = { shades: shadeRgb.slice(), bg: pal().bg as Rgb };
+    XF_PAL.forEach((k, i) => (S[k] = keep[i]));
+    palMix = mix;
+    xfPalCache.set(key, hit);
+  }
+  return hit;
+}
+function xfApply(pos: number) {
+  const A = xfScene(xf.a);
+  const B = xfScene(xf.b);
+  if (!A || !B) return;
+  morphState = null;
+  pendingLook = null;
+  intKeys ??= new Set(CONTROLS.flatMap((c) => (c.kind === 'range' && Number.isInteger(c.step) && c.step >= 1 ? [c.key as string] : [])));
+  const S = settings as unknown as Record<string, unknown>;
+  const a = A as unknown as Record<string, unknown>;
+  const b = B as unknown as Record<string, unknown>;
+  const side = pos < 0.5 ? a : b;
+  const flips = new Set<keyof Settings>();
+  for (const k of Object.keys(DEFAULTS) as (keyof Settings)[]) {
+    if (k === 'xfPos' || (XF_PAL as readonly string[]).includes(k)) continue;
+    const va = a[k];
+    const vb = b[k];
+    let v: unknown;
+    if (typeof va === 'number' && typeof vb === 'number') {
+      let n2 = va + (vb - va) * pos;
+      if (intKeys.has(k)) n2 = Math.round(n2);
+      v = n2;
+    } else v = side[k];
+    if (S[k] === v) continue;
+    S[k] = v;
+    if (typeof v === 'number') xfMoved.add(k);
+    else flips.add(k);
+  }
+  // Colours: B's palette, mixed from A's by the fader.
+  const samePal = XF_PAL.every((k) => a[k] === b[k]);
+  const pa = samePal ? null : xfShades(A);
+  XF_PAL.forEach((k) => (S[k] = b[k]));
+  palMix = pa ? { from: pa.shades, fromBg: pa.bg, start: 0, dur: 1, tick: 0, fixed: pos } : null;
+  buildShades();
+  if ('count' in DEFAULTS && xfMoved.has('count')) {
+    const c = settings.count;
+    settings.count = c < 100 ? Math.round(c) : Math.round(c / 10) * 10;
+    setCount(countNow());
+  }
+  if (flips.size) {
+    if ((['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter'] as const).some((k) => flips.has(k))) pictureFade(0.5);
+    glideHomes = { ms: 700, fromFree: false };
+    changed(flips);
+    glideHomes = null;
+  }
+  xfSettle = performance.now() + 250;
+}
+function xfTick(now: number) {
+  if (!xf.on) return;
+  if (xfAuto) {
+    const u = Math.min(1, (now - xfAuto.start) / xfAuto.dur);
+    const e = u * u * (3 - 2 * u);
+    settings.xfPos = xfAuto.from + (xfAuto.to - xfAuto.from) * e;
+    if (u >= 1) {
+      settings.xfPos = xfAuto.to;
+      xfAuto = xf.pingpong ? { from: xfAuto.to, to: 1 - xfAuto.to, start: now, dur: xfAuto.dur } : null;
+    }
+  }
+  const pos = Math.max(0, Math.min(1, settings.xfPos + linkRun.out.macros.xfade));
+  if (Math.abs(pos - xfLast) > 0.0015) {
+    xfLast = pos;
+    xfApply(pos);
+    xfUi.forEach((f) => f());
+  }
+  // Once the fader rests, let the rest of the app catch up (shape sizes,
+  // saved settings, the menu).
+  if (xfSettle && now > xfSettle) {
+    xfSettle = 0;
+    const keys = new Set<keyof Settings>([...xfMoved, 'xfPos']);
+    xfMoved.clear();
+    changed(keys);
+  }
+}
+function xfSetOn(on: boolean) {
+  xf.on = on;
+  xfAuto = null;
+  xf.pingpong = false;
+  xfLast = -1;
+  if (on && tl.on) {
+    tlSetOn(false);
+    showToast('Timeline paused for the crossfader');
+  }
+  if (!on && palMix?.fixed !== undefined) {
+    // Keep the colours you were nearer to.
+    const A = settings.xfPos < 0.5 ? xfScene(xf.a) : null;
+    if (A) XF_PAL.forEach((k) => ((settings as unknown as Record<string, unknown>)[k] = A[k]));
+    palMix = null;
+    changed(new Set(XF_PAL));
+  }
+  xfSave();
+  xfUi.forEach((f) => f());
+}
+function xfBarSec() {
+  const L = audio.levels;
+  return 240 / (audio.source !== 'off' && L.bpm > 0 ? L.bpm : tl.bpm || 120);
+}
+function xfFadeTo(to: number) {
+  if (!xf.on) xfSetOn(true);
+  xf.pingpong = false;
+  xfAuto = { from: settings.xfPos, to, start: performance.now(), dur: xf.bars * xfBarSec() * 1000 * Math.max(0.15, Math.abs(to - settings.xfPos)) };
+}
+function xfPingPong() {
+  if (!xf.on) xfSetOn(true);
+  xf.pingpong = !xf.pingpong;
+  if (xf.pingpong) xfAuto = { from: settings.xfPos, to: settings.xfPos < 0.5 ? 1 : 0, start: performance.now(), dur: xf.bars * xfBarSec() * 1000 };
+  else xfAuto = null;
+  xfUi.forEach((f) => f());
+}
+function xfNudge(d: number) {
+  xfAuto = null;
+  xf.pingpong = false;
+  settings.xfPos = Math.max(0, Math.min(1, settings.xfPos + d));
+}
+function xfSetScene(side: 'a' | 'b', v: string) {
+  xf[side] = v.startsWith('my:') ? { name: v.slice(3), mine: true } : { name: v };
+  xfLast = -1;
+  xfSave();
+  xfUi.forEach((f) => f());
+}
+const xfValue = (r: XfRef) => (r.mine ? `my:${r.name}` : r.name);
+function xfOptions(sel: HTMLSelectElement) {
+  sel.innerHTML = '';
+  if (myPresets.length) {
+    const g = document.createElement('optgroup');
+    g.label = 'My scenes';
+    for (const p of myPresets) g.append(new Option(p.name, `my:${p.name}`));
+    sel.append(g);
+  }
+  const g2 = document.createElement('optgroup');
+  g2.label = 'Scene library';
+  for (const [nm] of [...PRESETS].sort(([x], [y]) => x.localeCompare(y))) g2.append(new Option(nm, nm));
+  sel.append(g2);
+}
+
+function renderXfader() {
+  const box = document.createElement('div');
+  box.className = 'xfader';
+  const deck = (side: 'a' | 'b') => {
+    const l = document.createElement('label');
+    l.className = 'row select';
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = side === 'a' ? 'Scene A' : 'Scene B';
+    const sel = document.createElement('select');
+    xfOptions(sel);
+    sel.value = xfValue(xf[side]);
+    sel.addEventListener('focus', () => {
+      xfOptions(sel);
+      sel.value = xfValue(xf[side]);
+    });
+    sel.addEventListener('change', () => xfSetScene(side, sel.value));
+    l.append(nm, sel);
+    return l;
+  };
+  const row = document.createElement('div');
+  row.className = 'xf-auto';
+  const bars = document.createElement('select');
+  bars.setAttribute('aria-label', 'Auto-fade length');
+  for (const n2 of [1, 2, 4, 8, 16]) bars.add(new Option(`${n2} bar${n2 > 1 ? 's' : ''}`, String(n2)));
+  bars.value = String(xf.bars);
+  bars.addEventListener('change', () => {
+    xf.bars = Number(bars.value);
+    xfSave();
+  });
+  const btn = (text: string, fn: () => void) => {
+    const b2 = document.createElement('button');
+    b2.type = 'button';
+    b2.textContent = text;
+    b2.addEventListener('click', fn);
+    row.append(b2);
+    return b2;
+  };
+  btn('Fade to A', () => xfFadeTo(0));
+  btn('Fade to B', () => xfFadeTo(1));
+  const pp = btn('Back and forth', xfPingPong);
+  const swap = document.createElement('button');
+  swap.type = 'button';
+  swap.className = 'xf-swap';
+  swap.textContent = 'Swap A and B';
+  swap.addEventListener('click', () => {
+    [xf.a, xf.b] = [xf.b, xf.a];
+    settings.xfPos = 1 - settings.xfPos;
+    xfLast = -1;
+    xfSave();
+    box.replaceWith(renderXfader());
+  });
+  row.prepend(bars);
+  xfUi.push(() => pp.classList.toggle('on', xf.pingpong));
+  box.append(deck('a'), deck('b'), swap, row);
+  return box;
+}
+
+// On the field: a slim fader with the two scene names at its ends.
+const xfField = document.createElement('div');
+xfField.className = 'xf-field';
+xfField.hidden = true;
+xfField.innerHTML = '<span class="xf-a"></span><div class="xf-track" role="slider" aria-label="Crossfader" aria-valuemin="0" aria-valuemax="100" tabindex="-1"><i></i><b></b></div><span class="xf-b"></span>';
+document.body.append(xfField);
+{
+  const track = xfField.querySelector('.xf-track') as HTMLElement;
+  const fill = track.querySelector('i') as HTMLElement;
+  const thumb = track.querySelector('b') as HTMLElement;
+  const la = xfField.querySelector('.xf-a') as HTMLElement;
+  const lb = xfField.querySelector('.xf-b') as HTMLElement;
+  let hideAt = 0;
+  const show = () => {
+    xfField.classList.add('show');
+    hideAt = performance.now() + 1600;
+    setTimeout(() => performance.now() >= hideAt && xfField.classList.remove('show'), 1700);
+  };
+  xfUi.push(() => {
+    xfField.hidden = !xf.on;
+    la.textContent = xf.a.name;
+    lb.textContent = xf.b.name;
+    const p = Math.max(0, Math.min(1, xfLast < 0 ? settings.xfPos : xfLast));
+    fill.style.width = `${p * 100}%`;
+    thumb.style.left = `${p * 100}%`;
+    track.setAttribute('aria-valuenow', String(Math.round(p * 100)));
+    if (xf.on) show();
+  });
+  const at = (e: PointerEvent) => {
+    const r = track.getBoundingClientRect();
+    xfAuto = null;
+    xf.pingpong = false;
+    settings.xfPos = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  };
+  track.addEventListener('pointerdown', (e) => {
+    track.setPointerCapture(e.pointerId);
+    at(e);
+    e.stopPropagation();
+  });
+  track.addEventListener('pointermove', (e) => track.hasPointerCapture(e.pointerId) && at(e));
+  xfField.addEventListener('pointerdown', (e) => e.stopPropagation());
+  xfField.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      xfNudge((Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * 0.002);
+    },
+    { passive: false },
+  );
+}
 
 // --- timeline transitions ------------------------------------------------------
 // How a clip comes in. Some move the particles (gather, implode, whirl,
@@ -6352,6 +6682,7 @@ function tlScene(c: TlClip): Partial<Settings> | null {
 }
 function tlSetOn(on: boolean) {
   tl.on = on;
+  if (on && xf.on) xfSetOn(false);
   // Held tweaks belong to one run of the set.
   if (!on) {
     tl.held = {};
@@ -6886,7 +7217,7 @@ function tickMorph(now: number, beat: boolean) {
     pendingLook = null;
     morphTo(t2);
   }
-  if (palMix) {
+  if (palMix && palMix.fixed === undefined) {
     const u = Math.min(1, (now - palMix.start) / palMix.dur);
     if (u >= 1) {
       palMix = null;
@@ -6931,7 +7262,7 @@ function tickMorph(now: number, beat: boolean) {
 function bgNow(): Rgb {
   const bg = pal().bg as Rgb;
   if (!palMix) return bg;
-  const u = Math.min(1, (performance.now() - palMix.start) / palMix.dur);
+  const u = palMix.fixed ?? Math.min(1, (performance.now() - palMix.start) / palMix.dur);
   return [0, 1, 2].map((c) => palMix!.fromBg[c] + (bg[c] - palMix!.fromBg[c]) * u) as Rgb;
 }
 
@@ -7493,6 +7824,11 @@ function renderControls() {
 
     if (ctl.kind === 'record') {
       searchItem(body, renderRecord());
+      continue;
+    }
+
+    if (ctl.kind === 'xfader') {
+      searchItem(body, renderXfader());
       continue;
     }
 
@@ -8504,6 +8840,12 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'd' || k === 'r') shuffle();
   else if (k === 'h') toggle.click();
   else if (k === 'v') toggleRecord();
+  else if (xf.on && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    const right = e.key === 'ArrowRight';
+    if (e.shiftKey) xfFadeTo(right ? 1 : 0);
+    else xfNudge(right ? 0.05 : -0.05);
+  }
   else if (k === 'i') toggleDebug();
 });
 

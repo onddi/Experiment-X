@@ -856,3 +856,37 @@ body.no-input .tl-ring { display: none; }
 @keyframes rec-blink { 50% { opacity: 0.25; } }
 .tl-wordrow { grid-column: 1 / -1; display: flex; gap: 6px; }
 .tl-wordrow input { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--text); background: #22242a; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+
+/* Crossfader: the card and the slim fader on the field. */
+.xfader { display: grid; gap: 4px; }
+.xf-swap { justify-self: start; font-size: 12px; padding: 4px 10px; }
+.xf-auto { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0; }
+.xf-auto select { font-size: 12px; }
+.xf-auto button { font-size: 12px; padding: 4px 10px; }
+.xf-auto button.on { border-color: var(--accent); color: var(--accent); }
+.xf-field {
+  position: absolute;
+  left: 50%;
+  bottom: 112px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(420px, calc(100vw - 48px));
+  transform: translateX(-50%);
+  color: rgb(255 255 255 / 0.6);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.6);
+  opacity: 0.22;
+  transition: opacity 0.5s;
+}
+.xf-field[hidden] { display: none; }
+.xf-field.show, .xf-field:hover { opacity: 1; transition-duration: 0.15s; }
+.xf-field span { flex: 0 1 auto; max-width: 28%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xf-track { position: relative; flex: 1; height: 28px; cursor: ew-resize; touch-action: none; }
+.xf-track::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 2px; background: rgb(255 255 255 / 0.14); }
+.xf-track i { position: absolute; left: 0; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 2px; background: rgb(255 255 255 / 0.5); }
+.xf-track b { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: rgb(255 255 255 / 0.85); box-shadow: 0 1px 4px rgb(0 0 0 / 0.5); }
+body.no-input .xf-field { display: none; }
