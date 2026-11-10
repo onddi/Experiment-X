@@ -855,6 +855,8 @@ function step(dt: number) {
   const I = S.audioIntensity;
   const sub2 = on ? A.sub * A.sub * S.audioSubAmt * I : 0; // squared: swells, not a constant
   let speedNow = on ? speed * (1 + (A.liftLevel * 1.2 + A.level * 0.25) * S.audioSpeed * I) : speed;
+  // Flow speed: double-time verses speed the field up.
+  if (on && S.audioFlowSpeed > 0) speedNow *= 1 + A.flow * 1.6 * S.audioFlowSpeed * I;
   let flowNow = on ? flow * (1 + A.liftMid * 2 * S.audioFlow * I) : flow;
   if (S.audioSub === 'speed') speedNow *= 1 + sub2 * 1.2;
   if (S.audioSub === 'flow') flowNow = (flowNow || 0.2) * (1 + sub2 * 2.5);
@@ -876,6 +878,8 @@ function step(dt: number) {
   const dSub = on && S.audioBassThrob > 0 ? A.sub - lastSub : 0;
   lastSub = on ? A.sub : 0;
   kick += dSub * (dSub > 0 ? 3 : 2.5) * S.audioBassThrob * I;
+  // Rap flow: a small shove on each syllable, so the field moves with the words.
+  if (on && A.syllable && S.audioSylPush > 0) kick += 0.45 * S.audioSylPush * I;
   // Frequency groups: every third particle listens to bass, mids or highs.
   const bands = on ? S.audioBands : 0;
   const kickBand = [1 + 1.8 * bands, 1 - 0.3 * bands, 1 - 0.8 * bands];
@@ -898,6 +902,10 @@ function step(dt: number) {
   if (kickWave && A.beat && S.audioBeat !== 'none') beatWave(A.pulse);
   // Melody ripple: each new note sends a ring, low notes on the left, high on the right.
   if (on && S.audioNoteRipple > 0 && A.note) addWave('ripple', w * (0.12 + (0.76 * A.notePc) / 11), h * (0.35 + Math.random() * 0.3), { force: 0.9 * S.audioNoteRipple * I, speed: 0.8, ring: S.audioWaveRings, audio: true });
+
+  // Accents burst from the centre; rhymes send a ring from somewhere new.
+  if (on && S.audioAccentBurst > 0 && A.accent) addWave('shockwave', w / 2, h / 2, { force: 1.3 * S.audioAccentBurst * I, speed: 1.2, ring: S.audioWaveRings, audio: true });
+  if (on && S.audioRhymeRipple > 0 && A.rhyme) addWave('ripple', w * (0.2 + Math.random() * 0.6), h * (0.25 + Math.random() * 0.5), { force: 1.5 * S.audioRhymeRipple * I, speed: 0.9, ring: S.audioWaveRings, audio: true });
 
   // Snare swirl: a twist on each hit, alternating direction.
   const dSnare = on ? Math.max(0, A.snareEnv - lastSnare) : 0;
@@ -5665,6 +5673,26 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioNoteHop', label: 'Letters hop with the melody', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioVoxSwell', label: 'Shape swells with the vocals', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
 
+  { kind: 'section', id: 'rapflow', label: 'Rap flow', tab: 'music', about: 'Reactions to the words: each syllable, the gaps between them, how fast the flow is, accents, the voice rising and falling, and rhymes.',
+    lock: ['audioSylPush', 'audioSylFlash', 'audioSylHop', 'audioPauseDim', 'audioPauseFreeze', 'audioFlowSpeed', 'audioFlowHue', 'audioAccentBurst', 'audioAccentPunch', 'audioPitchLift', 'audioPitchTilt', 'audioRhymeRipple', 'audioRhymeHue'],
+    power: { on: () => settings.audioSylPush > 0 || settings.audioSylFlash > 0 || settings.audioSylHop > 0 || settings.audioPauseDim > 0 || settings.audioPauseFreeze > 0 || settings.audioFlowSpeed > 0 || settings.audioFlowHue > 0 || settings.audioAccentBurst > 0 || settings.audioAccentPunch > 0 || settings.audioPitchLift > 0 || settings.audioPitchTilt > 0 || settings.audioRhymeRipple > 0 || settings.audioRhymeHue > 0,
+      off: { audioSylPush: 0, audioSylFlash: 0, audioSylHop: 0, audioPauseDim: 0, audioPauseFreeze: 0, audioFlowSpeed: 0, audioFlowHue: 0, audioAccentBurst: 0, audioAccentPunch: 0, audioPitchLift: 0, audioPitchTilt: 0, audioRhymeRipple: 0, audioRhymeHue: 0 }, start: { audioSylPush: 0.5, audioPauseDim: 0.5 } },
+    summary: () => [settings.audioSylPush > 0 || settings.audioSylFlash > 0 || settings.audioSylHop > 0 ? 'syllables' : '', settings.audioPauseDim > 0 || settings.audioPauseFreeze > 0 ? 'pauses' : '', settings.audioFlowSpeed > 0 || settings.audioFlowHue > 0 ? 'flow' : '', settings.audioAccentBurst > 0 || settings.audioAccentPunch > 0 ? 'accents' : '', settings.audioPitchLift > 0 || settings.audioPitchTilt > 0 ? 'pitch' : '', settings.audioRhymeRipple > 0 || settings.audioRhymeHue > 0 ? 'rhymes' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'note', text: 'Follows a rapping or speaking voice over the beat, syllable by syllable. Quiet between words, so gaps read as silence.' },
+  { kind: 'range', key: 'audioSylPush', label: 'Push on each syllable', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioSylFlash', label: 'Flash on each syllable', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioSylHop', label: 'Letters hop on syllables', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioPauseDim', label: 'Dim in the gaps between words', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioPauseFreeze', label: 'Freeze for a beat at each pause', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioFlowSpeed', label: 'Speed with the flow (syllables a second)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioFlowHue', label: 'Colour drifts faster with the flow', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioAccentBurst', label: 'Burst on accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioAccentPunch', label: 'Punch in on accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioPitchLift', label: 'Rise and fall with the voice', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioPitchTilt', label: 'Tilt as the voice rises or falls', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioRhymeRipple', label: 'Ripple on rhymes', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioRhymeHue', label: 'Colour jumps on rhymes', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+
   { kind: 'section', id: 'cam', label: 'Camera', tab: 'camera', about: 'Your webcam. Every card on this tab uses it; the picture stays on this device.',
     power: { on: () => cam.on || camStarting, off: {}, start: {}, toggle: () => (cam.on ? stopCamera() : void startCamera()) },
     summary: () => (cam.on ? 'on' : camStarting ? 'starting…' : 'off') },
@@ -5862,6 +5890,7 @@ const MUSIC_KEYS = [
   'audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop',
   'audioSnareFlash', 'audioSnareHop', 'audioHatTwinkle', 'audioHatShake', 'audioBassThrob', 'audioBassZoom', 'audioBassGlow', 'audioBuildScatter', 'audioEnergyShake', 'audioEnergyWords',
   'audioNoteRipple', 'audioNoteHue', 'audioNoteHop', 'audioVoxGlow', 'audioVoxZoom', 'audioVoxSwell',
+  'audioSylPush', 'audioSylFlash', 'audioSylHop', 'audioPauseDim', 'audioPauseFreeze', 'audioFlowSpeed', 'audioFlowHue', 'audioAccentBurst', 'audioAccentPunch', 'audioPitchLift', 'audioPitchTilt', 'audioRhymeRipple', 'audioRhymeHue',
 ] as const;
 const playSettings = (): Partial<Settings> => ({
   morph: settings.morph,
@@ -6019,6 +6048,15 @@ let hopAmt = 0;
 let noteHueT = 0;
 let noteHueNow = 0;
 let wordShiver = 0;
+let sylFlashA = 0;
+let lastVoxAt = -1e9;
+let pauseDim = 0;
+let flowHue = 0;
+let rhymeHueT = 0;
+let rhymeHueNow = 0;
+let accentZ = 0;
+let pitchTilt = 0;
+let pitchLift = 0;
 let twinkleA = 0;
 let hatShakeA = 0;
 let hopIdx = 0;
@@ -6083,7 +6121,22 @@ function musicVisuals(now: number) {
   const glowB = on && S.audioBassGlow > 0 ? L.sub * L.sub * S.audioBassGlow : 0;
   // Vocals glow: light lifts while someone sings.
   const voxG = on && S.audioVoxGlow > 0 ? L.voice * S.audioVoxGlow : 0;
-  if (!lightBg && (twinkleA > 0.005 || glowB > 0.005 || voxG > 0.005)) parts.push(`brightness(${(1 + twinkleA + glowB * 0.35 + voxG * 0.3).toFixed(2)})`);
+  // Rap flow: a blip of light on each syllable; the field dims in the gaps
+  // between words (only once someone has been rapping recently).
+  sylFlashA = on && S.audioSylFlash > 0 && L.syllable ? 0.22 * S.audioSylFlash : sylFlashA * 0.78;
+  if (!on || S.audioSylFlash <= 0) sylFlashA = 0;
+  if (L.voxOn) lastVoxAt = now;
+  const dimT = on && S.audioPauseDim > 0 && !L.voxOn && now - lastVoxAt < 4000 ? S.audioPauseDim : 0;
+  pauseDim += (dimT - pauseDim) * Math.min(1, dt * (dimT > pauseDim ? 14 : 22));
+  const lift = twinkleA + glowB * 0.35 + voxG * 0.3 + sylFlashA;
+  if (!lightBg && (lift > 0.005 || pauseDim > 0.005)) parts.push(`brightness(${((1 + lift) * (1 - pauseDim * 0.55)).toFixed(2)})`);
+  // Flow hue drifts faster the faster the flow; rhymes jump the colour.
+  if (on && S.audioFlowHue > 0) flowHue = (flowHue + dt * L.flow * 160 * S.audioFlowHue) % 360;
+  else flowHue = 0;
+  if (on && S.audioRhymeHue > 0 && L.rhyme) rhymeHueT += 60 + 90 * S.audioRhymeHue;
+  if (!on || S.audioRhymeHue <= 0) rhymeHueT = rhymeHueNow = 0;
+  rhymeHueNow += (rhymeHueT - rhymeHueNow) * Math.min(1, dt * 8);
+  if (!lightBg && (flowHue > 0.5 || rhymeHueNow > 0.5)) parts.push(`hue-rotate(${((flowHue + rhymeHueNow) % 360).toFixed(1)}deg)`);
   // Note colour: each pitch has its own hue (C red … B violet), eased between notes.
   if (on && S.audioNoteHue > 0) {
     if (L.note) noteHueT = L.notePc * 30;
@@ -6118,6 +6171,10 @@ function musicVisuals(now: number) {
   }
   // Bass breathe: the view leans in with the sub-bass.
   if (on && S.audioVoxZoom > 0) zoom *= 1 + L.voice * 0.06 * S.audioVoxZoom;
+  // Accent punch: a quick lean in on the stressed word.
+  accentZ = on && S.audioAccentPunch > 0 && L.accent ? 1 : accentZ * 0.86;
+  if (!on || S.audioAccentPunch <= 0) accentZ = 0;
+  zoom *= 1 + accentZ * 0.1 * S.audioAccentPunch;
   if (on && S.audioBassZoom > 0) zoom *= 1 + L.sub * L.sub * 0.07 * S.audioBassZoom * S.audioIntensity;
   // Hi-hat shake: a small, quick jitter of the frame on each hat.
   hatShakeA = on && S.audioHatShake > 0 && L.hat ? 1 : hatShakeA * 0.7;
@@ -6155,7 +6212,10 @@ function musicVisuals(now: number) {
   if (on && S.audioRoll > 0 && L.snare) rollSign = -rollSign;
   const rollT = on && S.audioRoll > 0 ? rollSign * S.audioRoll * 5 : 0;
   rollNow += (rollT - rollNow) * Math.min(1, dt * 10);
-  const rollAll = rollNow + handDial.roll + linkRun.out.amounts.roll;
+  // Pitch tilt: the view leans as the voice rises or falls.
+  const tiltT = on && S.audioPitchTilt > 0 ? L.voxRise * 9 * S.audioPitchTilt : 0;
+  pitchTilt += (tiltT - pitchTilt) * Math.min(1, dt * 6);
+  const rollAll = rollNow + pitchTilt + handDial.roll + linkRun.out.amounts.roll;
   const rollZ = 1 + Math.abs(Math.sin((rollAll * Math.PI) / 180)) * (Math.max(w, h) / Math.min(w, h));
   // Flip: mirror the view at each drop.
   if (on && S.audioFlip && L.drop) flipS = -flipS;
@@ -6195,6 +6255,7 @@ function musicVisuals(now: number) {
 
   // Motion.
   if (on && S.audioStutter && L.snare) stutterUntil = now + 90;
+  if (on && S.audioPauseFreeze > 0 && L.pause) stutterUntil = now + 80 + 320 * S.audioPauseFreeze;
   if (on && S.audioGravFlip) {
     if (L.drop) gravSign = -gravSign;
     gravNow = (S.gravity || 0.25) * gravSign;
@@ -6202,6 +6263,9 @@ function musicVisuals(now: number) {
     gravSign = 1;
     gravNow = S.gravity;
   }
+  // Pitch lift: particles float up with a high voice and sink with a low one.
+  pitchLift += ((on && S.audioPitchLift > 0 && L.voxOn ? (L.voxPitch - 0.5) * 2 * S.audioPitchLift : 0) - pitchLift) * Math.min(1, dt * 4);
+  gravNow -= pitchLift * 0.35;
   if (on && S.audioSway > 0) {
     if (L.beat) swayDir = -swayDir;
     swayF = swayDir * Math.max(L.sub, L.bass * 0.7) * S.audioSway * 0.12;
@@ -6244,8 +6308,10 @@ function musicVisuals(now: number) {
   const hopSnare = on && S.audioSnareHop > 0 && L.snare;
   // Melody hop: the letter that hops follows the note's pitch.
   const hopNote = on && S.audioNoteHop > 0 && L.note;
-  if ((hopBeat || hopSnare || hopNote) && S.shape !== 'none') {
-    hopAmt = hopSnare ? S.audioSnareHop : hopBeat ? S.audioLetterHop : S.audioNoteHop;
+  // Syllable hop: letters hop in turn with the words, like reading along.
+  const hopSyl = on && S.audioSylHop > 0 && L.syllable;
+  if ((hopBeat || hopSnare || hopNote || hopSyl) && S.shape !== 'none') {
+    hopAmt = hopSnare ? S.audioSnareHop : hopBeat ? S.audioLetterHop : hopSyl ? S.audioSylHop : S.audioNoteHop;
     hopMin = Infinity;
     hopMax = -Infinity;
     for (let i = 0; i < n; i++) {
@@ -6256,7 +6322,7 @@ function musicVisuals(now: number) {
     hopIdx = hopNote && !hopBeat && !hopSnare ? L.notePc % hopLetters : (hopIdx + 1) % hopLetters;
     hopKick = 1;
   } else hopKick *= 0.8;
-  if (!on || (S.audioLetterHop <= 0 && S.audioSnareHop <= 0 && S.audioNoteHop <= 0)) hopKick = 0;
+  if (!on || (S.audioLetterHop <= 0 && S.audioSnareHop <= 0 && S.audioNoteHop <= 0 && S.audioSylHop <= 0)) hopKick = 0;
 
   // Auto VJ: a new look every few bars, and on drops.
   if (on && S.audioVj > 0 && !tlActive() && !xf.on) {
@@ -8149,10 +8215,87 @@ const MUSIC_GRID: MgGrid = {
       hi: 0.3,
       cells: [
         null,
-        [mgRange('Glow', 'audioVoxGlow', 1, { note: 'Vocals are a rough guess: clear, gliding tones in the voice range. A synth lead can count too.' })],
+        [mgRange('Glow', 'audioVoxGlow', 1, { note: 'Singing: clear, gliding tones in the voice range (a synth lead can count too). Rap & speech (Sound source › Vocals, or Auto with Rap / drill): follows the words and goes quiet between them.' })],
         [mgRange('Lean in', 'audioVoxZoom', 1)],
         null,
         [mgRange('Swell', 'audioVoxSwell', 1)],
+        null,
+      ],
+    },
+    {
+      name: 'Syllable',
+      live: () => lit('syl', levelsNow().syllable),
+      level: () => levelsNow().syllEnv,
+      cells: [
+        [mgRange('Push', 'audioSylPush', 1, { note: 'Each syllable of a rapping or speaking voice. The backing is filtered out and drum hits are skipped, so it follows the words, not the beat.' })],
+        [mgRange('Flash', 'audioSylFlash', 1)],
+        null,
+        null,
+        [mgRange('Hop', 'audioSylHop', 1, { note: 'Letters hop in turn, one per syllable.' })],
+        null,
+      ],
+    },
+    {
+      name: 'Pause',
+      live: () => lit('pause', levelsNow().pause),
+      level: () => (levelsNow().voxOn ? 0 : clamp01(1 - levelsNow().vocal)),
+      cells: [
+        null,
+        [mgRange('Dim', 'audioPauseDim', 1, { note: 'Dims in the gaps between words and lifts the moment the voice is back. Only after someone has been rapping, so an instrumental stays as it is.' })],
+        null,
+        [mgRange('Freeze', 'audioPauseFreeze', 1, { note: 'A pause is the voice quiet for about 0.15 s: the end of a line or a breath.' })],
+        null,
+        null,
+      ],
+    },
+    {
+      name: 'Flow',
+      live: () => levelsNow().flow > 0.35,
+      level: () => levelsNow().flow,
+      hi: 0.35,
+      cells: [
+        null,
+        [mgRange('Hue', 'audioFlowHue', 1)],
+        null,
+        [mgRange('Speed', 'audioFlowSpeed', 1, { note: 'Syllables a second: double-time verses speed things up, laid-back bars slow them down.' })],
+        null,
+        null,
+      ],
+    },
+    {
+      name: 'Accent',
+      live: () => lit('accent', levelsNow().accent),
+      cells: [
+        [mgRange('Burst', 'audioAccentBurst', 1, { note: 'A syllable clearly louder than the ones around it: a punchline or a stressed word.' })],
+        null,
+        [mgRange('Punch', 'audioAccentPunch', 1)],
+        null,
+        null,
+        null,
+      ],
+    },
+    {
+      name: 'Pitch',
+      live: () => levelsNow().voxOn && Math.abs(levelsNow().voxRise) > 0.25,
+      level: () => (levelsNow().voxOn ? levelsNow().voxPitch : 0),
+      cells: [
+        [mgRange('Lift', 'audioPitchLift', 1, { note: 'Particles float up with a high voice and sink with a low one.' })],
+        null,
+        [mgRange('Tilt', 'audioPitchTilt', 1, { note: 'The view leans as the voice rises or falls.' })],
+        null,
+        null,
+        null,
+      ],
+    },
+    {
+      name: 'Rhyme',
+      live: () => lit('rhyme', levelsNow().rhyme),
+      cells: [
+        [mgRange('Ripple', 'audioRhymeRipple', 1, { note: 'When a line ends on the same vowel sound as one of the last few lines. A rough guess: it catches end rhymes, not internal ones.' })],
+        [mgRange('Hue', 'audioRhymeHue', 1)],
+        null,
+        null,
+        null,
         null,
       ],
     },

@@ -265,6 +265,7 @@ export const CARDS_OFF: Partial<Settings> = {
   audioWordsOn: false, audioWordsEvery: 'bar', audioWordPulse: 0, audioLetterHop: 0,
   audioSnareFlash: 0, audioSnareHop: 0, audioHatTwinkle: 0, audioHatShake: 0, audioBassThrob: 0, audioBassZoom: 0, audioBassGlow: 0, audioBuildScatter: 0, audioEnergyShake: 0, audioEnergyWords: 0,
   audioNoteRipple: 0, audioNoteHue: 0, audioNoteHop: 0, audioVoxGlow: 0, audioVoxZoom: 0, audioVoxSwell: 0,
+  audioSylPush: 0, audioSylFlash: 0, audioSylHop: 0, audioPauseDim: 0, audioPauseFreeze: 0, audioFlowSpeed: 0, audioFlowHue: 0, audioAccentBurst: 0, audioAccentPunch: 0, audioPitchLift: 0, audioPitchTilt: 0, audioRhymeRipple: 0, audioRhymeHue: 0,
 };
 export const vibe = (name: string, about: string, drums: Vibe, cards: Partial<Settings>, look: Partial<Settings>, family: VibeFamily = 'all', suits?: Family): VibeDef => ({
   name, about, family, suits, drums: { ...quiet, ...drums }, cards: { ...CARDS_OFF, ...cards }, look,

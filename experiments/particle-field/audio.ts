@@ -95,6 +95,19 @@ export interface AudioLevels {
   // Vocals, roughly: clear, wandering tones in the voice range over the music.
   // A synth lead in the same range reads as a voice too.
   voice: number;
+  // Rap and spoken word, frame by frame. vocal is a gated envelope: it
+  // opens within ~20 ms of a voiced syllable and shuts ~60 ms after the
+  // voice stops, so the gaps between words read as silence.
+  voxOn: boolean;
+  vocal: number;
+  syllable: boolean; // a new syllable starts
+  syllEnv: number; // 1 at a syllable, decaying
+  pause: boolean; // the voice has been quiet for ~150 ms (end of a line, a breath)
+  flow: number; // syllables per second, 0..1 (about 8/s = 1)
+  accent: boolean; // a syllable clearly louder than the ones around it
+  voxPitch: number; // where the voice sits in its own range, 0..1
+  voxRise: number; // pitch going up (+) or down (-), -1..1
+  rhyme: boolean; // a line ends on the same vowel sound as a recent line
 }
 
 const ZERO: AudioLevels = {
@@ -102,6 +115,13 @@ const ZERO: AudioLevels = {
   pulse: 0, snareEnv: 0, beat: false, snare: false, hat: false, bpm: 0,
   tension: 0, drop: false, dropEnv: 0, bar: false, bars: 0,
   note: false, noteEnv: 0, notePc: 0, melody: 0, voice: 0,
+  voxOn: false, vocal: 0, syllable: false, syllEnv: 0, pause: false, flow: 0, accent: false, voxPitch: 0.5, voxRise: 0, rhyme: false,
+};
+
+const median = (a: number[]) => {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  return s[s.length >> 1];
 };
 
 const BANDS = { bass: [25, 160], mid: [160, 2000], treble: [2000, 9000], sub: [28, 60], snare: [1500, 5000], hat: [7000, 14000] } as const;
@@ -115,6 +135,35 @@ const bandOf = (F: Uint8Array, hz: number, [lo, hi]: readonly [number, number]) 
 };
 
 type DrumFrame = { bins: Uint8Array; hz: number; t: number };
+
+// (a) The backing, per frequency: the lowest level in the last ~0.4 s
+// ("minimum statistics"). Between words the voice is gone, so the minimum is
+// whatever keeps playing (beat, 808, pads); a held chord is learned within
+// half a second. Anything well above it is new: in the voice band, the voice.
+class Backing {
+  floor: Float32Array;
+  private blocks: Float32Array[];
+  private cur: Float32Array;
+  private frames = 0;
+  private at = 0;
+  constructor(len: number, private per = 3, nBlocks = 8) {
+    this.floor = new Float32Array(len).fill(255);
+    this.cur = new Float32Array(len).fill(255);
+    this.blocks = Array.from({ length: nBlocks }, () => new Float32Array(len).fill(255));
+  }
+  push(F: Uint8Array) {
+    const c = this.cur;
+    for (let k = 0; k < F.length; k++) if (F[k] < c[k]) c[k] = F[k];
+    if (++this.frames % this.per) return;
+    this.blocks[this.at].set(c);
+    this.at = (this.at + 1) % this.blocks.length;
+    c.fill(255);
+    const f = this.floor;
+    f.fill(255);
+    for (const b of this.blocks) for (let k = 0; k < f.length; k++) if (b[k] < f[k]) f[k] = b[k];
+  }
+}
+const MARGIN = 20; // ~5 dB above the backing before it counts
 
 // Onset detector for one band: spectral flux (how much the band rose
 // since the last frame) compared with an adaptive mean + k·std threshold.
@@ -187,8 +236,18 @@ export class AudioInput {
   // sources both use the full 0..1 range.
   private peaks = { bass: 0.2, mid: 0.2, treble: 0.2, level: 0.2, sub: 0.2 };
   private avg = { level: 0, mid: 0 };
-  private onsets = { kick: new Onset(), snare: new Onset(), hat: new Onset(), syll: new Onset() };
-  private syllTimes: number[] = []; // rap / speech syllables in the last 2 s
+  private onsets = { kick: new Onset(), snare: new Onset(), hat: new Onset() };
+  // Rap flow state (see voiceGate / voiceShape).
+  private backMain: Backing | null = null; // long window
+  private backFast: Backing | null = null; // short window
+  private resid = new Float32Array(0); // long-window bins minus the backing
+  private sungV = 0;
+  private rap = {
+    e: 0, prevE: 0, score: 0, vRun: 0, open: false, below: 0, peak: 0.05, sylAt: -1e9, sylPeak: 0, localMin: 1, closedAt: 0, paused: true, mask: 0,
+    voicedAt: -1e9, semi: 0, semiHist: [] as { t: number; s: number }[], lo: 0, hi: 12,
+    sylTimes: [] as number[], sylMaxes: [] as number[], accentAt: 0, accentMax: 0,
+    vowel: { f1: 0, f2: 0, n: 0 }, lastVowel: null as null | [number, number], lineSyl: 0, lineEnds: [] as [number, number][],
+  };
   private kickTimes: number[] = []; // kick and snare hit times, for tempo
   private lastKick = 0;
   private mel = { prev: 0, midi: 0, at: 0, drift: 0 };
@@ -294,6 +353,7 @@ export class AudioInput {
     this.tapDest = null;
     this.feedQueue = [];
     this.hist = [];
+    this.backMain = this.backFast = null;
     this.cur = { ...ZERO };
     this.ctx = this.analyser = this.fast = this.node = this.stream = this.element = null;
     this.source = 'off';
@@ -316,6 +376,7 @@ export class AudioInput {
     const a = this.analyser;
     const L = this.cur;
     L.beat = L.snare = L.hat = L.drop = L.bar = L.note = false;
+    L.syllable = L.pause = L.accent = L.rhyme = false;
     let hzPerBin: number;
     let drums: DrumFrame[];
     if (this.source === 'feed') {
@@ -340,11 +401,14 @@ export class AudioInput {
     L.snareEnv *= 0.88;
     let fullKick = false;
     let snareHit = false;
+    L.syllEnv *= 0.85;
     for (const d of drums) {
       const r = this.drums(d);
       fullKick ||= r.full;
       snareHit ||= r.snare;
+      this.voiceGate(d);
     }
+    this.voiceShape(now, hzPerBin);
 
     const raw = {
       bass: band(BANDS.bass), mid: band(BANDS.mid), treble: band(BANDS.treble), sub: band(BANDS.sub), level: 0,
@@ -442,7 +506,7 @@ export class AudioInput {
     if (i < 0) {
       // Nothing old enough yet: hold the last output, without repeating its hits.
       if (this.levels === L) this.levels = { ...ZERO };
-      else this.levels = { ...this.levels, beat: false, snare: false, hat: false, drop: false, bar: false, note: false };
+      else this.levels = { ...this.levels, beat: false, snare: false, hat: false, drop: false, bar: false, note: false, syllable: false, pause: false, accent: false, rhyme: false };
       return;
     }
     const out = { ...this.hist[i].L };
@@ -454,9 +518,197 @@ export class AudioInput {
       out.drop ||= h.drop;
       out.bar ||= h.bar;
       out.note ||= h.note;
+      out.syllable ||= h.syllable;
+      out.pause ||= h.pause;
+      out.accent ||= h.accent;
+      out.rhyme ||= h.rhyme;
     }
     this.hist.splice(0, i + 1);
     this.levels = out;
+  }
+
+  // (c, d, e, f, g, h) The voice gate, run on every short-window frame at
+  // the time it was measured. Opens on a voiced rise above the backing,
+  // closes ~60 ms after it falls away; frames right after a drum hit are
+  // skipped so a snare never reads as a syllable.
+  private voiceGate({ bins, hz, t }: DrumFrame) {
+    const L = this.cur;
+    const R = this.rap;
+    if (this.backFast?.floor.length !== bins.length) this.backFast = new Backing(bins.length);
+    const fl = this.backFast.floor;
+    const k0 = Math.max(1, Math.floor(300 / hz));
+    const k1 = Math.min(bins.length - 1, Math.ceil(3400 / hz));
+    let sum = 0;
+    for (let k = k0; k <= k1; k++) sum += Math.max(0, bins[k] - fl[k] - MARGIN);
+    this.backFast.push(bins);
+    const e = sum / ((k1 - k0 + 1) * 255);
+    R.e = e;
+    // (d) Drums are noise, so they reach well above the voice band; a voice
+    // (an "s" aside) mostly doesn't. Those frames are skipped: a snare, its
+    // tail or a hat never counts as a syllable. (The drum detector itself
+    // can fire on a voice, so it isn't used for this.)
+    const h0 = Math.ceil(3600 / hz);
+    const h1 = Math.min(bins.length - 1, Math.ceil(9000 / hz));
+    let hi = 0;
+    for (let k = h0; k <= h1; k++) hi += Math.max(0, bins[k] - fl[k] - MARGIN);
+    const noisy = hi / ((h1 - h0 + 1) * 255) > Math.max(0.005, e) * 0.35;
+    if (noisy) R.mask = t + 20;
+    if (t < R.mask) return;
+    R.peak = Math.max(e, R.peak * 0.9993, 0.02);
+    const openAt = Math.max(0.012, R.peak * 0.22);
+    // The voice check runs on the long window, so it confirms a syllable a
+    // little late; mid-verse (a voice heard in the last ~0.35 s) a fresh rise
+    // opens straight away.
+    const voiced = t - R.voicedAt < 70;
+    const inVerse = t - R.voicedAt < 350;
+    const syllable = () => {
+      L.syllable = true;
+      L.syllEnv = 1;
+      R.sylAt = t;
+      R.sylPeak = e;
+      R.localMin = e;
+      R.lineSyl++;
+      R.sylTimes.push(t);
+      // The previous syllable's vowel, for rhymes.
+      if (R.vowel.n) R.lastVowel = [R.vowel.f1 / R.vowel.n, R.vowel.f2 / R.vowel.n];
+      R.vowel = { f1: 0, f2: 0, n: 0 };
+      // Accent: decided ~50 ms in, once the syllable has peaked.
+      R.accentAt = t + 50;
+      R.accentMax = e;
+    };
+    if (!R.open) {
+      if (e > openAt && (voiced || (inVerse && e > R.prevE * 1.5))) {
+        R.open = true;
+        R.below = 0;
+        syllable();
+      }
+    } else {
+      R.sylPeak = Math.max(R.sylPeak, e);
+      R.localMin = Math.min(R.localMin, e);
+      // A new syllable inside a run of words: a fresh rise after a dip.
+      if (e > R.localMin * 2 && e > openAt && R.localMin < R.sylPeak * 0.45 && t - R.sylAt > 100 && inVerse) syllable();
+      // Shut when the level falls away, or when it's no longer a voice (a
+      // snare tail or a chord change keeps the level up but has no comb).
+      if (e < R.peak * 0.2 || t - R.voicedAt > 90) {
+        R.below ||= t;
+        if (t - R.below > 20) {
+          R.open = false;
+          R.closedAt = t;
+          R.paused = false;
+          if (R.vowel.n) R.lastVowel = [R.vowel.f1 / R.vowel.n, R.vowel.f2 / R.vowel.n];
+        }
+      } else R.below = 0;
+    }
+    if (R.accentAt) {
+      R.accentMax = Math.max(R.accentMax, e);
+      if (t >= R.accentAt) {
+        const typical = median(R.sylMaxes);
+        // Levels here are in dB steps, so "louder" is a step up: at least ~3 dB,
+        // and well beyond how much this rapper's syllables usually vary.
+        const spread = median(R.sylMaxes.map((m) => Math.abs(m - typical)));
+        if (R.sylMaxes.length >= 6 && R.accentMax > typical + Math.max(0.045, spread * 2.5)) L.accent = true;
+        R.sylMaxes.push(R.accentMax);
+        if (R.sylMaxes.length > 12) R.sylMaxes.shift();
+        R.accentAt = 0;
+      }
+    }
+    // Pause: quiet for 150 ms after words. The end of a line, so check for a rhyme.
+    if (!R.open && !R.paused && t - R.closedAt > 150) {
+      R.paused = true;
+      L.pause = true;
+      if (R.lastVowel && R.lineSyl >= 3) {
+        const [f1, f2] = R.lastVowel;
+        const near = R.lineEnds.some(([g1, g2]) => Math.abs(Math.log2(f1 / g1)) < 0.12 && Math.abs(Math.log2(f2 / g2)) < 0.1);
+        if (near) L.rhyme = true;
+        R.lineEnds.push(R.lastVowel);
+        if (R.lineEnds.length > 4) R.lineEnds.shift();
+      }
+      R.lineSyl = 0;
+      R.lastVowel = null;
+    }
+    R.prevE = e;
+    L.voxOn = R.open;
+    const v = R.open ? Math.min(1, (e / R.peak) * 1.4) : 0;
+    L.vocal = v > L.vocal ? L.vocal * 0.3 + v * 0.7 : L.vocal * 0.55 + v * 0.45;
+    while (R.sylTimes.length && t - R.sylTimes[0] > 2000) R.sylTimes.shift();
+  }
+
+  // (b, i, j) On the long window: is it a voice (an even comb of harmonics
+  // above a pitch of 90-300 Hz, which drums and noise don't have), its
+  // pitch, and its vowel (the two strongest formant regions).
+  private voiceShape(now: number, hz: number) {
+    const L = this.cur;
+    const R = this.rap;
+    const F = this.freq;
+    if (this.backMain?.floor.length !== F.length) {
+      this.backMain = new Backing(F.length);
+      this.resid = new Float32Array(F.length);
+    }
+    const r = this.resid;
+    const fl = this.backMain.floor;
+    for (let k = 0; k < F.length; k++) r[k] = Math.max(0, F[k] - fl[k] - MARGIN);
+    this.backMain.push(F);
+    const at = (f: number) => {
+      const x = f / hz;
+      const i = Math.floor(x);
+      return i + 1 < r.length ? Math.max(r[i], r[i + 1]) : 0;
+    };
+    let best = 0;
+    let bestF = 0;
+    let bestE = 0;
+    for (let f0 = 90; f0 <= 300; f0 += 2) {
+      let pk = 0;
+      let va = 0;
+      let n = 0;
+      let harm = 0;
+      for (let h = 2; h * f0 < 3500 && h <= 14; h++) {
+        const p = at(h * f0);
+        const v = at((h + 0.5) * f0);
+        pk += p;
+        va += v;
+        n++;
+        if (p > 10 && p > v * 2) harm++;
+      }
+      // A voice has a whole comb of harmonics; a chord or a lone synth note
+      // has only a few clear tones.
+      const score = harm >= 6 && harm >= n * 0.45 ? (pk - va) / (pk + va + n * 2) : 0;
+      if (score > best) (best = score), (bestF = f0), (bestE = pk / n);
+    }
+    R.score = best * Math.min(1, bestE / 8);
+    const voiced = best > 0.3 && bestE > 8;
+    // Two voiced frames in a row: a kick's sweep or a stray chord can pass once.
+    R.vRun = voiced ? R.vRun + 1 : 0;
+    if (R.vRun >= 2) R.voicedAt = now;
+    // Pitch contour while the gate is open.
+    if (voiced && L.voxOn) {
+      const semi = 12 * Math.log2(bestF / 90);
+      R.semi += (semi - R.semi) * 0.5;
+      R.lo = Math.min(R.lo + 0.002, R.semi);
+      R.hi = Math.max(R.hi - 0.002, R.semi, R.lo + 4);
+      R.semiHist.push({ t: now, s: R.semi });
+      while (R.semiHist.length && now - R.semiHist[0].t > 250) R.semiHist.shift();
+      L.voxPitch += ((R.semi - R.lo) / (R.hi - R.lo) - L.voxPitch) * 0.3;
+      const rise = Math.max(-1, Math.min(1, (R.semi - R.semiHist[0].s) / 3));
+      L.voxRise += (rise - L.voxRise) * 0.3;
+      // Vowel: smooth the voice's spectrum and take the strongest region for
+      // each of the first two formants.
+      const peakIn = (lo: number, hi: number) => {
+        let bv = 0;
+        let bf = (lo + hi) / 2;
+        for (let f = lo; f <= hi; f += 25) {
+          let s2 = 0;
+          for (let d = -75; d <= 75; d += 25) s2 += at(f + d);
+          if (s2 > bv) (bv = s2), (bf = f);
+        }
+        return bf;
+      };
+      R.vowel.f1 += peakIn(250, 900);
+      R.vowel.f2 += peakIn(950, 2600);
+      R.vowel.n++;
+    } else L.voxRise *= 0.85;
+    // Flow speed: syllables in the last 2 s, about 8 a second at full.
+    const rate = R.sylTimes.length / 2;
+    L.flow += (Math.min(1, rate / 8) - L.flow) * 0.05;
   }
 
   // Melody and vocals from the shape of the mid spectrum: a clear tone is a
@@ -499,22 +751,10 @@ export class AudioInput {
     L.noteEnv *= 0.9;
     // Vocals: clear tone in the voice range that keeps wandering in pitch.
     const vox = tonal && f < 1100 ? Math.min(1, this.mel.drift * 1.6) * Math.min(1, best / 180) : 0;
-    // Rap and spoken word have no held pitch, but they have syllables: quick
-    // rises in the voice band, 3-8 a second, with voiced (harmonic, so peaky)
-    // spectra, landing between drum hits rather than on them.
-    let speech = 0;
+    this.sungV = this.sungV * 0.94 + vox * 0.06;
+    // Rap and speech: the gated vocal envelope, so gaps between words go quiet.
     const speechOn = this.vox === 'speech' || (this.vox === 'auto' && this.genre === 'hiphop');
-    if (speechOn) {
-      const vb = bandOf(F, hz, [300, 3000]);
-      const syl = this.onsets.syll.test(vb, now, 1.2, 110, 0.06);
-      const voiced = best > mean * 1.5 && best > 70;
-      if (syl > 0 && voiced && !L.beat && !L.snare) this.syllTimes.push(now);
-      while (this.syllTimes.length && now - this.syllTimes[0] > 2000) this.syllTimes.shift();
-      const rate = this.syllTimes.length / 2;
-      speech = Math.min(1, Math.max(0, (rate - 1.5) / 3)) * Math.min(1, vb * 3);
-    }
-    const target = Math.max(vox, speech);
-    L.voice = L.voice * 0.94 + target * 0.06;
+    L.voice = speechOn ? Math.max(L.vocal, this.sungV * (L.voxOn ? 1 : 0.3)) : this.sungV;
   }
 
   // Build-ups, drops and bars.

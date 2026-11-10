@@ -279,6 +279,20 @@ export interface Settings {
   audioVoxGlow: number;
   audioVoxZoom: number;
   audioVoxSwell: number;
+  // Rap flow reactions (syllables, pauses, flow speed, accents, pitch, rhymes).
+  audioSylPush: number;
+  audioSylFlash: number;
+  audioSylHop: number;
+  audioPauseDim: number;
+  audioPauseFreeze: number;
+  audioFlowSpeed: number;
+  audioFlowHue: number;
+  audioAccentBurst: number;
+  audioAccentPunch: number;
+  audioPitchLift: number;
+  audioPitchTilt: number;
+  audioRhymeRipple: number;
+  audioRhymeHue: number;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -563,4 +577,17 @@ export const DEFAULTS: Settings = {
   audioVoxGlow: 0,
   audioVoxZoom: 0,
   audioVoxSwell: 0,
+  audioSylPush: 0,
+  audioSylFlash: 0,
+  audioSylHop: 0,
+  audioPauseDim: 0,
+  audioPauseFreeze: 0,
+  audioFlowSpeed: 0,
+  audioFlowHue: 0,
+  audioAccentBurst: 0,
+  audioAccentPunch: 0,
+  audioPitchLift: 0,
+  audioPitchTilt: 0,
+  audioRhymeRipple: 0,
+  audioRhymeHue: 0,
 };
