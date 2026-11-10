@@ -66,6 +66,9 @@ app.innerHTML = `
   <aside class="panel" id="panel">
     <header>
       <h1>Particle field</h1>
+      <button type="button" class="sheet-title" id="sheet-title" aria-expanded="false" aria-controls="picker"><small></small><b></b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      <button type="button" class="icon sheet-btn" id="sheet-find" aria-label="Search settings" title="Search settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg></button>
+      <button type="button" class="icon sheet-btn" id="sheet-more" aria-label="Actions" title="Actions" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" class="dots"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       <button class="icon" id="toggle" aria-expanded="true" title="Hide controls (H)">⟩</button>
     </header>
     <div class="panel-body" id="controls"></div>
@@ -7619,6 +7622,12 @@ function showTab(tab: Tab) {
     b.setAttribute('aria-selected', String(t === tab));
   }
   for (const [el, t] of sectionTabs) el.classList.toggle('other-tab', t !== tab);
+  const title = document.getElementById('sheet-title');
+  if (title) {
+    title.querySelector('small')!.textContent = INTENTS.find(([i]) => i === intent)![1];
+    title.querySelector('b')!.textContent = TABS.find(([t]) => t === tab)![1];
+  }
+  for (const b of document.querySelectorAll<HTMLElement>('.picker button')) b.classList.toggle('on', b.dataset.tab === tab);
   try {
     localStorage.setItem(TAB_KEY, tab);
     localStorage.setItem(INTENT_KEY, JSON.stringify(lastPage));
@@ -7820,6 +7829,32 @@ function renderControls() {
     foldAll.append(b);
   }
   tabBar.after(foldAll);
+  // Phones: every page in one grid, opened from the slim bar's title.
+  const picker = document.createElement('div');
+  picker.className = 'picker';
+  picker.id = 'picker';
+  for (const [, text, pages] of INTENTS) {
+    const g = document.createElement('div');
+    g.className = 'picker-group';
+    const h = document.createElement('span');
+    h.textContent = text;
+    const grid = document.createElement('div');
+    for (const t of pages) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.tab = t;
+      b.textContent = TABS.find(([x]) => x === t)![1];
+      b.addEventListener('click', () => {
+        showTab(t);
+        setPicking(false);
+        controls.scrollTop = 0;
+      });
+      grid.append(b);
+    }
+    g.append(h, grid);
+    picker.append(g);
+  }
+  foldAll.after(picker);
   const actionBar = document.getElementById('actionbar')!;
 
   for (const [ci, ctl] of CONTROLS.entries()) {
@@ -9063,6 +9098,11 @@ const panel = document.getElementById('panel')!;
 const toggle = document.getElementById('toggle')!;
 toggle.addEventListener('click', () => {
   const collapsed = panel.classList.toggle('collapsed');
+  if (sheetMode()) applySheet();
+  if (collapsed) {
+    panel.classList.remove('picking', 'more');
+    document.getElementById('sheet-title')?.setAttribute('aria-expanded', 'false');
+  }
   // The floating shuffle button only shows while the drawer is closed.
   document.body.classList.toggle('panel-open', !collapsed);
   toggle.setAttribute('aria-expanded', String(!collapsed));
@@ -9070,32 +9110,136 @@ toggle.addEventListener('click', () => {
   toggle.textContent = collapsed ? '⟨' : sheetMode() ? '⌄' : '⟩';
   requestAnimationFrame(resize);
 });
-// Phones: the panel is a bottom sheet; drag its header down to close it.
+// Phones: the panel is a bottom sheet with one slim bar (page picker, search,
+// actions, close). Drag the bar to any height and it stays there; low down it
+// snaps to a peek that only shows the actions, lower still it closes. Closed,
+// all that's left on the field is a faint handle at the bottom edge.
 function sheetMode() {
   return matchMedia('(max-width: 720px)').matches;
 }
+const SHEET_KEY = 'particle-field:sheet';
+const sheet: { h: number; peek: boolean } = (() => {
+  try {
+    return { h: 0, peek: false, ...JSON.parse(localStorage.getItem(SHEET_KEY) ?? '{}') };
+  } catch {
+    return { h: 0, peek: false };
+  }
+})();
+const sheetMax = () => window.innerHeight - 24;
+function applySheet() {
+  const phone = sheetMode();
+  panel.classList.toggle('peek', phone && sheet.peek);
+  panel.style.height = phone && !sheet.peek && sheet.h && !panel.classList.contains('collapsed') ? `${Math.min(sheet.h, sheetMax())}px` : '';
+  try {
+    localStorage.setItem(SHEET_KEY, JSON.stringify(sheet));
+  } catch {
+    /* not persisted */
+  }
+}
+function setPicking(on: boolean) {
+  panel.classList.toggle('picking', on);
+  document.getElementById('sheet-title')!.setAttribute('aria-expanded', String(on));
+  if (on && sheet.peek) {
+    sheet.peek = false;
+    applySheet();
+  }
+}
+document.getElementById('sheet-title')!.addEventListener('click', () => setPicking(!panel.classList.contains('picking')));
+document.getElementById('sheet-find')!.addEventListener('click', () => {
+  const on = panel.classList.toggle('finding');
+  setPicking(false);
+  if (on && sheet.peek) {
+    sheet.peek = false;
+    applySheet();
+  }
+  const input = document.querySelector<HTMLInputElement>('.search input');
+  if (on) input?.focus();
+  else if (input?.value) {
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+  }
+});
+document.getElementById('sheet-more')!.addEventListener('click', (e) => {
+  const on = panel.classList.toggle('more');
+  (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(on));
+});
+addEventListener('resize', () => {
+  applySheet();
+  toggle.textContent = panel.classList.contains('collapsed') ? '⟨' : sheetMode() ? '⌄' : '⟩';
+});
+applySheet();
 {
   const head = panel.querySelector<HTMLElement>('header')!;
   let y0 = -1;
-  let dy = 0;
+  let h0 = 0;
+  let hNow = 0;
+  let moved = false;
+  let wasClosed = false;
+  let lastY = 0;
+  let lastT = 0;
+  let vy = 0;
   head.addEventListener('pointerdown', (e) => {
-    if (!sheetMode() || panel.classList.contains('collapsed') || e.target === toggle) return;
-    y0 = e.clientY;
-    dy = 0;
-    panel.classList.add('dragging');
+    if (!sheetMode()) return;
+    wasClosed = panel.classList.contains('collapsed');
+    if (!wasClosed && (e.target as HTMLElement).closest('button')) return;
+    y0 = lastY = e.clientY;
+    lastT = e.timeStamp;
+    vy = 0;
+    moved = false;
+    h0 = wasClosed ? 0 : panel.getBoundingClientRect().height;
+    hNow = h0;
     head.setPointerCapture(e.pointerId);
   });
   head.addEventListener('pointermove', (e) => {
     if (y0 < 0) return;
-    dy = Math.max(0, e.clientY - y0);
-    panel.style.transform = `translateY(${dy}px)`;
+    if (!moved && Math.abs(e.clientY - y0) < 6) return;
+    if (!moved) {
+      moved = true;
+      if (wasClosed) {
+        toggle.click();
+        panel.classList.remove('peek');
+      }
+      panel.classList.add('dragging');
+    }
+    const dt = Math.max(1, e.timeStamp - lastT);
+    vy = vy * 0.6 + ((e.clientY - lastY) / dt) * 0.4;
+    lastY = e.clientY;
+    lastT = e.timeStamp;
+    hNow = Math.max(40, Math.min(sheetMax(), h0 - (e.clientY - y0)));
+    panel.classList.remove('peek');
+    panel.style.height = `${hNow}px`;
   });
   const end = () => {
     if (y0 < 0) return;
     y0 = -1;
     panel.classList.remove('dragging');
-    panel.style.transform = '';
-    if (dy > 80) toggle.click();
+    if (!moved) {
+      // A tap on the closed handle opens the sheet where it was.
+      if (wasClosed) toggle.click();
+      applySheet();
+      return;
+    }
+    // Where the peek would sit: the bar plus the actions row.
+    panel.style.height = '';
+    panel.classList.add('peek');
+    const peekH = panel.getBoundingClientRect().height;
+    panel.classList.remove('peek');
+    panel.style.height = `${hNow}px`;
+    if (vy > 1.2 || hNow < peekH * 0.6) {
+      applySheet();
+      if (!panel.classList.contains('collapsed')) toggle.click();
+      return;
+    }
+    if (vy < -1.2) {
+      sheet.peek = false;
+      sheet.h = sheetMax();
+    } else if (hNow < peekH + 70) {
+      sheet.peek = true;
+    } else {
+      sheet.peek = false;
+      sheet.h = Math.round(hNow);
+    }
+    applySheet();
   };
   head.addEventListener('pointerup', end);
   head.addEventListener('pointercancel', end);
@@ -9106,6 +9250,7 @@ xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapse
 // ⌘K / Ctrl+K (or /) finds any setting: opens the panel and the search field.
 function focusSearch() {
   if (panel.classList.contains('collapsed')) toggle.click();
+  if (sheetMode() && !panel.classList.contains('finding')) document.getElementById('sheet-find')!.click();
   const input = document.querySelector<HTMLInputElement>('.search input');
   input?.focus();
   input?.select();
@@ -9332,8 +9477,12 @@ function toggleDebug() {
   let idle = 0;
   const wake = () => {
     fab.classList.remove('idle');
+    document.body.classList.remove('field-idle');
     clearTimeout(idle);
-    idle = window.setTimeout(() => fab.classList.add('idle'), 3000);
+    idle = window.setTimeout(() => {
+      fab.classList.add('idle');
+      document.body.classList.add('field-idle');
+    }, 3000);
   };
   window.addEventListener('pointerdown', wake, { capture: true, passive: true });
   wake();

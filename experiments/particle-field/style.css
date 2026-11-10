@@ -187,8 +187,12 @@ button:hover, select:hover { border-color: #3c3f46; }
 
 .stats { margin: 4px 4px 0; color: var(--muted); font-size: 12px; }
 
-/* Phones: the panel is a full-width sheet from the bottom, the field stays
-   visible above it. Drag the handle down (or tap the toggle) to close. */
+/* The slim bar's own buttons and the page picker only exist on phones. */
+.sheet-title, .sheet-btn, .picker { display: none; }
+
+/* Phones: the panel is a full-width sheet from the bottom with one slim bar.
+   Drag the bar to any height; low down it peeks (actions only); closed, only
+   a faint handle stays at the bottom edge. */
 @media (max-width: 720px) {
   .panel {
     position: absolute;
@@ -203,13 +207,55 @@ button:hover, select:hover { border-color: #3c3f46; }
     border-top: 1px solid var(--line);
     border-radius: 18px 18px 0 0;
     box-shadow: 0 -10px 30px rgb(0 0 0 / 0.45);
-    transition: transform 0.2s ease;
+    transition: height 0.22s ease;
   }
-  .panel:not(.collapsed) header { position: relative; padding-top: 18px; touch-action: none; }
-  .panel:not(.collapsed) header::before { content: ''; position: absolute; top: 7px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: #3a3d46; }
   .panel.dragging { transition: none; }
-  /* Collapsed, only the toggle stays: don't cover the field below it. */
-  .panel.collapsed { top: 0; left: auto; bottom: auto; height: auto; border: none; border-radius: 0; box-shadow: none; transform: none; }
+  .panel header { position: relative; gap: 6px; padding: 16px 10px 8px 16px; touch-action: none; }
+  .panel header::before { content: ''; position: absolute; top: 6px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: #3a3d46; }
+  .panel header h1 { display: none; }
+  .sheet-title { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; height: 40px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+  .sheet-title small { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .sheet-title b { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-title svg { flex: none; width: 14px; height: 14px; fill: none; stroke: var(--muted); stroke-width: 2.4; stroke-linecap: round; transition: transform 0.2s; }
+  .panel.picking .sheet-title svg { transform: rotate(180deg); }
+  .sheet-btn { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 12px; background: rgb(255 255 255 / 0.05); }
+  .sheet-btn svg { width: 18px; height: 18px; fill: none; stroke: #b9bcc4; stroke-width: 2; stroke-linecap: round; }
+  .sheet-btn svg.dots { fill: #b9bcc4; stroke: none; }
+  .panel.finding #sheet-find, .panel.more #sheet-more { background: color-mix(in oklch, var(--accent) 18%, transparent); }
+  .panel #toggle { width: 40px; height: 40px; border-radius: 12px; background: rgb(255 255 255 / 0.05); border: 0; }
+  .panel:not(.collapsed) header { border-bottom: 1px solid var(--line); }
+
+  /* Fixed chrome goes: tabs live in the picker, search and actions behind icons. */
+  .panel .tabs, .panel .tabs.pages, .panel .tabs.intents, .panel .fold-all { display: none; }
+  .panel .search { display: none; margin: 10px 12px 0; }
+  .panel.finding .search { display: block; }
+  .panel .actionbar { display: none; }
+  .panel.more .actionbar, .panel.peek .actionbar { display: block; }
+  .actionbar .icon-buttons { display: flex; justify-content: space-between; gap: 4px; }
+  .actionbar .icon-buttons button { flex: 1; height: 44px; }
+
+  /* Page picker: every page at once, grouped by intent. */
+  .panel.picking .picker { display: flex; flex: 1; flex-direction: column; gap: 16px; overflow-y: auto; padding: 14px 16px 20px; }
+  .panel.picking .panel-body, .panel.picking .search { display: none; }
+  .picker-group { display: grid; gap: 8px; }
+  .picker-group > span { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .picker-group > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .picker button { height: 48px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: rgb(255 255 255 / 0.03); color: var(--text); font: 600 14px/1 inherit; font-family: inherit; text-align: left; }
+  .picker button.on { border-color: color-mix(in oklch, var(--accent) 55%, transparent); background: color-mix(in oklch, var(--accent) 14%, transparent); }
+
+  /* Peek: just the bar and the actions row, the field almost all visible. */
+  .panel.peek { height: auto; }
+  .panel.peek .panel-body, .panel.peek .search, .panel.peek .picker { display: none; }
+
+  /* Closed: no buttons on the field, only a faint handle to tap or swipe up. */
+  .panel.collapsed { top: auto; left: 50%; right: auto; bottom: 0; width: 160px; height: auto; margin-left: -80px; border: none; border-radius: 0; box-shadow: none; background: none; }
+  .panel.collapsed header { height: 34px; padding: 0; border: none; cursor: pointer; }
+  .panel.collapsed header::before { top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); width: 48px; margin-left: -24px; height: 4px; background: rgb(255 255 255 / 0.28); transition: opacity 0.4s; }
+  .panel.collapsed header > * { display: none; }
+  .panel.collapsed .picker, .panel.collapsed .actionbar { display: none; }
+  body.field-idle .panel.collapsed header::before { opacity: 0.35; }
+  /* The floating quick actions go too: they're one swipe away in the peek. */
+  .fab { display: none !important; }
 }
 
 .swatch {
