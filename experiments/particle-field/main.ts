@@ -8050,11 +8050,11 @@ const MUSIC_GRID: MgGrid = {
 const handsSeen = () => cam.hands.length > 0;
 // Reactions read as a sentence: "When you smile, the particles warm up."
 const VERB: Record<string, string> = {
-  explode: 'explode', ripple: 'ripple', shockwave: 'send a shockwave', implode: 'implode', scatter: 'scatter', colours: 'change colours',
-  warm: 'warm up', flash: 'flash', scene: 'go to the next scene', mine: 'go to the next of my scenes', look: 'change face look',
-  save: 'save the scene', clear: 'clear the drawing', gather: 'gather', freeze: 'freeze', size: 'grow', flow: 'flow', speed: 'speed up',
-  hue: 'shift colour', roll: 'roll the view', zoom: 'zoom', emit: 'stream from your mouth', energy: 'turn up Energy', order: 'turn up Order',
-  dream: 'turn up Dream', heat: 'turn up Heat', density: 'turn up Density', xfade: 'crossfade',
+  explode: 'explode', ripple: 'ripple', shockwave: 'shockwave', implode: 'implode', scatter: 'scatter', colours: 'change colours',
+  warm: 'warm up', flash: 'flash', scene: 'next scene', mine: 'my next scene', look: 'new face look',
+  save: 'save scene', clear: 'clear drawing', gather: 'gather', freeze: 'freeze', size: 'grow', flow: 'flow', speed: 'speed up',
+  hue: 'shift colour', roll: 'roll view', zoom: 'zoom', emit: 'stream', energy: 'Energy', order: 'Order',
+  dream: 'Dream', heat: 'Heat', density: 'Density', xfade: 'crossfade',
 };
 const verbOf = (act: string) => VERB[act] ?? actionDef(act)?.label.toLowerCase() ?? act;
 // What a new connection does first, per input.
@@ -8115,17 +8115,17 @@ const CAMERA_GRID: MgGrid = {
       group: 'Your hands',
       when: 'Move your hands',
       level: () => (handsSeen() ? 1 : 0),
-      cells: [[mgPick('push or swirl', 'camHands', [['repel', 'push away'], ['attract', 'pull in'], ['vortex', 'swirl'], ['spray', 'spray out']], 'off', 'camHandForce', 3, { fine: ['camHandReach'] })], null, null, null, null, null],
+      cells: [[mgPick('push or swirl', 'camHands', [['repel', 'push'], ['attract', 'pull'], ['vortex', 'swirl'], ['spray', 'spray']], 'off', 'camHandForce', 3, { fine: ['camHandReach'] })], null, null, null, null, null],
     },
     {
       name: 'Pinch',
       group: 'Your hands',
       when: 'Pinch',
       level: () => (handsSeen() ? 1 : 0),
-      cells: [null, [mgMode('draw lines', 'camHands', 'draw', 'off', null, 1, { fine: ['drawColour'], note: 'Drawing takes over your hands from moving the particles.' })], null, null, null, null],
+      cells: [null, [mgMode('draw', 'camHands', 'draw', 'off', null, 1, { fine: ['drawColour'], note: 'Drawing takes over your hands from moving the particles.' })], null, null, null, null],
     },
-    { name: 'Two fingers', group: 'Your hands', when: 'Two fingers', cells: [null, [mgToggle('change line width', 'drawWidth', { note: 'Works while a pinch draws.' })], null, null, null, null] },
-    linkRow('Your hands', 'palm', 'Open a palm', [null, [mgToggle('erase lines', 'drawErase', { note: 'Works while a pinch draws.' })], null, null, null, null]),
+    { name: 'Two fingers', group: 'Your hands', when: 'Two fingers', cells: [null, [mgToggle('line width', 'drawWidth', { note: 'Works while a pinch draws.' })], null, null, null, null] },
+    linkRow('Your hands', 'palm', 'Open a palm', [null, [mgToggle('erase', 'drawErase', { note: 'Works while a pinch draws.' })], null, null, null, null]),
     linkRow('Your hands', 'fist', 'Make a fist'),
     linkRow('Your hands', 'victory', 'Show a peace sign'),
     linkRow('Your hands', 'thumbUp', 'Give a thumbs up'),
@@ -8142,7 +8142,7 @@ const CAMERA_GRID: MgGrid = {
         null,
         null,
         [{
-          label: 'zoom and turn',
+          label: 'zoom & turn',
           get: () => (settings.gestOn ? 1 : 0),
           put: (v) => set('gestOn', v > 0.05),
           fine: ['twoDist', 'twoAngle'],
@@ -8156,10 +8156,10 @@ const CAMERA_GRID: MgGrid = {
       group: 'Your face',
       when: 'Show your face',
       level: () => (cam.faces.length > 0 ? 1 : 0),
-      cells: [null, null, null, null, null, [mgPick('wear a mask', 'maskFx', [['flames', 'grow flame hair'], ['crown', 'wear a crown'], ['tears', 'cry tears'], ['beard', 'grow a rainbow beard'], ['halo', 'form a halo'], ['lasers', 'fire laser eyes']], 'none', 'maskShare', 0.8)]],
+      cells: [null, null, null, null, null, [mgPick('wear a mask', 'maskFx', [['flames', 'flame hair'], ['crown', 'crown'], ['tears', 'tears'], ['beard', 'rainbow beard'], ['halo', 'halo'], ['lasers', 'laser eyes']], 'none', 'maskShare', 0.8)]],
     },
-    { name: 'Gaze', group: 'Your face', when: 'Look around', cells: [[mgPick('follow your gaze', 'gaze', [['drift', 'drift where you look'], ['eyes', 'pull into your eyes']], 'off', null)], null, null, null, null, null] },
-    { name: 'Voice', group: 'Your face', when: 'Sing or talk', level: () => (cam.faces.length > 0 ? clamp01(audio.levels.level * 1.5) : 0), cells: [null, null, [mgToggle('stream from your mouth', 'voice', { fine: ['maskShare'] })], null, null, null] },
+    { name: 'Gaze', group: 'Your face', when: 'Look around', cells: [[mgPick('follow your gaze', 'gaze', [['drift', 'drift'], ['eyes', 'into eyes']], 'off', null)], null, null, null, null, null] },
+    { name: 'Voice', group: 'Your face', when: 'Sing or talk', level: () => (cam.faces.length > 0 ? clamp01(audio.levels.level * 1.5) : 0), cells: [null, null, [mgToggle('stream', 'voice', { fine: ['maskShare'] })], null, null, null] },
     linkRow('Your face', 'mouth', 'Open your mouth'),
     linkRow('Your face', 'smile', 'Smile'),
     linkRow('Your face', 'brows', 'Raise your eyebrows'),
@@ -8174,11 +8174,11 @@ const CAMERA_GRID: MgGrid = {
       group: 'Your body',
       when: 'Stand in view',
       cells: [
-        [{ label: 'flow round you', get: () => (settings.obstacles === 'body' ? 1 : 0), put: (v) => set('obstacles', v > 0.05 ? 'body' : 'none') }],
+        [{ label: 'flow round', get: () => (settings.obstacles === 'body' ? 1 : 0), put: (v) => set('obstacles', v > 0.05 ? 'body' : 'none') }],
         null,
         null,
         null,
-        [mgToggle('mirror the world', 'mirrorWorld')],
+        [mgToggle('mirror', 'mirrorWorld')],
         null,
       ],
     },
@@ -8378,7 +8378,7 @@ function renderMixGrid(which: 'music' | 'camera') {
     hint.textContent = 'Tap a reaction for its settings. Slide it sideways: strength. + adds one.';
     const cap = document.createElement('div');
     cap.className = 'mg-lhead';
-    cap.innerHTML = '<span>When you…</span><span>…the particles…</span>';
+    cap.innerHTML = '<span>When you…</span><span>…the particles</span>';
     list.append(cap);
     let group = '';
     grid.rows.forEach((row, ri) => {
@@ -8435,7 +8435,7 @@ function renderMixGrid(which: 'music' | 'camera') {
         const pick = f.choice && f.get() > 0.02 ? f.choice.options.find(([o]) => o === f.choice!.get())?.[1] : '';
         return pick || f.label;
       };
-      const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => `the particles ${chipName(f)}`, [f], key, () => f.put(0));
+      const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => chipName(f), [f], key, () => f.put(0));
       let sig = '-';
       const build = () => {
         const items = [...fixed, ...linked()];
