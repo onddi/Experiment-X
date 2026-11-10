@@ -4850,8 +4850,24 @@ function adaptQuality(dt: number, ms: number) {
 // --- controls ----------------------------------------------------------------
 
 type Control = ControlBody & { show?: () => boolean };
-type Tab = 'presets' | 'look' | 'shape' | 'motion' | 'music' | 'camera';
-const TABS: [Tab, string][] = [['presets', 'Scenes'], ['look', 'Look'], ['shape', 'Shape'], ['motion', 'Motion'], ['music', 'Music'], ['camera', 'Camera']];
+// Cards live on a page; pages are grouped by what you're trying to do:
+// Create the look, Perform with it, or make it React to music and camera.
+type Tab = 'presets' | 'look' | 'shape' | 'motion' | 'music' | 'camera' | 'timeline' | 'xfader' | 'knobs' | 'record' | 'links';
+type Intent = 'create' | 'perform' | 'react';
+const TABS: [Tab, string][] = [
+  ['look', 'Look'], ['shape', 'Shape'], ['motion', 'Motion'],
+  ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'Knobs'], ['record', 'Record'],
+  ['music', 'Music'], ['camera', 'Camera'], ['links', 'Connections'],
+];
+const INTENTS: [Intent, string, Tab[]][] = [
+  ['create', 'Create', ['look', 'shape', 'motion']],
+  ['perform', 'Perform', ['presets', 'timeline', 'xfader', 'knobs', 'record']],
+  ['react', 'React', ['music', 'camera', 'links']],
+];
+const intentOf = (tab: Tab) => INTENTS.find(([, , tabs]) => tabs.includes(tab))![0];
+// Cards that sit on their own page rather than the tab they were written for.
+const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', record: 'record', links: 'links' };
+const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
 // A card that can be switched off: `off` is what switching off sets, `start`
 // what switching on sets the first time (later it restores what you had).
 type Power = { on: () => boolean; off: Partial<Settings>; start: Partial<Settings> };
@@ -5564,7 +5580,7 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: 'Body' },
   { kind: 'toggle', key: 'poseOn', label: 'Your arms sweep the particles' },
   { kind: 'range', key: 'poseSweep', label: 'Arms sweep', min: 0, max: 3, step: 0.1, format: (v) => (v === 0 ? 'off' : `${v.toFixed(1)}×`), show: () => settings.poseOn },
-  { kind: 'note', text: 'Expressions, hand signs and jumps: pick what they do in Connections (Scenes tab). Step back so the camera sees you from the hips up (the whole body for jumps).' },
+  { kind: 'note', text: 'Expressions, hand signs and jumps: pick what they do in Connections (React tab). Step back so the camera sees you from the hips up (the whole body for jumps).' },
   { kind: 'buttons', buttons: [['Open Connections', () => openConnections()]] },
 
   { kind: 'heading', label: 'Your body', tab: 'camera' },
@@ -7366,23 +7382,35 @@ const sectionTabs: [HTMLElement, Tab][] = [];
 const powerMemory: Record<string, Partial<Settings>> = {};
 
 let currentTab: Tab = 'presets';
+const intentButtons: [Intent, HTMLButtonElement][] = [];
+const INTENT_KEY = 'particle-field:intent-pages';
+// The page you were last on in each intent, so switching back lands there.
+const lastPage: Partial<Record<Intent, Tab>> = readJson<Partial<Record<Intent, Tab>>>(INTENT_KEY, {});
 function showTab(tab: Tab) {
   currentTab = tab;
+  const intent = intentOf(tab);
+  lastPage[intent] = tab;
+  for (const [i, b] of intentButtons) {
+    b.classList.toggle('on', i === intent);
+    b.setAttribute('aria-selected', String(i === intent));
+  }
   for (const [t, b] of tabButtons) {
     b.classList.toggle('on', t === tab);
+    b.hidden = intentOf(t) !== intent;
     b.setAttribute('aria-selected', String(t === tab));
   }
   for (const [el, t] of sectionTabs) el.classList.toggle('other-tab', t !== tab);
   try {
     localStorage.setItem(TAB_KEY, tab);
+    localStorage.setItem(INTENT_KEY, JSON.stringify(lastPage));
   } catch {
     /* not persisted */
   }
 }
 
-// Jump to the Connections card (Scenes tab), opened.
+// Jump to the Connections card (React › Connections), opened.
 function openConnections() {
-  showTab('presets');
+  showTab('links');
   const sec = document.querySelector<HTMLElement>('[data-sec="links"]');
   if (!sec) return;
   if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
@@ -7392,9 +7420,10 @@ function openConnections() {
 // A dot on a tab when one of its cards is locked.
 function syncTabDots() {
   for (const [t, b] of tabButtons) {
-    const locked = CONTROLS.some((c) => c.kind === 'section' && c.tab === t && locks.has(c.id));
+    const locked = CONTROLS.some((c) => c.kind === 'section' && pageOf(c) === t && locks.has(c.id));
     b.classList.toggle('has-lock', locked);
   }
+  for (const [i, b] of intentButtons) b.classList.toggle('has-lock', tabButtons.some(([t, tb]) => intentOf(t) === i && tb.classList.contains('has-lock')));
 }
 
 function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
@@ -7434,7 +7463,7 @@ function renderSearch() {
   wrap.className = 'search';
   const input = document.createElement('input');
   input.type = 'search';
-  input.placeholder = 'Search all settings';
+  input.placeholder = matchMedia('(pointer: fine)').matches ? `Search all settings   ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}K` : 'Search all settings';
   input.setAttribute('aria-label', 'Search settings');
   const empty = document.createElement('p');
   empty.className = 'search-empty';
@@ -7527,9 +7556,22 @@ function renderControls() {
   // Where a keyed control of the current card goes.
   const destFor = (key: string) => (essBody && fineBody ? (essKeys.has(key) || pins.has(key) ? essBody : fineBody) : body);
 
-  // Tabs along the top; Actions get their own bar at the bottom.
+  // Create / Perform / React along the top, that intent's pages below it;
+  // Actions get their own bar at the bottom.
+  const intentBar = document.createElement('div');
+  intentBar.className = 'tabs intents';
+  intentBar.setAttribute('role', 'tablist');
+  for (const [i, text, pages] of INTENTS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.textContent = text;
+    b.addEventListener('click', () => showTab(lastPage[i] && pages.includes(lastPage[i]!) ? lastPage[i]! : pages[0]));
+    intentBar.append(b);
+    intentButtons.push([i, b]);
+  }
   const tabBar = document.createElement('div');
-  tabBar.className = 'tabs';
+  tabBar.className = 'tabs pages';
   tabBar.setAttribute('role', 'tablist');
   for (const [t, text] of TABS) {
     const b = document.createElement('button');
@@ -7541,7 +7583,8 @@ function renderControls() {
     tabButtons.push([t, b]);
   }
   controls.before(tabBar);
-  tabBar.before(renderSearch());
+  tabBar.before(intentBar);
+  intentBar.before(renderSearch());
   // Fold or unfold every card on the open tab at once.
   const foldAll = document.createElement('div');
   foldAll.className = 'fold-all';
@@ -7695,7 +7738,7 @@ function renderControls() {
       }
       controls.append(section);
       section.dataset.sec = ctl.id;
-      sectionTabs.push([section, ctl.tab ?? 'look']);
+      sectionTabs.push([section, pageOf(ctl)]);
       {
         const id = ctl.id;
         head.setAttribute('aria-controls', sectionBody.id);
@@ -8109,7 +8152,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · V record a clip · H hide panel · I debug info. Hold a number key to play it only while held.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · V record a clip · H hide panel · ⌘K or / find a setting · I debug info. Hold a number key to play it only while held.';
   controls.append(keys);
 }
 
@@ -8813,8 +8856,25 @@ toggle.addEventListener('click', () => {
 // In X-Frame, only one layer's options panel is open at a time.
 xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click() });
 
+// ⌘K / Ctrl+K (or /) finds any setting: opens the panel and the search field.
+function focusSearch() {
+  if (panel.classList.contains('collapsed')) toggle.click();
+  const input = document.querySelector<HTMLInputElement>('.search input');
+  input?.focus();
+  input?.select();
+}
 window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    focusSearch();
+    return;
+  }
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    focusSearch();
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (typing) return;
   if (e.key === 'Enter') {
