@@ -4,6 +4,7 @@ import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { VIBE_FAMILIES, vibe, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
+import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
@@ -3648,6 +3649,67 @@ lensCanvas.setAttribute('aria-hidden', 'true');
 lensCanvas.hidden = true;
 canvas.after(lensCanvas);
 const lensCtx = lensCanvas.getContext('2d')!;
+
+// --- recording ---------------------------------------------------------------------
+// A clip of what's on the field (V, the Actions bar or the Record card).
+const recUi: (() => void)[] = [];
+const recorder = new Recorder({
+  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  size: () => [w, h],
+  filter: () => canvas.style.filter,
+  transform: () => canvas.style.transform,
+  bg: () => {
+    const [r, g, b] = bgNow();
+    return `rgb(${r} ${g} ${b})`;
+  },
+  audio: () => audio.tap(),
+  onChange: () => recUi.forEach((f) => f()),
+});
+function toggleRecord() {
+  if (!canRecord()) return showToast('This browser can’t record the canvas');
+  const was = recorder.on;
+  recorder.toggle();
+  if (!was && recorder.on) showToast(recorder.prefs.secs ? `Recording ${recorder.prefs.secs} s` : 'Recording · V stops');
+}
+const fmtSecs = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+// On the field: a pill while recording (tap to stop), then Save / Share.
+const recPill = document.createElement('div');
+recPill.className = 'rec-pill';
+recPill.hidden = true;
+document.body.append(recPill);
+let recPillText: HTMLElement | null = null;
+recUi.push(() => {
+  recPill.innerHTML = '';
+  recPillText = null;
+  recPill.hidden = !recorder.on && !recorder.clip;
+  recPill.classList.toggle('live', recorder.on);
+  const btn = (text: string, fn: () => void, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    if (cls) b.className = cls;
+    b.addEventListener('click', fn);
+    recPill.append(b);
+    return b;
+  };
+  if (recorder.on) {
+    const b = btn('', () => recorder.stop(), 'stop');
+    b.title = 'Stop recording (V)';
+    b.innerHTML = '<i></i><span></span>';
+    recPillText = b.querySelector('span');
+    recTime();
+  } else if (recorder.clip) {
+    const t = document.createElement('span');
+    t.textContent = `Clip ready · ${Math.round(recorder.clip.secs)} s`;
+    recPill.append(t);
+    btn('Save', () => recorder.save(), 'main');
+    if (recorder.canShare()) btn('Share', () => void recorder.share());
+    btn('✕', () => recorder.discard(), 'x').setAttribute('aria-label', 'Discard the clip');
+  }
+});
+function recTime() {
+  if (recPillText) recPillText.textContent = `REC ${fmtSecs(recorder.elapsed)}${recorder.prefs.secs ? ' / ' + fmtSecs(recorder.prefs.secs) : ''}`;
+}
 const lensBuf = document.createElement('canvas');
 const lensBufCtx = lensBuf.getContext('2d')!;
 const splitBuf = document.createElement('canvas');
@@ -4668,6 +4730,10 @@ function frame(now: number) {
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
     drawMs = drawMs * 0.9 + (t2 - t1) * 0.1;
   }
+  if (recorder.on) {
+    recorder.tick();
+    recTime();
+  }
   requestAnimationFrame(frame);
 }
 
@@ -4716,6 +4782,7 @@ type ControlBody =
   | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
   | { kind: 'timeline' }
+  | { kind: 'record' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'links' }
@@ -4909,6 +4976,7 @@ const ICONS = {
   explode: svg('<circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5M5 5l3.5 3.5M15.5 15.5L19 19M5 19l3.5-3.5M15.5 8.5L19 5"/>'),
   shuffle: svg('<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>'),
   reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
+  record: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>'),
 };
 
 
@@ -5020,6 +5088,11 @@ const CONTROLS: Control[] = [
   { kind: 'links' },
   { kind: 'note', text: 'Music inputs need a sound source (Music tab).', show: () => linkNeed.audio && audio.source === 'off' },
   { kind: 'note', text: 'Face, hands and body inputs start the camera by themselves.', show: () => linkNeed.face || linkNeed.hands || linkNeed.pose },
+
+  { kind: 'section', id: 'record', label: 'Record a clip', tab: 'presets',
+    about: 'A video of the field to save or share: the picture and, if you like, the sound.',
+    summary: () => (recorder.on ? 'recording' : recorder.clip ? 'clip ready' : RECORD_LENGTHS.find(([v]) => Number(v) === recorder.prefs.secs)![1]) },
+  { kind: 'record' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
     lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
@@ -5412,6 +5485,7 @@ const CONTROLS: Control[] = [
       ['Explode from the centre (E)', ICONS.explode, explode],
       ['Scatter (S)', ICONS.scatter, scatter],
       ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle],
+      ['Record a clip (V)', ICONS.record, toggleRecord],
       ['Reset to defaults and clear locks', ICONS.reset, reset],
     ],
   },
@@ -6166,6 +6240,79 @@ function tlAddCurrent() {
   }
   tl.clips.push(c);
   tlSave();
+}
+
+function renderRecord() {
+  const box = document.createElement('div');
+  box.className = 'record';
+  if (!canRecord()) {
+    box.innerHTML = '<p class="rec-note">This browser can’t record the canvas. Chrome, Edge, Firefox and Safari 14.1+ can.</p>';
+    return box;
+  }
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'rec-go';
+  go.addEventListener('click', toggleRecord);
+  const row = (label: string, el: HTMLElement) => {
+    const r = document.createElement('label');
+    r.className = 'row select';
+    const n = document.createElement('span');
+    n.className = 'name';
+    n.textContent = label;
+    r.append(n, el);
+    return r;
+  };
+  const sel = (opts: [string, string][], get: () => string, put: (v: string) => void) => {
+    const s = document.createElement('select');
+    for (const [v, t] of opts) s.add(new Option(t, v));
+    s.addEventListener('change', () => put(s.value));
+    recUi.push(() => (s.value = get()));
+    return s;
+  };
+  const len = sel(RECORD_LENGTHS, () => String(recorder.prefs.secs), (v) => recorder.setPrefs({ secs: Number(v) }));
+  const size = sel(RECORD_SIZES, () => recorder.prefs.size, (v) => recorder.setPrefs({ size: v as never }));
+  const snd = document.createElement('label');
+  snd.className = 'row toggle';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.addEventListener('change', () => recorder.setPrefs({ sound: cb.checked }));
+  const sn = document.createElement('span');
+  sn.className = 'name';
+  sn.textContent = 'Include the sound source';
+  snd.append(cb, sn);
+  const note = document.createElement('p');
+  note.className = 'rec-note';
+  const ready = document.createElement('div');
+  ready.className = 'rec-ready';
+  recUi.push(() => {
+    cb.checked = recorder.prefs.sound;
+    go.classList.toggle('on', recorder.on);
+    go.textContent = recorder.on ? 'Stop recording' : 'Start recording';
+    note.textContent =
+      'Records the field only: lenses, view moves and colour effects included; the menu, knobs and camera preview are left out. ' +
+      (audio.source === 'off' || audio.source === 'feed' ? 'No sound source is on, so the clip will be silent.' : audio.source === 'mic' ? 'Sound comes from the microphone, so it records the room.' : '') +
+      ' Shortcut: V starts and stops.';
+    ready.innerHTML = '';
+    if (recorder.clip && !recorder.on) {
+      const t = document.createElement('span');
+      t.textContent = `${recorder.clip.name} · ${(recorder.clip.blob.size / 1e6).toFixed(1)} MB`;
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.textContent = 'Save';
+      save.addEventListener('click', () => recorder.save());
+      ready.append(t, save);
+      if (recorder.canShare()) {
+        const sh = document.createElement('button');
+        sh.type = 'button';
+        sh.textContent = 'Share';
+        sh.addEventListener('click', () => void recorder.share());
+        ready.append(sh);
+      }
+    }
+  });
+  box.append(go, row('Length', len), row('Size', size), snd, ready, note);
+  recUi.forEach((f) => f());
+  return box;
 }
 
 function renderTimeline() {
@@ -7007,6 +7154,11 @@ function renderControls() {
       continue;
     }
 
+    if (ctl.kind === 'record') {
+      searchItem(body, renderRecord());
+      continue;
+    }
+
     if (ctl.kind === 'presetlib') {
       searchItem(body, renderPresetLibrary());
       continue;
@@ -7067,6 +7219,7 @@ function renderControls() {
         b.addEventListener('click', fn);
         if (fn === togglePause) pauseButtons.push(b);
         if (fn === toggleGather) gatherButtons.push(b);
+        if (fn === toggleRecord) recUi.push(() => b.classList.toggle('rec', recorder.on));
         row.append(b);
       }
       searchItem(body, row);
@@ -7280,7 +7433,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · H hide panel · I debug info. Hold a number key to play it only while held.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · V record a clip · H hide panel · I debug info. Hold a number key to play it only while held.';
   controls.append(keys);
 }
 
@@ -8013,6 +8166,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'e') explode();
   else if (k === 'd' || k === 'r') shuffle();
   else if (k === 'h') toggle.click();
+  else if (k === 'v') toggleRecord();
   else if (k === 'i') toggleDebug();
 });
 

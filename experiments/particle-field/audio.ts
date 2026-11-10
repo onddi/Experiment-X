@@ -123,6 +123,17 @@ export class AudioInput {
   // 'feed' source: spectrum frames from another experiment via X-Frame.
   private feedFrame: SpectrumFrame | null = null;
   private unsubscribe: (() => void) | null = null;
+  private tapDest: MediaStreamAudioDestinationNode | null = null;
+
+  /** A copy of the sound as a track (for recording), or null without a source. */
+  tap(): MediaStreamTrack | null {
+    if (!this.ctx || !this.node) return null;
+    if (!this.tapDest) {
+      this.tapDest = this.ctx.createMediaStreamDestination();
+      this.node.connect(this.tapDest);
+    }
+    return this.tapDest.stream.getAudioTracks()[0]?.clone() ?? null;
+  }
   // Running peaks per band act as automatic gain, so quiet and loud
   // sources both use the full 0..1 range.
   private peaks = { bass: 0.2, mid: 0.2, treble: 0.2, level: 0.2, sub: 0.2 };
@@ -212,6 +223,7 @@ export class AudioInput {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.feedFrame = null;
+    this.tapDest = null;
     this.ctx = this.analyser = this.node = this.stream = this.element = null;
     this.source = 'off';
     this.levels = { ...ZERO };

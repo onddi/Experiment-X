@@ -818,3 +818,39 @@ body.no-input .tl-ring { display: none; }
   .knob b { font-size: 11px; }
   .knob span { font-size: 9.5px; }
 }
+
+/* Recording: card, pill on the field, red Actions button. */
+.record { display: grid; gap: 6px; }
+.rec-go { height: 36px; font-weight: 600; }
+.rec-go.on { background: #6b2328; border-color: #a33a42; color: #fff; }
+.rec-note { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.rec-ready { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.rec-ready:empty { display: none; }
+.rec-ready span { margin-right: auto; overflow-wrap: anywhere; }
+.icon-buttons button.rec { color: #ff5a64; }
+.rec-pill {
+  position: absolute;
+  left: 50%;
+  top: max(54px, calc(env(safe-area-inset-top) + 40px));
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(20 21 26 / 0.78);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  color: rgb(255 255 255 / 0.85);
+  font: 12px ui-monospace, Menlo, monospace;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.rec-pill[hidden] { display: none; }
+.rec-pill > span { padding: 0 6px 0 8px; }
+.rec-pill button { font: inherit; color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.rec-pill button.main { background: var(--accent); color: #0b0b10; border-color: transparent; font-weight: 600; }
+.rec-pill button.x { padding: 4px 8px; }
+.rec-pill button.stop { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 4px 10px; }
+.rec-pill button.stop i { width: 9px; height: 9px; border-radius: 50%; background: #ff3b47; animation: rec-blink 1s steps(2) infinite; }
+@keyframes rec-blink { 50% { opacity: 0.25; } }
