@@ -854,3 +854,5 @@ body.no-input .tl-ring { display: none; }
 .rec-pill button.stop { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 4px 10px; }
 .rec-pill button.stop i { width: 9px; height: 9px; border-radius: 50%; background: #ff3b47; animation: rec-blink 1s steps(2) infinite; }
 @keyframes rec-blink { 50% { opacity: 0.25; } }
+.tl-wordrow { grid-column: 1 / -1; display: flex; gap: 6px; }
+.tl-wordrow input { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--text); background: #22242a; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }

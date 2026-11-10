@@ -151,12 +151,77 @@ PRESETS.push(
   ['Seed', seed], ['Sprout', sprout], ['Bud', bud], ['Roots', roots],
   ['Branches', branches], ['Canopy', canopy], ['Blossom', blossom], ['Extravaganza', extravaganza],
 );
+// --- Stories: more timelines that tell one ---
+// Each stage starts from the one before and changes a few things, so a
+// story reads as one world changing. `chapter` keeps the lenses and the
+// stage-specific extras (emitters, wells, obstacles, flocks) from leaking.
+const CLEAN: Partial<Settings> = {
+  ...LENS_OFF, budding: false, shape: 'none', shapeCycle: 0, emitter: 'none', wells: '', obstacles: 'none', flock: 0, depth: 0,
+  gravity: 0, wind: 0, lifespan: 0, edges: 'wrap', entrance: 'drift', pointerMode: 'repel', radius: 140, force: 0.6, click: 'shockwave',
+};
+function story(...stages: [string, Partial<Settings>][]) {
+  let at: Partial<Settings> = { ...CLEAN };
+  for (const [name, d] of stages) {
+    at = { ...at, ...d };
+    PRESETS.push([name, at]);
+  }
+}
+story(
+  ['Singularity', { budding: true, count: 5, size: 3, render: 'glow', shape: 'sunflower', shapeSize: 0.01, entrance: 'formed', flow: 0, speed: 0.3, trail: 0.7, friction: 0.05, jitter: 0.05, palette: 'ice', colorBy: 'palette', glow: true }],
+  ['Big bang', { count: 6000, size: 1.3, render: 'streaks', shape: 'none', wells: '0.5,0.5,repel', wellForce: 1, wellRange: 500, showWells: false, speed: 2.4, friction: 0.01, flow: 0.2, flowType: 'curl', palette: 'infra', colorBy: 'speed', trail: 0.6, lensGlow: 0.6 }],
+  ['Primordial gas', { budding: false, count: 4000, size: 2, render: 'glow', wells: '', flow: 0.6, flowScale: 0.002, flowSpeed: 0.15, speed: 0.6, friction: 0.04, palette: 'vapor', colorBy: 'direction', trail: 0.85, lensGlow: 0.3 }],
+  ['First stars', { count: 3000, size: 1.5, render: 'sparkles', flow: 0.2, flock: 0.5, flockCohesion: 1.6, flockSep: 0.5, flockAlign: 0.2, flockRange: 50, palette: 'cosmic', colorBy: 'speed', trail: 0.6 }],
+  ['Galaxies', { count: 4500, size: 1.4, flock: 0, wells: '0.3,0.4,vortex;0.72,0.6,vortex', wellForce: 1, wellRange: 260, depth: 1, depthParallax: 0.8, colorBy: 'depth', trail: 0.75 }],
+  ['Event horizon', { count: 5000, size: 1.3, render: 'comets', wells: '0.5,0.5,attract;0.5,0.5,vortex', wellForce: 1.8, wellRange: 700, palette: 'infra', colorBy: 'speed', lensTwirl: 0.5, lensGlow: 0.5 }],
+);
+story(
+  ['Dawn', { count: 600, size: 4, sizeVar: 0.6, render: 'bokeh', flow: 0.2, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.08, speed: 0.5, friction: 0.04, jitter: 0.02, palette: 'pastel', colorBy: 'vertical', trail: 0, glow: true, depth: 0.6, depthParallax: 0.5 }],
+  ['Morning', { count: 2500, size: 1.6, sizeVar: 0.3, render: 'dots', flow: 0.6, flowType: 'waves', flowScale: 0.004, flowSpeed: 0.25, speed: 0.9, wind: 0.2, windDir: 0, palette: 'ice', colorBy: 'direction', trail: 0.8, depth: 0 }],
+  ['Midday', { count: 4500, size: 1.2, render: 'streaks', flow: 1.2, flowType: 'curl', flowSpeed: 0.5, speed: 1.6, wind: 0, palette: 'desert', colorBy: 'speed', trail: 0.85, lensGlow: 0.2 }],
+  ['Golden hour', { count: 3000, size: 1.3, flow: 0.8, flowSpeed: 0.25, speed: 1, wind: 0.3, palette: 'sunset', colorBy: 'vertical', trail: 0.92, lensGlow: 0.5 }],
+  ['Dusk embers', { count: 1500, size: 1.8, render: 'glow', flow: 0.4, wind: 0, gravity: -0.1, palette: 'ember', colorBy: 'speed', trail: 0.85, lensGlow: 0.3 }],
+  ['Firefly night', { count: 300, size: 1.6, render: 'glow', gravity: 0, lifespan: 5, lifeFade: 'swell', flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, speed: 0.6, palette: 'gold', colorBy: 'palette', pointerMode: 'attract', radius: 220, force: 0.3, trail: 0.6, lensGlow: 0.4 }],
+  ['Starry night', { count: 1800, size: 1.2, render: 'sparkles', lifespan: 0, depth: 1, depthParallax: 0.6, flow: 0.05, speed: 0.3, wind: 0.05, windDir: 180, palette: 'ice', colorBy: 'depth', trail: 0.3, lensGlow: 0.2 }],
+);
+story(
+  ['Still pond', { count: 2000, size: 1.2, render: 'dots', flow: 0.1, flowType: 'waves', flowScale: 0.003, flowSpeed: 0.1, speed: 0.3, friction: 0.08, jitter: 0.01, palette: 'ocean', colorBy: 'horizontal', trail: 0.9, glow: true, click: 'ripple' }],
+  ['Wind rises', { count: 3000, render: 'streaks', wind: 0.6, windDir: 0, flow: 0.6, flowSpeed: 0.4, speed: 1.2, friction: 0.04, palette: 'ice', colorBy: 'speed', trail: 0.85 }],
+  ['Rain', { count: 3500, gravity: 1.2, wind: 0.3, flow: 0.2, speed: 1.5, palette: 'ocean', trail: 0.7 }],
+  ['Lightning', { palette: 'mono', lensGlitch: 0.5, lensSplit: 0.3, lensGlow: 0.3 }],
+  ['Full storm', { count: 6000, speed: 2.2, wind: 0.9, flow: 1.8, flowType: 'curl', flowSpeed: 1, gravity: 0.8, palette: 'ice', lensWave: 0.35, lensGlitch: 0.4, lensSplit: 0.3 }],
+  ['Clearing', { count: 1500, size: 1.5, render: 'dots', gravity: 0, wind: 0.1, flow: 0.2, flowType: 'waves', flowSpeed: 0.1, speed: 0.4, palette: 'ice', colorBy: 'vertical', trail: 0.8, lensGlitch: 0, lensSplit: 0, lensWave: 0, lensGlow: 0.3 }],
+);
+story(
+  ['Raindrop', { count: 30, size: 2, render: 'glow', shape: 'sunflower', shapeSize: 0.03, entrance: 'formed', flow: 0, speed: 0.3, trail: 0.7, friction: 0.05, jitter: 0.02, palette: 'ocean', colorBy: 'palette', glow: true }],
+  ['Ripples', { count: 1500, size: 1.2, render: 'dots', shape: 'ring', shapeSize: 0.6, shapeCycle: 4, flow: 0.1, flowType: 'waves', colorBy: 'radial', trail: 0.85, click: 'ripple' }],
+  ['Streams', { count: 2500, render: 'streaks', shape: 'none', shapeCycle: 0, obstacles: 'circles', obsCircles: '0.3,0.4;0.6,0.62;0.78,0.3', obsRadius: 50, obsForce: 1.2, obsShow: true, wind: 0.4, windDir: 0, edges: 'enter', flow: 0.4, flowSpeed: 0.2, speed: 0.9, colorBy: 'speed', trail: 0.88 }],
+  ['River', { count: 4000, wind: 0.8, flow: 0.8, flowScale: 0.003, speed: 1.3, palette: 'ice' }],
+  ['Falls', { count: 3000, emitter: 'line', emitMode: 'steady', emitRate: 0.4, emitX: 0.5, emitY: 0.08, emitSize: 700, emitAngle: 0, emitOut: false, launchSpeed: 1, launchDir: 90, launchSpread: 20, lifespan: 5, lifeFade: 'out', gravity: 1, wind: 0, edges: 'wrap', obsCircles: '0.35,0.55;0.62,0.72', obsRadius: 55, flow: 0.15, palette: 'ocean', colorBy: 'age' }],
+  ['Open ocean', { count: 6000, emitter: 'none', lifespan: 0, gravity: 0, obstacles: 'none', flow: 1, flowType: 'waves', flowScale: 0.0015, flowSpeed: 0.4, speed: 1, depth: 1, depthParallax: 0.6, colorBy: 'depth', trail: 0.85, lensWave: 0.4, lensGlow: 0.3 }],
+);
+story(
+  ['Star cloud', { count: 4000, size: 1.6, render: 'glow', flow: 0.5, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.15, speed: 0.6, friction: 0.04, palette: 'lavender', colorBy: 'direction', trail: 0.8, glow: true }],
+  ['Collapse', { wells: '0.5,0.5,attract', wellForce: 1.4, wellRange: 800, showWells: false, palette: 'ember', colorBy: 'speed' }],
+  ['Young star', { count: 2500, size: 1.2, render: 'dots', wells: '', shape: 'sunflower', shapeSize: 0.25, entrance: 'formed', palette: 'gold', colorBy: 'radial', jitter: 0.08, lensGlow: 0.35 }],
+  ['Red giant', { count: 3000, shapeSize: 0.7, size: 1.6, palette: 'crimson', jitter: 0.12, lensGlow: 0.4 }],
+  ['Supernova', { count: 7000, shape: 'none', wells: '0.5,0.5,repel', wellForce: 2, wellRange: 900, speed: 2.5, friction: 0.015, render: 'streaks', size: 1.3, palette: 'rainbow', colorBy: 'speed', lensSplit: 0.3 }],
+  ['Remnant', { count: 260, size: 5.5, sizeVar: 0.7, render: 'bokeh', wells: '', flow: 0.2, speed: 0.5, friction: 0.04, depth: 1, depthParallax: 0.6, palette: 'vapor', colorBy: 'depth', lensSplit: 0, lensGlow: 0.15 }],
+);
+story(
+  ['A few birds', { count: 25, size: 2.6, render: 'arrows', flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 60, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, speed: 1, friction: 0.01, jitter: 0.06, palette: 'ice', colorBy: 'direction', trail: 0.5, glow: false }],
+  ['Flock', { count: 400, size: 2.2 }],
+  ['Murmuration', { count: 1500, size: 1.6, flockRange: 45, trail: 0.6, palette: 'sunset' }],
+  ['The split', { obstacles: 'circles', obsCircles: '0.5,0.5', obsRadius: 140, obsForce: 1.4, obsShow: false }],
+  ['Sky shapes', { obstacles: 'none', shape: 'ring', shapeSize: 0.7, entrance: 'drift', flock: 0.5 }],
+  ['Scatter', { shape: 'none', flock: 0.3, speed: 2, render: 'streaks', trail: 0.75 }],
+);
+
 
 // Preset families: each built around one engine feature (see the proposal doc).
-export type Family = 'all' | 'growth' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+export type Family = 'all' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 export const FAMILIES: [Family, string][] = [
   ['all', 'All'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
-  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['growth', 'Growth'],
+  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['growth', 'Growth'], ['stories', 'Stories'],
 ];
 export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
@@ -171,6 +236,7 @@ for (const [fam, names] of [
   ['space', 'Deep space, Galaxy, Comet shower, Bokeh, Constellation, Warp speed, Nebula'],
   ['symbols', 'ASCII, Compass, Digital rain, Runes, Weather map'],
   ['growth', 'Seed, Sprout, Bud, Roots, Branches, Canopy, Blossom, Extravaganza'],
+  ['stories', 'Singularity, Big bang, Primordial gas, First stars, Galaxies, Event horizon, Dawn, Morning, Midday, Golden hour, Dusk embers, Firefly night, Starry night, Still pond, Wind rises, Rain, Lightning, Full storm, Clearing, Raindrop, Ripples, Streams, River, Falls, Open ocean, Star cloud, Collapse, Young star, Red giant, Supernova, Remnant, A few birds, Flock, Murmuration, The split, Sky shapes, Scatter'],
 ] as [Family, string][]) for (const n of names.split(', ')) FAMILY_OF[n] = fam;
 
 // Vibes: how the music moves the particles. They only set the reaction

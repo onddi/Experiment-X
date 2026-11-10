@@ -101,8 +101,21 @@ let dpr = 1;
 const countNow = () => {
   const c = settings.count * densityK;
   // Small counts stay exact (a seed of 7); larger ones move in tens.
-  return Math.max(3, Math.min(10000, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
+  const v = Math.max(3, Math.min(10000, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
+  return Math.min(v, growCap(v));
 };
+// Grow transition: the count is held down, then let out over a bar or two.
+let growFx: { from: number; start: number; dur: number } | null = null;
+function growCap(full: number) {
+  if (!growFx) return Infinity;
+  const u = (performance.now() - growFx.start) / growFx.dur;
+  if (u >= 1) {
+    growFx = null;
+    return Infinity;
+  }
+  // Doubling at a steady rate, like cells dividing.
+  return Math.round(growFx.from * Math.pow(Math.max(1, full / growFx.from), u));
+}
 function ensureCount(want = countNow()) {
   if (want > cap) {
     const grow = (a: Float32Array) => {
@@ -115,7 +128,7 @@ function ensureCount(want = countNow()) {
   }
   // With a shape on, newcomers appear beside an existing particle, so they
   // join the formation instead of flying in from anywhere on screen.
-  const near = (settings.shape !== 'none' || settings.budding) && n > 0 ? n : 0;
+  const near = (settings.shape !== 'none' || settings.budding || growFx) && n > 0 ? n : 0;
   for (let i = n; i < want; i++) {
     if (near) {
       const j = (Math.random() * near) | 0;
@@ -693,13 +706,14 @@ function step(dt: number) {
   // Gather: hold the pointer (click mode), or the Gather action, which pulls
   // the whole field into an orb at the centre until pressed again.
   const holdGather = pointer.down && settings.click === 'gather';
-  const gathering = holdGather || gatherAll || linkRun.out.gather;
+  const gathering = holdGather || gatherAll || linkRun.out.gather || tlGatherNow;
   const gx = holdGather ? pointer.x : w / 2;
   const gy = holdGather ? pointer.y : h / 2;
   const gatherR = holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
   const gatherMin = holdGather ? 0 : 0.35;
   const gatherCore = holdGather ? 30 : Math.min(w, h) * 0.18;
   if (pointer.down && settings.click === 'emit') emit(dt);
+  const whirlK = whirlNow * (Math.min(w, h) / 800);
   // Hover behaviour pauses while gathering so the two don't fight.
   const usePointer = pointer.active && pointerMode !== 'none' && !gathering;
 
@@ -1029,6 +1043,15 @@ function step(dt: number) {
           ay += (nx - ny * 0.25) * f;
         }
       }
+    }
+
+    if (whirlK > 0) {
+      // Whirl transition: everything spins round the centre for a moment.
+      const dx = px[i] - w / 2;
+      const dy = py[i] - h / 2;
+      const d = Math.sqrt(dx * dx + dy * dy) + 1;
+      ax += (-dy / d - (dx / d) * 0.2) * whirlK;
+      ay += (dx / d - (dy / d) * 0.2) * whirlK;
     }
 
     if (gathering) {
@@ -3667,6 +3690,7 @@ const recorder = new Recorder({
     return `rgb(${r} ${g} ${b})`;
   },
   audio: () => audio.tap(),
+  overlay: () => (fxCanvas.hidden ? null : fxCanvas),
   onChange: () => recUi.forEach((f) => f()),
 });
 function toggleRecord() {
@@ -4734,6 +4758,7 @@ function frame(now: number) {
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
     drawMs = drawMs * 0.9 + (t2 - t1) * 0.1;
   }
+  tlFxFrame(now);
   if (recorder.on) {
     recorder.tick();
     recTime();
@@ -5985,19 +6010,224 @@ function vjNext() {
 // A setlist of scenes, each for a number of bars, changing on the bar. The
 // clock is the music's (once a tempo is found) or a tempo you set or tap.
 // Kept apart from Settings so scenes never overwrite the set.
-type TlHow = 'cut' | 'morph' | 'slow' | 'drop';
-type TlClip = { name: string; mine?: boolean; bars: number; how: TlHow };
-type Timeline = { on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden'; hold: boolean; held: Record<string, unknown> };
+type TlHow = 'cut' | 'morph' | 'slow' | 'drop' | 'gather' | 'implode' | 'fade' | 'flash' | 'whirl' | 'grow' | 'wipe' | 'freeze' | 'shatter';
+type TlClip = { name: string; mine?: boolean; bars: number; how: TlHow; word?: string };
+type Timeline = { words?: string; on: boolean; clips: TlClip[]; clock: 'music' | 'tempo'; bpm: number; knobs: 'keep' | 'reset'; dropJump: boolean; ring: 'always' | 'changes' | 'hidden'; hold: boolean; held: Record<string, unknown> };
 const TL_KEY = 'particle-field:timeline';
-const TL_HOW: [TlHow, string][] = [['cut', 'Cut'], ['morph', 'Morph'], ['slow', 'Slow morph'], ['drop', 'Drop']];
+const TL_HOW: [TlHow, string][] = [
+  ['cut', 'Cut'], ['morph', 'Morph'], ['slow', 'Slow morph'], ['drop', 'Drop'], ['gather', 'Gather & burst'], ['implode', 'Implode'],
+  ['fade', 'Fade through black'], ['flash', 'Flash'], ['whirl', 'Whirl'], ['grow', 'Grow'], ['wipe', 'Wipe'], ['freeze', 'Freeze'], ['shatter', 'Shatter'],
+];
+
+// --- timeline transitions ------------------------------------------------------
+// How a clip comes in. Some move the particles (gather, implode, whirl,
+// grow); some work on the picture (fade, flash, wipe, freeze, shatter), drawn
+// on an overlay above the field that holds a snapshot of the old scene.
+const fxCanvas = document.createElement('canvas');
+fxCanvas.className = 'lens tlfx';
+fxCanvas.setAttribute('aria-hidden', 'true');
+fxCanvas.hidden = true;
+const fxCtx = fxCanvas.getContext('2d')!;
+const fxSnap = document.createElement('canvas');
+lensCanvas.after(fxCanvas);
+let tlGatherNow = false;
+let whirlNow = 0;
+type Shard = { pts: number[]; cx: number; cy: number; vx: number; vy: number; va: number };
+let tlFx: { how: TlHow; start: number; dur: number; switchAt: number; go: (() => void) | null; shards?: Shard[] } | null = null;
+
+function tlSnapshot() {
+  const src = lensCanvas.hidden ? canvas : lensCanvas;
+  fxSnap.width = src.width;
+  fxSnap.height = src.height;
+  const g = fxSnap.getContext('2d')!;
+  g.filter = canvas.style.filter || 'none';
+  g.drawImage(src, 0, 0);
+}
+
+function tlTransition(how: TlHow, go: (morph: number) => void) {
+  const bar = tlBarSec;
+  const now = performance.now();
+  const morphStd = Math.min(2.5, Math.max(0.5, bar / 2));
+  tlFx = null;
+  tlGatherNow = false;
+  whirlNow = 0;
+  const fx = (dur: number, switchAt: number, after: (() => void) | null) => (tlFx = { how, start: now, dur: dur * 1000, switchAt: now + switchAt * 1000, go: after });
+  switch (how) {
+    case 'cut':
+      return go(0);
+    case 'slow':
+      return go(Math.min(4, bar));
+    case 'drop':
+      explode();
+      return go(morphStd);
+    case 'gather': {
+      // Pull in for half a bar, then burst out as the new scene.
+      const d = Math.min(1.6, Math.max(0.6, bar / 2));
+      tlGatherNow = true;
+      fx(d, d, () => {
+        tlGatherNow = false;
+        go(0.4);
+        explode();
+      });
+      return;
+    }
+    case 'implode':
+      addWave('implode', w / 2, h / 2, { force: 1.6, speed: 1.6 });
+      return go(Math.min(1.5, bar / 2));
+    case 'whirl':
+      fx(Math.min(3, Math.max(1.2, bar)), 0, null);
+      return go(Math.min(2.5, bar));
+    case 'grow':
+      growFx = { from: 12, start: now, dur: Math.min(8, Math.max(3, bar * 2)) * 1000 };
+      n = Math.min(n, 12);
+      return go(Math.min(1.5, bar / 2));
+    case 'fade': {
+      const d = Math.min(2.4, Math.max(0.8, bar / 2));
+      fx(d, d / 2, () => go(0));
+      return;
+    }
+    case 'flash':
+      fx(0.7, 0, null);
+      return go(0);
+    case 'wipe':
+    case 'freeze':
+    case 'shatter': {
+      tlSnapshot();
+      const d = how === 'wipe' ? Math.min(1.6, Math.max(0.6, bar * 0.6)) : how === 'freeze' ? Math.min(3, Math.max(1, bar)) : 1.6;
+      fx(d, 0, null);
+      if (how === 'shatter') tlFx!.shards = makeShards(fxSnap.width, fxSnap.height);
+      return go(how === 'freeze' ? d * 0.8 : 0);
+    }
+    default:
+      return go(morphStd);
+  }
+}
+
+// Triangles over a jittered grid; each flies off from the centre and falls.
+function makeShards(W: number, H: number): Shard[] {
+  const cols = 9;
+  const rows = Math.max(4, Math.round((cols * H) / W));
+  const pt: [number, number][][] = [];
+  for (let r = 0; r <= rows; r++) {
+    pt.push([]);
+    for (let c = 0; c <= cols; c++) {
+      const jx = c > 0 && c < cols ? (Math.random() - 0.5) * 0.6 : 0;
+      const jy = r > 0 && r < rows ? (Math.random() - 0.5) * 0.6 : 0;
+      pt[r].push([((c + jx) / cols) * W, ((r + jy) / rows) * H]);
+    }
+  }
+  const out: Shard[] = [];
+  const k = Math.min(W, H) / 600;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const a = pt[r][c], b = pt[r][c + 1], d = pt[r + 1][c], e = pt[r + 1][c + 1];
+      for (const tri of Math.random() < 0.5 ? [[a, b, e], [a, e, d]] : [[a, b, d], [b, e, d]]) {
+        const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
+        const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+        const ang = Math.atan2(cy - H / 2, cx - W / 2);
+        const sp = (2 + Math.random() * 6) * k;
+        out.push({ pts: tri.flatMap(([x, y]) => [x - cx, y - cy]), cx, cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 4 * k, va: (Math.random() - 0.5) * 0.12 });
+      }
+    }
+  return out;
+}
+
+// Each frame while a transition runs: fire its switch, move its particles,
+// and draw its overlay.
+function tlFxFrame(now: number) {
+  const f = tlFx;
+  const need = !!f && ['fade', 'flash', 'wipe', 'freeze', 'shatter'].includes(f.how);
+  if (fxCanvas.hidden === need) fxCanvas.hidden = !need;
+  if (!f) return;
+  const u = Math.min(1, (now - f.start) / f.dur);
+  if (f.go && now >= f.switchAt) {
+    const go = f.go;
+    f.go = null;
+    go();
+  }
+  whirlNow = f.how === 'whirl' ? Math.sin(u * Math.PI) * 1.6 : 0;
+  if (need) {
+    const W = canvas.width;
+    const H = canvas.height;
+    if (fxCanvas.width !== W || fxCanvas.height !== H) (fxCanvas.width = W), (fxCanvas.height = H);
+    const g = fxCtx;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.clearRect(0, 0, W, H);
+    if (f.how === 'fade') {
+      g.globalAlpha = Math.sin(u * Math.PI);
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, W, H);
+    } else if (f.how === 'flash') {
+      g.globalAlpha = (1 - u) * (1 - u);
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, W, H);
+    } else if (f.how === 'wipe') {
+      // The old picture slides off to the right behind a bright edge.
+      const e = u * u * (3 - 2 * u) * W;
+      if (e < W) g.drawImage(fxSnap, e, 0, W - e, H, e, 0, W - e, H);
+      const lg = g.createLinearGradient(e - 28, 0, e + 2, 0);
+      lg.addColorStop(0, 'rgb(255 255 255 / 0)');
+      lg.addColorStop(1, 'rgb(255 255 255 / 0.3)');
+      g.fillStyle = lg;
+      g.fillRect(e - 28, 0, 30, H);
+    } else if (f.how === 'freeze') {
+      g.globalAlpha = u < 0.3 ? 1 : 1 - (u - 0.3) / 0.7;
+      g.drawImage(fxSnap, 0, 0);
+    } else if (f.how === 'shatter' && f.shards) {
+      const t = (now - f.start) / 16.67;
+      const k = Math.min(W, H) / 600;
+      g.globalAlpha = 1 - u * u;
+      for (const s of f.shards) {
+        const x = s.cx + s.vx * t;
+        const y = s.cy + s.vy * t + 0.5 * 0.35 * k * t * t;
+        g.setTransform(1, 0, 0, 1, x, y);
+        g.rotate(s.va * t);
+        g.beginPath();
+        g.moveTo(s.pts[0], s.pts[1]);
+        g.lineTo(s.pts[2], s.pts[3]);
+        g.lineTo(s.pts[4], s.pts[5]);
+        g.closePath();
+        g.save();
+        g.clip();
+        g.drawImage(fxSnap, -s.cx, -s.cy);
+        g.restore();
+      }
+    }
+  }
+  if (u >= 1 && !f.go) {
+    tlFx = null;
+    whirlNow = 0;
+    fxCanvas.hidden = true;
+  }
+}
 const TL_BARS = [1, 2, 4, 8, 16, 32];
 const clip = (name: string, bars: number, how: TlHow): TlClip => ({ name, bars, how });
 const TL_SETS: [string, TlClip[]][] = [
   ['Chill', [clip('Silk', 8, 'slow'), clip('Pond', 8, 'slow'), clip('Northern lights', 8, 'morph'), clip('Nebula', 8, 'slow')]],
   ['Club', [clip('Galaxy', 4, 'cut'), clip('Fireworks', 4, 'drop'), clip('Warp speed', 4, 'cut'), clip('Shatter', 4, 'drop'), clip('Black hole', 8, 'morph'), clip('Neon storm', 4, 'cut')]],
   ['Seed to tree', [clip('Seed', 8, 'slow'), clip('Sprout', 4, 'morph'), clip('Bud', 4, 'morph'), clip('Roots', 8, 'slow'), clip('Branches', 8, 'morph'), clip('Canopy', 8, 'morph'), clip('Blossom', 8, 'morph'), clip('Extravaganza', 16, 'drop')]],
+  ['Big bang', [clip('Singularity', 8, 'implode'), clip('Big bang', 4, 'flash'), clip('Primordial gas', 8, 'slow'), clip('First stars', 8, 'morph'), clip('Galaxies', 8, 'whirl'), clip('Event horizon', 8, 'implode')]],
+  ['Day to night', [clip('Dawn', 8, 'fade'), clip('Morning', 8, 'slow'), clip('Midday', 8, 'morph'), clip('Golden hour', 8, 'slow'), clip('Dusk embers', 8, 'fade'), clip('Firefly night', 8, 'slow'), clip('Starry night', 8, 'fade')]],
+  ['Storm', [clip('Still pond', 8, 'fade'), clip('Wind rises', 8, 'morph'), clip('Rain', 4, 'wipe'), clip('Lightning', 4, 'flash'), clip('Full storm', 8, 'shatter'), clip('Clearing', 8, 'slow')]],
+  ['Rain to ocean', [clip('Raindrop', 4, 'gather'), clip('Ripples', 8, 'grow'), clip('Streams', 8, 'morph'), clip('River', 8, 'wipe'), clip('Falls', 8, 'morph'), clip('Open ocean', 16, 'slow')]],
+  ['Life of a star', [clip('Star cloud', 8, 'fade'), clip('Collapse', 4, 'implode'), clip('Young star', 8, 'morph'), clip('Red giant', 8, 'slow'), clip('Supernova', 4, 'drop'), clip('Remnant', 8, 'freeze')]],
+  ['Murmuration', [clip('A few birds', 8, 'fade'), clip('Flock', 8, 'grow'), clip('Murmuration', 8, 'morph'), clip('The split', 8, 'morph'), clip('Sky shapes', 8, 'whirl'), clip('Scatter', 4, 'drop')]],
+  ['Word story', []],
   ['Journey', [clip('Deep space', 8, 'slow'), clip('Galaxy', 8, 'morph'), clip('Black hole', 4, 'drop'), clip('Mandala', 8, 'morph'), clip('Pollen', 8, 'slow')]],
 ];
+// Word story: your words one at a time, each in its own lettering, with a
+// short abstract scene between them.
+const WORD_SCENES = ['Neon sign', 'Marquee', 'Glyph word', 'Breathing word', 'Dot matrix', 'Smoke writing'];
+const WORD_GAPS = ['Galaxy', 'Silk', 'Starlings', 'Neon storm'];
+const WORD_HOW: TlHow[] = ['gather', 'shatter', 'wipe', 'whirl', 'flash'];
+function wordStory(text: string): TlClip[] {
+  const words = text.toUpperCase().split(/\s+/).filter(Boolean).slice(0, 16);
+  return words.flatMap((word, i) => [
+    { ...clip(WORD_SCENES[i % WORD_SCENES.length], 4, WORD_HOW[i % WORD_HOW.length]), word: word.slice(0, 14) },
+    clip(WORD_GAPS[i % WORD_GAPS.length], 2, 'morph'),
+  ]);
+}
 const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', hold: true, held: {}, ...readJson<Partial<Timeline>>(TL_KEY, {}) };
 // Not held: they already carry over, or belong to the timeline itself.
 const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
@@ -6070,26 +6300,28 @@ function tlGo(i: number) {
   for (let k = 0; k < n; k++) {
     const j = (i + k) % n;
     const c = tl.clips[j];
-    const p = tlScene(c);
-    if (!p) continue;
+    const base = tlScene(c);
+    if (!base) continue;
+    const p: Partial<Settings> = c.word ? { ...base, shape: 'text', shapeText: c.word, shapeCycle: 0 } : base;
     tlIdx = j;
     tlQueued = -1;
     tlBarsIn = 0;
     tlShownAt = performance.now();
     if (tl.knobs === 'reset') for (const [mk] of MACROS) (settings as unknown as Record<string, number>)[mk] = 0.5;
-    const morph = c.how === 'cut' ? 0 : c.how === 'slow' ? Math.min(4, tlBarSec) : Math.min(2.5, Math.max(0.5, tlBarSec / 2));
-    if (c.how === 'drop') explode();
-    if (c.mine) {
-      const mine = myPresets.find((p2) => p2.name === c.name)!;
-      lastPresetFamily = null;
-      apply(p, false, { now: true, morph });
-      currentMine = mine;
-      redrawMine();
-    } else {
-      lastPresetFamily = FAMILY_OF[c.name] ?? null;
-      apply(p, true, { now: true, morph });
-      lastSceneName = c.name;
-    }
+    const go = (morph: number) => {
+      if (c.mine) {
+        const mine = myPresets.find((p2) => p2.name === c.name);
+        lastPresetFamily = null;
+        apply(p, false, { now: true, morph });
+        currentMine = mine ?? null;
+        redrawMine();
+      } else {
+        lastPresetFamily = FAMILY_OF[c.name] ?? null;
+        apply(p, true, { now: true, morph });
+        lastSceneName = c.name;
+      }
+    };
+    tlTransition(c.how, go);
     if (tl.ring === 'hidden') showToast(c.name);
     tlRedraw?.();
     return;
@@ -6349,7 +6581,7 @@ function renderTimeline() {
       const live = tl.on && k === tlIdx;
       row.classList.toggle('on', live);
       row.classList.toggle('queued', k === tlQueued);
-      const name = mk('button', 'tl-name', c.name);
+      const name = mk('button', 'tl-name', c.word ? `“${c.word}” · ${c.name}` : c.name);
       name.type = 'button';
       name.title = 'Play this one next (on the bar)';
       name.addEventListener('click', () => tlQueue(k));
@@ -6431,7 +6663,7 @@ function renderTimeline() {
   const sets = sel([['', 'Ready-made set…'], ...TL_SETS.map(([n]): [string, string] => [n, n])], '', 'Load a ready-made set', (v) => {
     const s = TL_SETS.find(([n]) => n === v);
     if (!s) return;
-    tl.clips = s[1].map((c) => ({ ...c }));
+    tl.clips = v === 'Word story' ? wordStory(tl.words ?? 'HELLO WE ARE HERE') : s[1].map((c) => ({ ...c }));
     tlIdx = -1;
     tlQueued = -1;
     if (!tl.on) tl.on = true;
@@ -6440,6 +6672,34 @@ function renderTimeline() {
   });
   sets.addEventListener('change', () => (sets.value = ''));
   add.append(addThis, pick, sets);
+  // Word story: type the words, one clip each.
+  const words = mk('input', 'tl-words');
+  words.type = 'text';
+  words.maxLength = 120;
+  words.placeholder = 'Words for a word story';
+  words.setAttribute('aria-label', 'Words for a word story');
+  words.value = tl.words ?? 'HELLO WE ARE HERE';
+  const tell = mk('button', '', 'Tell it');
+  tell.type = 'button';
+  const makeWords = () => {
+    tl.words = words.value.trim() || 'HELLO WE ARE HERE';
+    const c = wordStory(tl.words);
+    if (!c.length) return;
+    tl.clips = c;
+    tlIdx = -1;
+    tlQueued = -1;
+    if (!tl.on) tl.on = true;
+    tlSave();
+    changed(new Set());
+  };
+  tell.addEventListener('click', makeWords);
+  words.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') makeWords();
+  });
+  const wrow = mk('div', 'tl-wordrow');
+  wrow.append(words, tell);
+  add.append(wrow);
 
   const opts = mk('div', 'tl-opts');
   const field = (label: string, el: HTMLElement) => {

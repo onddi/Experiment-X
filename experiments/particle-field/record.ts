@@ -20,6 +20,8 @@ export interface RecordHost {
   bg: () => string;
   /** A live audio track of the sound source, or null when there is none. */
   audio: () => MediaStreamTrack | null;
+  /** A canvas drawn on top (timeline transitions), or null. */
+  overlay: () => HTMLCanvasElement | null;
   onChange: () => void;
 }
 
@@ -208,5 +210,10 @@ export class Recorder {
     if (f) g.filter = f;
     g.drawImage(src, -w / 2, -h / 2, w, h);
     g.filter = 'none';
+    const top = this.host.overlay();
+    if (top) {
+      g.setTransform(k, 0, 0, k, W / 2, H / 2);
+      g.drawImage(top, -w / 2, -h / 2, w, h);
+    }
   }
 }
