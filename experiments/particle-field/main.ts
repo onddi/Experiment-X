@@ -5839,9 +5839,11 @@ function renderPresetLibrary() {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = name;
+      b.dataset.scene = name;
       b.addEventListener('click', () => playPreset(name, p));
       grid.append(b);
     }
+    markLibrary(wrap);
   };
   for (const [fam, label] of FAMILIES) {
     const c = document.createElement('button');
@@ -5858,9 +5860,22 @@ function renderPresetLibrary() {
     });
     chips.append(c);
   }
-  draw();
   wrap.append(chips, grid);
+  draw();
   return wrap;
+}
+
+// The scene playing now, and its family chip, are marked in the library.
+// (Not while one of your own scenes or the crossfader is playing.)
+function markLibrary(root: ParentNode = document) {
+  let mine = true;
+  try {
+    mine = !!currentMine;
+  } catch {}
+  const name = xf.on || mine ? '' : lastSceneName;
+  const fam = name ? FAMILY_OF[name] : undefined;
+  for (const el of root.querySelectorAll<HTMLElement>('.presetlib [data-scene]')) el.classList.toggle('cur', el.dataset.scene === name);
+  for (const el of root.querySelectorAll<HTMLElement>('.presetlib [data-fam]')) el.classList.toggle('cur', !!fam && el.dataset.fam === fam);
 }
 
 const controls = document.getElementById('controls')!;
@@ -9890,6 +9905,7 @@ function syncSceneNow() {
   el.hidden = !name;
   el.querySelector('b')!.textContent = name;
   el.classList.toggle('edited', edited);
+  markLibrary();
   el.title = edited ? `${name}, changed since you picked it` : name;
 }
 setInterval(syncSceneNow, 500);

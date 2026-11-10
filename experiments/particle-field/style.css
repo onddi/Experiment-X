@@ -669,6 +669,8 @@ body.no-input .panel, body.no-input .fab, body.no-input .hint { display: none !i
   cursor: pointer;
 }
 .families button small { opacity: 0.6; font-size: 10px; margin-left: 2px; }
+.families button.cur::after { content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 5px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.presetlib .buttons button.cur { border-color: var(--accent); color: var(--text); background: color-mix(in oklch, var(--accent) 22%, transparent); font-weight: 600; }
 .families button.on { border-color: var(--accent); color: var(--text); background: color-mix(in oklch, var(--accent) 14%, transparent); }
 @media (pointer: coarse) { .families button { padding: 7px 11px; font-size: 13px; } }
 
