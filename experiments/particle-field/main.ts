@@ -3727,7 +3727,8 @@ function lensClipDraw(g: CanvasRenderingContext2D, src: HTMLCanvasElement, clip:
 // Slices: a short history of frames at half size.
 const sliceHist: HTMLCanvasElement[] = [];
 let sliceAt = 0;
-const SLICE_FRAMES = 8;
+const SLICE_FRAMES = 24;
+let sliceTick = 0;
 let shards: { dx: number; dy: number; r: number }[] = [];
 let crtPat: { dpr: number; pat: CanvasPattern } | null = null;
 const glowBuf = document.createElement('canvas');
@@ -3930,31 +3931,43 @@ function lensFrame(now: number) {
   }
 
 
-  // Slices: vertical blinds, each showing a slightly older moment.
+  // Slices: vertical blinds, each showing an older moment, up to about two
+  // seconds back. The history is kept small (a third of the size, a snapshot
+  // every few frames) so it stays light on memory.
   if (S.lensSlices > 0) {
     const src = input();
-    const hw = Math.ceil(cw / 2);
-    const hh = Math.ceil(ch / 2);
+    const sc = 3;
+    const hw = Math.ceil(cw / sc);
+    const hh = Math.ceil(ch / sc);
     while (sliceHist.length < SLICE_FRAMES) sliceHist.push(document.createElement('canvas'));
-    const cur = sliceHist[sliceAt % SLICE_FRAMES];
-    if (cur.width !== hw || cur.height !== hh) (cur.width = hw), (cur.height = hh);
-    const cc = cur.getContext('2d')!;
-    cc.globalCompositeOperation = 'copy';
-    cc.drawImage(src, 0, 0, hw, hh);
-    const N = 16;
+    const every = 1 + Math.round(S.lensSlices * 5); // frames between snapshots
+    if (sliceTick++ % every === 0) {
+      const cur = sliceHist[sliceAt % SLICE_FRAMES];
+      if (cur.width !== hw || cur.height !== hh) (cur.width = hw), (cur.height = hh);
+      const cc = cur.getContext('2d')!;
+      cc.globalCompositeOperation = 'copy';
+      cc.drawImage(src, 0, 0, hw, hh);
+      sliceAt++;
+    }
+    const N = 20;
     const stripW = cw / N;
-    const maxLag = Math.round(S.lensSlices * (SLICE_FRAMES - 1));
+    const maxLag = Math.min(sliceAt - 1, Math.round(S.lensSlices * (SLICE_FRAMES - 1)));
     fill(bgCol);
     for (let i = 0; i < N; i++) {
-      const lag = Math.round((maxLag * Math.abs(i + 0.5 - N / 2)) / (N / 2));
+      // Older toward the edges, and every other strip older still, so the
+      // stagger reads clearly.
+      const v = Math.abs(i + 0.5 - N / 2) / (N / 2);
+      const lag = Math.min(maxLag, Math.round(maxLag * (0.15 + 0.85 * v) * (i % 2 ? 1 : 0.6)));
       const x = i * stripW;
-      if (!lag) g.drawImage(src, x, 0, stripW + 1, ch, x, 0, stripW + 1, ch);
+      if (lag <= 0) g.drawImage(src, x, 0, stripW + 1, ch, x, 0, stripW + 1, ch);
       else {
-        const old = sliceHist[(sliceAt - Math.min(lag, sliceAt) + SLICE_FRAMES * 4) % SLICE_FRAMES];
-        if (old.width === hw) g.drawImage(old, x / 2, 0, stripW / 2 + 1, hh, x, 0, stripW + 1, ch);
+        const old = sliceHist[(sliceAt - 1 - lag + SLICE_FRAMES * 8) % SLICE_FRAMES];
+        if (old.width === hw) g.drawImage(old, x / sc, 0, stripW / sc + 0.5, hh, x, 0, stripW + 1, ch);
       }
     }
-    sliceAt++;
+    // Thin dark seams between the blinds, so they read even when it's calm.
+    g.fillStyle = `rgb(0 0 0 / ${(0.25 + S.lensSlices * 0.35).toFixed(2)})`;
+    for (let i = 1; i < N; i++) g.fillRect(Math.round(i * stripW) - dpr, 0, dpr * 2, ch);
   }
 
   // Dots: each cell's colour as a round light, like an LED wall.
