@@ -603,6 +603,7 @@ if (import.meta.env.DEV)
     },
   };
 let lastPulse = 0;
+let lastSub = 0;
 let lastSnare = 0;
 let swirlDir = 1;
 
@@ -794,7 +795,8 @@ function step(dt: number) {
   if (lk.flow > 1 && flowNow < 0.15) flowNow = 0.15;
   flowNow *= (1 - blastK) * handDial.flow * lk.flow;
   speedNow *= handDial.speed * lk.speed;
-  const jitterNow = jitter;
+  // Energy shake: the field trembles harder as the music lifts.
+  const jitterNow = jitter + (on ? A.liftLevel * S.audioEnergyShake * 2.5 * I : 0);
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
   const kickWave = on && (S.audioKick === 'wave' || S.audioKick === 'both');
@@ -802,7 +804,11 @@ function step(dt: number) {
   // back while it decays, so the field breathes in place.
   const dPulse = kickPulse ? A.pulse - lastPulse : 0;
   lastPulse = A.pulse;
-  const kick = dPulse * (dPulse > 0 ? 3 : 2.5) * S.audioPulse * I;
+  let kick = dPulse * (dPulse > 0 ? 3 : 2.5) * S.audioPulse * I;
+  // Bass throb: the same breathing shove, driven by the sub-bass swell.
+  const dSub = on && S.audioBassThrob > 0 ? A.sub - lastSub : 0;
+  lastSub = on ? A.sub : 0;
+  kick += dSub * (dSub > 0 ? 3 : 2.5) * S.audioBassThrob * I;
   // Frequency groups: every third particle listens to bass, mids or highs.
   const bands = on ? S.audioBands : 0;
   const kickBand = [1 + 1.8 * bands, 1 - 0.3 * bands, 1 - 0.8 * bands];
@@ -967,7 +973,12 @@ function step(dt: number) {
       // Letter hop: one letter (a slice of the shape) jumps on each kick.
       if (hopKick > 0.02 && hopMax > hopMin) {
         const li = Math.min(hopLetters - 1, (((hx[i] - hopMin) / (hopMax - hopMin + 0.01)) * hopLetters) | 0);
-        if (li === hopIdx) ay -= hopKick * settings.audioLetterHop * 1.2;
+        if (li === hopIdx) ay -= hopKick * hopAmt * 1.2;
+      }
+      // Build-up scatter: the shape shivers apart as the tension rises.
+      if (wordShiver > 0) {
+        ax += (Math.random() - 0.5) * wordShiver;
+        ay += (Math.random() - 0.5) * wordShiver;
       }
     }
     if (entK > 0) {
@@ -5430,7 +5441,7 @@ const CONTROLS: Control[] = [
 
   { kind: 'heading', label: 'Hits', tab: 'music' },
   { kind: 'section', id: 'drums', label: 'Drums', tab: 'music',
-    lock: ['audioKick', 'audioPulse', 'audioBeat', 'audioWaveAt', 'audioWaveEvery', 'audioWaveForce', 'audioWaveSpeed', 'audioWaveReach', 'audioWaveWidth', 'audioWaveFeel', 'audioWaveRings', 'audioWaveAccent', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioSubAmt', 'audioSpeed', 'audioFlow'],
+    lock: ['audioKick', 'audioPulse', 'audioBeat', 'audioWaveAt', 'audioWaveEvery', 'audioWaveForce', 'audioWaveSpeed', 'audioWaveReach', 'audioWaveWidth', 'audioWaveFeel', 'audioWaveRings', 'audioWaveAccent', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioSubAmt', 'audioBassThrob', 'audioSpeed', 'audioFlow'],
     summary: () => [label([['pulse', 'pulse'], ['wave', 'waves'], ['both', 'pulse + waves'], ['none', '']], settings.audioKick), settings.audioSnare !== 'none' ? `snare ${settings.audioSnare}` : '', settings.audioHats !== 'none' ? 'hats' : ''].filter(Boolean).join(' · ') },
   { kind: 'sub', label: 'Kick' },
   { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['none', 'Nothing']], show: ft },
@@ -5452,6 +5463,7 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: '808 & sub bass', show: ft },
   { kind: 'select', key: 'audioSub', label: 'Sub swells', options: [['size', 'Particle size'], ['flow', 'Flow'], ['speed', 'Speed'], ['none', 'Nothing']], show: ft },
   { kind: 'range', key: 'audioSubAmt', label: 'Sub strength', min: 0, max: 2, step: 0.05, format: pct, show: () => ft() && settings.audioSub !== 'none' },
+  { kind: 'range', key: 'audioBassThrob', label: 'Throb with the bass', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'sub', label: 'Overall energy', show: ft },
   { kind: 'range', key: 'audioSpeed', label: 'Speed with energy', min: 0, max: 2, step: 0.05, format: pct, show: ft },
   { kind: 'range', key: 'audioFlow', label: 'Flow stir', min: 0, max: 2, step: 0.05, format: pct, show: ft },
@@ -5473,9 +5485,9 @@ const CONTROLS: Control[] = [
 
   { kind: 'heading', label: 'Colour', tab: 'music' },
   { kind: 'section', id: 'mcolour', label: 'Music colour', tab: 'music', about: 'Hue shifts, new palettes per section, flashes and colour that drains in a build-up.',
-    lock: ['audioHue', 'audioHueAmt', 'audioBright', 'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert'],
-    power: { on: () => settings.audioHue !== 'off' || settings.audioBright > 0 || settings.audioPalEvery > 0 || settings.audioMonoBuild || settings.audioBgFlash > 0 || settings.audioInvert,
-      off: { audioHue: 'off', audioBright: 0, audioPalEvery: 0, audioMonoBuild: false, audioBgFlash: 0, audioInvert: false }, start: { audioHue: 'bar', audioBright: 0.4 } },
+    lock: ['audioHue', 'audioHueAmt', 'audioBright', 'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert', 'audioSnareFlash', 'audioHatTwinkle', 'audioBassGlow'],
+    power: { on: () => settings.audioHue !== 'off' || settings.audioBright > 0 || settings.audioPalEvery > 0 || settings.audioMonoBuild || settings.audioBgFlash > 0 || settings.audioInvert || settings.audioSnareFlash > 0 || settings.audioHatTwinkle > 0 || settings.audioBassGlow > 0,
+      off: { audioHue: 'off', audioBright: 0, audioPalEvery: 0, audioMonoBuild: false, audioBgFlash: 0, audioInvert: false, audioSnareFlash: 0, audioHatTwinkle: 0, audioBassGlow: 0 }, start: { audioHue: 'bar', audioBright: 0.4 } },
     summary: () => [
       settings.audioHue !== 'off' ? `shift ${label([['beat', 'per beat'], ['bar', 'per bar'], ['drift', 'drifting'], ['drop', 'on drops']], settings.audioHue)}` : '',
       settings.audioPalEvery > 0 ? `palette every ${settings.audioPalEvery}` : '',
@@ -5488,20 +5500,25 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioBright', label: 'Brightness with energy', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioPalEvery', label: 'New palette every', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'never' : `${v} bars`) },
   { kind: 'range', key: 'audioBgFlash', label: 'Background flash on kicks', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioSnareFlash', label: 'Flash on snares', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioHatTwinkle', label: 'Twinkle on hi-hats', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioBassGlow', label: 'Glow with the bass', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'toggle', key: 'audioMonoBuild', label: 'Colour drains in a build-up, back at the drop' },
   { kind: 'toggle', key: 'audioInvert', label: 'Invert the colours for a moment at a drop' },
 
   { kind: 'heading', label: 'View', tab: 'music' },
   { kind: 'section', id: 'camera', label: 'View moves', tab: 'music', about: 'Punches, shakes, cuts, dollies, pans, rolls and spins in time with the music.',
-    lock: ['audioCam', 'audioSpin', 'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip'],
-    power: { on: () => settings.audioCam > 0 || settings.audioSpin !== 'off' || settings.audioCuts !== 'off' || settings.audioDolly || settings.audioPan > 0 || settings.audioRoll > 0 || settings.audioFlip,
-      off: { audioCam: 0, audioSpin: 'off', audioCuts: 'off', audioDolly: false, audioPan: 0, audioRoll: 0, audioFlip: false }, start: { audioCam: 0.6 } },
+    lock: ['audioCam', 'audioSpin', 'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip', 'audioHatShake', 'audioBassZoom'],
+    power: { on: () => settings.audioCam > 0 || settings.audioSpin !== 'off' || settings.audioCuts !== 'off' || settings.audioDolly || settings.audioPan > 0 || settings.audioRoll > 0 || settings.audioFlip || settings.audioHatShake > 0 || settings.audioBassZoom > 0,
+      off: { audioCam: 0, audioSpin: 'off', audioCuts: 'off', audioDolly: false, audioPan: 0, audioRoll: 0, audioFlip: false, audioHatShake: 0, audioBassZoom: 0 }, start: { audioCam: 0.6 } },
     summary: () => [
       settings.audioCam > 0 ? `punch ${pct(settings.audioCam)}` : '', settings.audioCuts !== 'off' ? 'cuts' : '', settings.audioDolly ? 'dolly' : '',
       settings.audioPan > 0 ? 'pan' : '', settings.audioRoll > 0 ? 'roll' : '', settings.audioFlip ? 'flip' : '', settings.audioSpin !== 'off' ? settings.audioSpin : '',
     ].filter(Boolean).join(' · ') || 'off' },
   { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
   { kind: 'range', key: 'audioCam', label: 'Punch & shake', min: 0, max: 1.5, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioHatShake', label: 'Shake on hi-hats', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioBassZoom', label: 'Breathe with the bass', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'audioCuts', label: 'Beat cuts', options: [['off', 'Off'], ['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['drop', 'Only on drops']] },
   { kind: 'select', key: 'audioSpin', label: 'Spin', options: [['off', 'Still'], ['sway', 'Sway every 4 bars'], ['rock', 'Rock to and fro over 8 bars'], ['step', 'Step an eighth turn each bar'], ['turn', 'Full turn every 32 bars'], ['energy', 'Turn faster when it gets loud']] },
   { kind: 'range', key: 'audioPan', label: 'Pan drift', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -5521,20 +5538,21 @@ const CONTROLS: Control[] = [
 
   { kind: 'heading', label: 'Motion & words', tab: 'music' },
   { kind: 'section', id: 'mmotion', label: 'Music motion', tab: 'music', about: 'Freeze frames on snares, gravity that flips at drops, trails and sway with the bass.',
-    lock: ['audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway'],
-    power: { on: () => settings.audioStutter || settings.audioGravFlip || settings.audioTrailEnergy > 0 || settings.audioSway > 0,
-      off: { audioStutter: false, audioGravFlip: false, audioTrailEnergy: 0, audioSway: 0 }, start: { audioSway: 0.6 } },
+    lock: ['audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway', 'audioEnergyShake'],
+    power: { on: () => settings.audioStutter || settings.audioGravFlip || settings.audioTrailEnergy > 0 || settings.audioSway > 0 || settings.audioEnergyShake > 0,
+      off: { audioStutter: false, audioGravFlip: false, audioTrailEnergy: 0, audioSway: 0, audioEnergyShake: 0 }, start: { audioSway: 0.6 } },
     summary: () => [settings.audioStutter ? 'stutter' : '', settings.audioGravFlip ? 'gravity flip' : '', settings.audioTrailEnergy > 0 ? 'trails' : '', settings.audioSway > 0 ? 'sway' : ''].filter(Boolean).join(' · ') || 'off' },
   { kind: 'note', text: 'Turn on a sound source in the Audio card first.', show: () => audio.source === 'off' },
   { kind: 'range', key: 'audioSway', label: 'Sway with the bass', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioEnergyShake', label: 'Tremble with the energy', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioTrailEnergy', label: 'Longer trails when loud', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'toggle', key: 'audioStutter', label: 'Freeze for a split second on snares' },
   { kind: 'toggle', key: 'audioGravFlip', label: 'Gravity flips at each drop' },
 
   { kind: 'section', id: 'mwords', label: 'Music words', tab: 'music', about: 'A text pattern that changes word with the music, pulses and hops letter by letter.',
-    lock: ['audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop'],
-    power: { on: () => settings.audioWordsOn || settings.audioWordPulse > 0 || settings.audioLetterHop > 0,
-      off: { audioWordsOn: false, audioWordPulse: 0, audioLetterHop: 0 }, start: { audioWordsOn: true, audioWords: 'LOVE, PEACE, UNITY', audioWordPulse: 0.5 } },
+    lock: ['audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop', 'audioSnareHop', 'audioEnergyWords', 'audioBuildScatter'],
+    power: { on: () => settings.audioWordsOn || settings.audioWordPulse > 0 || settings.audioLetterHop > 0 || settings.audioSnareHop > 0 || settings.audioEnergyWords > 0 || settings.audioBuildScatter > 0,
+      off: { audioWordsOn: false, audioWordPulse: 0, audioLetterHop: 0, audioSnareHop: 0, audioEnergyWords: 0, audioBuildScatter: 0 }, start: { audioWordsOn: true, audioWords: 'LOVE, PEACE, UNITY', audioWordPulse: 0.5 } },
     summary: () => [settings.audioWordsOn && settings.audioWords.trim() ? 'words' : '', settings.audioWordPulse > 0 ? 'pulse' : '', settings.audioLetterHop > 0 ? 'hop' : ''].filter(Boolean).join(' · ') || 'off' },
   { kind: 'note', text: 'Changing words needs a Text shape (Shape tab) or a Words scene. Pulse and hop work with any shape, your face too.', show: () => settings.shape !== 'text' },
   { kind: 'toggle', key: 'audioWordsOn', label: 'Change word with the music' },
@@ -5542,6 +5560,9 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'audioWordsEvery', label: 'Next word', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['drop', 'Only on drops']], show: () => settings.audioWordsOn },
   { kind: 'range', key: 'audioWordPulse', label: 'Shape pulses with the kick', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioLetterHop', label: 'Letters hop in turn', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioSnareHop', label: 'Letters hop on snares', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioEnergyWords', label: 'Shape grows with the energy', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioBuildScatter', label: 'Shape shivers apart in build-ups', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
 
   { kind: 'section', id: 'cam', label: 'Camera', tab: 'camera', about: 'Your webcam. Every card on this tab uses it; the picture stays on this device.',
     summary: () => (cam.on ? 'on' : camStarting ? 'starting…' : 'off') },
@@ -5739,6 +5760,7 @@ const MUSIC_KEYS = [
   'audioCuts', 'audioDolly', 'audioPan', 'audioRoll', 'audioFlip', 'audioTunnel', 'audioTunnelTurn', 'audioEcho',
   'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert', 'audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway',
   'audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop',
+  'audioSnareFlash', 'audioSnareHop', 'audioHatTwinkle', 'audioHatShake', 'audioBassThrob', 'audioBassZoom', 'audioBassGlow', 'audioBuildScatter', 'audioEnergyShake', 'audioEnergyWords',
 ] as const;
 const playSettings = (): Partial<Settings> => ({
   morph: settings.morph,
@@ -5889,6 +5911,10 @@ let echoSnap = false;
 let flashA = 0;
 let wordScale = 1;
 let hopKick = 0;
+let hopAmt = 0;
+let wordShiver = 0;
+let twinkleA = 0;
+let hatShakeA = 0;
 let hopIdx = 0;
 let hopMin = 0;
 let hopMax = 0;
@@ -5944,8 +5970,14 @@ function musicVisuals(now: number) {
       parts.push(`hue-rotate(${(hueNow % 360).toFixed(1)}deg)`, `brightness(${bright.toFixed(2)})`);
     }
   } else hueNow = hueTarget = 0;
+  // Hi-hat twinkle: a quick lift in brightness on each hat.
+  twinkleA = on && S.audioHatTwinkle > 0 && L.hat ? 0.18 * S.audioHatTwinkle : twinkleA * 0.8;
+  if (!on || S.audioHatTwinkle <= 0) twinkleA = 0;
+  // Bass glow: colour and light swell with the sub-bass.
+  const glowB = on && S.audioBassGlow > 0 ? L.sub * L.sub * S.audioBassGlow : 0;
+  if (!lightBg && (twinkleA > 0.005 || glowB > 0.005)) parts.push(`brightness(${(1 + twinkleA + glowB * 0.35).toFixed(2)})`);
   if (on) {
-    let sat = 1 + S.audioBright * L.liftLevel * 0.8;
+    let sat = 1 + S.audioBright * L.liftLevel * 0.8 + glowB * 0.7;
     // Mono build-up: the colour drains as the tension rises, back at the drop.
     if (S.audioMonoBuild) sat *= 1 - Math.min(0.92, L.tension * 1.1) * (1 - L.dropEnv);
     if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
@@ -5968,6 +6000,16 @@ function musicVisuals(now: number) {
     zoom = (1 + (L.pulse * 0.04 + L.dropEnv * 0.1 + L.tension * 0.03) * amt) * (1 + (2 * shake) / Math.min(w, h));
     tx = (Math.random() - 0.5) * 2 * shake;
     ty = (Math.random() - 0.5) * 2 * shake;
+  }
+  // Bass breathe: the view leans in with the sub-bass.
+  if (on && S.audioBassZoom > 0) zoom *= 1 + L.sub * L.sub * 0.07 * S.audioBassZoom * S.audioIntensity;
+  // Hi-hat shake: a small, quick jitter of the frame on each hat.
+  hatShakeA = on && S.audioHatShake > 0 && L.hat ? 1 : hatShakeA * 0.7;
+  if (!on || S.audioHatShake <= 0) hatShakeA = 0;
+  if (hatShakeA > 0.02) {
+    const m = hatShakeA * S.audioHatShake * 3;
+    tx += (Math.random() - 0.5) * 2 * m;
+    ty += (Math.random() - 0.5) * 2 * m;
   }
   // Beat cuts: a hard change of framing, like a video edit.
   if (on && S.audioCuts !== 'off') {
@@ -6071,13 +6113,20 @@ function musicVisuals(now: number) {
   }
   if (!on || S.audioEcho <= 0) echoA = 0;
   if (on && S.audioBgFlash > 0 && L.beat) flashA = Math.min(0.22, S.audioBgFlash * 0.22 * (0.5 + L.pulse * 0.5));
+  else if (on && S.audioSnareFlash > 0 && L.snare) flashA = Math.max(flashA, Math.min(0.22, S.audioSnareFlash * 0.2));
   else flashA *= 0.82;
-  if (!on || S.audioBgFlash <= 0) flashA = 0;
+  if (!on || (S.audioBgFlash <= 0 && S.audioSnareFlash <= 0)) flashA = 0;
 
   // Words.
   musicWords(on, L, S);
   wordScale = on && S.audioWordPulse > 0 ? 1 + L.pulse * S.audioWordPulse * 0.14 + L.dropEnv * S.audioWordPulse * 0.2 : 1;
-  if (on && S.audioLetterHop > 0 && S.shape !== 'none' && L.beat) {
+  // Energy: the words grow as the music lifts.
+  if (on && S.audioEnergyWords > 0) wordScale *= 1 + L.liftLevel * S.audioEnergyWords * 0.25;
+  wordShiver = on && S.audioBuildScatter > 0 ? L.tension * (1 - L.dropEnv) * S.audioBuildScatter * 4 : 0;
+  const hopBeat = on && S.audioLetterHop > 0 && L.beat;
+  const hopSnare = on && S.audioSnareHop > 0 && L.snare;
+  if ((hopBeat || hopSnare) && S.shape !== 'none') {
+    hopAmt = hopSnare ? S.audioSnareHop : S.audioLetterHop;
     hopMin = Infinity;
     hopMax = -Infinity;
     for (let i = 0; i < n; i++) {
@@ -6088,7 +6137,7 @@ function musicVisuals(now: number) {
     hopIdx = (hopIdx + 1) % hopLetters;
     hopKick = 1;
   } else hopKick *= 0.8;
-  if (!on || S.audioLetterHop <= 0) hopKick = 0;
+  if (!on || (S.audioLetterHop <= 0 && S.audioSnareHop <= 0)) hopKick = 0;
 
   // Auto VJ: a new look every few bars, and on drops.
   if (on && S.audioVj > 0 && !tlActive() && !xf.on) {
@@ -7904,25 +7953,25 @@ const MUSIC_GRID: MgGrid = {
       live: () => lit('snare', levelsNow().snare),
       cells: [
         [mgPick('Hit', 'audioSnare', [['swirl', 'Swirl'], ['wave', 'Ripple'], ['flash', 'Flash']], 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })],
-        null,
+        [mgRange('Flash', 'audioSnareFlash', 1)],
         [mgRange('Roll', 'audioRoll', 1)],
         [mgToggle('Freeze', 'audioStutter')],
-        null,
+        [mgRange('Hop', 'audioSnareHop', 1)],
         null,
       ],
     },
     {
       name: 'Hi-hats',
       live: () => lit('hat', levelsNow().hat),
-      cells: [[mgMode('Sparkle', 'audioHats', 'sparkle', 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })], null, null, null, null, null],
+      cells: [[mgMode('Sparkle', 'audioHats', 'sparkle', 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })], [mgRange('Twinkle', 'audioHatTwinkle', 1)], [mgRange('Shake', 'audioHatShake', 1)], null, null, null],
     },
     {
       name: 'Bass',
       live: () => levelsNow().sub > 0.55,
       cells: [
-        null,
-        null,
-        null,
+        [mgRange('Throb', 'audioBassThrob', 2)],
+        [mgRange('Glow', 'audioBassGlow', 1)],
+        [mgRange('Breathe', 'audioBassZoom', 1)],
         [mgPick('Swell', 'audioSub', [['size', 'Size'], ['flow', 'Flow'], ['speed', 'Speed']], 'none', 'audioSubAmt', 2), mgRange('Sway', 'audioSway', 1)],
         null,
         null,
@@ -7958,7 +8007,7 @@ const MUSIC_GRID: MgGrid = {
     {
       name: 'Build-up',
       live: () => levelsNow().tension > 0.3,
-      cells: [[mgToggle('Pull in', 'audioDropBuild')], [mgToggle('Drain', 'audioMonoBuild')], [mgToggle('Dolly', 'audioDolly')], null, null, null],
+      cells: [[mgToggle('Pull in', 'audioDropBuild')], [mgToggle('Drain', 'audioMonoBuild')], [mgToggle('Dolly', 'audioDolly')], null, [mgRange('Scatter', 'audioBuildScatter', 1)], null],
     },
     {
       name: 'Drop',
@@ -7984,11 +8033,11 @@ const MUSIC_GRID: MgGrid = {
       name: 'Energy',
       live: () => levelsNow().liftLevel > 0.45,
       cells: [
-        null,
+        [mgRange('Tremble', 'audioEnergyShake', 1)],
         [mgRange('Bright', 'audioBright', 1), hueAmt('drift', 'Drift')],
         [mgRange('Pan', 'audioPan', 1), mgMode('Spin', 'audioSpin', 'energy', 'off', null), mgRange('Tunnel', 'audioTunnel', 1, { fine: ['audioTunnelTurn'] })],
         [mgRange('Speed', 'audioSpeed', 2), mgRange('Stir', 'audioFlow', 2), mgRange('Trails', 'audioTrailEnergy', 1), mgRange('Split', 'audioBands', 1)],
-        null,
+        [mgRange('Grow', 'audioEnergyWords', 1)],
         null,
       ],
     },
@@ -8209,7 +8258,10 @@ function renderMixGrid(which: 'music' | 'camera') {
     r.append(bar);
     row.cells.forEach((fl, ci) => {
       if (!fl) {
-        r.append(document.createElement('span'));
+        // Not a thing (a new look on every hi-hat would just be noise).
+        const none = document.createElement('span');
+        none.className = 'mg-none';
+        r.append(none);
         return;
       }
       const b = document.createElement('button');

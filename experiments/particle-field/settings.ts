@@ -261,6 +261,16 @@ export interface Settings {
   audioWordsEvery: 'bar' | '2bars' | '4bars' | 'drop';
   audioWordPulse: number;
   audioLetterHop: number;
+  audioSnareFlash: number;
+  audioSnareHop: number;
+  audioHatTwinkle: number;
+  audioHatShake: number;
+  audioBassThrob: number;
+  audioBassZoom: number;
+  audioBassGlow: number;
+  audioBuildScatter: number;
+  audioEnergyShake: number;
+  audioEnergyWords: number;
 }
 
 // Each palette is a list of [hue, saturation, lightness] stops from the
@@ -527,4 +537,14 @@ export const DEFAULTS: Settings = {
   audioWordsEvery: 'bar',
   audioWordPulse: 0,
   audioLetterHop: 0,
+  audioSnareFlash: 0,
+  audioSnareHop: 0,
+  audioHatTwinkle: 0,
+  audioHatShake: 0,
+  audioBassThrob: 0,
+  audioBassZoom: 0,
+  audioBassGlow: 0,
+  audioBuildScatter: 0,
+  audioEnergyShake: 0,
+  audioEnergyWords: 0,
 };

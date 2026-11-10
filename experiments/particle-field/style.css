@@ -1134,3 +1134,6 @@ body:not(.show-classic):not(.searching) .classic { display: none !important; }
   .mg-lrow .mg-name b { font-size: 12px; white-space: normal; line-height: 1.15; }
   .mg-menu { margin-left: 0; }
 }
+.mg-none { display: grid; place-items: center; height: 44px; }
+.mg-none::before { content: ""; width: 8px; height: 1.5px; border-radius: 1px; background: #2b2e36; }
+@container (max-width: 330px) { .mg-none { height: 34px; } }
