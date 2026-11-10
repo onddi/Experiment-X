@@ -232,6 +232,7 @@ export interface Settings {
   lensSplit: number;
   lensGlitch: number;
   lensDots: number;
+  lensMusic: number;
   audioKaleidoDrop: boolean;
   audioEcho: number;
   audioPalEvery: number;
@@ -486,6 +487,7 @@ export const DEFAULTS: Settings = {
   lensSplit: 0,
   lensGlitch: 0,
   lensDots: 0,
+  lensMusic: 0.6,
   audioKaleidoDrop: false,
   audioEcho: 0,
   audioPalEvery: 0,

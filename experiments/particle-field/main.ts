@@ -3614,7 +3614,7 @@ function kaleidoscope(seg: number) {
   kCtx.globalCompositeOperation = 'copy';
   kCtx.drawImage(canvas, 0, 0);
   const sl = (Math.PI * 2) / seg;
-  const base = (ch > cw ? Math.PI / 2 : 0) - sl / 2;
+  const base = (ch > cw ? Math.PI / 2 : 0) - sl / 2 + lm.turn;
   const R = Math.hypot(cw, ch);
   ctx.save();
   ctx.globalCompositeOperation = 'copy';
@@ -3654,8 +3654,41 @@ const splitBuf = document.createElement('canvas');
 const splitCtx = splitBuf.getContext('2d')!;
 const dotsSmall = document.createElement('canvas');
 const dotsSmallCtx = dotsSmall.getContext('2d')!;
-let dotsMask: { cell: number; pat: CanvasPattern } | null = null;
+const dotsMasks = new Map<string, CanvasPattern>();
 let lensJolt = 0; // colour split kick, 1 → 0
+// Lenses moving with the music ("Moves with the music" on the Lens card).
+const lm = { t: 0, kick: 0, zoom: 0, turn: 0, turnDir: 1, tilesStep: 0, mirrorStep: 0, bars: 0, sidesUntil: 0 };
+const MIRROR_CYCLE = ['lr', 'tb', 'quad'] as const;
+// Runs every frame before the kaleidoscope and the lens are drawn.
+function lensMusicTick(now: number) {
+  const S = settings;
+  const L = audio.levels;
+  const music = audio.source !== 'off';
+  const m = music ? S.lensMusic : 0;
+  const dt = lm.t ? Math.min(0.1, (now - lm.t) / 1000) : 0;
+  lm.t = now;
+  lm.kick = music && L.beat ? 1 : lm.kick * 0.85;
+  lensJolt = lm.kick;
+  // Infinite zoom: its own drift, surging forward on kicks and in a drop.
+  lm.zoom = (lm.zoom + dt * (S.lensZoom * 0.35 + m * (lm.kick * 1.4 + L.dropEnv * 1.5) * (S.lensZoom > 0 ? 1 : 0))) % 1;
+  // Kaleidoscope: turns with the bass, kicked along by the kick; a drop
+  // reverses it and adds two sides for two bars.
+  lm.turn += dt * m * lm.turnDir * (L.bass * 0.5 + lm.kick * 1.2);
+  if (m > 0 && L.drop) {
+    lm.turnDir = -lm.turnDir;
+    lm.sidesUntil = now + (480 / (L.bpm || 120)) * 1000;
+    lm.mirrorStep++;
+  }
+  // Tiles: step through counts every few bars.
+  if (m > 0 && L.bar && ++lm.bars % (m > 0.6 ? 2 : 4) === 0) lm.tilesStep++;
+  if (m === 0) lm.tilesStep = lm.mirrorStep = 0;
+}
+const tilesNow = () => (settings.lensTiles < 2 ? 0 : Math.round(settings.lensTiles) + [0, 1, 2, 1][lm.tilesStep % 4]);
+function mirrorNow() {
+  const base = settings.lensMirror;
+  if (base === 'off' || !lm.mirrorStep) return base;
+  return MIRROR_CYCLE[(MIRROR_CYCLE.indexOf(base) + lm.mirrorStep) % 3];
+}
 let glitchBands: { y: number; h: number; dx: number; until: number }[] = [];
 let glitchNext = 0;
 const lensOn = () => {
@@ -3697,10 +3730,11 @@ function lensFrame(now: number) {
   g.filter = 'none';
 
   // Mirror: one half (or quarter) reflected onto the rest.
-  if (S.lensMirror !== 'off') {
+  const mirror = mirrorNow();
+  if (mirror !== 'off') {
     const src = input();
-    const hx = S.lensMirror !== 'tb';
-    const hy = S.lensMirror !== 'lr';
+    const hx = mirror !== 'tb';
+    const hy = mirror !== 'lr';
     const qw = hx ? cw / 2 : cw;
     const qh = hy ? ch / 2 : ch;
     g.globalCompositeOperation = 'copy';
@@ -3719,7 +3753,7 @@ function lensFrame(now: number) {
   // Tiles: the frame shrunk into an n × n grid, every other tile mirrored.
   if (S.lensTiles >= 2) {
     const src = input();
-    const k = Math.round(S.lensTiles);
+    const k = tilesNow();
     const tw = cw / k;
     const th = ch / k;
     g.globalCompositeOperation = 'copy';
@@ -3740,7 +3774,7 @@ function lensFrame(now: number) {
   if (S.lensZoom > 0) {
     const src = input();
     const s = 0.6;
-    const phase = ((now / 1000) * S.lensZoom * 0.35) % 1;
+    const phase = lm.zoom;
     g.globalCompositeOperation = 'copy';
     g.fillStyle = bgCol;
     g.fillRect(0, 0, cw, ch);
@@ -3767,22 +3801,28 @@ function lensFrame(now: number) {
     dotsSmallCtx.imageSmoothingEnabled = true;
     dotsSmallCtx.globalCompositeOperation = 'copy';
     dotsSmallCtx.drawImage(src, 0, 0, cols, rows);
-    if (!dotsMask || dotsMask.cell !== cell) {
-      const m = document.createElement('canvas');
-      m.width = m.height = cell;
-      const mc = m.getContext('2d')!;
+    // Dots swell with the kick (a few cached sizes).
+    const swell = Math.round(lm.kick * S.lensMusic * 4);
+    const mk = `${cell}:${swell}`;
+    let pat = dotsMasks.get(mk);
+    if (!pat) {
+      const mc0 = document.createElement('canvas');
+      mc0.width = mc0.height = cell;
+      const mc = mc0.getContext('2d')!;
       mc.fillStyle = '#fff';
       mc.beginPath();
-      mc.arc(cell / 2, cell / 2, cell * 0.42, 0, Math.PI * 2);
+      mc.arc(cell / 2, cell / 2, cell * (0.38 + swell * 0.035), 0, Math.PI * 2);
       mc.fill();
-      dotsMask = { cell, pat: g.createPattern(m, 'repeat')! };
+      pat = g.createPattern(mc0, 'repeat')!;
+      if (dotsMasks.size > 40) dotsMasks.clear();
+      dotsMasks.set(mk, pat);
     }
     g.globalCompositeOperation = 'copy';
     g.imageSmoothingEnabled = false;
     g.drawImage(dotsSmall, 0, 0, cols * cell, rows * cell);
     g.imageSmoothingEnabled = true;
     g.globalCompositeOperation = 'destination-in';
-    g.fillStyle = dotsMask.pat;
+    g.fillStyle = pat;
     g.fillRect(0, 0, cw, ch);
     if (!seeThrough) {
       g.globalCompositeOperation = 'destination-over';
@@ -3792,11 +3832,9 @@ function lensFrame(now: number) {
   }
 
   // Colour split: red, green and blue drift apart, with a jolt on each kick.
-  if (music && L.beat) lensJolt = 1;
-  else lensJolt *= 0.88;
   if (S.lensSplit > 0) {
     const src = input();
-    const d = S.lensSplit * (6 + 14 * lensJolt) * dpr;
+    const d = S.lensSplit * (6 + 24 * S.lensMusic * lensJolt) * dpr;
     g.globalCompositeOperation = 'copy';
     g.fillStyle = seeThrough ? 'rgb(0 0 0 / 0)' : '#000';
     g.fillRect(0, 0, cw, ch);
@@ -3818,8 +3856,8 @@ function lensFrame(now: number) {
 
   // Glitch: bands of the picture jump sideways for a moment.
   if (S.lensGlitch > 0) {
-    const fire = music ? L.beat && Math.random() < 0.35 + S.lensGlitch * 0.5 : now > glitchNext;
-    if (fire || (music && L.drop)) {
+    const fire = music && S.lensMusic > 0 ? L.beat && Math.random() < (0.35 + S.lensGlitch * 0.5) * Math.min(1, S.lensMusic * 1.5) : now > glitchNext;
+    if (fire || (music && S.lensMusic > 0 && L.drop)) {
       glitchNext = now + 300 + Math.random() * (1800 - S.lensGlitch * 1400);
       const k = 1 + Math.round(Math.random() * S.lensGlitch * 7);
       for (let j = 0; j < k; j++)
@@ -4371,7 +4409,8 @@ function frame(now: number) {
     const t1 = performance.now();
     if (!held) {
       draw();
-      if (kaleidoNow >= 2) kaleidoscope(kaleidoNow);
+      lensMusicTick(now);
+      if (kaleidoNow >= 2) kaleidoscope(kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0));
       if (settings.mirrorWorld) mirrorHalf();
       lensFrame(now);
     }
@@ -4748,7 +4787,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
   { kind: 'section', id: 'lens', label: 'Lens', tab: 'look', about: 'Reshape the whole picture: kaleidoscope, mirror, tiles, infinite zoom, colour split, glitch, LED dots.',
-    lock: ['audioKaleido', 'audioKaleidoDrop', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots'],
+    lock: ['audioKaleido', 'audioKaleidoDrop', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic'],
     power: { on: () => settings.audioKaleido > 0 || settings.audioKaleidoDrop || lensOn(),
       off: { audioKaleido: 0, audioKaleidoDrop: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0 }, start: { audioKaleido: 6 } },
     summary: () => [settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.lensMirror !== 'off' ? 'mirror' : '', settings.lensTiles >= 2 ? `tiles ${settings.lensTiles}×${settings.lensTiles}` : '', settings.lensZoom > 0 ? 'infinite zoom' : '', settings.lensSplit > 0 ? 'colour split' : '', settings.lensGlitch > 0 ? 'glitch' : '', settings.lensDots > 0 ? 'LED dots' : ''].filter(Boolean).join(' · ') || 'off' },
@@ -4760,7 +4799,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'lensSplit', label: 'Colour split', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'lensGlitch', label: 'Glitch', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'lensDots', label: 'LED dots', min: 0, max: 24, step: 1, format: (v) => (v === 0 ? 'off' : `${v}px`) },
-  { kind: 'note', text: 'They stack, in this order. With music the colour split jolts on each kick and the glitch fires on beats and drops; without music the glitch picks its own moments. Every one can go on a knob (Play on the field).' },
+  { kind: 'range', key: 'lensMusic', label: 'Moves with the music', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. Without music the glitch picks its own moments. Every one can go on a knob (Play on the field).' },
 
   { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
@@ -5212,7 +5252,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
