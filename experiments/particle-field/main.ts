@@ -1533,7 +1533,7 @@ async function startCamera() {
     const ok = await cam.start();
     camStarting = false;
     if (!ok) {
-      showToast(cam.error);
+      showToast(cam.error === 'Camera permission was denied' ? 'Camera blocked. Allow it in the browser’s site settings (Safari: aA › Website Settings › Camera), then reload.' : cam.error);
       refresh();
       return;
     }
@@ -8435,7 +8435,7 @@ function renderMixGrid(which: 'music' | 'camera') {
         const pick = f.choice && f.get() > 0.02 ? f.choice.options.find(([o]) => o === f.choice!.get())?.[1] : '';
         return pick || f.label;
       };
-      const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => chipName(f), [f], key, () => f.put(0));
+      const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => chipName(f), [f], key, () => f.put(0), menu);
       let sig = '-';
       const build = () => {
         const items = [...fixed, ...linked()];
@@ -8521,8 +8521,10 @@ function renderMixGrid(which: 'music' | 'camera') {
     list.append(sens);
   }
 
-  function openDetail(sup: string, title: string | (() => string), fl: MgFlav[], key: string, remove?: () => void) {
+  // anchor: show the panel right under this (the list), not at the end.
+  function openDetail(sup: string, title: string | (() => string), fl: MgFlav[], key: string, remove?: () => void, anchor?: HTMLElement) {
     open = key;
+    if (anchor && anchor.nextSibling !== detail) anchor.after(detail);
     dDraws = [];
     detail.hidden = false;
     detail.innerHTML = '';
@@ -10536,6 +10538,23 @@ resize();
 refresh();
 presetFromUrl(true);
 playEntrance();
-if (camWanted() && !cam.on) void startCamera();
+// Safari refuses a camera asked for without a tap (and then keeps refusing
+// until a reload), so on load only start it straight away when it's already
+// allowed; otherwise wait for the first tap or key.
+syncLinks();
+if (camWanted() && !cam.on) {
+  const later = () => {
+    removeEventListener('pointerdown', later, true);
+    removeEventListener('keydown', later, true);
+    if (camWanted() && !cam.on) void startCamera();
+  };
+  const wait = () => {
+    addEventListener('pointerdown', later, true);
+    addEventListener('keydown', later, true);
+  };
+  const q = navigator.permissions?.query?.({ name: 'camera' as PermissionName });
+  if (q) q.then((st) => (st.state === 'granted' ? void startCamera() : wait()), wait);
+  else wait();
+}
 window.addEventListener('hashchange', () => presetFromUrl(false));
 requestAnimationFrame(frame);
