@@ -62,6 +62,8 @@ export interface Settings {
   flowSpeed: number;
   flowType: FlowType;
   flock: number;
+  /** New particles bud off existing ones instead of appearing anywhere. */
+  budding: boolean;
   flockSep: number;
   flockAlign: number;
   flockCohesion: number;
@@ -329,6 +331,7 @@ export const DEFAULTS: Settings = {
   flow: 0.3,
   flowType: 'waves',
   flock: 0,
+  budding: false,
   flockSep: 1,
   flockAlign: 1,
   flockCohesion: 1,

@@ -110,11 +110,53 @@ export const PRESETS: [string, Partial<Settings>][] = [
   ['Weather map', { count: 1400, size: 2.6, render: 'glyphs', glyphSet: 'arrows', glyphPick: 'heading', glyphChange: 'fixed', glyphFont: 'sans', glyphScale: 1, glyphRotate: 'none', wind: 0.25, windDir: 20, flow: 0.7, flowType: 'curl', flowScale: 0.0025, flowSpeed: 0.08, trail: 0, friction: 0.05, jitter: 0.01, palette: 'paper', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 200, force: 0.5, click: 'none' }],
 ];
 
+// --- Growth: "seed to tree" ---
+// One look that grows, stage by stage, from a handful of particles into
+// everything at once. Each stage adds to the last; newcomers bud off the
+// particles already there. The timeline set "Seed to tree" plays them in order.
+const LENS_OFF: Partial<Settings> = {
+  lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0,
+  lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioKaleido: 0,
+};
+const seed: Partial<Settings> = {
+  ...LENS_OFF, budding: true, count: 7, size: 2.6, sizeVar: 0.2, render: 'glow', shape: 'sunflower', shapeSize: 0.04, entrance: 'formed',
+  flow: 0.05, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.05, speed: 0.4, trail: 0.75, friction: 0.05, jitter: 0.03,
+  palette: 'gold', colorBy: 'palette', glow: false, pointerMode: 'attract', radius: 200, force: 0.3, click: 'ripple',
+};
+const sprout: Partial<Settings> = { ...seed, count: 40, size: 2, shapeSize: 0.12, jitter: 0.05, palette: 'desert', colorBy: 'radial' };
+const bud: Partial<Settings> = { ...sprout, count: 220, size: 1.6, render: 'sparkles', shapeSize: 0.34, flow: 0.15, trail: 0.8, glow: true, palette: 'desert' };
+const roots: Partial<Settings> = {
+  ...bud, count: 700, size: 1.4, render: 'streaks', shape: 'none', flow: 0.6, flowSpeed: 0.2, speed: 0.9, trail: 0.88,
+  jitter: 0.01, palette: 'forest', colorBy: 'direction', pointerMode: 'vortex', force: 0.6,
+};
+const branches: Partial<Settings> = {
+  ...roots, count: 1100, size: 1.6, render: 'ribbons', ribbonLen: 18, trail: 0, flow: 0.8, flowSpeed: 0.25,
+  flock: 0.6, flockAlign: 1, flockCohesion: 0.8, flockSep: 0.8, flockRange: 40, palette: 'tealorange',
+};
+const canopy: Partial<Settings> = {
+  ...branches, count: 2600, size: 1.6, render: 'sparkles', ribbonLen: 12, trail: 0.7, flock: 0, depth: 1, depthParallax: 1,
+  wells: '0.5,0.5,vortex', wellForce: 0.7, wellRange: 360, showWells: false, palette: 'aurora', colorBy: 'depth', click: 'shockwave',
+};
+const blossom: Partial<Settings> = {
+  ...canopy, count: 4500, size: 1.3, render: 'streaks', flow: 1.1, flowSpeed: 0.35, speed: 1.3, trail: 0.82, depth: 1.4,
+  wells: '0.5,0.5,vortex;0.3,0.35,attract;0.7,0.65,attract', wellForce: 1, palette: 'cosmic', colorBy: 'speed',
+  lensGlow: 0.45, lensTwirl: 0.25,
+};
+const extravaganza: Partial<Settings> = {
+  ...blossom, count: 7000, size: 1.5, render: 'mixed', mixStyles: 'sparkles,streaks,glow,comets', flow: 1.4, speed: 1.6,
+  trail: 0.8, depth: 1.8, depthParallax: 1.4, wellForce: 1.3, palette: 'neon', colorBy: 'cycle',
+  audioKaleido: 6, lensGlow: 0.7, lensTwirl: 0.4, lensEcho: 0.3, lensSplit: 0.25,
+};
+PRESETS.push(
+  ['Seed', seed], ['Sprout', sprout], ['Bud', bud], ['Roots', roots],
+  ['Branches', branches], ['Canopy', canopy], ['Blossom', blossom], ['Extravaganza', extravaganza],
+);
+
 // Preset families: each built around one engine feature (see the proposal doc).
-export type Family = 'all' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+export type Family = 'all' | 'growth' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 export const FAMILIES: [Family, string][] = [
   ['all', 'All'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
-  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'],
+  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['growth', 'Growth'],
 ];
 export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
@@ -128,6 +170,7 @@ for (const [fam, names] of [
   ['forces', 'Riverstones, Windbreak, Orbit, Black hole, Slalom, Wind tunnel'],
   ['space', 'Deep space, Galaxy, Comet shower, Bokeh, Constellation, Warp speed, Nebula'],
   ['symbols', 'ASCII, Compass, Digital rain, Runes, Weather map'],
+  ['growth', 'Seed, Sprout, Bud, Roots, Branches, Canopy, Blossom, Extravaganza'],
 ] as [Family, string][]) for (const n of names.split(', ')) FAMILY_OF[n] = fam;
 
 // Vibes: how the music moves the particles. They only set the reaction

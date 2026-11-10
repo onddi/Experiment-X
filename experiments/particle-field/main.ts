@@ -98,7 +98,11 @@ let paused = false;
 let dpr = 1;
 
 // The particle count with the Density macro applied.
-const countNow = () => Math.max(50, Math.min(10000, Math.round((settings.count * densityK) / 10) * 10));
+const countNow = () => {
+  const c = settings.count * densityK;
+  // Small counts stay exact (a seed of 7); larger ones move in tens.
+  return Math.max(3, Math.min(10000, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
+};
 function ensureCount(want = countNow()) {
   if (want > cap) {
     const grow = (a: Float32Array) => {
@@ -111,7 +115,7 @@ function ensureCount(want = countNow()) {
   }
   // With a shape on, newcomers appear beside an existing particle, so they
   // join the formation instead of flying in from anywhere on screen.
-  const near = settings.shape !== 'none' && n > 0 ? n : 0;
+  const near = (settings.shape !== 'none' || settings.budding) && n > 0 ? n : 0;
   for (let i = n; i < want; i++) {
     if (near) {
       const j = (Math.random() * near) | 0;
@@ -5991,6 +5995,7 @@ const clip = (name: string, bars: number, how: TlHow): TlClip => ({ name, bars, 
 const TL_SETS: [string, TlClip[]][] = [
   ['Chill', [clip('Silk', 8, 'slow'), clip('Pond', 8, 'slow'), clip('Northern lights', 8, 'morph'), clip('Nebula', 8, 'slow')]],
   ['Club', [clip('Galaxy', 4, 'cut'), clip('Fireworks', 4, 'drop'), clip('Warp speed', 4, 'cut'), clip('Shatter', 4, 'drop'), clip('Black hole', 8, 'morph'), clip('Neon storm', 4, 'cut')]],
+  ['Seed to tree', [clip('Seed', 8, 'slow'), clip('Sprout', 4, 'morph'), clip('Bud', 4, 'morph'), clip('Roots', 8, 'slow'), clip('Branches', 8, 'morph'), clip('Canopy', 8, 'morph'), clip('Blossom', 8, 'morph'), clip('Extravaganza', 16, 'drop')]],
   ['Journey', [clip('Deep space', 8, 'slow'), clip('Galaxy', 8, 'morph'), clip('Black hole', 4, 'drop'), clip('Mandala', 8, 'morph'), clip('Pollen', 8, 'slow')]],
 ];
 const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', hold: true, held: {}, ...readJson<Partial<Timeline>>(TL_KEY, {}) };
@@ -6577,7 +6582,7 @@ function tickMorph(now: number, beat: boolean) {
   intKeys ??= new Set(CONTROLS.flatMap((c) => (c.kind === 'range' && Number.isInteger(c.step) && c.step >= 1 ? [c.key as string] : [])));
   for (const k in m.to) if (intKeys.has(k)) S[k] = Math.round(S[k]);
   if ('count' in m.to) {
-    S.count = Math.round(S.count / 10) * 10;
+    S.count = S.count < 100 ? Math.round(S.count) : Math.round(S.count / 10) * 10;
     n = Math.min(n, countNow());
     ensureCount();
   }
