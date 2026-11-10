@@ -7929,7 +7929,7 @@ type MgFlav = {
   fixed?: () => boolean;
 };
 // src: a Connections input; its connections show as reactions in the list too.
-type MgRow = { name: string; when?: string; group?: string; src?: string; level?: () => number; live?: () => boolean; cells: (MgFlav[] | null)[] };
+type MgRow = { name: string; when?: string; group?: string; src?: string; level?: () => number; hi?: number; live?: () => boolean; cells: (MgFlav[] | null)[] };
 // list: draw as "When you… → …the particles" rows instead of a matrix (for sparse grids).
 // chips: one row of effects with no trigger (a card full of off-by-default effects); cols are the groups.
 type MgGrid = { cols: string[]; rows: MgRow[]; list?: boolean; chips?: boolean };
@@ -8035,6 +8035,7 @@ const MUSIC_GRID: MgGrid = {
     {
       name: 'Kick',
       live: () => lit('kick', levelsNow().beat),
+      level: () => clamp01(levelsNow().pulse),
       cells: [
         [
           mgKick('pulse', 'Pulse', 'audioPulse', 2),
@@ -8050,6 +8051,7 @@ const MUSIC_GRID: MgGrid = {
     {
       name: 'Snare',
       live: () => lit('snare', levelsNow().snare),
+      level: () => clamp01(levelsNow().snareEnv),
       cells: [
         [mgPick('Hit', 'audioSnare', [['swirl', 'Swirl'], ['wave', 'Ripple'], ['flash', 'Flash']], 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })],
         [mgRange('Flash', 'audioSnareFlash', 1)],
@@ -8067,6 +8069,8 @@ const MUSIC_GRID: MgGrid = {
     {
       name: 'Bass',
       live: () => levelsNow().sub > 0.55,
+      level: () => clamp01(levelsNow().sub),
+      hi: 0.55,
       cells: [
         [mgRange('Throb', 'audioBassThrob', 2)],
         [mgRange('Glow', 'audioBassGlow', 1)],
@@ -8106,11 +8110,15 @@ const MUSIC_GRID: MgGrid = {
     {
       name: 'Build-up',
       live: () => levelsNow().tension > 0.3,
+      level: () => levelsNow().tension,
+      hi: 0.3,
       cells: [[mgToggle('Pull in', 'audioDropBuild')], [mgToggle('Drain', 'audioMonoBuild')], [mgToggle('Dolly', 'audioDolly')], null, [mgRange('Scatter', 'audioBuildScatter', 1)], null],
     },
     {
       name: 'Drop',
       live: () => levelsNow().dropEnv > 0.25,
+      level: () => levelsNow().dropEnv,
+      hi: 0.25,
       cells: [
         [mgRange('Burst', 'audioDrop', 2)],
         [mgToggle('Invert', 'audioInvert'), hueAmt('drop', 'Shift')],
@@ -8130,7 +8138,9 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Energy',
-      live: () => levelsNow().liftLevel > 0.45,
+      live: () => levelsNow().liftLevel > 0.3,
+      level: () => clamp01(levelsNow().liftLevel),
+      hi: 0.3,
       cells: [
         [mgRange('Tremble', 'audioEnergyShake', 1)],
         [mgRange('Bright', 'audioBright', 1), hueAmt('drift', 'Drift')],
@@ -8449,7 +8459,23 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
     name.innerHTML = '<i></i><b></b>';
     name.querySelector('b')!.textContent = row.name;
     r.append(name);
-    if (row.live) lives.push([r, row.live]);
+    if (row.level) {
+      // How close it is to firing: a small meter with the mark it fires at.
+      const lvl = row.level;
+      const meter = document.createElement('em');
+      meter.className = 'mg-meter';
+      meter.innerHTML = '<u></u>';
+      if (row.hi) meter.style.setProperty('--hi', `${row.hi * 100}%`);
+      else meter.classList.add('nohi');
+      name.classList.add('has-meter');
+      name.append(meter);
+      const u = meter.querySelector('u')!;
+      const on = row.live;
+      lives.push([r, () => {
+        u.style.width = `${Math.round(lvl() * 100)}%`;
+        return on ? on() : lvl() > (row.hi ?? 0.5);
+      }]);
+    } else if (row.live) lives.push([r, row.live]);
     const bar = document.createElement('div');
     bar.className = 'mg-bar';
     bar.innerHTML = '<i></i><span></span><b></b>';

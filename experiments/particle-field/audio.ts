@@ -141,6 +141,8 @@ export class AudioInput {
   private onsets = { kick: new Onset(), snare: new Onset(), hat: new Onset() };
   private kickTimes: number[] = []; // kick and snare hit times, for tempo
   private lastKick = 0;
+  private kickHits: number[] = []; // full kicks in the last 2 s
+  private kickAvg = 0; // typical kick strength, so bass notes don't count as the kick coming back
   private lastFrame = 0;
   private slow = { fast: 0, slow: 0 }; // ~1 s and ~4 s loudness averages
   private snareTimes: number[] = [];
@@ -314,7 +316,11 @@ export class AudioInput {
       while (this.kickTimes.length && now - this.kickTimes[0] > 8000) this.kickTimes.shift();
       L.bpm = estimateBpm(this.kickTimes, tu.bpm);
     }
-    this.structure(now, kick > 0, snare > 0);
+    // A build-up is when the kick drops out; a rolling bass line still fires
+    // weak onsets in the kick band, so only full-strength kicks count here.
+    const fullKick = kick > 0 && kick >= this.kickAvg * 0.6 && kickSig > band(BANDS.snare) * 2;
+    if (fullKick) this.kickAvg = this.kickAvg ? this.kickAvg * 0.9 + kick * 0.1 : kick;
+    this.structure(now, fullKick, snare > 0);
   }
 
   // Build-ups, drops and bars.
@@ -327,15 +333,20 @@ export class AudioInput {
     if (snare) this.snareTimes.push(now);
     while (this.snareTimes.length && now - this.snareTimes[0] > 2000) this.snareTimes.shift();
 
-    const away = this.lastKick > 0 && now - this.lastKick > 1800; // kick has dropped out
+    if (kick) this.kickHits.push(now);
+    while (this.kickHits.length && now - this.kickHits[0] > 2000) this.kickHits.shift();
+    // The kick has dropped out: at most one stray hit in the last 2 s (a bass
+    // note or a fill shouldn't cancel a build-up).
+    const away = this.lastKick > 0 && this.kickHits.length <= 1;
     const rising = this.slow.fast > this.slow.slow + 0.02;
     const roll = this.snareTimes.length >= 6; // snare roll: lots of hits in 2 s
     const audible = L.level > 0.05;
-    if (audible && (away || roll)) L.tension = Math.min(1, L.tension + dt * (0.1 + (rising ? 0.2 : 0) + (roll ? 0.15 : 0)));
+    if (audible && (away || roll)) L.tension = Math.min(1, L.tension + dt * (0.15 + (rising ? 0.2 : 0) + (roll ? 0.15 : 0)));
     else if (!away) L.tension = Math.max(0, L.tension - dt * 0.4);
 
     if (kick) {
-      if ((away || roll) && L.tension > 0.25) {
+      // The kick coming back after a build-up (this hit and at most one stray before it).
+      if ((this.kickHits.length <= 2 || roll) && L.tension > 0.4) {
         L.drop = true;
         L.dropEnv = 1;
         L.tension = 0;

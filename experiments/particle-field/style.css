@@ -1175,3 +1175,6 @@ body:not(.searching):not(.show-classic) .group[data-sec="lens"] .group-body > :n
 .mg-chips + .mg-menu { margin-left: 0; max-height: 320px; overflow-y: auto; }
 .group.off[data-sec="lens"]:not(.closed) .group-body { display: block; }
 .mg-mgroup { margin: 6px 8px 2px; font: 600 10px/1 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #7d808a; }
+.mg-name.has-meter { display: grid; grid-template-columns: 7px minmax(0, 1fr); column-gap: 6px; row-gap: 4px; align-items: center; }
+.mg-name.has-meter .mg-meter { grid-column: 2; margin-left: 0; max-width: 56px; }
+.mg-row.live .mg-meter u { background: #f0a36b; }
