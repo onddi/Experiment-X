@@ -12900,7 +12900,7 @@ toggle.addEventListener('click', () => {
   if (!collapsed) document.body.classList.remove('watching');
   if (sheetMode()) applySheet();
   if (collapsed) {
-    panel.classList.remove('picking', 'more');
+    panel.classList.remove('picking', 'more', 'finding');
     document.getElementById('sheet-title')?.setAttribute('aria-expanded', 'false');
   }
   // The floating shuffle button only shows while the drawer is closed.
@@ -12984,6 +12984,7 @@ xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapse
 // ⌘K / Ctrl+K (or /) finds any setting: opens the panel and the search field.
 function focusSearch() {
   if (panel.classList.contains('collapsed')) toggle.click();
+  if (sheetMode() && !panel.classList.contains('finding')) document.getElementById('sheet-find')!.click();
   const input = document.querySelector<HTMLInputElement>('.search input');
   input?.focus();
   input?.select();
