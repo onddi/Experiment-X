@@ -11547,6 +11547,24 @@ function toggleDebug() {
   };
   window.addEventListener('pointerdown', wake, { capture: true, passive: true });
   wake();
+  // Desktop: one faint shuffle icon in the corner, so you can roll a new look
+  // without opening the panel. Barely there; it hides when the mouse rests.
+  const desk = document.createElement('button');
+  desk.type = 'button';
+  desk.className = 'desk-shuffle';
+  desk.title = 'Shuffle (D)';
+  desk.setAttribute('aria-label', 'Shuffle');
+  desk.innerHTML = ICONS.shuffle;
+  desk.addEventListener('click', () => shuffle());
+  fab.after(desk);
+  let rest = 0;
+  window.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    desk.classList.remove('rest');
+    clearTimeout(rest);
+    rest = window.setTimeout(() => desk.classList.add('rest'), 2500);
+  }, { passive: true });
+  desk.classList.add('rest');
 }
 document.body.classList.add('panel-open');
 new ResizeObserver(() => resize()).observe(canvas);

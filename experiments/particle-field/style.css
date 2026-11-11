@@ -405,6 +405,35 @@ button:hover, select:hover { border-color: #3c3f46; }
   .hint { padding: 0 64px; line-height: 1.5; }
 }
 
+/* Desktop: a faint shuffle icon in the bottom-right corner. */
+.desk-shuffle {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  display: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #fff;
+  opacity: 0.16;
+  cursor: pointer;
+  transition: opacity 0.6s, transform 0.15s;
+}
+.desk-shuffle svg { width: 18px; height: 18px; }
+.desk-shuffle:hover { opacity: 0.7; transition-duration: 0.15s; }
+.desk-shuffle:active { transform: scale(0.88); }
+.desk-shuffle:focus-visible { opacity: 0.7; outline: 1px solid rgb(255 255 255 / 0.4); }
+.desk-shuffle.rest:not(:hover):not(:focus-visible) { opacity: 0; }
+@media (hover: hover) and (min-width: 721px) {
+  .desk-shuffle { display: grid; }
+  body.panel-open .desk-shuffle { display: none; }
+}
+
 .swatches { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .swatches input[type='color'], .row input[type='color'] {
   width: 32px;
