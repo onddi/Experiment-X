@@ -793,7 +793,7 @@ body.no-input .cam-preview { display: none; }
 .searching .group.hit:not(.all) :is(.note, h3) { display: none; }
 .searching .group .more-body { border-top: none; }
 body.searching .tabs button.on { background: none; color: var(--muted); border-color: var(--line); }
-body.searching .tabs.pages { display: none; }
+body.searching :is(.tabs.pages, .react-sub, .fold-all, .tab-power) { display: none !important; }
 /* The switch already says off; leave the room for the title. */
 .group.off:has(.power) .group-summary { display: none; }
 
