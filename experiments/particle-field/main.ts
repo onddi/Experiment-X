@@ -12701,15 +12701,15 @@ function syncFieldKnobs() {
 }
 refreshers.push(syncFieldKnobs);
 syncFieldKnobs();
-// Phones: one bar along the bottom, the same in Watch: Overview, Menu,
-// Shuffle and the knob pill. Tap the pill and it fills the bar: drag across
+// Phones: one bar along the bottom: Overview, Scenes, Menu, Shuffle and
+// the knob pill. Tap the pill and it fills the bar: drag across
 // it to turn the knob, swipe up or down for the next knob, tap a
 // choice's ‹ › to step or its middle for the list; ✕ folds it back.
 const mbar = document.createElement('div');
 mbar.className = 'm-bar';
 const MENU_ICON = svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
 const KNOB_ICON = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l3.5-3.5"/>');
-mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
+mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
@@ -12720,6 +12720,11 @@ mbar.querySelector('.mb-menu')!.addEventListener('click', () => {
   if (panel.classList.contains('collapsed')) toggle.click();
 });
 mbar.querySelector('.mb-shuffle')!.addEventListener('click', () => shuffle());
+mbar.querySelector('.mb-scenes')!.addEventListener('click', () => {
+  if (panel.classList.contains('collapsed')) toggle.click();
+  if (currentTab !== 'presets') showTab('presets');
+  controls.scrollTop = 0;
+});
 // The bar shows only when you tap near the bottom edge (playing with the
 // particles elsewhere leaves the field clean), and hides again when left be.
 let mbarTimer = 0;
