@@ -774,7 +774,7 @@ body.no-input .cam-preview { display: none; }
 .tab-heading.other-tab { display: none; }
 
 .prow { display: flex; align-items: center; gap: 4px; }
-.prow[hidden] { display: none; }
+.prow[hidden], #panel [hidden] { display: none !important; }
 .prow > .row { flex: 1; min-width: 0; }
 .pin {
   flex: none;
