@@ -7758,7 +7758,25 @@ let tlBarSec = 2;
 let tlShownAt = 0; // when the ring last popped up
 let tlRedraw: (() => void) | null = null; // the card's list, when drawn
 let tlProgress: ((frac: number) => void) | null = null;
-let lastSceneName = ''; // the built-in scene playing, for "Add this scene"
+// The built-in scene playing, for "Add this scene" and so a scene change or
+// shuffle knows what that scene switched on (kept across reloads).
+const SCENE_NAME_KEY = 'particle-field:scene-name';
+let lastSceneName = (() => {
+  try {
+    return localStorage.getItem(SCENE_NAME_KEY) ?? '';
+  } catch {
+    return '';
+  }
+})();
+const keepSceneName = () => {
+  try {
+    localStorage.setItem(SCENE_NAME_KEY, lastSceneName);
+  } catch {
+    /* not kept */
+  }
+};
+addEventListener('pagehide', keepSceneName);
+document.addEventListener('visibilitychange', () => document.hidden && keepSceneName());
 
 // Options (tempo, ring, …) don't touch the list: redrawing it under a click
 // that blurred the tempo box would swallow the click.
@@ -12249,6 +12267,7 @@ function remixCheck() {
     } else remixRetries = 0;
   }, 1400);
 }
+const SCENE_INPUT_KEYS = ['maskFx', 'gaze', 'obstacles', 'camMode', 'camMirror', 'camCentre', 'camRate', 'camMix', 'camSnap', 'camDepth', 'camPreview', 'camHands', 'camHandReach', 'camHandForce', 'gestOn', 'voice', 'poseOn', 'poseSweep', 'twoDist', 'twoAngle', 'links'] as const;
 function shuffle(again?: unknown) {
   // (A click hands its event in: only a re-roll passes true.)
   const retry = again === true;
@@ -12256,6 +12275,24 @@ function shuffle(again?: unknown) {
   const { patch, used } = rollRemix();
   const keys = new Set<keyof Settings>();
   const S = settings as unknown as Record<string, unknown>;
+  // Like a scene change: inputs and music reactions the last scene switched
+  // on (camera, preview, hands, body, links…) end with it, unless you changed them.
+  const prev = currentMine?.settings ?? PRESETS.find(([n]) => n === lastSceneName)?.[1] ?? null;
+  if (prev) {
+    const P = upgradeShape(prev) as Record<string, unknown>;
+    const D = DEFAULTS as unknown as Record<string, unknown>;
+    const locked = new Set<string>(lockedKeys());
+    for (const k of [...SCENE_INPUT_KEYS, ...MUSIC_KEYS]) {
+      if (k in patch || locked.has(k) || !(k in P) || P[k] === D[k] || S[k] !== P[k]) continue;
+      S[k] = D[k];
+      keys.add(k as keyof Settings);
+    }
+  }
+  lastSceneName = '';
+  if (currentMine) {
+    currentMine = null;
+    redrawMine();
+  }
   for (const [k, v] of Object.entries(patch)) {
     if (S[k] !== v) {
       S[k] = v;
@@ -12456,6 +12493,7 @@ function presetFromUrl(first: boolean) {
     settings.beatSnap = beatSnap;
   } else apply(p, false);
   lastPresetFamily = built && !mine ? (FAMILY_OF[built[0]] ?? null) : null;
+  if (built && !mine) lastSceneName = built[0];
   if (mine) {
     currentMine = mine;
     redrawMine();
