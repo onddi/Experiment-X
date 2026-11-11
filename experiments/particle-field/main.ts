@@ -5527,7 +5527,7 @@ const INTENTS: [Intent, string, Tab[]][] = [
 ];
 const intentOf = (tab: Tab) => (INTENTS.find(([, , tabs]) => tabs.includes(tab)) ?? INTENTS[INTENTS.length - 1])[0];
 // Cards that sit on their own page rather than the tab they were written for.
-const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', record: 'record', links: 'links' };
+const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', record: 'record', links: 'links' };
 const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
 // A card that can be switched off: `off` is what switching off sets, `start`
 // what switching on sets the first time (later it restores what you had).
@@ -5924,8 +5924,8 @@ const CONTROLS: Control[] = [
     Object.assign(settings, { mEnergy: 0.5, mOrder: 0.5, mDream: 0.5, mHeat: 0.5, mDensity: 0.5 });
     changed(new Set(['mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity']));
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
-  { kind: 'section', id: 'play', label: 'Field knobs & gestures', tab: 'presets',
-    about: 'Knobs along the bottom edge (up to eight from each scene), two-finger drag and pinch, and the mouse wheel: turn settings with the menu closed.',
+  { kind: 'section', id: 'play', label: 'Field knobs', tab: 'presets',
+    about: 'Knobs along the bottom edge (up to eight from each scene) and the mouse wheel: turn settings with the menu closed.',
     summary: () => (!settings.playOn ? 'off' : knobPicks().length ? `your ${knobPicks().length} picked knobs${knobPicks().some(knobLive) ? '' : ' (none in this scene)'}` : settings.knobsFollow && settings.knobsScene ? 'the scene\'s knobs' : (knobSetName() ?? 'own mix')),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
   { kind: 'note', text: 'You picked these knobs yourself (the knob button on an overview setting), so they stay put through every scene and shuffle. Clear them to let each scene and shuffle bring its own again.', show: () => knobPicks().length > 0 },
@@ -5943,9 +5943,19 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'playWheel5', label: 'Knob E', options: PLAYABLE },
   { kind: 'knobsmore' },
   { kind: 'note', text: 'Knobs A–E (and any you add) sit along the bottom of the field, left to right: slide a thumb up or right over one to turn it up (down or left turns it down), or hover the bottom edge to see them all. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D, ⌥ + wheel = E (Ctrl or Alt on Windows).' },
+  { kind: 'section', about: 'What your finger, two fingers and the mouse do on the field.', id: 'pointer', label: 'Touch & gestures', tab: 'presets', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
+    power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
+    summary: () => [hasPointer() ? label(POINTER_MODES, settings.pointerMode) : '', hasClick() ? label(CLICK_MODES, settings.click).replace(' (hold)', '') : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'sub', label: 'One finger (or the mouse)' },
+  { kind: 'select', key: 'pointerMode', label: 'Drag / hover', options: POINTER_MODES },
+  { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px`, show: hasPointer },
+  { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasPointer },
+  { kind: 'select', key: 'click', label: 'Hold / click', options: CLICK_MODES },
+  { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
   { kind: 'sub', label: 'Two fingers' },
   { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
+  { kind: 'note', text: 'A quick sideways swipe plays the previous or next scene. Tap near the bottom edge for the bar.' },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -6145,15 +6155,6 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
-
-  { kind: 'section', about: 'How particles react to your pointer and clicks.', id: 'pointer', label: 'Pointer & click', tab: 'motion', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
-    power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
-    summary: () => [hasPointer() ? label(POINTER_MODES, settings.pointerMode) : '', hasClick() ? label(CLICK_MODES, settings.click).replace(' (hold)', '') : ''].filter(Boolean).join(' · ') || 'off' },
-  { kind: 'select', key: 'pointerMode', label: 'On hover', options: POINTER_MODES },
-  { kind: 'range', key: 'radius', label: 'Radius', min: 20, max: 400, step: 5, format: (v) => `${v}px`, show: hasPointer },
-  { kind: 'range', key: 'force', label: 'Force', min: 0.05, max: 2, step: 0.05, format: (v) => v.toFixed(2), show: hasPointer },
-  { kind: 'select', key: 'click', label: 'On click', options: CLICK_MODES },
-  { kind: 'range', key: 'clickForce', label: 'Strength', min: 0.2, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasClick },
 
   { kind: 'section', id: 'audio', label: 'Sound source', tab: 'music', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : ` · ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
   { kind: 'audio' },
@@ -8646,7 +8647,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   forces: ['gravity', 'wind', 'windDir'],
   swarm: ['flock', 'space'],
   obstacles: ['obstacles', 'obsText', 'obsShow', 'obsForce'],
-  pointer: ['pointerMode', 'click', 'radius'],
+  pointer: ['pointerMode', 'click', 'radius', 'playTwo', 'playPinch'],
   drums: ['audioKick', 'audioPulse', 'audioSpeed'],
   mcolour: ['audioHue', 'audioHueAmt', 'audioBright'],
   camera: ['audioCam', 'audioSpin', 'audioCuts'],
@@ -12094,7 +12095,7 @@ function remixCards(): RemixCard[] {
   let cur: RemixCard | null = null;
   for (const c of CONTROLS) {
     if (c.kind === 'section') {
-      cur = c.tab && REMIX_TABS.includes(c.tab) ? { id: c.id, keys: [], ctls: new Map(), power: c.power, lockKeys: (c.lock ?? []) as string[], donors: [] } : null;
+      cur = c.tab && (REMIX_TABS.includes(c.tab) || c.id === 'pointer') ? { id: c.id, keys: [], ctls: new Map(), power: c.power, lockKeys: (c.lock ?? []) as string[], donors: [] } : null;
       if (cur) cards.push(cur);
       continue;
     }
