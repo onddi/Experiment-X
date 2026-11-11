@@ -145,6 +145,21 @@ export interface Settings {
   /** The knobs follow the scene (its own knobs) instead of your set. */
   knobsFollow: boolean;
   shapeSize: number;
+  /** Where the shape sits: offset from the centre as a share of the screen. */
+  shapeX: number;
+  shapeY: number;
+  /** The shape's angle on screen, in degrees. */
+  shapeAngle: number;
+  /** 3D shapes: tilt towards you and which way they face, in degrees. */
+  shapeTilt: number;
+  shapeFacing: number;
+  /** The whole picture (projection fit): offset, zoom, rotation and mirroring. Not part of scenes. */
+  viewX: number;
+  viewY: number;
+  viewZoom: number;
+  viewRot: number;
+  viewFlipH: boolean;
+  viewFlipV: boolean;
   homeStrength: number;
   shapeCycle: number;
   entrance: 'drift' | 'formed' | 'centre' | 'sweep' | 'rain' | 'edges' | 'scatter';
@@ -460,6 +475,17 @@ export const DEFAULTS: Settings = {
   knobsScene: '',
   knobsFollow: true,
   shapeSize: 0.8,
+  shapeX: 0,
+  shapeY: 0,
+  shapeAngle: 0,
+  shapeTilt: 0,
+  shapeFacing: 0,
+  viewX: 0,
+  viewY: 0,
+  viewZoom: 1,
+  viewRot: 0,
+  viewFlipH: false,
+  viewFlipV: false,
   homeStrength: 1,
   shapeCycle: 0,
   entrance: 'drift',

@@ -111,6 +111,25 @@ let span = new Float32Array(0); // this particle's lifetime in frames (Lifespan 
 let rnd = new Float32Array(0); // a random 0..1 drawn at birth (size variety)
 let psz = new Float32Array(0); // per-particle size multiplier, worked out each frame
 let hx = new Float32Array(0); // home position (Shape section)
+// Shape placement: homes are built about the screen centre; the spring
+// aims at them moved and turned by the shape's position and angle.
+const place = { on: false, cx: 0, cy: 0, ox: 0, oy: 0, c: 1, s: 0 };
+function placeFrame() {
+  const S = settings;
+  place.on = S.shapeX !== 0 || S.shapeY !== 0 || S.shapeAngle !== 0;
+  place.cx = w / 2;
+  place.cy = h / 2;
+  place.ox = S.shapeX * w;
+  place.oy = S.shapeY * h;
+  const a = (S.shapeAngle * Math.PI) / 180;
+  place.c = Math.cos(a);
+  place.s = Math.sin(a);
+}
+function placed(x: number, y: number): [number, number] {
+  const dx = x - place.cx;
+  const dy = y - place.cy;
+  return [place.cx + place.ox + dx * place.c - dy * place.s, place.cy + place.oy + dx * place.s + dy * place.c];
+}
 let hy = new Float32Array(0);
 let pz = new Float32Array(0); // depth: 0 far, 1 near
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
@@ -1010,6 +1029,7 @@ function step(dt: number) {
   const faceLive = settings.shape === 'camera' && trackMode();
   const homeDamp = homeK > 0 ? Math.min(faceLive ? 0.5 : 0.2, homeK * (faceLive ? 7 : 12)) : 0;
   const cxW = w / 2;
+  placeFrame();
   const cyH = h / 2;
   // While an entrance plays, particles follow their gliding spot closely, then
   // the grip eases off over a second to the normal spring.
@@ -1098,8 +1118,9 @@ function step(dt: number) {
       // Spring towards the home position, with a little extra damping so it
       // settles instead of wobbling forever.
       // Word pulse scales the target about the centre with the kick.
-      const tx = wordScale === 1 ? hx[i] : cxW + (hx[i] - cxW) * wordScale;
-      const ty = wordScale === 1 ? hy[i] : cyH + (hy[i] - cyH) * wordScale;
+      let tx = wordScale === 1 ? hx[i] : cxW + (hx[i] - cxW) * wordScale;
+      let ty = wordScale === 1 ? hy[i] : cyH + (hy[i] - cyH) * wordScale;
+      if (place.on) [tx, ty] = placed(tx, ty);
       ax += (tx - px[i]) * homeK - vx[i] * homeDamp;
       ay += (ty - py[i]) * homeK - vy[i] * homeDamp;
       // Letter hop: one letter (a slice of the shape) jumps on each kick.
@@ -1114,8 +1135,9 @@ function step(dt: number) {
       }
     }
     if (entK > 0) {
-      ax += ((hx[i] - px[i]) * 0.06 - vx[i] * 0.4) * entK;
-      ay += ((hy[i] - py[i]) * 0.06 - vy[i] * 0.4) * entK;
+      const [ex, ey] = place.on ? placed(hx[i], hy[i]) : [hx[i], hy[i]];
+      ax += ((ex - px[i]) * 0.06 - vx[i] * 0.4) * entK;
+      ay += ((ey - py[i]) * 0.06 - vy[i] * 0.4) * entK;
     }
     if (windX !== 0 || windY !== 0) {
       ax += windX;
@@ -3005,8 +3027,9 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
     out[2] = -1;
   } else if (kind === 'solid') {
     const [x0, y0, z0] = solidPoint(S.shapeSolid, u, v);
-    const yaw = shapeT * (0.15 + S.shapeSpin * 0.9);
-    const pitch = 0.45 + 0.2 * Math.sin(t * 0.3);
+    // Turning at 0 holds it still, facing where you set it.
+    const yaw = (S.shapeSpin > 0 ? shapeT * (0.15 + S.shapeSpin * 0.9) : 0) + (S.shapeFacing * Math.PI) / 180;
+    const pitch = 0.45 + (S.shapeSpin > 0 ? 0.2 * Math.sin(t * 0.3) : 0) + (S.shapeTilt * Math.PI) / 180;
     const cyw = Math.cos(yaw);
     const syw = Math.sin(yaw);
     const x1 = x0 * cyw + z0 * syw;
@@ -3154,6 +3177,7 @@ const DRAW_KEY = 'particle-field:drawing';
 let drawStrokes: number[][] = readJson<number[][]>(DRAW_KEY, []);
 let drawVersion = 0;
 let drawMode = false;
+let arranging = false; // the Arrange overlay is up (Shape placement by hand)
 let drawCur: number[] | null = null;
 let drawLastBuild = 0;
 function saveDrawing() {
@@ -3395,9 +3419,9 @@ function playEntrance() {
   const sy = new Float32Array(n);
   const dl = new Float32Array(n);
   const rand01 = Math.random;
+  placeFrame();
   for (let i = 0; i < n; i++) {
-    const tx = hx[i];
-    const ty = hy[i];
+    const [tx, ty] = place.on ? placed(hx[i], hy[i]) : [hx[i], hy[i]];
     let x = tx;
     let y = ty;
     let d = 0;
@@ -5527,7 +5551,18 @@ const INTENTS: [Intent, string, Tab[]][] = [
 ];
 const intentOf = (tab: Tab) => (INTENTS.find(([, , tabs]) => tabs.includes(tab)) ?? INTENTS[INTENTS.length - 1])[0];
 // Cards that sit on their own page rather than the tab they were written for.
-const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', record: 'record', links: 'links' };
+const signedPct = (v: number) => (v === 0 ? 'centre' : `${v > 0 ? '+' : '−'}${Math.round(Math.abs(v) * 100)}%`);
+const VIEW_KEYS = ['viewX', 'viewY', 'viewZoom', 'viewRot', 'viewFlipH', 'viewFlipV'] as const;
+const viewIsPlain = () => !settings.viewX && !settings.viewY && settings.viewZoom === 1 && !settings.viewRot && !settings.viewFlipH && !settings.viewFlipV;
+function resetView() {
+  for (const k of VIEW_KEYS) (settings as unknown as Record<string, unknown>)[k] = DEFAULTS[k];
+  changed(new Set<keyof Settings>(VIEW_KEYS));
+}
+function resetPlacement() {
+  Object.assign(settings, { shapeX: 0, shapeY: 0, shapeAngle: 0, shapeTilt: 0, shapeFacing: 0 });
+  changed(new Set<keyof Settings>(['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing']));
+}
+const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', links: 'links' };
 const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
 // A card that can be switched off: `off` is what switching off sets, `start`
 // what switching on sets the first time (later it restores what you had).
@@ -5968,6 +6003,17 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Music inputs need a sound source (Music tab).', show: () => linkNeed.audio && audio.source === 'off' },
   { kind: 'note', text: 'Face, hands and body inputs start the camera by themselves.', show: () => linkNeed.face || linkNeed.hands || linkNeed.pose },
 
+  { kind: 'section', id: 'view', label: 'Screen fit', tab: 'presets',
+    about: 'Fit the whole picture to a projector or another surface: move, zoom, turn or mirror it. It stays as you set it through every scene.',
+    summary: () => (viewIsPlain() ? 'as is' : [settings.viewZoom !== 1 ? `${Math.round(settings.viewZoom * 100)}%` : '', settings.viewRot ? `${settings.viewRot}°` : '', settings.viewFlipH || settings.viewFlipV ? 'mirrored' : '', settings.viewX || settings.viewY ? 'moved' : ''].filter(Boolean).join(' · ')) },
+  { kind: 'range', key: 'viewX', label: 'Move ←→', min: -0.5, max: 0.5, step: 0.005, format: signedPct },
+  { kind: 'range', key: 'viewY', label: 'Move ↑↓', min: -0.5, max: 0.5, step: 0.005, format: signedPct },
+  { kind: 'range', key: 'viewZoom', label: 'Zoom', min: 0.3, max: 3, step: 0.01, format: (v) => `${Math.round(v * 100)}%` },
+  { kind: 'range', key: 'viewRot', label: 'Turn', min: -180, max: 180, step: 0.5, format: (v) => `${v}°` },
+  { kind: 'toggle', key: 'viewFlipH', label: 'Mirror left ↔ right (rear projection)' },
+  { kind: 'toggle', key: 'viewFlipV', label: 'Flip upside down (ceiling mount)' },
+  { kind: 'buttons', buttons: [['Reset the fit', resetView]], show: () => !viewIsPlain() },
+  { kind: 'note', text: 'The projector window, recordings and this screen all show the same fit.' },
   { kind: 'section', id: 'record', label: 'Record a clip', tab: 'presets',
     about: 'A video of the field to save or share: the picture and, if you like, the sound.',
     summary: () => (recorder.on ? 'recording' : recorder.clip ? 'clip ready' : RECORD_LENGTHS.find(([v]) => Number(v) === recorder.prefs.secs)![1]) },
@@ -6034,7 +6080,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -6064,6 +6110,12 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
+  { kind: 'range', key: 'shapeX', label: 'Position ←→', min: -0.5, max: 0.5, step: 0.01, format: signedPct, show: hasShape },
+  { kind: 'range', key: 'shapeY', label: 'Position ↑↓', min: -0.5, max: 0.5, step: 0.01, format: signedPct, show: hasShape },
+  { kind: 'range', key: 'shapeAngle', label: 'Angle', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: hasShape },
+  { kind: 'range', key: 'shapeTilt', label: 'Tilt', min: -60, max: 60, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
+  { kind: 'buttons', buttons: [['Arrange on the field', () => toggleArrange()], ['Centre it', resetPlacement]], active: (t) => t === 'Arrange on the field' && arranging, show: hasShape },
   { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
   { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && !isCam() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
   { kind: 'buttons', buttons: [['Play entrance', () => playEntrance()]], show: () => hasShape() && !isCam() && settings.entrance !== 'scatter' },
@@ -6606,7 +6658,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 // you play, your on-screen knobs and locked cards.
 function blankTarget(): Settings {
   const S0 = settings as unknown as Record<string, unknown>;
-  const keep = ['morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'playTwo', 'playPinch'];
+  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'playTwo', 'playPinch'];
   const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
   for (const k of lockedKeys()) target[k] = S0[k];
   return target as unknown as Settings;
@@ -6639,6 +6691,8 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   for (const k of MUSIC_KEYS) if (keepAudio && !(k in p) && fromScene(k)) (target as unknown as Record<string, unknown>)[k] = D[k];
   // Locked cards keep what they have, whichever scene loads.
   for (const k of lockedKeys()) (target as unknown as Record<string, unknown>)[k] = settings[k];
+  // The screen fit belongs to the room, not the scene.
+  for (const k of VIEW_KEYS) (target as unknown as Record<string, unknown>)[k] = settings[k];
   // Tweaks held by the timeline stay for the rest of the set.
   if (tlActive() && tl.hold) Object.assign(target, tl.held);
   return target;
@@ -6932,6 +6986,11 @@ function musicVisuals(now: number) {
   let transform = '';
   if (Math.abs(scale - 1) > 0.0005 || tx || ty || Math.abs(rollAll) > 0.01 || flipS < 0) {
     transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${rollAll.toFixed(2)}deg) scale(${(scale * flipS).toFixed(3)}, ${scale.toFixed(3)})`;
+  }
+  // Screen fit (projection) wraps whatever the music camera does.
+  if (!viewIsPlain()) {
+    const fit = `translate(${(S.viewX * w).toFixed(1)}px, ${(S.viewY * h).toFixed(1)}px) rotate(${S.viewRot}deg) scale(${(S.viewZoom * (S.viewFlipH ? -1 : 1)).toFixed(3)}, ${(S.viewZoom * (S.viewFlipV ? -1 : 1)).toFixed(3)})`;
+    transform = transform ? `${fit} ${transform}` : fit;
   }
   if (transform !== lastTransform) canvas.style.transform = lastTransform = transform;
 
@@ -7727,7 +7786,7 @@ function wordStory(text: string): TlClip[] {
 }
 const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', hold: true, held: {}, ...readJson<Partial<Timeline>>(TL_KEY, {}) };
 // Not held: they already carry over, or belong to the timeline itself.
-const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
+const TL_NO_HOLD = new Set<string>([...VIEW_KEYS, 'links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
 let tlChips: (() => void) | null = null;
 // A change you make while the timeline plays sticks for the rest of the set.
 function tlHold(keys: Iterable<keyof Settings>) {
@@ -13045,7 +13104,7 @@ function uCrossfade() {
 const PAGES_ICON = svg('<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/>');
 const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ['Knobs', KNOB_ICON, openKnobPill]],
+  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : [])],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''], ['Shuffle', ICONS.shuffle, () => shuffle(), 'primary']],
   studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], ['Pages', PAGES_ICON, () => {
     document.body.classList.toggle('u-pages');
@@ -13055,7 +13114,7 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
 let uSig = '';
 function uPaint(force = false) {
   const v = uView();
-  const sig = `${v}|${xf.on}|${document.body.classList.contains('u-pages')}`;
+  const sig = `${v}|${xf.on}|${document.body.classList.contains("u-pages")}|${hasShape()}`;
   if (sig === uSig && !force) return;
   uSig = sig;
   ubar.classList.remove('stage', 'deck', 'studio');
@@ -13083,6 +13142,126 @@ function uPaint(force = false) {
 ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-v]');
   if (b) uGo(b.dataset.v as UView);
+});
+// Arrange: move, turn and resize the shape by hand on the field. One finger
+// (or the mouse) moves it; two fingers twist to turn and pinch to resize; on
+// a 3D shape, Turn 3D makes one finger orbit it instead. The wheel resizes
+// (Shift + wheel turns). Double-tap centres it. Done (or Esc) leaves.
+let arrangeEl: HTMLElement | null = null;
+function toggleArrange(on = !arranging) {
+  if (on === arranging) return;
+  arranging = on;
+  document.body.classList.toggle('arranging', on);
+  if (!on) {
+    arrangeEl?.remove();
+    arrangeEl = null;
+    refresh();
+    return;
+  }
+  if (!hasShape()) {
+    settings.shape = 'geo';
+    changed(new Set<keyof Settings>(['shape']));
+  }
+  closeOverview();
+  if (sheetMode() && !panel.classList.contains('collapsed')) toggle.click();
+  const el = document.createElement('div');
+  el.className = 'arrange';
+  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on">Move</button><button type="button" data-m="orbit">Turn 3D</button></span><button type="button" class="ar-centre">Centre</button><button type="button" class="ar-done">Done</button></div>`;
+  document.body.append(el);
+  arrangeEl = el;
+  let mode: 'move' | 'orbit' = 'move';
+  const hint = el.querySelector<HTMLElement>('.ar-hint')!;
+  const paint = () => {
+    const solid = settings.shape === 'solid';
+    el.querySelector<HTMLElement>('.ar-modes')!.hidden = !solid;
+    if (!solid) mode = 'move';
+    el.querySelectorAll<HTMLButtonElement>('.ar-modes button').forEach((b) => b.classList.toggle('on', b.dataset.m === mode));
+    hint.textContent = mode === 'orbit' ? 'Drag to turn it in 3D' : matchMedia('(pointer: coarse)').matches ? 'Drag to move · twist to turn · pinch to resize' : 'Drag to move · wheel resizes · Shift + wheel turns';
+  };
+  paint();
+  el.querySelector('.ar-modes')!.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-m]');
+    if (b) { mode = b.dataset.m as 'move' | 'orbit'; paint(); }
+  });
+  el.querySelector('.ar-centre')!.addEventListener('click', resetPlacement);
+  el.querySelector('.ar-done')!.addEventListener('click', () => toggleArrange(false));
+  // Changes go out once a frame (a new size rebuilds the shape).
+  const pend = new Set<keyof Settings>();
+  let raf = 0;
+  const put = (k: keyof Settings, v: number) => {
+    (settings as unknown as Record<string, number>)[k] = v;
+    pend.add(k);
+    raf ||= requestAnimationFrame(() => {
+      raf = 0;
+      changed(new Set(pend));
+      pend.clear();
+    });
+  };
+  const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+  const snapAngle = (a: number) => {
+    a = ((((a + 180) % 360) + 360) % 360) - 180;
+    const near = Math.round(a / 15) * 15;
+    return Math.round(Math.abs(a - near) < 3 ? near : a);
+  };
+  const pts = new Map<number, { x: number; y: number }>();
+  let start: { x: number; y: number; ang: number; dist: number; sx: number; sy: number; a: number; size: number; tilt: number; face: number } | null = null;
+  const geo = () => {
+    const [p1, p2] = [...pts.values()];
+    if (!p2) return { x: p1.x, y: p1.y, ang: 0, dist: 1 };
+    return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2, ang: Math.atan2(p2.y - p1.y, p2.x - p1.x), dist: Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1 };
+  };
+  const begin = () => {
+    const g = geo();
+    const S = settings;
+    start = { ...g, sx: S.shapeX, sy: S.shapeY, a: S.shapeAngle, size: S.shapeSize, tilt: S.shapeTilt, face: S.shapeFacing };
+  };
+  let lastTap = 0;
+  el.addEventListener('pointerdown', (e) => {
+    if ((e.target as HTMLElement).closest('.ar-bar')) return;
+    el.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    begin();
+    if (pts.size === 1) {
+      const now = performance.now();
+      if (now - lastTap < 300) resetPlacement();
+      lastTap = now;
+    }
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId) || !start) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = geo();
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    if (pts.size === 1 && mode === 'orbit') {
+      put('shapeFacing', Math.round(clamp(start.face + (g.x - start.x) * 0.5, -180, 180)));
+      put('shapeTilt', Math.round(clamp(start.tilt - (g.y - start.y) * 0.3, -60, 60)));
+      return;
+    }
+    put('shapeX', +clamp(start.sx + (g.x - start.x) / W, -0.5, 0.5).toFixed(3));
+    put('shapeY', +clamp(start.sy + (g.y - start.y) / H, -0.5, 0.5).toFixed(3));
+    if (pts.size >= 2) {
+      put('shapeAngle', snapAngle(start.a + ((g.ang - start.ang) * 180) / Math.PI));
+      put('shapeSize', +clamp(start.size * (g.dist / start.dist), 0.2, 1).toFixed(2));
+    }
+  });
+  const up = (e: PointerEvent) => {
+    pts.delete(e.pointerId);
+    if (pts.size) begin();
+    else start = null;
+  };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const S = settings;
+    if (e.shiftKey) put('shapeAngle', snapAngle(S.shapeAngle + Math.sign(e.deltaY || e.deltaX) * 5));
+    else put('shapeSize', +clamp(S.shapeSize * Math.exp(-e.deltaY * 0.0015), 0.2, 1).toFixed(2));
+  }, { passive: false });
+  refresh();
+}
+addEventListener('keydown', (e) => {
+  if (arranging && e.key === 'Escape') toggleArrange(false);
 });
 // (After the module has set everything up: the panel comes later in the file.)
 setTimeout(() => {
