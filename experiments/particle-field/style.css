@@ -1755,3 +1755,27 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 .solo-sheet .ov-fader-row span:first-child { grid-area: a; }
 .solo-sheet .ov-fader-row span:last-child { grid-area: b; }
 .solo-sheet .ov-fader-row .ov-fader { grid-area: f; height: 44px; }
+
+/* Field knobs: any number along the bottom; the overview can pick them. */
+.play-row { max-width: min(100%, calc(132px * var(--n, 5))); }
+.play-row.many .knob { width: 72px; margin-left: -36px; }
+.play-row.many .knob svg { width: 46px; height: 46px; }
+.knob b.word { font-size: 10px; max-width: 46px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.knob span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.knobs-more { display: flex; flex-direction: column; gap: 6px; }
+.km-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 32px; align-items: center; gap: 8px; font-size: 12.5px; color: var(--label); }
+.knobs-more select { width: 100%; min-width: 0; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--tile); color: var(--text); font: inherit; font-size: 12.5px; padding: 0 8px; }
+.km-row button { height: 32px; border: 0; border-radius: 8px; background: var(--tile); color: var(--muted); cursor: pointer; }
+.km-row button:hover { color: var(--text); }
+.km-add { color: var(--accent-soft) !important; }
+.tuner-fk { white-space: nowrap; }
+.tuner-fk.on { color: var(--accent-soft) !important; border-color: var(--accent) !important; }
+.solo-sheet .tuner-fk { flex: none; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--label); font: inherit; font-size: 13px; }
+.ov-picknote { display: none; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--accent-bg); color: var(--accent-soft); font-size: 12.5px; }
+.picking-knobs .ov-picknote { display: block; }
+.ov-pickknobs.on { color: var(--on-accent); background: var(--accent); }
+.picking-knobs :is(.rack-knob, .rack-row)[data-key] { cursor: copy; outline: 1px dashed rgba(154, 168, 255, 0.35); outline-offset: -1px; }
+.picking-knobs :is(.rack-knob, .rack-row)[data-key] * { pointer-events: none; }
+.picking-knobs :is(.rack-knob, .rack-row)[data-key].fk { outline: 2px solid var(--accent); }
+:is(.rack-knob, .rack-row).fk { position: relative; }
+:is(.rack-knob, .rack-row).fk::after { content: ''; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); pointer-events: none; }

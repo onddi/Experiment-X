@@ -136,6 +136,8 @@ export interface Settings {
   playWheel3: string;
   playWheel4: string;
   playWheel5: string;
+  /** Field knobs beyond A–E: setting keys, comma-separated. */
+  knobsMore: string;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -447,6 +449,7 @@ export const DEFAULTS: Settings = {
   playWheel3: 'mOrder',
   playWheel4: 'mHeat',
   playWheel5: 'mDensity',
+  knobsMore: '',
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,

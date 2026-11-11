@@ -5530,6 +5530,7 @@ type ControlBody =
   | { kind: 'timeline' }
   | { kind: 'record' }
   | { kind: 'xfader' }
+  | { kind: 'knobsmore' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'rapmeters' }
@@ -5923,7 +5924,8 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'playWheel4', label: 'Knob C', options: PLAYABLE },
   { kind: 'select', key: 'playRight', label: 'Knob D', options: PLAYABLE },
   { kind: 'select', key: 'playWheel5', label: 'Knob E', options: PLAYABLE },
-  { kind: 'note', text: 'Knobs A–E sit along the bottom of the field, left to right: slide a thumb up or right over one to turn it up (down or left turns it down), or hover the bottom edge to see them all. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D, ⌥ + wheel = E (Ctrl or Alt on Windows).' },
+  { kind: 'knobsmore' },
+  { kind: 'note', text: 'Knobs A–E (and any you add) sit along the bottom of the field, left to right: slide a thumb up or right over one to turn it up (down or left turns it down), or hover the bottom edge to see them all. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D, ⌥ + wheel = E (Ctrl or Alt on Windows).' },
   { kind: 'sub', label: 'Two fingers' },
   { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
@@ -6576,7 +6578,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean): Settings {
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -7263,6 +7265,50 @@ function libraryGroups(sel: HTMLSelectElement) {
   }
 }
 
+// Field knobs past A–E: each with its setting and ✕, and a picker to add one.
+function renderKnobsMore() {
+  const box = document.createElement('div');
+  box.className = 'knobs-more';
+  let sig = '-';
+  const pick = (value: string, onChange: (v: string) => void, first?: string) => {
+    const sel = document.createElement('select');
+    if (first) sel.add(new Option(first, ''));
+    for (const [k, t] of PLAYABLE) if (k) sel.add(new Option(t, k));
+    sel.value = value;
+    sel.addEventListener('change', () => onChange(sel.value));
+    return sel;
+  };
+  const set = (list: string[]) => {
+    settings.knobsMore = list.filter(Boolean).join(',');
+    if (settings.knobsMore) settings.playOn = true;
+    changed(new Set<keyof Settings>(['knobsMore', 'playOn']));
+  };
+  const build = () => {
+    if (sig === settings.knobsMore) return;
+    sig = settings.knobsMore;
+    box.textContent = '';
+    const list = settings.knobsMore.split(',').filter(Boolean);
+    list.forEach((key, i) => {
+      const row = document.createElement('div');
+      row.className = 'km-row';
+      const name = document.createElement('span');
+      name.textContent = `Knob ${String.fromCharCode(70 + i)}`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '✕';
+      del.setAttribute('aria-label', `Remove knob ${String.fromCharCode(70 + i)}`);
+      del.addEventListener('click', () => set(list.filter((_, j) => j !== i)));
+      row.append(name, pick(key, (v) => set(list.map((k, j) => (j === i ? v : k)))), del);
+      box.append(row);
+    });
+    const add = pick('', (v) => v && set([...list, v]), '+ Add a knob…');
+    add.className = 'km-add';
+    box.append(add);
+  };
+  build();
+  refreshers.push(() => box.isConnected && build());
+  return box;
+}
 function renderXfader() {
   const box = document.createElement('div');
   box.className = 'xfader';
@@ -7626,7 +7672,7 @@ function wordStory(text: string): TlClip[] {
 }
 const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', hold: true, held: {}, ...readJson<Partial<Timeline>>(TL_KEY, {}) };
 // Not held: they already carry over, or belong to the timeline itself.
-const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
+const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
 let tlChips: (() => void) | null = null;
 // A change you make while the timeline plays sticks for the rest of the set.
 function tlHold(keys: Iterable<keyof Settings>) {
@@ -10487,6 +10533,10 @@ function renderControls() {
       searchItem(body, renderXfader());
       continue;
     }
+    if (ctl.kind === 'knobsmore') {
+      searchItem(body, renderKnobsMore(), 'field knobs more add knob');
+      continue;
+    }
 
     if (ctl.kind === 'presetlib') {
       searchItem(body, renderPresetLibrary());
@@ -11105,6 +11155,8 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
   rackTimer = window.setInterval(() => {
     if (!wrap.isConnected) return clearInterval(rackTimer);
     for (const u of updaters) u();
+    // Settings that are field knobs wear a small dot.
+    for (const e of wrap.querySelectorAll<HTMLElement>('[data-key]')) e.classList.toggle('fk', isFieldKnob(e.dataset.key!));
   }, 150);
   return wrap;
 }
@@ -11112,6 +11164,7 @@ const RACK_RING = 94.25; // 270° of a 20-radius circle
 function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-knob';
+  el.dataset.key = c.key;
   el.innerHTML = `<svg viewBox="0 0 52 52" aria-hidden="true"><circle class="bg" cx="26" cy="26" r="20" stroke-dasharray="${RACK_RING} 200" transform="rotate(135 26 26)"/><circle class="val" cx="26" cy="26" r="20" stroke-dasharray="0 200" transform="rotate(135 26 26)"/><circle class="home" r="2.5"/></svg><b></b><em class="rack-bar" aria-hidden="true"><i></i><u></u></em><span></span>`;
   el.tabIndex = 0;
   el.setAttribute('role', 'slider');
@@ -11211,6 +11264,7 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   el.className = 'tuner';
   el.innerHTML = `<div class="tuner-head"><b></b><output></output><button type="button" class="tuner-home">Scene value</button><button type="button" class="tuner-close" aria-label="Done">✕</button></div><div class="tuner-track"><input type="range"><i aria-hidden="true"></i></div>`;
   el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
+  el.querySelector('.tuner-close')!.before(fieldKnobButton(c.key));
   const out = el.querySelector('output')!;
   const input = el.querySelector('input')!;
   const mark = el.querySelector<HTMLElement>('.tuner-track i')!;
@@ -11261,12 +11315,32 @@ function exitSolo() {
   r.parent.insertBefore(r.el, r.next && r.next.parentNode === r.parent ? r.next : null);
   r.sheet.remove();
 }
+// Make the setting a field knob, or take it off (single-setting view).
+function fieldKnobButton(key: string) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'tuner-fk';
+  const show = () => {
+    const on = isFieldKnob(key);
+    b.textContent = on ? '✓ Field knob' : '+ Field knob';
+    b.classList.toggle('on', on);
+    b.title = on ? 'Take it off the field knobs' : 'Keep it as a knob on the field';
+  };
+  show();
+  b.addEventListener('click', () => {
+    const on = toggleFieldKnob(key);
+    show();
+    showToast(on ? 'Added to the field knobs' : 'Taken off the field knobs');
+  });
+  return b;
+}
 function soloRowOpen(row: HTMLElement, update: () => void) {
   closeTuner();
   const sheet = document.createElement('div');
   sheet.className = 'tuner solo-sheet';
   sheet.innerHTML = '<button type="button" class="tuner-close" aria-label="Done">✕</button>';
   sheet.querySelector('.tuner-close')!.addEventListener('click', exitSolo);
+  if (row.dataset.key) sheet.querySelector('.tuner-close')!.before(fieldKnobButton(row.dataset.key));
   soloRow = { el: row, parent: row.parentNode!, next: row.nextSibling, sheet };
   sheet.prepend(row);
   document.body.append(sheet);
@@ -11352,6 +11426,7 @@ function rackText(c: Extract<Control, { kind: 'text' }>, src: RackSrc) {
 function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, home: () => unknown, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-row';
+  if (c.kind !== 'toggle') el.dataset.key = c.key;
   const name = document.createElement('span');
   name.textContent = c.label;
   const out = document.createElement('b');
@@ -11451,6 +11526,7 @@ function xfRackSrc(side: 'a' | 'b'): RackSrc {
   };
 }
 
+let ovPickKnobs = false;
 type OvDensity = 'strips' | 'roomy' | 'compact' | 'dense';
 const OV_DENSITIES: [OvDensity, string][] = [['strips', 'Strips'], ['compact', 'Compact'], ['dense', 'Dense'], ['roomy', 'Roomy']];
 const OV_DENSITY_KEY = 'particle-field:ov-density';
@@ -11597,6 +11673,45 @@ function openOverview() {
     showToast(OV_DENSITIES.find(([k]) => k === ovDensity)![1]);
   });
   (head.querySelector('.ov-xfstart') ?? head.querySelector('.ov-close')!).before(dens);
+  // Pick field knobs: while on, a tap on a slider or choice adds it as a knob
+  // on the field (or takes it off) instead of turning it.
+  const pickK = document.createElement('button');
+  pickK.type = 'button';
+  pickK.className = 'icon ov-pickknobs';
+  pickK.innerHTML = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l4.2-4.2"/>');
+  const pickNote = document.createElement('p');
+  pickNote.className = 'ov-picknote';
+  pickNote.textContent = 'Tap sliders and choices to make them field knobs; tap again to take one off. The knob icon finishes.';
+  const showPick = () => {
+    el.classList.toggle('picking-knobs', ovPickKnobs);
+    pickK.classList.toggle('on', ovPickKnobs);
+    pickK.title = ovPickKnobs ? 'Done picking field knobs' : 'Pick field knobs';
+    pickK.setAttribute('aria-label', pickK.title);
+    pickK.setAttribute('aria-pressed', String(ovPickKnobs));
+  };
+  showPick();
+  pickK.addEventListener('click', () => {
+    ovPickKnobs = !ovPickKnobs;
+    showPick();
+    if (!ovPickKnobs) {
+      const n = fieldKnobKeys().filter((k) => knobSpec(k)).length;
+      showToast(n ? `${n} field knob${n > 1 ? 's' : ''}: close the menu to play them` : 'No field knobs');
+    }
+  });
+  dens.before(pickK);
+  body.prepend(pickNote);
+  const pickTarget = (e: Event) => (ovPickKnobs ? (e.target as HTMLElement).closest<HTMLElement>('.rack-knob[data-key], .rack-row[data-key]') : null);
+  body.addEventListener('pointerdown', (e) => {
+    if (pickTarget(e)) e.stopPropagation();
+  }, true);
+  body.addEventListener('click', (e) => {
+    const t = pickTarget(e);
+    if (!t) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const on = toggleFieldKnob(t.dataset.key!);
+    t.classList.toggle('fk', on);
+  }, true);
   // Phones: the overview fills the screen; Watch hides every menu, All
   // settings opens the tabs, ⇄ starts or stops a crossfade.
   const foot = document.createElement('div');
@@ -12198,46 +12313,114 @@ function reset() {
 // makes a value jump.
 function fillPlayable() {
   let sec = '';
+  PLAYABLE.push(['', '— none —']);
   for (const c of CONTROLS) {
     if (c.kind === 'section') sec = c.label;
-    else if (c.kind === 'range') PLAYABLE.push([c.key, `${sec} · ${c.label}`]);
+    else if (c.kind === 'range' || ((c.kind === 'select' || c.kind === 'choice') && c.options.length > 1)) PLAYABLE.push([c.key, `${sec} · ${c.label}`]);
   }
 }
 fillPlayable();
 const rangeOf = (key: string) => CONTROLS.find((c): c is Extract<Control, { kind: 'range' }> => c.kind === 'range' && c.key === key);
+// A field knob works on a number: a slider's value, or a choice's place in
+// its list (turning steps through the options).
+type KnobSpec = { key: keyof Settings; label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => boolean; text: (v: number) => string };
+function knobSpec(key: string): KnobSpec | null {
+  const c = CONTROLS.find((x) => (x.kind === 'range' || x.kind === 'select' || x.kind === 'choice') && x.key === key);
+  if (!c) return null;
+  const S = settings as unknown as Record<string, unknown>;
+  if (c.kind === 'range')
+    return {
+      key: c.key, label: c.label, min: c.min, max: c.max, step: c.step,
+      get: () => settings[c.key] as number,
+      set: (raw) => {
+        const v = Number((Math.round(raw / c.step) * c.step).toFixed(6));
+        if (S[c.key] === v) return false;
+        S[c.key] = v;
+        return true;
+      },
+      text: (v) => `${Math.round(((v - c.min) / (c.max - c.min)) * 100)}%`,
+    };
+  if (c.kind !== 'select' && c.kind !== 'choice') return null;
+  const opts = c.options;
+  return {
+    key: c.key, label: c.label, min: 0, max: Math.max(1, opts.length - 1), step: 1,
+    get: () => Math.max(0, opts.findIndex(([k]) => k === S[c.key])),
+    set: (raw) => {
+      const v = opts[Math.max(0, Math.min(opts.length - 1, Math.round(raw)))][0];
+      if (S[c.key] === v) return false;
+      S[c.key] = v;
+      return true;
+    },
+    text: (v) => opts[Math.max(0, Math.min(opts.length - 1, Math.round(v)))][1].replace(/ \(.*\)$/, ''),
+  };
+}
 const stage = document.querySelector<HTMLElement>('.stage')!;
-// Knobs A–D sit in a row along the bottom, left to right. Each has a touch
-// zone (slide up/down) and a wheel combo; its 0–100% ring shows while you
-// play it, then fades away. Two-finger drag and pinch get a knob of their own.
-type KnobAt = 'a' | 'b' | 'c' | 'd' | 'e' | 'centre';
-const KNOB_KEYS: [KnobAt, 'playLeft' | 'playWheel3' | 'playWheel4' | 'playRight' | 'playWheel5'][] = [['a', 'playLeft'], ['b', 'playWheel3'], ['c', 'playWheel4'], ['d', 'playRight'], ['e', 'playWheel5']];
+// Field knobs sit in a row along the bottom, left to right: A–E (each with a
+// wheel combo) and any extra ones after them. Each has a touch zone (drag up
+// or right to turn it up); its ring shows while you play it, then fades.
+// Two-finger drag and pinch get a knob of their own in the middle.
+const KNOB_KEYS: ['playLeft' | 'playWheel3' | 'playWheel4' | 'playRight' | 'playWheel5', number][] = [['playLeft', 0], ['playWheel3', 1], ['playWheel4', 2], ['playRight', 3], ['playWheel5', 4]];
+/** Every field knob's setting, in row order (A–E, then the extra ones). */
+function fieldKnobKeys(): string[] {
+  return [...KNOB_KEYS.map(([sk]) => settings[sk] as string), ...settings.knobsMore.split(',').filter(Boolean)];
+}
+function isFieldKnob(key: string) {
+  return !!key && fieldKnobKeys().includes(key);
+}
+/** Add a setting as a field knob (the first free of A–E, else at the end), or take it off. */
+function toggleFieldKnob(key: string) {
+  const S = settings as unknown as Record<string, string>;
+  const touched = new Set<keyof Settings>(['knobsMore', 'playOn']);
+  if (isFieldKnob(key)) {
+    for (const [sk] of KNOB_KEYS) if (S[sk] === key) (S[sk] = ''), touched.add(sk);
+    settings.knobsMore = settings.knobsMore.split(',').filter((k) => k && k !== key).join(',');
+  } else {
+    // Knobs were off: start a fresh set with this one, not the old A–E.
+    if (!settings.playOn) {
+      for (const [sk] of KNOB_KEYS) (S[sk] = ''), touched.add(sk);
+      settings.knobsMore = '';
+    }
+    const free = KNOB_KEYS.find(([sk]) => !S[sk] || !knobSpec(S[sk]));
+    if (free) (S[free[0]] = key), touched.add(free[0]);
+    else settings.knobsMore = [...settings.knobsMore.split(',').filter(Boolean), key].join(',');
+    settings.playOn = true;
+  }
+  changed(touched);
+  return isFieldKnob(key);
+}
 const RING = 2 * Math.PI * 26;
-const knobs = {} as Record<KnobAt, { el: HTMLElement; arc: SVGCircleElement; pct: HTMLElement; name: HTMLElement; timer: number }>;
+type KnobEl = { el: HTMLElement; arc: SVGCircleElement; pct: HTMLElement; name: HTMLElement; timer: number };
+const knobs = new Map<string, KnobEl>();
+const makeKnob = (id: string) => {
+  const el = document.createElement('div');
+  el.className = `knob ${id}`;
+  el.innerHTML = `<span></span><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="26"/><circle class="arc" cx="32" cy="32" r="26" stroke-dasharray="${RING.toFixed(2)}" transform="rotate(-90 32 32)"/></svg><b></b>`;
+  const k: KnobEl = { el, arc: el.querySelector('.arc')!, pct: el.querySelector('b')!, name: el.querySelector('span')!, timer: 0 };
+  knobs.set(id, k);
+  return k;
+};
 const playRow = document.createElement('div');
 playRow.className = 'play-row';
 stage.append(playRow);
-for (const at of ['a', 'b', 'c', 'd', 'e', 'centre'] as const) {
-  const el = document.createElement('div');
-  el.className = `knob ${at}`;
-  el.innerHTML = `<span></span><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="track" cx="32" cy="32" r="26"/><circle class="arc" cx="32" cy="32" r="26" stroke-dasharray="${RING.toFixed(2)}" transform="rotate(-90 32 32)"/></svg><b></b>`;
-  knobs[at] = { el, arc: el.querySelector('.arc')!, pct: el.querySelector('b')!, name: el.querySelector('span')!, timer: 0 };
-  if (at === 'centre') stage.append(el);
-}
-// Draw a knob's ring, % and name (without showing it).
-function playPaint(at: KnobAt, key: string) {
-  const r = rangeOf(key);
-  if (!r) return false;
-  const k = knobs[at];
-  const share = (playBase(key) - r.min) / (r.max - r.min);
+stage.append(makeKnob('centre').el);
+// Draw a knob's ring, value and name (without showing it).
+function playPaint(id: string, key: string) {
+  const r = knobSpec(key);
+  const k = knobs.get(id);
+  if (!r || !k) return false;
+  const v = playBase(key);
+  const share = (v - r.min) / (r.max - r.min);
   k.arc.style.strokeDashoffset = (RING * (1 - share)).toFixed(2);
-  k.pct.textContent = `${Math.round(share * 100)}%`;
+  k.pct.textContent = r.text(v);
+  k.pct.classList.toggle('word', r.step === 1 && r.min === 0 && !rangeOf(key));
   k.name.textContent = r.label;
   return true;
 }
 function playShow(key: string) {
-  const at: KnobAt = KNOB_KEYS.find(([, sk]) => settings[sk] === key)?.[0] ?? 'centre';
-  if (!playPaint(at, key)) return;
-  const k = knobs[at];
+  const i = fieldKnobKeys().indexOf(key);
+  const id = i >= 0 && playing() ? `k${i}` : 'centre';
+  if (!playPaint(id, key)) return;
+  const k = knobs.get(id)!;
   k.el.classList.add('show');
   clearTimeout(k.timer);
   k.timer = window.setTimeout(() => k.el.classList.remove('show'), 1400);
@@ -12258,13 +12441,11 @@ function playFlush() {
 }
 // Set a setting from play: the engine sees it at once, the rest next frame.
 function playSet(key: string, raw: number) {
-  const r = rangeOf(key);
+  const r = knobSpec(key);
   if (!r) return;
   raw = Math.max(r.min, Math.min(r.max, raw));
   playRaw[key] = raw;
-  const v = Number((Math.round(raw / r.step) * r.step).toFixed(6));
-  if (settings[r.key] !== v) {
-    (settings as unknown as Record<string, number>)[r.key] = v;
+  if (r.set(raw)) {
     playDirty.add(r.key);
     playFrame ||= requestAnimationFrame(playFlush);
   }
@@ -12272,49 +12453,71 @@ function playSet(key: string, raw: number) {
 }
 // The value play works from: its own if still in step with the setting.
 function playBase(key: string) {
-  const r = rangeOf(key);
+  const r = knobSpec(key);
   if (!r) return 0;
-  const v = settings[r.key] as number;
+  const v = r.get();
   const raw = playRaw[key];
-  return raw !== undefined && Math.abs(raw - v) <= r.step ? raw : v;
+  return raw !== undefined && Math.abs(raw - v) <= r.step * (r.step === 1 ? 0.5 : 1) ? raw : v;
 }
-// Move a setting by a share of its range (0..1 of min→max).
+// Move a setting by a share of its range (0..1 of min→max). Choices move a
+// little slower per pixel, so each option is easy to land on.
 function playNudge(key: string, from: number, share: number) {
-  const r = rangeOf(key);
-  if (r) playSet(key, from + share * (r.max - r.min));
+  const r = knobSpec(key);
+  if (!r) return;
+  const n = r.max - r.min;
+  playSet(key, from + share * (rangeOf(key) ? n : Math.min(n, Math.max(3, n * 0.6))));
 }
-for (const [at, sk] of KNOB_KEYS) {
-  const f = document.createElement('div');
-  f.className = `fader ${at}`;
-  f.append(knobs[at].el);
-  const key = () => settings[sk];
-  let start: { x: number; y: number; v: number } | null = null;
-  f.addEventListener('pointerdown', (e) => {
-    f.setPointerCapture(e.pointerId);
-    start = { x: e.clientX, y: e.clientY, v: playBase(key()) };
-    playShow(key());
+let rowSig = '';
+function buildFieldKnobs() {
+  const keys = fieldKnobKeys();
+  const sig = keys.join(',');
+  if (sig === rowSig) return;
+  rowSig = sig;
+  playRow.textContent = '';
+  for (const id of [...knobs.keys()]) if (id !== 'centre') knobs.delete(id);
+  keys.forEach((_, i) => {
+    const id = `k${i}`;
+    const k = makeKnob(id);
+    const f = document.createElement('div');
+    f.className = `fader ${id}`;
+    f.append(k.el);
+    const key = () => fieldKnobKeys()[i] ?? '';
+    let start: { x: number; y: number; v: number } | null = null;
+    f.addEventListener('pointerdown', (e) => {
+      if (!knobSpec(key())) return;
+      f.setPointerCapture(e.pointerId);
+      start = { x: e.clientX, y: e.clientY, v: playBase(key()) };
+      playShow(key());
+    });
+    // Up or right turns it up, down or left turns it down: the knobs sit at the
+    // bottom edge, so sideways gives the room that up/down lacks.
+    f.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      playNudge(key(), start.v, (start.y - e.clientY + (e.clientX - start.x)) / Math.max(200, stage.clientHeight * 0.32));
+    });
+    const end = () => {
+      start = null;
+    };
+    f.addEventListener('pointerup', end);
+    f.addEventListener('pointercancel', end);
+    playRow.append(f);
   });
-  // Up or right turns it up, down or left turns it down: the knobs sit at the
-  // bottom edge, so sideways gives the room that up/down lacks.
-  f.addEventListener('pointermove', (e) => {
-    if (!start) return;
-    playNudge(key(), start.v, (start.y - e.clientY + (e.clientX - start.x)) / Math.max(200, stage.clientHeight * 0.32));
-  });
-  const end = () => {
-    start = null;
-  };
-  f.addEventListener('pointerup', end);
-  f.addEventListener('pointercancel', end);
-  // Keep the knob drawn with its current value, so hovering the row can
-  // reveal all of them at once.
-  const sync = () => {
-    f.hidden = !playing() || !rangeOf(key());
-    if (!f.hidden) playPaint(at, key());
-  };
-  refreshers.push(sync);
-  sync();
-  playRow.append(f);
 }
+// Keep the knobs drawn with their current values, so hovering the row can
+// reveal all of them at once.
+function syncFieldKnobs() {
+  buildFieldKnobs();
+  const keys = fieldKnobKeys();
+  let shown = 0;
+  playRow.querySelectorAll<HTMLElement>('.fader').forEach((f, i) => {
+    f.hidden = !playing() || !knobSpec(keys[i]);
+    if (!f.hidden) shown++, playPaint(`k${i}`, keys[i]);
+  });
+  playRow.style.setProperty('--n', String(Math.max(1, shown)));
+  playRow.classList.toggle('many', shown > 5);
+}
+refreshers.push(syncFieldKnobs);
+syncFieldKnobs();
 // Two fingers: drag up/down and pinch.
 const playTouch = new Map<number, { x: number; y: number }>();
 let twoStart: { cy: number; d: number; two: number; pinch: number } | null = null;
