@@ -6475,10 +6475,17 @@ function renderPresetLibrary() {
     });
     chips.append(c);
   }
-  wrap.append(chips, grid);
+  // A plain start: still grey dots, no shape, flow or effects, to build on.
+  const blank = document.createElement('button');
+  blank.type = 'button';
+  blank.className = 'scene-blank';
+  blank.innerHTML = '<b>Blank</b><span>Plain dots, nothing else: a starting point to build on</span>';
+  blank.addEventListener('click', () => playPreset('Blank', BLANK_SCENE));
+  wrap.append(blank, chips, grid);
   draw();
   return wrap;
 }
+const BLANK_SCENE: Partial<Settings> = { count: 900, size: 1.6, speed: 0.6, jitter: 0.02, flow: 0, trail: 0.5, glow: false, depth: 0, palette: 'mono', shape: 'none', emitter: 'none' };
 
 // The scene playing now, and its family chip, are marked in the library.
 // (Not while one of your own scenes or the crossfader is playing.)
