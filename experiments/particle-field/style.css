@@ -1510,3 +1510,42 @@ body.solo .fab, body.solo #toggle, body.solo .panel, body.solo .hint, body.solo 
 .solo-sheet .tuner-close { flex: none; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--label); font: inherit; font-size: 13px; }
 .overview .rack-row, .overview .rack-knob { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .overview[data-density='dense'] .rack-knob span.long { top: 20px; padding: 0 6px; font-size: 8px; letter-spacing: -0.02em; }
+.ov-density svg rect { fill: currentColor; stroke: none; }
+.rack-bar { display: none; }
+
+/* Strips: one 32 px line per setting, like a mixer's channel list. Numbers
+   are a thin bar (the tick is the scene's value): slide the line sideways,
+   or tap it for the big slider. Cards are rounded blocks of lines. */
+.overview[data-density='strips'] .rack { gap: 10px; }
+.overview[data-density='strips'] .rack-group { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 4px; padding-top: 8px; }
+.overview[data-density='strips'] .rack-group > h3 { flex: none; font-size: 10px; }
+.overview[data-density='strips'] .rack-card,
+.overview[data-density='strips'] .rack-card:not(:has(.rack-rows)) { flex: none; gap: 0; border-radius: 10px; overflow: hidden; background: var(--tile); }
+.overview[data-density='strips'] .rack-cap { display: none; }
+.overview[data-density='strips'] .rack-knobs,
+.overview[data-density='strips'] .rack-card:not(:has(.rack-rows)) .rack-knobs,
+.overview[data-density='strips'] .rack-rows { display: flex; flex-direction: column; gap: 0; }
+.overview[data-density='strips'] .rack-knob,
+.overview[data-density='strips'] .rack-card:not(:has(.rack-rows)) .rack-knob { width: auto; display: grid; grid-template-columns: 112px minmax(0, 1fr) 58px; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: 0; background: transparent; border-bottom: 1px solid var(--line); }
+.overview[data-density='strips'] .rack-knob svg { display: none; }
+.overview[data-density='strips'] .rack-knob b { font-size: 12px; font-weight: 400; color: var(--label); text-align: left; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset; }
+.overview[data-density='strips'] .rack-knob span { font-size: 12px; text-align: right; }
+.overview[data-density='strips'] .rack-knob.moved b { color: var(--text); }
+.overview[data-density='strips'] .rack-knob.turning, .overview[data-density='strips'] .rack-knob.tuning { background: var(--accent-bg); }
+.overview[data-density='strips'] .rack-bar { display: block; position: relative; height: 4px; border-radius: 2px; background: var(--track); }
+.overview[data-density='strips'] .rack-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--accent); }
+.overview[data-density='strips'] .rack-bar u { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: #fff; opacity: 0.7; }
+.overview[data-density='strips'] .rack-row,
+.overview[data-density='strips'] .rack-row:has(.rack-switch) { grid-column: auto; grid-template-columns: minmax(0, 1fr) 26px minmax(60px, auto) 26px; gap: 0; min-height: 32px; height: 32px; padding: 0 0 0 10px; border-radius: 0; background: transparent; border-bottom: 1px solid var(--line); font-size: 12px; }
+.overview[data-density='strips'] .rack-row:has(.rack-switch) { grid-template-columns: minmax(0, 1fr) auto; padding-right: 10px; }
+.overview[data-density='strips'] .rack-row > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overview[data-density='strips'] .rack-row b { text-align: right; }
+.overview[data-density='strips'] .rack-row > button { height: 32px; font-size: 14px; }
+.overview[data-density='strips'] .rack-row .rack-switch { position: relative; width: 32px; min-width: 0; height: 18px; margin: 0; padding: 0; border-radius: 999px; border: 0; background: var(--track); font-size: 0; }
+.overview[data-density='strips'] .rack-row .rack-switch::after { content: ''; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: left 0.15s; }
+.overview[data-density='strips'] .rack-row .rack-switch[aria-pressed='true'] { background: var(--accent); }
+.overview[data-density='strips'] .rack-row .rack-switch[aria-pressed='true']::after { left: 17px; background: var(--on-accent); }
+.overview[data-density='strips'] .rack-row.rack-text { grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding-right: 4px; }
+.overview[data-density='strips'] .rack-text input { height: 24px; border: 0; background: transparent; font-size: 16px; padding: 0 6px; }
+.overview[data-density='strips'] .rack-knobs > :last-child, .overview[data-density='strips'] .rack-rows > :last-child { border-bottom: 0; }
+.overview[data-density='strips'] .rack-knobs:has(+ .rack-rows) > :last-child { border-bottom: 1px solid var(--line); }

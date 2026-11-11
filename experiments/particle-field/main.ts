@@ -10769,11 +10769,13 @@ const RACK_RING = 94.25; // 270° of a 20-radius circle
 function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-knob';
-  el.innerHTML = `<svg viewBox="0 0 52 52" aria-hidden="true"><circle class="bg" cx="26" cy="26" r="20" stroke-dasharray="${RACK_RING} 200" transform="rotate(135 26 26)"/><circle class="val" cx="26" cy="26" r="20" stroke-dasharray="0 200" transform="rotate(135 26 26)"/><circle class="home" r="2.5"/></svg><b></b><span></span>`;
+  el.innerHTML = `<svg viewBox="0 0 52 52" aria-hidden="true"><circle class="bg" cx="26" cy="26" r="20" stroke-dasharray="${RACK_RING} 200" transform="rotate(135 26 26)"/><circle class="val" cx="26" cy="26" r="20" stroke-dasharray="0 200" transform="rotate(135 26 26)"/><circle class="home" r="2.5"/></svg><b></b><em class="rack-bar" aria-hidden="true"><i></i><u></u></em><span></span>`;
   el.tabIndex = 0;
   el.setAttribute('role', 'slider');
   el.setAttribute('aria-label', c.label);
   const [val, homeDot] = [el.querySelector<SVGCircleElement>('.val')!, el.querySelector<SVGCircleElement>('.home')!];
+  // The same value as a thin bar (the Strips density shows this instead of the ring).
+  const [barFill, barHome] = [el.querySelector<HTMLElement>('.rack-bar i')!, el.querySelector<HTMLElement>('.rack-bar u')!];
   el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
   const out = el.querySelector('span')!;
   const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
@@ -10784,6 +10786,8 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   const update = () => {
     const v = src.get(c.key) as number;
     val.setAttribute('stroke-dasharray', `${(RACK_RING * pos(v)).toFixed(1)} 200`);
+    barFill.style.width = `${pos(v) * 100}%`;
+    barHome.style.left = `${pos(home()) * 100}%`;
     const a = ((135 + 270 * pos(home())) * Math.PI) / 180;
     homeDot.setAttribute('cx', (26 + 20 * Math.cos(a)).toFixed(1));
     homeDot.setAttribute('cy', (26 + 20 * Math.sin(a)).toFixed(1));
@@ -11087,19 +11091,20 @@ function xfRackSrc(side: 'a' | 'b'): RackSrc {
   };
 }
 
-type OvDensity = 'roomy' | 'compact' | 'dense';
-const OV_DENSITIES: [OvDensity, string][] = [['roomy', 'Roomy'], ['compact', 'Compact'], ['dense', 'Dense']];
+type OvDensity = 'strips' | 'roomy' | 'compact' | 'dense';
+const OV_DENSITIES: [OvDensity, string][] = [['strips', 'Strips'], ['compact', 'Compact'], ['dense', 'Dense'], ['roomy', 'Roomy']];
 const OV_DENSITY_KEY = 'particle-field:ov-density';
 let ovDensity: OvDensity = (() => {
   try {
     const v = localStorage.getItem(OV_DENSITY_KEY);
-    return OV_DENSITIES.some(([k]) => k === v) ? (v as OvDensity) : 'compact';
+    return OV_DENSITIES.some(([k]) => k === v) ? (v as OvDensity) : 'strips';
   } catch {
-    return 'compact';
+    return 'strips';
   }
 })();
 // Dots that pack tighter as the density goes up.
 const DENSITY_ICON: Record<OvDensity, string> = {
+  strips: '<rect x="4" y="5" width="16" height="2.2" rx="1.1"/><rect x="4" y="10.9" width="16" height="2.2" rx="1.1"/><rect x="4" y="16.8" width="16" height="2.2" rx="1.1"/>',
   roomy: '<circle cx="5.0" cy="5.0" r="2.6"/><circle cx="5.0" cy="19.0" r="2.6"/><circle cx="19.0" cy="5.0" r="2.6"/><circle cx="19.0" cy="19.0" r="2.6"/>',
   compact: '<circle cx="5.0" cy="5.0" r="2"/><circle cx="5.0" cy="12.0" r="2"/><circle cx="5.0" cy="19.0" r="2"/><circle cx="12.0" cy="5.0" r="2"/><circle cx="12.0" cy="12.0" r="2"/><circle cx="12.0" cy="19.0" r="2"/><circle cx="19.0" cy="5.0" r="2"/><circle cx="19.0" cy="12.0" r="2"/><circle cx="19.0" cy="19.0" r="2"/>',
   dense: '<circle cx="5.0" cy="5.0" r="1.5"/><circle cx="5.0" cy="9.7" r="1.5"/><circle cx="5.0" cy="14.3" r="1.5"/><circle cx="5.0" cy="19.0" r="1.5"/><circle cx="9.7" cy="5.0" r="1.5"/><circle cx="9.7" cy="9.7" r="1.5"/><circle cx="9.7" cy="14.3" r="1.5"/><circle cx="9.7" cy="19.0" r="1.5"/><circle cx="14.3" cy="5.0" r="1.5"/><circle cx="14.3" cy="9.7" r="1.5"/><circle cx="14.3" cy="14.3" r="1.5"/><circle cx="14.3" cy="19.0" r="1.5"/><circle cx="19.0" cy="5.0" r="1.5"/><circle cx="19.0" cy="9.7" r="1.5"/><circle cx="19.0" cy="14.3" r="1.5"/><circle cx="19.0" cy="19.0" r="1.5"/>',
