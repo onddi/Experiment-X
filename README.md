@@ -125,7 +125,8 @@ is unchanged. Per layer you can set:
   with the mouse; tap it (or press **L**) to pass the mouse to the next one.
 
 A shared link opens ready to start: with several experiments on screen, only the
-layer that has the mouse starts with its options panel open, and a view with a
+layer that has the mouse starts with its options panel open. A player that's
+opening always gets the mouse (whatever `input` the link says), and a view with a
 player in it (an experiment that provides `transport`) opens paused, layers
 included. Picking a track in the player (a demo or a file) starts the music and
 every layer together; the toolbar's play starts whatever is loaded. A player

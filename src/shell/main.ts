@@ -277,6 +277,10 @@ function route() {
   const layers = (parsed?.layers ?? []).filter((l) => bySlug(l.slug) && !seen.has(l.slug) && seen.add(l.slug));
   if (!layers.length && experiments[0]) layers.push({ ...newLayer(experiments[0].slug), blend: 'normal' });
   view = { layers, input: parsed?.input ?? -1 };
+  // A player that's just opening gets the mouse, so its options (and its
+  // track list) are what's in front, whatever layer the link had active.
+  const player = layers.findIndex((l) => !frames.has(l.slug) && bySlug(l.slug)?.provides?.includes('transport'));
+  if (player >= 0 && layers.length > 1) view.input = player;
   const hash = layers.length ? toHash(view) : '';
   if (hash && hash !== location.hash) history.replaceState(null, '', hash);
   removeHandover();
