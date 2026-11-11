@@ -82,6 +82,10 @@ export interface Settings {
   shapeSolid: string;
   shapeLive: 'bars' | 'ring' | 'clock' | 'tempo';
   shapePattern: 'sunflower' | 'grid' | FillPattern;
+  patScale: number;
+  patForm: number;
+  patVary: number;
+  patSeed: number;
   shapeSeq: string;
   shapeSeqEvery: 'bar' | '2bars' | '4bars' | '8bars' | 'drop';
   shapeSeqSec: number;
@@ -393,6 +397,10 @@ export const DEFAULTS: Settings = {
   shapeSolid: 'sphere',
   shapeLive: 'bars',
   shapePattern: 'sunflower',
+  patScale: 1,
+  patForm: 0.5,
+  patVary: 0.5,
+  patSeed: 0,
   shapeSeq: 'heart, star, moon, HELLO',
   shapeSeqEvery: '4bars',
   shapeSeqSec: 4,

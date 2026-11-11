@@ -1,4 +1,4 @@
-import { fillPattern, FILL_PATTERNS } from './patterns.ts';
+import { fillPattern, FILL_PATTERNS, PATTERN_FORM, PATTERN_VARY, patternArms, isFillPattern } from './patterns.ts';
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
@@ -2953,7 +2953,7 @@ function shapeDetail() {
     case 'icon': return S.shapeIcon;
     case 'geo': return S.shapeGeo;
     case 'solid': return S.shapeSolid;
-    case 'pattern': return S.shapePattern;
+    case 'pattern': return `${S.shapePattern}|${S.patScale}|${S.patForm}|${S.patVary}|${S.patSeed}`;
     case 'sequence': return `${seqToken()}`;
     case 'drawing': return `${drawVersion}`;
     case 'live': return S.shapeLive === 'clock' ? clockText() : S.shapeLive === 'tempo' ? tempoText() : S.shapeLive;
@@ -3261,7 +3261,7 @@ function buildShape() {
     return;
   }
   const pat = S.shape === 'pattern' ? S.shapePattern : S.shape;
-  if (S.shape === 'pattern' && fillPattern(pat, n, w, h, S.shapeSize, hx, hy)) return;
+  if (S.shape === 'pattern' && fillPattern(pat, n, w, h, S.shapeSize, hx, hy, { scale: S.patScale, form: S.patForm, vary: S.patVary, seed: S.patSeed })) return;
   if (pat === 'grid' || pat === 'sunflower' || pat === 'ring') {
     const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
     const rows = Math.max(1, Math.ceil(n / cols));
@@ -5961,7 +5961,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -5971,6 +5971,10 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'shapeIcon', label: 'Icon', options: ICON_SHAPES, show: () => settings.shape === 'icon' },
   { kind: 'select', key: 'shapeGeo', label: 'Shape', options: GEO_SHAPES, show: () => settings.shape === 'geo' },
   { kind: 'select', key: 'shapePattern', label: 'Pattern', options: PATTERNS, show: () => settings.shape === 'pattern' },
+  { kind: 'range', key: 'patScale', label: 'Pattern scale', min: 0.4, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.shape === 'pattern' && isFillPattern(settings.shapePattern) },
+  ...FILL_PATTERNS.map(([p]): Control => ({ kind: 'range', key: 'patForm', label: PATTERN_FORM[p], min: 0, max: 1, step: 0.02, format: p === 'spiral' || p === 'galaxy' ? (v) => `${patternArms(v)}` : pct, show: () => settings.shape === 'pattern' && settings.shapePattern === p })),
+  ...FILL_PATTERNS.map(([p]): Control => ({ kind: 'range', key: 'patVary', label: PATTERN_VARY[p], min: 0, max: 1, step: 0.02, format: pct, show: () => settings.shape === 'pattern' && settings.shapePattern === p })),
+  { kind: 'buttons', buttons: [['New seed', () => set('patSeed', settings.patSeed + 1)]], show: () => settings.shape === 'pattern' && isFillPattern(settings.shapePattern) },
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
@@ -8415,7 +8419,7 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
   if (keys.has('shapeSeq')) seqIdx = 0;
   if (keys.has('shape') && settings.shape !== 'drawing') drawMode = false;
   if (keys.has('shape') || keys.has('drawOutline')) inkSync();
-  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapePattern') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
+  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapePattern') || keys.has('patScale') || keys.has('patForm') || keys.has('patVary') || keys.has('patSeed') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
     const g = glideHomes && settings.shape !== 'none' ? glideHomes : null;
     const fx = g ? (g.fromFree ? px : hx).slice(0, n) : null;
     const fy = g ? (g.fromFree ? py : hy).slice(0, n) : null;
@@ -8471,7 +8475,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['homeStrength', 'morph'],
   look: ['render', 'mixStyles', 'size', 'trail', 'glow'],
   colour: ['palette', 'colorBy', 'customColors'],
-  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize'],
+  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['count', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
