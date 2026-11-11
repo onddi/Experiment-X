@@ -2,7 +2,7 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
-import { VIBE_FAMILIES, vibe, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeDef, type Family } from './scenes.ts';
+import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
@@ -604,6 +604,10 @@ if (import.meta.env.DEV)
     },
   };
 let lastPulse = 0;
+// Kick tick: the flow turns a step on each kick, eased so it never jolts.
+let tickTarget = 0;
+let tickNow = 0;
+let spawnSide = 1;
 let lastSub = 0;
 let lastSnare = 0;
 let swirlDir = 1;
@@ -870,6 +874,35 @@ function step(dt: number) {
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
   const kickWave = on && (S.audioKick === 'wave' || S.audioKick === 'both');
+  const kickAmt = S.audioPulse * I;
+  // Pump: the field ducks on each kick and swells back before the next, like
+  // a sidechained synth. Slower, not shoved.
+  if (on && S.audioKick === 'pump') speedNow *= 1 - Math.min(0.85, A.pulse * 0.75 * kickAmt);
+  // Tick: each kick turns the flow a step, like a clock hand.
+  if (on && S.audioKick === 'tick') {
+    if (A.beat) tickTarget += 0.35 * kickAmt;
+    if (flowNow < 0.25) flowNow = 0.25;
+  } else tickTarget = tickNow;
+  tickNow += (tickTarget - tickNow) * Math.min(1, dt * 0.12);
+  // Spawn: each kick lets a puff of particles be born at a spot, fading in.
+  if (on && S.audioKick === 'spawn' && A.beat && n > 0) {
+    spawnSide = -spawnSide;
+    const sx = w * (0.5 + spawnSide * (0.1 + Math.random() * 0.25));
+    const sy = h * (0.3 + Math.random() * 0.4);
+    const m = Math.min(400, Math.ceil(n * 0.035 * kickAmt));
+    for (let q = 0; q < m; q++) {
+      const i = (Math.random() * n) | 0;
+      if (dead[i] || free[i]) continue;
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * 14;
+      px[i] = ox[i] = sx + Math.cos(a) * r;
+      py[i] = oy[i] = sy + Math.sin(a) * r;
+      const sp = (0.6 + Math.random() * 2.2) * Math.min(1.6, kickAmt);
+      vx[i] = Math.cos(a) * sp;
+      vy[i] = Math.sin(a) * sp;
+      rebirth(i);
+    }
+  }
   // Pulse: an outward shove while the kick envelope rises and a gentle pull
   // back while it decays, so the field breathes in place.
   const dPulse = kickPulse ? A.pulse - lastPulse : 0;
@@ -1025,6 +1058,13 @@ function step(dt: number) {
 
     if (flowNow > 0) {
       flowVec(px[i], py[i]);
+      if (tickNow !== 0) {
+        const c = Math.cos(tickNow);
+        const sn = Math.sin(tickNow);
+        const fx = fvx;
+        fvx = fx * c - fvy * sn;
+        fvy = fx * sn + fvy * c;
+      }
       if (settings.flowType !== 'waves') {
         // Steer the velocity towards the field (advection) rather than pushing:
         // inertia would fling particles out of the swirls and into streams.
@@ -3412,6 +3452,7 @@ function audioSizeBoost() {
   const S = settings;
   let b = 1;
   if (S.audioKick === 'pulse' || S.audioKick === 'both') b += L.pulse * 0.7 * S.audioPulse * S.audioIntensity;
+  if (S.audioKick === 'pump') b *= 1 - Math.min(0.5, L.pulse * 0.35 * S.audioPulse * S.audioIntensity);
   if (S.audioSnare === 'flash') b += L.snareEnv * 1.5 * S.audioHits * S.audioIntensity;
   if (S.audioSub === 'size') b += L.sub * L.sub * 1.2 * S.audioSubAmt * S.audioIntensity;
   return b;
@@ -5090,14 +5131,15 @@ const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face feat
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
+const VIBE_LEAD_KEY = 'particle-field:vibe-lead';
+let vibeLead: VibeLead | 'any' = (() => {
+  const v = readJson<string>(VIBE_LEAD_KEY, 'any');
+  return VIBE_LEADS.some(([f]) => f === v) ? (v as VibeLead | 'any') : 'any';
+})();
 let vibeFamily: VibeFamily = (() => {
   const v = readJson<string>(VIBE_FAMILY_KEY, 'all');
   return VIBE_FAMILIES.some(([f]) => f === v) ? (v as VibeFamily) : 'all';
 })();
-for (const [fam, names] of [
-  ['chill', 'Breathe, Ambient, Lo-fi, Minimal'], ['groove', 'Groove, Bounce'], ['hypnotic', 'Hypnotic, Liquid, Kaleido'],
-  ['peak', 'Storm, Rave, Bass face, Festival'], ['glitch', 'Glitch'],
-] as [VibeFamily, string][]) for (const nm of names.split(', ')) VIBES.find((v) => v.name === nm)!.family = fam;
 // Word lists that came with a vibe: another vibe may replace them, yours it keeps.
 const VIBE_WORDS = new Set(VIBES.map((v) => v.cards.audioWords).filter(Boolean));
 
@@ -5176,59 +5218,117 @@ function vibeLabel() {
   return vibeIntact(v) ? v.name : `${v.name} (edited)`;
 }
 
-// A random combination, not just a random preset.
-function surpriseVibe() {
-  const kick = pick(['pulse', 'wave', 'both', 'both'] as const);
+// A random combination, not just a random preset. It picks what leads first
+// (the drums, the bass, the melody, the voice or the song's shape), then one
+// layer to support it, so each roll feels different instead of all jumping.
+const LEAD_PATCH: Record<VibeLead, () => Partial<Settings>> = {
+  beat: () => {
+    const kick = pick(['pulse', 'wave', 'both', 'pump', 'tick', 'spawn', 'none'] as const);
+    return {
+      audioKick: kick,
+      audioPulse: rand(0.4, 1.2, 0.05),
+      audioBeat: pick(['ripple', 'twist', 'shockwave', 'star', 'sweep', 'implode', 'mix', 'random'] as const),
+      audioWaveAt: pick(['centre', 'orbit', 'mirror', 'corners', 'random'] as const),
+      audioWaveEvery: pick([1, 1, 2, 4] as const),
+      audioWaveReach: rand(0.6, 2, 0.05),
+      audioWaveSpeed: rand(0.6, 1.6, 0.05),
+      audioWaveWidth: rand(0.6, 2, 0.05),
+      audioSnare: pick(['swirl', 'wave', 'flash', 'none'] as const),
+      audioHats: pick(['sparkle', 'none'] as const),
+      audioHits: rand(0.3, 1, 0.05),
+      audioSnareFlash: pick([0, 0, 0.4, 0.7]),
+      audioHatTwinkle: pick([0, 0, 0.5, 0.8]),
+      audioHatShake: pick([0, 0, 0, 0.4]),
+      audioCam: pick([0, 0.4, 0.8, 1.2]),
+      audioBgFlash: pick([0, 0, 0.3, 0.6]),
+      audioStutter: Math.random() < 0.2,
+      audioHue: pick(['beat', 'bar', 'drift'] as const),
+    };
+  },
+  bass: () => ({
+    audioKick: pick(['pump', 'none', 'none'] as const),
+    audioPulse: rand(0.4, 1, 0.05),
+    audioSub: pick(['size', 'flow', 'speed'] as const),
+    audioSubAmt: rand(0.5, 1.3, 0.05),
+    audioBassThrob: pick([0, 0.5, 0.8, 1.2]),
+    audioBassZoom: pick([0, 0.3, 0.6]),
+    audioBassGlow: pick([0, 0.4, 0.7]),
+    audioSway: pick([0, 0.5, 0.8]),
+    audioEnergyShake: pick([0, 0, 0.3]),
+    audioTrailEnergy: pick([0, 0.4, 0.8]),
+    audioHue: pick(['drift', 'bar'] as const),
+  }),
+  melody: () => ({
+    audioNoteHue: rand(0.4, 1, 0.05),
+    audioNoteRipple: pick([0, 0.3, 0.6]),
+    audioNoteHop: pick([0, 0.4]),
+    audioHatTwinkle: pick([0, 0.4]),
+    audioSpin: pick(['sway', 'turn', 'off'] as const),
+    audioHue: 'off' as const,
+  }),
+  voice: () => ({
+    audioVoxGlow: pick([0, 0.4, 0.7]),
+    audioVoxZoom: pick([0, 0.3, 0.5]),
+    audioVoxSwell: pick([0, 0.4, 0.6]),
+    audioPitchLift: pick([0, 0.4, 0.7]),
+    audioPitchTilt: pick([0, 0, 0.4]),
+    audioSylPush: pick([0, 0.4, 0.7]),
+    audioSylFlash: pick([0, 0, 0.5]),
+    audioPauseDim: pick([0, 0.3, 0.5]),
+    audioAccentPunch: pick([0, 0, 0.5]),
+    audioRhymeRipple: pick([0, 0, 0.5]),
+    audioHue: pick(['drift', 'off'] as const),
+  }),
+  song: () => ({
+    audioDrop: rand(1.2, 2, 0.1),
+    audioMonoBuild: Math.random() < 0.6,
+    audioBuildScatter: pick([0, 0.4, 0.7]),
+    audioDolly: Math.random() < 0.5,
+    audioKaleidoDrop: Math.random() < 0.3,
+    audioInvert: Math.random() < 0.3,
+    audioGravFlip: Math.random() < 0.25,
+    audioCuts: pick(['off', 'drop', 'drop'] as const),
+    audioPalEvery: pick([0, 8, 16]),
+    audioHue: 'drop' as const,
+  }),
+};
+const LEAD_NAMES: Record<VibeLead, string> = { beat: 'the beat', bass: 'the bass', melody: 'the melody', voice: 'the voice', song: 'the song shape' };
+function surpriseVibe(lead: VibeLead = pick(['beat', 'bass', 'melody', 'voice', 'song'] as const)) {
   const look = pick(VIBES).look;
-  const cards: Partial<Settings> = {
-    audioDrop: pick([0, 0.8, 1.2, 1.6]),
-    audioBands: pick([0, 0, 0.5, 1]),
-    audioHue: pick(['off', 'beat', 'bar', 'drift', 'drop'] as const),
+  // Calm shared ground: the energy moves things a little, nothing more.
+  const base: Partial<Settings> = {
+    audioDrop: pick([0, 0.6, 1]),
     audioHueAmt: rand(10, 120, 5),
-    audioBright: pick([0, 0.3, 0.6, 0.9]),
-    audioCam: pick([0, 0.4, 0.8, 1.2]),
-    audioSpin: pick(['off', 'off', 'sway', 'turn', 'step', 'rock', 'energy'] as const),
-    audioCuts: pick(['off', 'off', 'bar', '2bars', '4bars', 'drop'] as const),
-    audioDolly: Math.random() < 0.3,
-    audioPan: pick([0, 0, 0.4, 0.8]),
-    audioRoll: pick([0, 0, 0.5, 1]),
-    audioFlip: Math.random() < 0.15,
-    audioTunnel: pick([0, 0, 0, 0.3, 0.6]),
+    audioBright: pick([0, 0.3, 0.5]),
+    audioSpeed: rand(0.1, 0.5, 0.05),
+    audioFlow: rand(0.2, 0.8, 0.05),
+    audioBands: pick([0, 0, 0.5]),
+    audioPan: pick([0, 0, 0.4]),
+    audioTunnel: pick([0, 0, 0, 0.3]),
     audioTunnelTurn: pick(['none', 'left', 'right', 'rock'] as const),
-    audioKaleido: pick([0, 0, 0, 0, 4, 6]),
-    audioKaleidoDrop: Math.random() < 0.2,
-    audioEcho: pick([0, 0, 0, 0.5, 0.8]),
-    audioPalEvery: pick([0, 0, 8, 16]),
-    audioMonoBuild: Math.random() < 0.3,
-    audioBgFlash: pick([0, 0, 0, 0.3, 0.6]),
-    audioInvert: Math.random() < 0.15,
-    audioStutter: Math.random() < 0.2,
-    audioGravFlip: Math.random() < 0.15,
-    audioTrailEnergy: pick([0, 0, 0.4, 0.8]),
-    audioSway: pick([0, 0, 0.5, 1]),
+    audioEcho: pick([0, 0, 0, 0.5]),
   };
-  applyVibe(vibe('Surprise', '', {
-    audioKick: kick,
-    audioPulse: rand(0.3, 1.2, 0.05),
-    audioBeat: pick(['ripple', 'twist', 'shockwave', 'star', 'sweep', 'implode', 'mix', 'random'] as const),
-    audioWaveAt: pick(['centre', 'orbit', 'mirror', 'corners', 'random'] as const),
-    audioWaveEvery: pick([1, 1, 2, 4] as const),
-    audioWaveReach: rand(0.6, 2, 0.05),
-    audioWaveSpeed: rand(0.6, 1.6, 0.05),
-    audioWaveWidth: rand(0.6, 2, 0.05),
-    audioSnare: pick(['swirl', 'wave', 'flash', 'none'] as const),
-    audioHats: pick(['sparkle', 'none'] as const),
-    audioHits: rand(0.3, 1, 0.05),
-    audioSub: pick(['size', 'flow', 'speed', 'none'] as const),
-    audioSubAmt: rand(0.3, 1, 0.05),
-    audioSpeed: rand(0.1, 0.7, 0.05),
-    audioFlow: rand(0.2, 1, 0.05),
-  }, cards, look));
+  // One supporting layer, kept softer than the lead.
+  const others = (['beat', 'bass', 'melody', 'voice', 'song'] as const).filter((l) => l !== lead);
+  const support: Partial<Settings> = {};
+  if (Math.random() < 0.7) {
+    const sl = pick(others);
+    const sp = LEAD_PATCH[sl]();
+    // Support never adds a kick move on top, and stays at half strength.
+    for (const [k, x] of Object.entries(sp)) {
+      if (k === 'audioKick' || k === 'audioHue' || k === 'audioCam' || k === 'audioBgFlash') continue;
+      (support as Record<string, unknown>)[k] = typeof x === 'number' ? Math.round(x * 50) / 100 : x;
+    }
+  }
+  const all = { ...base, ...support, ...LEAD_PATCH[lead]() };
+  const drums: Partial<Settings> = {};
+  const cards: Partial<Settings> = {};
+  for (const [k, x] of Object.entries(all)) ((k in quiet ? drums : cards) as Record<string, unknown>)[k] = x;
+  applyVibe(vibe(`Surprise: led by ${LEAD_NAMES[lead]}`, '', lead, drums, cards, look));
 }
 
 const GENRES: [string, string][] = [['general', 'Any'], ['hiphop', 'Rap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afro'], ['reggae', 'Reggae'], ['techno', 'Techno']];
 const ft = () => true;
-const kickPulse = () => settings.audioKick === 'pulse' || settings.audioKick === 'both';
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
 const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file', feed: 'X-Frame player' } as const;
 
@@ -5611,10 +5711,10 @@ const CONTROLS: Control[] = [
   { kind: 'heading', label: 'Hits', tab: 'music' },
   { kind: 'section', id: 'drums', label: 'Drums', tab: 'music',
     lock: ['audioKick', 'audioPulse', 'audioBeat', 'audioWaveAt', 'audioWaveEvery', 'audioWaveForce', 'audioWaveSpeed', 'audioWaveReach', 'audioWaveWidth', 'audioWaveFeel', 'audioWaveRings', 'audioWaveAccent', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioSubAmt', 'audioBassThrob', 'audioNoteRipple', 'audioSpeed', 'audioFlow'],
-    summary: () => [label([['pulse', 'pulse'], ['wave', 'waves'], ['both', 'pulse + waves'], ['none', '']], settings.audioKick), settings.audioSnare !== 'none' ? `snare ${settings.audioSnare}` : '', settings.audioHats !== 'none' ? 'hats' : ''].filter(Boolean).join(' · ') },
+    summary: () => [label([['pulse', 'pulse'], ['wave', 'waves'], ['both', 'pulse + waves'], ['pump', 'pump'], ['tick', 'tick'], ['spawn', 'spawn'], ['none', '']], settings.audioKick), settings.audioSnare !== 'none' ? `snare ${settings.audioSnare}` : '', settings.audioHats !== 'none' ? 'hats' : ''].filter(Boolean).join(' · ') },
   { kind: 'sub', label: 'Kick' },
-  { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['none', 'Nothing']], show: ft },
-  { kind: 'range', key: 'audioPulse', label: 'Pulse strength', min: 0, max: 2, step: 0.05, format: pct, show: () => ft() && kickPulse() },
+  { kind: 'select', key: 'audioKick', label: 'Kick does', options: [['pulse', 'Pulse the field'], ['wave', 'Send a wave'], ['both', 'Pulse + wave'], ['pump', 'Pump: duck and swell back'], ['tick', 'Tick: turn the flow a step'], ['spawn', 'Spawn: a puff of new particles'], ['none', 'Nothing']], show: ft },
+  { kind: 'range', key: 'audioPulse', label: 'Kick strength', min: 0, max: 2, step: 0.05, format: pct, show: () => ft() && settings.audioKick !== 'none' && settings.audioKick !== 'wave' },
   { kind: 'select', key: 'audioBeat', label: 'Wave type', options: BEAT_ACTIONS, show: () => ft() && kickWave() },
   { kind: 'select', key: 'audioWaveAt', label: 'Waves from', options: [['centre', 'Centre'], ['orbit', 'Orbit the centre'], ['mirror', 'Mirrored pair'], ['corners', 'Corners in turn'], ['pointer', 'Pointer'], ['random', 'Random spot']], show: () => ft() && kickWave() && settings.audioBeat !== 'sweep' },
   { kind: 'range', key: 'audioWaveEvery', label: 'Every', min: 1, max: 8, step: 1, format: (v) => (v === 1 ? 'kick' : `${v} kicks`), show: () => ft() && kickWave() },
@@ -6212,7 +6312,9 @@ function musicVisuals(now: number) {
   const dimT = on && S.audioPauseDim > 0 && !L.voxOn && now - lastVoxAt < 4000 ? S.audioPauseDim : 0;
   pauseDim += (dimT - pauseDim) * Math.min(1, dt * (dimT > pauseDim ? 14 : 22));
   const lift = twinkleA + glowB * 0.35 + voxG * 0.3 + sylFlashA;
-  if (!lightBg && (lift > 0.005 || pauseDim > 0.005)) parts.push(`brightness(${((1 + lift) * (1 - pauseDim * 0.55)).toFixed(2)})`);
+  // Kick pump: the light ducks with the kick too.
+  const pumpDim = on && S.audioKick === 'pump' ? Math.min(0.6, L.pulse * 0.45 * S.audioPulse * S.audioIntensity) : 0;
+  if (!lightBg && (lift > 0.005 || pauseDim > 0.005 || pumpDim > 0.005)) parts.push(`brightness(${((1 + lift) * (1 - pauseDim * 0.55) * (1 - pumpDim)).toFixed(2)})`);
   // Flow hue drifts faster the faster the flow; rhymes jump the colour.
   if (on && S.audioFlowHue > 0) flowHue = (flowHue + dt * L.flow * 160 * S.audioFlowHue) % 360;
   else flowHue = 0;
@@ -9575,21 +9677,27 @@ function renderControls() {
       const chips = document.createElement('div');
       chips.className = 'families';
       chips.setAttribute('role', 'tablist');
+      // A second row: what the vibe listens to (the drums, bass, melody…).
+      const leads = document.createElement('div');
+      leads.className = 'families leads';
+      leads.setAttribute('role', 'tablist');
       const grid = document.createElement('div');
       grid.className = 'vibes';
       const btns: [VibeDef, HTMLButtonElement][] = [];
       const drawVibes = () => {
         for (const c of chips.children) c.classList.toggle('on', (c as HTMLElement).dataset.fam === vibeFamily);
+        for (const c of leads.children) c.classList.toggle('on', (c as HTMLElement).dataset.lead === vibeLead);
         grid.innerHTML = '';
         btns.length = 0;
-        const list = VIBES.filter((v) => vibeFamily === 'all' || v.family === vibeFamily).sort((a, b) => a.name.localeCompare(b.name));
+        const list = VIBES.filter((v) => (vibeFamily === 'all' || v.family === vibeFamily) && (vibeLead === 'any' || v.lead === vibeLead)).sort((a, b) => a.name.localeCompare(b.name));
         for (const v of [...list, null]) {
           const b = document.createElement('button');
           b.type = 'button';
-          b.innerHTML = '<b></b><span></span>';
+          b.innerHTML = '<b></b><span></span><i></i>';
           b.querySelector('b')!.textContent = v ? v.name : 'Surprise me';
-          b.querySelector('span')!.textContent = v ? v.about : 'A random mix of everything';
-          b.addEventListener('click', () => (v ? applyVibe(v) : surpriseVibe()));
+          b.querySelector('span')!.textContent = v ? v.about : vibeLead === 'any' ? 'A random mix, led by one layer (F)' : `A random mix led by ${LEAD_ABOUT[vibeLead]} (F)`;
+          b.querySelector('i')!.textContent = v ? `Moves with ${LEAD_ABOUT[v.lead]}` : '';
+          b.addEventListener('click', () => (v ? applyVibe(v) : surpriseVibe(vibeLead === 'any' ? undefined : vibeLead)));
           if (v) {
             btns.push([v, b]);
             b.classList.toggle('on', settings.audioVibe === v.name && vibeIntact(v));
@@ -9613,8 +9721,24 @@ function renderControls() {
         });
         chips.append(c);
       }
+      for (const [lead, lbl] of VIBE_LEADS) {
+        const c = document.createElement('button');
+        c.type = 'button';
+        c.dataset.lead = lead;
+        c.setAttribute('role', 'tab');
+        c.innerHTML = `${lbl} <small>${lead === 'any' ? VIBES.length : VIBES.filter((v) => v.lead === lead).length}</small>`;
+        c.addEventListener('click', () => {
+          vibeLead = lead;
+          writeJson(VIBE_LEAD_KEY, lead);
+          drawVibes();
+        });
+        leads.append(c);
+      }
       drawVibes();
-      body.append(chips);
+      const leadLbl = document.createElement('div');
+      leadLbl.className = 'leads-label';
+      leadLbl.textContent = 'Moves with';
+      body.append(chips, leadLbl, leads);
       searchItem(body, grid);
       continue;
     }
@@ -11355,7 +11479,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'e') explode();
   else if (k === 'd' || k === 'r') shuffle();
   // F, next to D: a random music vibe, as Surprise me in the Vibe card.
-  else if (k === 'f') surpriseVibe();
+  else if (k === 'f') surpriseVibe(vibeLead === 'any' ? undefined : vibeLead);
   else if (k === 'h') toggle.click();
   else if (k === 'v') toggleRecord();
   else if (xf.on && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
