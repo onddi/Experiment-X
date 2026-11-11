@@ -73,7 +73,7 @@ app.innerHTML = `
       <button type="button" class="icon sheet-btn" id="sheet-more" aria-label="Actions" title="Actions" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" class="dots"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       <button class="icon" id="toggle" aria-expanded="true" title="Hide controls (H)">⟩</button>
     </header>
-    <button type="button" class="scene-now" id="scene-now" hidden><span class="sn-label">Scene</span><b></b><em>edited</em><span class="sn-more">Overview</span></button>
+    <button type="button" class="scene-now" id="scene-now" hidden><span class="sn-label">Scene</span><b></b><em>edited</em></button>
     <div class="panel-body" id="controls"></div>
     <div class="actionbar" id="actionbar"></div>
   </aside>
@@ -5452,6 +5452,20 @@ const TABS: [Tab, string][] = [
   ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'Knobs'], ['record', 'Record'],
   ['music', 'Music'], ['camera', 'Camera'], ['links', 'Connections'],
 ];
+// Desktop tab icons: one row of every page, the open one also named.
+const TAB_ICONS: Record<Tab, string> = {
+  look: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
+  shape: '<path d="M12 3.5l2.5 5.5 6 .6-4.5 4 1.3 5.9L12 16.6l-5.3 2.9L8 13.6l-4.5-4 6-.6z"/>',
+  motion: '<path d="M3 9c3-3 6 3 9 0s6 3 9 0M3 15c3-3 6 3 9 0s6 3 9 0"/>',
+  presets: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  timeline: '<path d="M4 6v12M20 6v12"/><rect x="7" y="9" width="5" height="6" rx="1"/><rect x="13" y="9" width="4" height="6" rx="1"/>',
+  xfader: '<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>',
+  knobs: '<circle cx="12" cy="12" r="8"/><path d="M12 12l4.2-4.2"/>',
+  record: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.6" fill="currentColor" stroke="none"/>',
+  music: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+  camera: '<path d="M4 8.5h3.2L9 6h6l1.8 2.5H20V18H4z"/><circle cx="12" cy="13" r="3.2"/>',
+  links: '<path d="M10.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1M13.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/>',
+};
 const INTENTS: [Intent, string, Tab[]][] = [
   ['create', 'Create', ['look', 'shape', 'motion']],
   ['perform', 'Perform', ['presets', 'timeline', 'xfader', 'knobs', 'record']],
@@ -8531,7 +8545,6 @@ function showTab(tab: Tab) {
   }
   for (const [t, b] of tabButtons) {
     b.classList.toggle('on', t === tab);
-    b.hidden = intentOf(t) !== intent;
     b.setAttribute('aria-selected', String(t === tab));
   }
   for (const [el, t] of sectionTabs) el.classList.toggle('other-tab', t !== tab);
@@ -9858,8 +9871,13 @@ function renderControls() {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('role', 'tab');
-    b.textContent = text;
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${TAB_ICONS[t]}</svg><span></span>`;
+    b.querySelector('span')!.textContent = ({ xfader: 'Fader', links: 'Links' } as Partial<Record<Tab, string>>)[t] ?? text;
+    b.title = text;
+    b.setAttribute('aria-label', text);
     b.dataset.tab = t;
+    // A gap before the first page of Perform and React.
+    if (INTENTS.some(([, , pages], k) => k > 0 && pages[0] === t)) b.classList.add('intent-start');
     b.addEventListener('click', () => showTab(t));
     tabBar.append(b);
     tabButtons.push([t, b]);
@@ -10579,6 +10597,19 @@ setTimeout(() => {
   if (currentMine) redrawMine();
 }, 0);
 document.getElementById('scene-now')!.addEventListener('click', () => openOverview());
+// Desktop: the scene's name is the panel's title. Phones keep it as a row
+// under the slim bar.
+{
+  const sn = document.getElementById('scene-now')!;
+  const head = document.querySelector<HTMLElement>('#panel header')!;
+  const phone = matchMedia('(max-width: 720px)');
+  const place = () => {
+    if (phone.matches) head.after(sn);
+    else head.querySelector('h1')!.after(sn);
+  };
+  place();
+  phone.addEventListener('change', place);
+}
 let ovEl: HTMLElement | null = null;
 function closeOverview() {
   closeTuner();

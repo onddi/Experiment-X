@@ -1573,3 +1573,26 @@ svg.ink.outline path.gone { opacity: 0.3; filter: none; stroke-dasharray: 2 6; s
 /* A lone button sits beside the knob before it, not on its own row. */
 #panel :is(.group-body, .ess-body, .more-body) > :is(.prow:has(> .kn), .row.kn) + .buttons:has(> button:only-child) { grid-column: span 3; align-self: center; margin: 0; display: flex; }
 #panel :is(.group-body, .ess-body, .more-body) > :is(.prow:has(> .kn), .row.kn) + .buttons:has(> button:only-child) > button { flex: 1; white-space: nowrap; }
+
+/* Desktop: every page in one row of icons (the open one named), and the
+   scene's name as the panel title. */
+@media (min-width: 721px) {
+  .panel .tabs.intents { display: none; }
+  .tabs.pages { flex-wrap: nowrap; gap: 1px; margin: 8px 10px 0; padding: 3px; background: var(--tile); border: 1px solid var(--line); border-radius: 10px; }
+  .tabs.pages button { flex: 1 1 0; min-width: 24px; height: 30px; padding: 0; border: 0; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); }
+  .tabs.pages button.intent-start { margin-left: 7px; }
+  .tabs.pages button.intent-start::after { content: ''; position: absolute; left: -4.5px; top: 7px; bottom: 7px; width: 1px; background: var(--line); }
+  .tabs.pages button svg { flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .tabs.pages button span { display: none; }
+  .tabs.pages button:hover { color: var(--text); background: rgb(255 255 255 / 0.04); }
+  .tabs.pages button.on { flex: none; padding: 0 10px 0 8px; background: rgba(154, 168, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(154, 168, 255, 0.5); color: #dfe3ff; }
+  .tabs.pages button.on span { display: inline; max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
+  .tabs.pages button.is-live::before { position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; margin: 0; }
+  .tabs.pages button.has-lock:not(.intent-start)::after, .tabs.pages button.has-lock.intent-start svg { }
+  .tabs.pages button.has-lock:not(.intent-start)::after { top: auto; bottom: 3px; right: 3px; width: 4px; height: 4px; }
+  .panel header .scene-now { flex: 1; padding: 0; border: 0; font-size: 14px; }
+  .panel header .scene-now .sn-label { display: none; }
+  .panel header .scene-now b { font-size: 14px; }
+  .panel header .scene-now::after { content: '›'; color: var(--muted); font-size: 15px; }
+  .panel header:has(> .scene-now:not([hidden])) h1 { display: none; }
+}
