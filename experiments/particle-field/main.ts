@@ -13152,7 +13152,7 @@ function uCrossfade() {
 const PAGES_ICON = svg('<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/>');
 const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : [])],
+  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], uRec(), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : [])],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''], ['Shuffle', ICONS.shuffle, () => shuffle(), 'primary']],
   studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], ['Pages', PAGES_ICON, () => {
     document.body.classList.toggle('u-pages');
@@ -13170,8 +13170,13 @@ const uMore = (): [string, string, () => void, string?] => ['More actions', MORE
   toggleDockMore();
   if (dockMoreEl && dockMoreEl.parentElement !== ubar) ubar.append(dockMoreEl);
 }, 'more'];
+// Record a clip straight from the Stage (V); red while it records.
+const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop recording (V)' : 'Record a clip (V)', ICONS.record, () => {
+  toggleRecord();
+  uPaint(true);
+}, recorder.on ? 'rec live' : 'rec'];
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), 'label'] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), 'label'] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uRec(), uPause(), uMore()],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
   studio: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
 };
@@ -13180,7 +13185,7 @@ function uPaint(force = false) {
   const v = uView();
   const desk = !sheetMode();
   if (desk) uPlace();
-  const sig = `${v}|${xf.on}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}`;
+  const sig = `${v}|${xf.on}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
   if (sig === uSig && !force) return;
   uSig = sig;
   ubar.classList.remove('stage', 'deck', 'studio');
@@ -13195,8 +13200,14 @@ function uPaint(force = false) {
   });
   if (v !== 'studio') document.body.classList.remove('u-pages');
   const tray = ubar.querySelector<HTMLElement>('.u-tray')!;
+  const list = (desk ? U_TRAY_DESK : U_TRAY)[v]();
+  // Rebuilt only when its buttons change, so a click never lands on a button
+  // that was just swapped out.
+  const key = list.map(([l, , , c]) => `${l}/${c ?? ''}`).join('|');
+  if (tray.dataset.key === key) return;
+  tray.dataset.key = key;
   tray.innerHTML = '';
-  (desk ? U_TRAY_DESK : U_TRAY)[v]().forEach(([label, ic, fn, cls], j) => {
+  list.forEach(([label, ic, fn, cls], j) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.title = label;
@@ -13205,7 +13216,10 @@ function uPaint(force = false) {
     b.innerHTML = ic + (named ? `<span>${label.replace(/ \(.*\)$/, '')}</span>` : '');
     if (cls) b.classList.add(...cls.split(' '));
     if (cls?.includes('more')) dockMoreBtn = b;
-    b.addEventListener('click', fn);
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fn();
+    });
     tray.append(b);
   });
   if (desk) uPlace();
