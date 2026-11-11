@@ -2075,7 +2075,7 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .ov-picker .families { display: flex; flex-wrap: wrap; gap: 5px; }
 .ov-picker .families button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
 .ov-picker .families button.on { background: var(--text); color: #111; border-color: transparent; }
-.ov-plist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; overflow-y: auto; min-height: 0; }
+.ov-plist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; overflow-y: auto; min-height: 0; grid-auto-rows: max-content; align-content: start; }
 .ov-plist button { padding: 8px 10px; border: 0; border-radius: 8px; background: var(--tile); color: var(--label); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-plist button:hover { color: var(--text); background: rgb(255 255 255 / 0.08); }
 .ov-plist button.on { background: var(--accent-bg); color: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
