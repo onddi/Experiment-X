@@ -8901,7 +8901,9 @@ function renderSearch() {
           const key = it.querySelector<HTMLElement>('[data-key]')?.dataset.key ?? '';
           const name = it.querySelector('.name')?.textContent ?? '';
           if (!full && !name) continue;
-          const text = full ? it.textContent : name;
+          // A long list (a knob picker lists every setting) doesn't count as its text.
+          const long = !!it.querySelector('select') && it.querySelectorAll('option').length > 30;
+          const text = full && !long ? it.textContent : name;
           if (has(norm(`${text} ${key} ${it.dataset.words ?? ''}`))) {
             it.classList.add('hit');
             g.classList.add('hit');
