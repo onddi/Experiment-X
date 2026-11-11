@@ -10589,7 +10589,7 @@ function openSection(id: string) {
   sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 const RACK_SKIP = new Set(['actions', 'presets', 'mine', 'record']);
-type RackCtl = Extract<Control, { kind: 'range' | 'select' | 'choice' | 'toggle' }>;
+type RackCtl = Extract<Control, { kind: 'range' | 'select' | 'choice' | 'toggle' | 'text' }>;
 let rackTimer = 0;
 type RackSrc = { get: (k: keyof Settings) => unknown; put: (k: keyof Settings, v: unknown) => void; base: Record<string, unknown> | null; settling: boolean };
 const RACK_LIVE: RackSrc = {
@@ -10602,9 +10602,9 @@ const RACK_LIVE: RackSrc = {
     return !!(morphState || pendingLook);
   },
 };
-function renderRack(src: RackSrc = RACK_LIVE) {
-  const wrap = document.createElement('div');
-  wrap.className = 'rack';
+// Which controls the rack shows, by card and tab group.
+type RackCard = { id: string; label: string; ctls: RackCtl[]; other: boolean };
+function rackPlan(src: RackSrc) {
   const base = src.base ?? (DEFAULTS as unknown as Record<string, unknown>);
   const S = new Proxy({}, { get: (_, k) => src.get(k as keyof Settings) }) as Record<string, unknown>;
   const D = DEFAULTS as unknown as Record<string, unknown>;
@@ -10612,7 +10612,7 @@ function renderRack(src: RackSrc = RACK_LIVE) {
   const same = (a: unknown, b: unknown) => a === b || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1e-6) || JSON.stringify(a) === JSON.stringify(b);
   // Tab group → card → its changed controls (a setting shown once, on the
   // first card that has it).
-  type Card = { id: string; label: string; ctls: RackCtl[]; other: boolean };
+  type Card = RackCard;
   const seen = new Set<string>();
   const groups = new Map<string, Card[]>();
   let sec: Extract<Control, { kind: 'section' }> | null = null;
@@ -10626,16 +10626,58 @@ function renderRack(src: RackSrc = RACK_LIVE) {
     if (!sec || RACK_SKIP.has(sec.id) || !('key' in c) || seen.has(c.key) || SCENE_IGNORE.has(c.key)) continue;
     // What the scene set, plus anything you've changed since (not mid-morph,
     // when everything is still on its way over).
-    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key]))) continue;
+    // Hidden in the panel right now (the word, once the shape isn't text): hidden here too.
+    if (src === RACK_LIVE && c.show && !c.show()) continue;
+    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key])) && !(src === RACK_LIVE && pairOf(c, card))) continue;
     seen.add(c.key);
     if (!card) {
       const col = OV_COLS.find(([, tabs]) => tabs.includes(pageOf(sec!)))?.[0] ?? 'Play';
       card = { id: sec.id, label: sec.label, ctls: [], other: false };
       groups.set(col, [...(groups.get(col) ?? []), card]);
     }
-    if (c.kind === 'range' || c.kind === 'select' || c.kind === 'choice' || c.kind === 'toggle') card.ctls.push(c as RackCtl);
+    if (c.kind === 'range' || c.kind === 'select' || c.kind === 'choice' || c.kind === 'toggle' || c.kind === 'text') card.ctls.push(c as RackCtl);
     else card.other = true;
   }
+  return { groups, base };
+}
+// A setting that only shows because of one already on the card (the shape
+// to draw once Shape is "A geometric shape", say) comes along with it.
+function pairOf(c: Control, card: RackCard | null) {
+  if (!c.show || !card || !('key' in c) || !c.show()) return false;
+  const D = DEFAULTS as unknown as Record<string, unknown>;
+  const S = settings as unknown as Record<string, unknown>;
+  for (const k of card.ctls.map((x) => x.key as string)) {
+    const v = S[k];
+    S[k] = D[k];
+    let gone = false;
+    try {
+      gone = !c.show();
+    } finally {
+      S[k] = v;
+    }
+    if (gone) return true;
+  }
+  return false;
+}
+const rackSig = (groups: Map<string, RackCard[]>) => [...groups.values()].flat().map((cd) => `${cd.id}:${cd.ctls.map((c) => c.key).join(',')}`).join('|');
+function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'rack';
+  const { groups, base } = rackPlan(src);
+  const sig = rackSig(groups);
+  // A choice that brings its own settings (or takes them away) redraws the
+  // rack in place.
+  const live = src;
+  src = {
+    ...live,
+    get base() { return live.base; },
+    get settling() { return live.settling; },
+    put: (k, v) => {
+      live.put(k, v);
+      if (live !== RACK_LIVE || !wrap.isConnected) return;
+      if (rackSig(rackPlan(live).groups) !== sig) wrap.replaceWith(renderRack(live));
+    },
+  };
   let count = 0;
   const updaters: (() => void)[] = [];
   const head = document.createElement('div');
@@ -10666,9 +10708,13 @@ function renderRack(src: RackSrc = RACK_LIVE) {
       for (const c of cd.ctls) {
         count++;
         if (c.kind === 'range') {
-          const k = rackKnob(c, () => base[c.key] as number, src);
+          const k = rackKnob(c, () => base[c.key] as number, live); // no redraw mid-turn
           knobs.append(k.el);
           updaters.push(k.update);
+        } else if (c.kind === 'text') {
+          const r = rackText(c, src);
+          rows.append(r.el);
+          updaters.push(r.update);
         } else {
           const r = rackRow(c, () => base[c.key], src);
           rows.append(r.el);
@@ -10818,6 +10864,27 @@ document.addEventListener('pointerdown', (e) => {
   if (tunerEl.contains(t) || t.closest('.rack-knob')) return;
   closeTuner();
 }, true);
+// A word or list to type (the text a shape spells, say). It applies when you
+// press Enter or leave the box.
+function rackText(c: Extract<Control, { kind: 'text' }>, src: RackSrc) {
+  const el = document.createElement('label');
+  el.className = 'rack-row rack-text';
+  const name = document.createElement('span');
+  name.textContent = c.label;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = c.placeholder ?? '';
+  input.setAttribute('aria-label', c.label);
+  input.addEventListener('change', () => src.put(c.key, input.value));
+  input.addEventListener('keydown', (e) => e.key === 'Enter' && input.blur());
+  el.append(name, input);
+  return {
+    el,
+    update: () => {
+      if (document.activeElement !== input) input.value = String(src.get(c.key) ?? '');
+    },
+  };
+}
 function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, home: () => unknown, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-row';

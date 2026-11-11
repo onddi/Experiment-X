@@ -1428,3 +1428,6 @@ body.watching .fab, body.watching #toggle, body.watching .panel, body.watching .
   .rack-head:not(.empty) { display: none; }
   .rack-head:not(.empty) + .rack-group { border-top: 0; padding-top: 0; }
 }
+.rack-row.rack-text { grid-template-columns: auto 1fr; gap: 12px; padding-right: 6px; }
+.rack-text input { min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--track); border-radius: 8px; background: var(--panel); color: var(--value); font: inherit; font-size: 16px; text-align: right; }
+.rack-text input:focus { outline: none; border-color: var(--accent); }
