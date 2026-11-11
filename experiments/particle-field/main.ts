@@ -35,7 +35,7 @@ function load(): Partial<Settings> {
 
 // Crossfader: two scenes and a fader between them (state; the engine is with
 // the timeline further down).
-type XfRef = { name: string; mine?: boolean };
+type XfRef = { name: string; mine?: boolean; edits?: Record<string, unknown> };
 type Xfader = { on: boolean; a: XfRef; b: XfRef; bars: number; pingpong: boolean };
 const XF_KEY = 'particle-field:xfader';
 const xf: Xfader = (() => {
@@ -6523,6 +6523,11 @@ function xfScene(r: XfRef): Settings | null {
   const p = PRESETS.find(([n]) => n === r.name);
   return p ? sceneTarget(p[1], true) : null;
 }
+// A side with your tweaks from the overview on top.
+function xfSide(r: XfRef): Settings | null {
+  const t = xfScene(r);
+  return t && r.edits ? ({ ...t, ...r.edits } as Settings) : t;
+}
 // The palette's colours for a scene, worked out without showing them.
 function xfShades(t: Settings) {
   const key = XF_PAL.map((k) => String(t[k])).join('|');
@@ -6542,8 +6547,8 @@ function xfShades(t: Settings) {
   return hit;
 }
 function xfApply(pos: number) {
-  const A = xfScene(xf.a);
-  const B = xfScene(xf.b);
+  const A = xfSide(xf.a);
+  const B = xfSide(xf.b);
   if (!A || !B) return;
   morphState = null;
   pendingLook = null;
@@ -9999,13 +10004,24 @@ function openSection(id: string) {
 const RACK_SKIP = new Set(['actions', 'presets', 'mine', 'record']);
 type RackCtl = Extract<Control, { kind: 'range' | 'select' | 'choice' | 'toggle' }>;
 let rackTimer = 0;
-function renderRack() {
+type RackSrc = { get: (k: keyof Settings) => unknown; put: (k: keyof Settings, v: unknown) => void; base: Record<string, unknown> | null; settling: boolean };
+const RACK_LIVE: RackSrc = {
+  get: (k) => settings[k],
+  put: (k, v) => set(k, v as never),
+  get base() {
+    return sceneBase as unknown as Record<string, unknown> | null;
+  },
+  get settling() {
+    return !!(morphState || pendingLook);
+  },
+};
+function renderRack(src: RackSrc = RACK_LIVE) {
   const wrap = document.createElement('div');
   wrap.className = 'rack';
-  const base = (sceneBase ?? DEFAULTS) as unknown as Record<string, unknown>;
-  const S = settings as unknown as Record<string, unknown>;
+  const base = src.base ?? (DEFAULTS as unknown as Record<string, unknown>);
+  const S = new Proxy({}, { get: (_, k) => src.get(k as keyof Settings) }) as Record<string, unknown>;
   const D = DEFAULTS as unknown as Record<string, unknown>;
-  const settling = !!(morphState || pendingLook);
+  const settling = src.settling;
   const same = (a: unknown, b: unknown) => a === b || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1e-6) || JSON.stringify(a) === JSON.stringify(b);
   // Tab group → card → its changed controls (a setting shown once, on the
   // first card that has it).
@@ -10063,11 +10079,11 @@ function renderRack() {
       for (const c of cd.ctls) {
         count++;
         if (c.kind === 'range') {
-          const k = rackKnob(c, () => base[c.key] as number);
+          const k = rackKnob(c, () => base[c.key] as number, src);
           knobs.append(k.el);
           updaters.push(k.update);
         } else {
-          const r = rackRow(c, () => base[c.key]);
+          const r = rackRow(c, () => base[c.key], src);
           rows.append(r.el);
           updaters.push(r.update);
         }
@@ -10090,7 +10106,7 @@ function renderRack() {
   return wrap;
 }
 const RACK_RING = 94.25; // 270° of a 20-radius circle
-function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number) {
+function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-knob';
   el.innerHTML = `<svg viewBox="0 0 52 52" aria-hidden="true"><circle class="bg" cx="26" cy="26" r="20" stroke-dasharray="${RACK_RING} 200" transform="rotate(135 26 26)"/><circle class="val" cx="26" cy="26" r="20" stroke-dasharray="0 200" transform="rotate(135 26 26)"/><circle class="home" r="2.5"/></svg><b></b><span></span>`;
@@ -10103,10 +10119,10 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number) {
   const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
   const put = (v: number) => {
     const snapped = Math.round((Math.min(c.max, Math.max(c.min, v)) - c.min) / c.step) * c.step + c.min;
-    set(c.key, +snapped.toFixed(6) as never);
+    src.put(c.key, +snapped.toFixed(6));
   };
   const update = () => {
-    const v = settings[c.key] as number;
+    const v = src.get(c.key) as number;
     val.setAttribute('stroke-dasharray', `${(RACK_RING * pos(v)).toFixed(1)} 200`);
     const a = ((135 + 270 * pos(home())) * Math.PI) / 180;
     homeDot.setAttribute('cx', (26 + 20 * Math.cos(a)).toFixed(1));
@@ -10118,7 +10134,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number) {
   // Drag right (or up, with a mouse) to turn it up; the whole travel is ~180 px.
   let start: { x: number; y: number; v: number } | null = null;
   el.addEventListener('pointerdown', (e) => {
-    start = { x: e.clientX, y: e.clientY, v: settings[c.key] as number };
+    start = { x: e.clientX, y: e.clientY, v: src.get(c.key) as number };
     el.setPointerCapture(e.pointerId);
     el.classList.add('turning');
   });
@@ -10136,20 +10152,20 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number) {
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
   el.addEventListener('dblclick', () => {
-    set(c.key, home() as never);
+    src.put(c.key, home());
     update();
   });
   el.addEventListener('keydown', (e) => {
     const dir = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
     if (!dir) return;
     e.preventDefault();
-    put((settings[c.key] as number) + dir * Math.max(c.step, (c.max - c.min) / 50));
+    put((src.get(c.key) as number) + dir * Math.max(c.step, (c.max - c.min) / 50));
     update();
   });
   update();
   return { el, update };
 }
-function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, home: () => unknown) {
+function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, home: () => unknown, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-row';
   const name = document.createElement('span');
@@ -10160,20 +10176,20 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
     sw.type = 'button';
     sw.className = 'rack-switch';
     sw.setAttribute('aria-label', c.label);
-    sw.addEventListener('click', () => set(c.key, !settings[c.key] as never));
+    sw.addEventListener('click', () => src.put(c.key, !src.get(c.key)));
     el.append(name, sw);
     return {
       el,
       update: () => {
-        sw.setAttribute('aria-pressed', String(!!settings[c.key]));
-        sw.textContent = settings[c.key] ? 'on' : 'off';
+        sw.setAttribute('aria-pressed', String(!!src.get(c.key)));
+        sw.textContent = src.get(c.key) ? 'on' : 'off';
       },
     };
   }
   const step = (d: number) => {
-    const i = c.options.findIndex(([k]) => k === settings[c.key]);
+    const i = c.options.findIndex(([k]) => k === src.get(c.key));
     const n = c.options.length;
-    set(c.key, c.options[(i + d + n) % n][0] as never);
+    src.put(c.key, c.options[(i + d + n) % n][0]);
   };
   const prev = document.createElement('button');
   prev.type = 'button';
@@ -10185,13 +10201,13 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
   next.textContent = '›';
   next.setAttribute('aria-label', `Next ${c.label}`);
   next.addEventListener('click', () => step(1));
-  out.addEventListener('dblclick', () => set(c.key, home() as never));
+  out.addEventListener('dblclick', () => src.put(c.key, home()));
   el.append(name, prev, out, next);
   return {
     el,
     update: () => {
-      out.textContent = c.options.find(([k]) => k === settings[c.key])?.[1] ?? String(settings[c.key]);
-      el.classList.toggle('moved', settings[c.key] !== home());
+      out.textContent = c.options.find(([k]) => k === src.get(c.key))?.[1] ?? String(src.get(c.key));
+      el.classList.toggle('moved', src.get(c.key) !== home());
     },
   };
 }
@@ -10199,13 +10215,43 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
 // Previous / next scene from the overview: the scene playing's family, A–Z as
 // in the library, wrapping round. Then the rack redraws for the new scene.
 function stepScene(d: number) {
-  const fam = (lastSceneName && FAMILY_OF[lastSceneName]) || (presetFamily === 'all' ? 'space' : presetFamily);
-  const list = PRESETS.filter(([n]) => FAMILY_OF[n] === fam).sort(([a], [b]) => a.localeCompare(b));
-  if (!list.length) return;
-  const i = list.findIndex(([n]) => n === lastSceneName);
-  const [name, p] = list[i < 0 ? 0 : (i + d + list.length) % list.length];
-  playPreset(name, p);
+  const r = sceneAfter(lastSceneName ? { name: lastSceneName } : null, lastSceneName ? d : 0);
+  const p = PRESETS.find(([n]) => n === r.name);
+  if (p) playPreset(p[0], p[1]);
   openOverview();
+}
+
+// The next / previous scene after a given one: its family A–Z (or your own
+// scenes, in order), wrapping round.
+function sceneAfter(r: XfRef | null, d: number): XfRef {
+  if (r?.mine && myPresets.length) {
+    const i = myPresets.findIndex((p) => p.name === r.name);
+    return { name: myPresets[(Math.max(0, i) + d + myPresets.length) % myPresets.length].name, mine: true };
+  }
+  const fam = (r && FAMILY_OF[r.name]) || (presetFamily === 'all' ? 'space' : presetFamily);
+  const list = PRESETS.filter(([n]) => FAMILY_OF[n] === fam).sort(([a], [b]) => a.localeCompare(b));
+  const i = list.findIndex(([n]) => n === r?.name);
+  return { name: list[i < 0 ? 0 : (i + d + list.length) % list.length][0] };
+}
+let ovSide: 'a' | 'b' = 'a';
+function xfRackSrc(side: 'a' | 'b'): RackSrc {
+  let cache: Settings | null = null;
+  const cur = () => (cache ??= xfSide(xf[side]) ?? settings);
+  return {
+    get: (k) => cur()[k],
+    put: (k, v) => {
+      const r = xf[side];
+      const base = xfScene(r) as unknown as Record<string, unknown> | null;
+      r.edits = { ...r.edits };
+      if (base && base[k] === v) delete r.edits[k];
+      else r.edits[k] = v;
+      cache = null;
+      xfLast = -1;
+      xfSave();
+    },
+    base: xfScene(xf[side]) as unknown as Record<string, unknown> | null,
+    settling: false,
+  };
 }
 
 function openOverview() {
@@ -10215,31 +10261,100 @@ function openOverview() {
   el.className = 'overview';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Overview');
-  const name = document.querySelector('#scene-now b')?.textContent || 'Your mix';
-  const edited = document.getElementById('scene-now')?.classList.contains('edited');
   const head = document.createElement('div');
   head.className = 'ov-head';
-  head.innerHTML = `<div class="ov-title"><button type="button" class="ov-step" aria-label="Previous scene">‹</button><span><small></small><b></b>${edited ? '<em>edited</em>' : ''}</span><button type="button" class="ov-step" aria-label="Next scene">›</button></div><button type="button" class="icon ov-close" aria-label="Close">✕</button>`;
-  head.querySelector('b')!.textContent = name;
-  head.querySelector('small')!.textContent = lastSceneName && !currentMine && !xf.on ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Overview';
-  head.querySelector('.ov-close')!.addEventListener('click', closeOverview);
-  const [prevB, nextB] = head.querySelectorAll<HTMLButtonElement>('.ov-step');
-  prevB.addEventListener('click', () => stepScene(-1));
-  nextB.addEventListener('click', () => stepScene(1));
   const body = document.createElement('div');
   body.className = 'ov-body';
-  // E: every setting this scene changed, playable. Numbers are knobs (drag
-  // up or sideways; the white dot is the scene's own value, double-tap to
-  // snap back), choices step with ‹ ›, switches flip.
-  const rack = renderRack();
-  body.append(rack);
+  if (xf.on) {
+    // Crossfader: both scenes, the fader between them, and the knobs of the
+    // side you pick. Turning one changes that scene; the mix follows.
+    head.innerHTML = '<div class="ov-title"><span><small>Crossfader</small><b></b></span></div><button type="button" class="icon ov-close" aria-label="Close">✕</button>';
+    head.querySelector('b')!.textContent = `${xf.a.name} ↔ ${xf.b.name}`;
+    const box = document.createElement('div');
+    box.className = 'ov-xf';
+    const side = (s: 'a' | 'b') => {
+      const c = document.createElement('div');
+      c.className = `ov-side${ovSide === s ? ' on' : ''}`;
+      const edits = Object.keys(xf[s].edits ?? {}).length;
+      c.innerHTML = `<button type="button" class="ov-step" aria-label="Previous scene for ${s.toUpperCase()}">‹</button><button type="button" class="ov-pick"><small>${s.toUpperCase()}${edits ? ` · ${edits} tweak${edits > 1 ? 's' : ''}` : ''}</small><b></b></button><button type="button" class="ov-step" aria-label="Next scene for ${s.toUpperCase()}">›</button>`;
+      c.querySelector('b')!.textContent = xf[s].name;
+      const [pv, pick, nx] = c.querySelectorAll('button');
+      const swap = (d: number) => {
+        const r = sceneAfter(xf[s], d);
+        xfSetScene(s, r.mine ? `my:${r.name}` : r.name);
+        ovSide = s;
+        openOverview();
+      };
+      pv.addEventListener('click', () => swap(-1));
+      nx.addEventListener('click', () => swap(1));
+      pick.addEventListener('click', () => {
+        ovSide = s;
+        openOverview();
+      });
+      return c;
+    };
+    const fader = document.createElement('input');
+    fader.type = 'range';
+    fader.min = '0';
+    fader.max = '1';
+    fader.step = '0.005';
+    fader.value = String(settings.xfPos);
+    fader.className = 'ov-fader';
+    fader.setAttribute('aria-label', 'Crossfader');
+    fader.addEventListener('input', () => xfNudge(+fader.value - settings.xfPos));
+    const stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'ov-xfstop';
+    stop.textContent = 'Stop crossfading';
+    stop.addEventListener('click', () => {
+      xfSetOn(false);
+      openOverview();
+    });
+    box.append(side('a'), fader, side('b'), stop);
+    body.append(box, renderRack(xfRackSrc(ovSide)));
+    const sync = () => {
+      if (!el.isConnected) return;
+      if (document.activeElement !== fader) fader.value = String(settings.xfPos);
+      requestAnimationFrame(sync);
+    };
+    requestAnimationFrame(sync);
+  } else {
+    const name = document.querySelector('#scene-now b')?.textContent || 'Your mix';
+    const edited = document.getElementById('scene-now')?.classList.contains('edited');
+    head.innerHTML = `<div class="ov-title"><button type="button" class="ov-step" aria-label="Previous scene">‹</button><span><small></small><b></b>${edited ? '<em>edited</em>' : ''}</span><button type="button" class="ov-step" aria-label="Next scene">›</button></div><button type="button" class="icon ov-close" aria-label="Close">✕</button>`;
+    head.querySelector('b')!.textContent = name;
+    head.querySelector('small')!.textContent = lastSceneName && !currentMine ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Overview';
+    const [prevB, nextB] = head.querySelectorAll<HTMLButtonElement>('.ov-step');
+    prevB.addEventListener('click', () => stepScene(-1));
+    nextB.addEventListener('click', () => stepScene(1));
+    // Start a crossfade from this scene to the next one along.
+    const xfStart = document.createElement('button');
+    xfStart.type = 'button';
+    xfStart.className = 'ov-xfstart';
+    xfStart.textContent = 'Crossfade with another scene';
+    xfStart.addEventListener('click', () => {
+      const a: XfRef | null = currentMine ? { name: currentMine.name, mine: true } : lastSceneName ? { name: lastSceneName } : null;
+      const from = a ?? sceneAfter(null, 0);
+      xf.a = from;
+      xf.b = sceneAfter(from, 1);
+      settings.xfPos = 0;
+      ovSide = 'b';
+      xfSetOn(true);
+      openOverview();
+    });
+    // Every setting this scene changed, playable. Numbers are knobs (the
+    // white dot is the scene's own value, double-tap to snap back), choices
+    // step with ‹ ›, switches flip.
+    body.append(xfStart, renderRack());
+  }
+  head.querySelector('.ov-close')!.addEventListener('click', closeOverview);
   el.append(head, body);
   document.body.append(el);
   ovEl = el;
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeOverview();
   });
-  head.querySelector<HTMLElement>('button')!.focus();
+  head.querySelector<HTMLElement>('.ov-close')!.focus();
 }
 
 const statsEl = () => document.getElementById('stats');

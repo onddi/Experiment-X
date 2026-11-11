@@ -1263,6 +1263,17 @@ body:not(.searching):not(.show-classic) .group[data-sec="lens"] .group-body > :n
 .ov-title em { order: 3; }
 .ov-step { flex: none; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: #1c1d23; color: var(--text); font: inherit; font-size: 20px; cursor: pointer; }
 .ov-step:hover { border-color: #ff9a3c; }
+.ov-xfstart { align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: #1c1d23; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.ov-xfstart::before { content: 'A ↔ B  '; color: #ffb070; font-weight: 600; }
+.ov-xf { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.ov-side { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 6px; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: #16171c; }
+.ov-side.on { border-color: #ff9a3c; background: #2a1d10; }
+.ov-pick { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 4px 0; border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; }
+.ov-pick small { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
+.ov-side.on .ov-pick small { color: #ffb070; }
+.ov-pick b { max-width: 100%; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-fader { width: 100%; height: 36px; accent-color: #ff9a3c; margin: 0; }
+.ov-xfstop { justify-self: start; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
 .ov-head small { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .ov-head b { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-head em { font-style: normal; font-size: 12px; color: #ffb070; }
