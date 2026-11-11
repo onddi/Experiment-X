@@ -25,6 +25,13 @@ const bySlug = (slug: string) => experiments.find((e) => e.slug === slug);
 
 /** What's on screen: the base experiment plus any layers. */
 let view: View = { layers: [], input: -1 };
+/** Set when a player opens: start playing as soon as it reports a loaded track. */
+let autostart = false;
+const startBtn = $<HTMLButtonElement>('start-btn');
+function armAutostart() {
+  autostart = true;
+  startBtn.hidden = true;
+}
 /**
  * Browser features experiments may use inside X-Frame's iframes: autoplay for
  * synced playback, camera/mic/screen capture for audio and webcam inputs.
@@ -110,7 +117,11 @@ function createFrame(exp: Experiment) {
   // Lets an audio layer start from the toolbar's play button without a tap of its own.
   frame.allow = FRAME_ALLOW;
   frame.src = exp.url;
-  frame.addEventListener('load', () => tellLayer(frame));
+  frame.addEventListener('load', () => {
+    tellLayer(frame);
+    // With several experiments on screen, start with every options panel closed.
+    if (view.layers.length > 1) frame.contentWindow?.postMessage({ type: 'xp:close-panel' }, location.origin);
+  });
   stack.append(frame);
   return frame;
 }
@@ -134,7 +145,10 @@ function applyView() {
   view.layers.forEach((l, i) => {
     let frame = frames.get(l.slug);
     if (!frame) {
-      frame = createFrame(bySlug(l.slug)!);
+      const exp = bySlug(l.slug)!;
+      frame = createFrame(exp);
+      // A newly opened player starts playing once its track has loaded (see autostart).
+      if (exp.provides?.includes('transport')) armAutostart();
       frames.set(l.slug, frame);
     }
     const r = rects[i];
@@ -168,13 +182,25 @@ function applyView() {
   renderPanel();
 }
 
-/** How much stacked layers above the one with the mouse fade back, so its controls are readable. */
+/** Which experiment has its options panel open (they report it with xp:panel). */
+let panelOpenSlug: string | null = null;
+
+function refreshOpacities() {
+  view.layers.forEach((l, i) => {
+    const f = frames.get(l.slug);
+    if (f) f.style.opacity = layerOpacity(i);
+  });
+}
+
+/** How much stacked layers above the one with the mouse fade back while its options panel is open. */
 const FADE_ABOVE_INPUT = 0.2;
 
 function layerOpacity(i: number): string {
   if (i === 0) return '';
   const l = view.layers[i];
-  const above = l.placement === 'full' && i > inputLayer(view);
+  const input = inputLayer(view);
+  // Fade only while the layer with the mouse has its options panel open.
+  const above = l.placement === 'full' && i > input && panelOpenSlug === view.layers[input]?.slug;
   return String((l.opacity / 100) * (above ? FADE_ABOVE_INPUT : 1));
 }
 
@@ -509,8 +535,15 @@ window.addEventListener('message', (e) => {
 
   if (handleBusMessage(source, msg)) return;
   if (msg.type === 'xp:panel') {
-    closePanels(source);
-    openPanel(false);
+    const open = (msg as { open?: boolean }).open !== false;
+    if (open) {
+      panelOpenSlug = slug;
+      closePanels(source);
+      openPanel(false);
+    } else if (panelOpenSlug === slug) {
+      panelOpenSlug = null;
+    }
+    refreshOpacities();
   } else if (msg.type === 'xp:hello') {
     const frame = frames.get(slug);
     if (frame) tellLayer(frame);
@@ -584,20 +617,62 @@ $('fs-exit').addEventListener('click', () => setFullscreen(false));
 // Shared play/pause ('play' topic): one button for every experiment that hooks in.
 // It shows only while someone listens, and follows whoever pressed play or pause last.
 const playAll = $('play-all');
+/** Whether things are playing: the player's own state when there is one, else the last shared play/pause. */
+function isPlaying() {
+  const t = lastValue('transport') as { playing?: boolean } | undefined;
+  if (typeof t?.playing === 'boolean') return t.playing;
+  return (lastValue('play') as { playing?: boolean } | undefined)?.playing ?? true;
+}
 function syncPlayAll() {
   const listening = hasSubscribers('play');
   playAll.hidden = !listening;
-  const playing = (lastValue('play') as { playing?: boolean } | undefined)?.playing ?? true;
+  const playing = isPlaying();
   playAll.textContent = playing ? '⏸' : '▶';
   playAll.title = playing ? 'Pause everything' : 'Play everything';
   playAll.setAttribute('aria-label', playAll.title);
 }
 playAll.addEventListener('click', () => {
-  const playing = (lastValue('play') as { playing?: boolean } | undefined)?.playing ?? true;
+  const playing = isPlaying();
   shellPublish('play', { playing: !playing });
+  if (!playing) shellPublish('transport.command', { action: 'play' });
+  hideStart();
   syncPlayAll();
 });
 shellSubscribe('play', syncPlayAll);
+
+// --- autostart -----------------------------------------------------------------
+// A view with a player in it (an experiment that provides "transport") starts
+// playing by itself once its track is loaded. Browsers often block sound until
+// the visitor has tapped the page; then a "Tap to start" button appears, and
+// that tap starts everything.
+
+
+function hideStart() {
+  startBtn.hidden = true;
+}
+function startAll() {
+  hideStart();
+  shellPublish('play', { playing: true });
+  shellPublish('transport.command', { action: 'play' });
+}
+startBtn.addEventListener('click', startAll);
+
+shellSubscribe('transport', (data) => {
+  const t = data as { playing?: boolean; duration?: number } | undefined;
+  syncPlayAll();
+  if (t?.playing) {
+    autostart = false;
+    hideStart();
+    return;
+  }
+  if (!autostart || !(t?.duration && t.duration > 0)) return;
+  autostart = false;
+  startAll();
+  // Still paused a moment later: the browser wants a tap first.
+  setTimeout(() => {
+    if (!(lastValue('transport') as { playing?: boolean } | undefined)?.playing) startBtn.hidden = false;
+  }, 900);
+});
 window.setInterval(syncPlayAll, 1000);
 layersBtn.addEventListener('click', () => openPanel(!!panel.hidden));
 mouseBtn.addEventListener('click', cycleMouse);

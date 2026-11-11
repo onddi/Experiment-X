@@ -135,7 +135,9 @@ export const xframe = {
   /**
    * Keep only one options panel open across layers: when yours opens, X-Frame
    * closes the others (and its own Layers panel), and asks you to close yours
-   * when another one opens. Watches `element` for attribute changes and calls
+   * when another one opens. While yours is open, layers stacked above you fade
+   * back so it stays readable. When several experiments are on screen, X-Frame
+   * also closes panels as they load, so a shared link opens clean. Watches `element` for attribute changes and calls
    * `isOpen()` to tell open from closed. Returns a function that stops it.
    */
   panel({ element, isOpen, close }: { element: Element; isOpen: () => boolean; close: () => void }): () => void {
@@ -143,7 +145,7 @@ export const xframe = {
     let open = isOpen();
     const observer = new MutationObserver(() => {
       const now = isOpen();
-      if (now && !open) send({ type: 'xp:panel', open: true });
+      if (now !== open) send({ type: 'xp:panel', open: now });
       open = now;
     });
     observer.observe(element, { attributes: true });

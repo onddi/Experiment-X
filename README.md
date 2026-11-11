@@ -120,9 +120,14 @@ is unchanged. Per layer you can set:
 - **Blend mode** and **opacity** for stacked layers. `screen` is a good default
   for visuals on a dark background: black disappears, light adds up.
 - **Gets the mouse**: only one stacked layer (or the base) gets pointer input;
-  docked strips always do. Stacked layers above the one with the mouse fade back
-  to 20% so its controls stay readable. The chip in the toolbar names the layer
+  docked strips always do. While the layer with the mouse has its options panel
+  open, stacked layers above it fade back to 20% so the panel stays readable. The chip in the toolbar names the layer
   with the mouse; tap it (or press **L**) to pass the mouse to the next one.
+
+A shared link opens clean: with several experiments on screen, their options
+panels start closed, and a view with a player in it (an experiment that provides
+`transport`) starts playing as soon as its track loads. If the browser blocks
+sound until the page is tapped, a **Tap to start** button starts everything.
 
 The whole setup is in the URL, so it can be bookmarked or shared:
 
