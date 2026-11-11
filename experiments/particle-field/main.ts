@@ -12685,7 +12685,16 @@ function sceneKnobs(t: Settings): string[] {
     t.depth > 0 && 'depth',
     t.flow > 0 && 'flow',
     t.render === 'glyphs' ? 'glyphScale' : t.render === 'links' ? 'linkDist' : t.render === 'ribbons' ? 'ribbonLen' : false,
-    'trail', 'speed', 'size', 'palette',
+    // Then what sets this look apart most from the plain defaults.
+    ...(['trail', 'speed', 'size', 'count', 'jitter', 'friction', 'sizeVar', 'flowScale', 'radius'] as const)
+      .map((k) => {
+        const c = CONTROLS.find((x) => x.kind === 'range' && x.key === k) as Extract<Control, { kind: 'range' }> | undefined;
+        return [k, c ? Math.abs((t[k] as number) - (DEFAULTS[k] as number)) / (c.max - c.min) : 0] as const;
+      })
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([k]) => k),
+    'render', 'palette',
   ];
   const out: string[] = [];
   for (const k of cands) if (k && !out.includes(k) && knobSpec(k) && out.length < 5) out.push(k);
