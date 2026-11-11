@@ -13513,7 +13513,7 @@ window.addEventListener(
   'wheel',
   (e) => {
     const t = e.target as Element | null;
-    if (t?.closest?.('#panel, #toggle, .overview')) return;
+    if (t?.closest?.('#panel, #toggle, .overview, .knob-menu')) return;
     if (!playing()) return;
     e.preventDefault();
     const slot = !e.shiftKey ? (e.altKey ? 4 : 0) : e.metaKey || e.ctrlKey ? 1 : e.altKey ? 2 : 3;
