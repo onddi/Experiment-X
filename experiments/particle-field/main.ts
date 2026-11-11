@@ -11134,6 +11134,8 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     // Touch: sideways only, so an up/down swipe still scrolls the list, and
     // only once it's clearly a drag (a tap opens the slider).
     if (touch && !start.turned && Math.abs(e.clientX - start.x) < 10) return;
+    // Mouse: a small dead zone, so holding still (for the solo view) doesn't nudge it.
+    if (!touch && !start.turned && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
     start.turned = true;
     el.classList.add('turning');
     const d = (e.clientX - start.x - (touch ? 0 : e.clientY - start.y)) / 180;
@@ -11256,13 +11258,17 @@ function soloRowOpen(row: HTMLElement, update: () => void) {
 function holdToSolo(el: HTMLElement, fire: () => void) {
   let timer = 0;
   let at: { x: number; y: number } | null = null;
+  let slack = 10;
   const stop = () => {
     clearTimeout(timer);
     at = null;
   };
   el.addEventListener('pointerdown', (e) => {
     stop();
-    if (e.pointerType !== 'touch' || !el.closest('.overview') || document.body.classList.contains('solo')) return;
+    if (e.button > 0 || !el.closest('.overview') || document.body.classList.contains('solo')) return;
+    // A mouse holds a little longer and must stay put: a press is also how a drag starts.
+    const touch = e.pointerType === 'touch';
+    slack = touch ? 10 : 4;
     at = { x: e.clientX, y: e.clientY };
     timer = window.setTimeout(() => {
       at = null;
@@ -11273,15 +11279,26 @@ function holdToSolo(el: HTMLElement, fire: () => void) {
       document.addEventListener('pointerup', done, { once: true, capture: true });
       document.addEventListener('pointercancel', done, { once: true, capture: true });
       fire();
-    }, 450);
+    }, touch ? 450 : 550);
   });
   el.addEventListener('pointermove', (e) => {
-    if (at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 10) stop();
+    if (at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > slack) stop();
   });
   el.addEventListener('pointerup', stop);
   el.addEventListener('pointercancel', stop);
   el.addEventListener('contextmenu', (e) => el.closest('.overview') && e.preventDefault());
 }
+// Esc leaves the solo view too (keyboards).
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('solo')) {
+    e.stopPropagation();
+    if (soloRow) exitSolo();
+    else {
+      closeTuner();
+      document.body.classList.remove('solo');
+    }
+  }
+}, true);
 // A tap anywhere else (not another knob) puts the tuner away.
 document.addEventListener('pointerdown', (e) => {
   const t0 = e.target as HTMLElement;

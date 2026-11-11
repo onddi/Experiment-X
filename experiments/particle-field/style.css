@@ -1741,3 +1741,7 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 .panel header .view-btn svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
 .panel.collapsed header .view-btn { display: none; }
 .panel.collapsed :is(.scene-strip, .react-sub, .dock-more) { display: none !important; }
+/* Desktop: the single-setting view (hold a control in the overview) is a card, not a full-width sheet. */
+@media (min-width: 721px) {
+  .tuner { left: 50%; right: auto; bottom: 28px; width: min(560px, calc(100vw - 32px)); transform: translateX(-50%); border: 1px solid var(--line); border-radius: 16px; padding-bottom: 16px; box-sizing: border-box; }
+}
