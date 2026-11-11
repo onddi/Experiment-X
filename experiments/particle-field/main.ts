@@ -10958,7 +10958,10 @@ function syncSceneNow() {
     // Mid-morph or waiting for the beat, it isn't "edited" yet.
     if (name && !morphState && !pendingLook) edited = sceneEdited();
   }
-  el.hidden = !name;
+  // Nothing picked (after a shuffle, say): still show it, as "Your mix", so
+  // the overview is always one tap away.
+  name ||= 'Your mix';
+  el.hidden = false;
   el.querySelector('b')!.textContent = name;
   el.classList.toggle('edited', edited);
   markLibrary();
@@ -11859,7 +11862,7 @@ function openOverview() {
     if (xf.on) {
       xfSetOn(false);
       openOverview();
-    } else body.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
+    } else head.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
   });
   el.append(head, body, foot);
   document.body.append(el);
