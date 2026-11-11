@@ -1652,6 +1652,13 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
   .ss-browse { border: 0; background: none; padding: 0; color: var(--accent-soft); font: inherit; font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; cursor: pointer; }
   .ss-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 4px; scroll-behavior: smooth; }
   .ss-row::-webkit-scrollbar { display: none; }
+  .ss-back { display: none; align-items: center; gap: 10px; }
+  .ss-back button { padding: 6px 10px; border: 0; border-radius: 8px; background: var(--tile); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; }
+  .ss-back button:hover { background: rgba(154, 168, 255, 0.14); }
+  .ss-back b { font-size: 14px; font-weight: 600; }
+  #panel[data-page='presets'] .scene-strip :is(.ss-head, .ss-row) { display: none; }
+  #panel[data-page='presets'] .ss-back { display: flex; }
+  #panel[data-page='presets'] :is(.tabs.pages, .fold-all) { display: none; }
   .ss-scene { flex: none; width: 66px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .ss-scene i { width: 66px; height: 40px; border-radius: 8px; opacity: 0.75; transition: opacity 0.15s; }
   .ss-scene span { max-width: 100%; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

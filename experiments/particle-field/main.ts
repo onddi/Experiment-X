@@ -8721,10 +8721,19 @@ function searchItem(to: HTMLElement, el: HTMLElement, words = '') {
 function sceneStrip() {
   const el = document.createElement('div');
   el.className = 'scene-strip';
-  el.innerHTML = '<div class="ss-head"><span></span><button type="button" class="ss-browse">Browse all ›</button></div><div class="ss-row"></div>';
+  el.innerHTML = '<div class="ss-head"><span></span><button type="button" class="ss-browse">Browse all ›</button></div><div class="ss-row"></div><div class="ss-back"><button type="button">‹ Back</button><b>All scenes</b></div>';
   const label = el.querySelector<HTMLElement>('.ss-head span')!;
   const row = el.querySelector<HTMLElement>('.ss-row')!;
-  el.querySelector('.ss-browse')!.addEventListener('click', () => showTab('presets'));
+  // Browsing is its own view: the strip and the tabs give way to a Back bar.
+  let from: Tab = 'shape';
+  el.querySelector('.ss-browse')!.addEventListener('click', () => {
+    if (currentTab !== 'presets') from = currentTab;
+    showTab('presets');
+    const lib = document.querySelector<HTMLElement>('[data-sec="presets"]');
+    if (lib?.classList.contains('closed')) lib.querySelector<HTMLElement>('.group-head')?.click();
+    controls.scrollTop = 0;
+  });
+  el.querySelector('.ss-back button')!.addEventListener('click', () => showTab(from === 'presets' ? 'shape' : from));
   const swatch = (p: Partial<Settings>) => {
     const key = (p.palette ?? DEFAULTS.palette) as keyof typeof PALETTES;
     const def = PALETTES[key] ?? PALETTES[DEFAULTS.palette as keyof typeof PALETTES];
