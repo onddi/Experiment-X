@@ -10938,8 +10938,12 @@ document.getElementById('scene-now')!.addEventListener('click', () => openOvervi
   document.querySelector<HTMLElement>('#panel header h1')!.after(sn);
 }
 let ovEl: HTMLElement | null = null;
+/** Where the overview was scrolled to when it closed. */
+let watchScroll = 0;
 function closeOverview() {
   if (document.querySelector('.overview')) revealKnobs();
+  // Where it was scrolled to, so it opens again on the same knobs.
+  if (ovEl) watchScroll = ovEl.querySelector('.ov-body')?.scrollTop ?? 0;
   closeTuner();
   ovEl?.remove();
   ovEl = null;
@@ -10953,19 +10957,15 @@ watchBar.innerHTML = `<button type="button" class="watch-scene" aria-label="Back
 watchBar.querySelector('.watch-scene')!.addEventListener('click', stopWatching);
 watchBar.querySelector('.watch-shuffle')!.addEventListener('click', () => shuffle());
 document.querySelector('.stage')!.append(watchBar);
-// Where the overview was scrolled to, so coming back from Watch lands on the
-// same knobs.
-let watchScroll = 0;
+// Watch is simply the field with everything closed (the same view as
+// closing the menu); the bottom bar, swipes and knobs work the same.
 function startWatching() {
-  watchScroll = ovEl?.querySelector('.ov-body')?.scrollTop ?? 0;
   closeOverview();
   if (!panel.classList.contains('collapsed')) toggle.click();
-  document.body.classList.add('watching');
   revealKnobs();
   watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || 'Overview';
 }
 function stopWatching() {
-  document.body.classList.remove('watching');
   openOverview();
   const body = ovEl?.querySelector<HTMLElement>('.ov-body');
   if (body) body.scrollTop = watchScroll;
@@ -10973,7 +10973,9 @@ function stopWatching() {
 {
   let sw: { x: number; y: number; t: number } | null = null;
   canvas.addEventListener('pointerdown', (e) => {
-    sw = document.body.classList.contains('watching') ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
+    // The field showing on its own (menu and overview closed), on a phone.
+    const bare = sheetMode() && panel.classList.contains('collapsed') && !ovEl && !document.body.classList.contains('solo');
+    sw = bare ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
   });
   canvas.addEventListener('pointerup', (e) => {
     if (!sw) return;
@@ -12701,8 +12703,7 @@ mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overvie
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
-  if (document.body.classList.contains('watching')) stopWatching();
-  else openOverview();
+  stopWatching();
 });
 mbar.querySelector('.mb-menu')!.addEventListener('click', () => {
   document.body.classList.remove('watching');
