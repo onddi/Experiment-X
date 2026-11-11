@@ -12364,7 +12364,55 @@ const rangeOf = (key: string) => CONTROLS.find((c): c is Extract<Control, { kind
 // A field knob works on a number: a slider's value, or a choice's place in
 // its list (turning steps through the options).
 type KnobSpec = { key: keyof Settings; label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => boolean; text: (v: number) => string; options?: [string, string][] };
+// Some choices only make sense as a few options on a knob.
+const KNOB_OPTIONS: Record<string, string[]> = { shape: ['solid', 'pattern', 'geo'] };
+// Related settings: a choice that decides which of several other choices
+// shows (Particles form → 3D shape / Geometric shape / Pattern…). Found by
+// trying each option and seeing which choices appear, once, on first use.
+type KnobFamily = { parent: string; kids: string[] };
+let familyMap: Map<string, KnobFamily> | null = null;
+function families() {
+  if (familyMap) return familyMap;
+  familyMap = new Map();
+  const S = settings as unknown as Record<string, unknown>;
+  const choices = CONTROLS.filter((c): c is Extract<Control, { kind: 'select' | 'choice' }> => (c.kind === 'select' || c.kind === 'choice') && c.options !== PLAYABLE);
+  const shy = choices.filter((c) => c.show);
+  for (const p of choices) {
+    if (familyMap.has(p.key)) continue;
+    const seen = new Map<string, number>();
+    const was = S[p.key];
+    try {
+      for (const [o] of p.options) {
+        S[p.key] = o;
+        for (const c of shy) if (c.key !== p.key && c.show!()) seen.set(c.key, (seen.get(c.key) ?? 0) + 1);
+      }
+    } catch {
+      continue;
+    } finally {
+      S[p.key] = was;
+    }
+    // Each one shows for exactly one option of the parent.
+    const kids = [...seen].filter(([, n]) => n === 1).map(([k]) => k).filter((k) => !familyMap!.has(k));
+    if (kids.length < 2) continue;
+    const fam: KnobFamily = { parent: p.key, kids };
+    for (const k of kids) familyMap.set(k, fam);
+    familyMap.set(p.key, { parent: p.key, kids });
+  }
+  return familyMap;
+}
+/** The setting a knob turns now: one of a family turns whichever shows. */
+function knobTarget(key: string) {
+  const f = families().get(key);
+  if (!f || f.parent === key) return key;
+  return f.kids.find((k) => CONTROLS.find((c) => 'key' in c && c.key === k)?.show?.()) ?? key;
+}
+/** A knob for this setting is picked (any one of a family's shapes counts). */
+function knobPicked(picks: string[], key: string) {
+  const f = families().get(key);
+  return f && f.parent !== key ? picks.some((k) => f.kids.includes(k)) : picks.includes(key);
+}
 function knobSpec(key: string): KnobSpec | null {
+  key = knobTarget(key);
   const c = CONTROLS.find((x) => (x.kind === 'range' || x.kind === 'select' || x.kind === 'choice') && x.key === key);
   if (!c) return null;
   const S = settings as unknown as Record<string, unknown>;
@@ -12381,7 +12429,8 @@ function knobSpec(key: string): KnobSpec | null {
       text: (v) => `${Math.round(((v - c.min) / (c.max - c.min)) * 100)}%`,
     };
   if (c.kind !== 'select' && c.kind !== 'choice') return null;
-  const opts = c.options;
+  const only = KNOB_OPTIONS[c.key];
+  const opts = only ? c.options.filter(([k]) => only.includes(k)).sort((x, y) => only.indexOf(x[0]) - only.indexOf(y[0])) : c.options;
   return {
     key: c.key, label: c.label, min: 0, max: Math.max(1, opts.length - 1), step: 1, options: opts,
     get: () => Math.max(0, opts.findIndex(([k]) => k === S[c.key])),
@@ -12416,14 +12465,19 @@ function clearKnobPicks() {
   changed(new Set<keyof Settings>(['knobsPick']));
 }
 function isFieldKnob(key: string) {
-  return !!key && knobPicks().includes(key);
+  return !!key && knobPicked(knobPicks(), key);
 }
 /** Pick a setting as a field knob, or un-pick it. The first pick replaces
  * your knob set until the picks are cleared. */
 function toggleFieldKnob(key: string) {
   const picks = knobPicks();
-  const on = !picks.includes(key);
-  settings.knobsPick = (on ? [...picks, key] : picks.filter((k) => k !== key)).join(',');
+  const on = !knobPicked(picks, key);
+  // Related settings come and go together (Particles form + its shape).
+  const fam = families().get(key);
+  const group = fam ? [fam.parent, ...fam.kids] : [key];
+  const rest = picks.filter((k) => !group.includes(k));
+  const both = fam ? [fam.parent, fam.parent === key ? fam.kids[0] : key] : [key];
+  settings.knobsPick = (on ? [...rest, ...both] : rest).join(',');
   if (on) {
     settings.playOn = true;
     // The whole Controls page switched off would hide them: switch it on.
@@ -12642,7 +12696,7 @@ function pillPaint(wake = false) {
   if (wake) {
     pill.classList.add('awake');
     clearTimeout(pillTimer);
-    pillTimer = window.setTimeout(() => pill.classList.remove('awake'), 1800);
+    pillTimer = window.setTimeout(() => pill.classList.remove('awake'), 2500);
   }
 }
 refreshers.push(() => pillPaint());

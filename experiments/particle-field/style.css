@@ -1816,8 +1816,12 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .swipe-pill:not([hidden]) { display: block; }
   .swipe-pill { position: absolute; left: 0; right: 0; bottom: calc(84px + env(safe-area-inset-bottom)); height: 120px; z-index: 3; pointer-events: none; }
   .sp-zone { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
-  .sp-body { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: grid; grid-template-columns: auto auto; align-items: baseline; justify-content: center; column-gap: 8px; row-gap: 5px; min-width: 150px; padding: 8px 16px 9px; border-radius: 999px; background: rgb(14 16 24 / 0.55); border: 1px solid rgb(255 255 255 / 0.08); backdrop-filter: blur(6px); opacity: 0.35; transition: opacity 0.4s; pointer-events: none; }
+  .sp-body { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: grid; grid-template-columns: auto auto; align-items: baseline; justify-content: center; column-gap: 8px; row-gap: 5px; min-width: 150px; padding: 8px 16px 9px; border-radius: 999px; background: rgb(14 16 24 / 0.55); border: 1px solid rgb(255 255 255 / 0.08); backdrop-filter: blur(6px); opacity: 0; transition: opacity 0.8s; pointer-events: none; }
   .swipe-pill.awake .sp-body { opacity: 1; transition-duration: 0.12s; }
+  /* Watch: no chrome, a quiet caption just above the scene button. */
+  body.watching .swipe-pill { bottom: calc(66px + env(safe-area-inset-bottom)); height: 110px; }
+  body.watching .sp-body { left: 20px; transform: none; bottom: 4px; justify-content: start; min-width: 140px; padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; text-shadow: 0 1px 6px rgb(0 0 0 / 0.8); }
+  body.watching .sp-dots { justify-self: start; }
   .sp-name { font-size: 11.5px; color: rgb(255 255 255 / 0.6); }
   .sp-val { font-size: 13px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sp-bar { grid-column: 1 / -1; position: relative; height: 3px; border-radius: 2px; background: rgb(255 255 255 / 0.12); overflow: hidden; }
