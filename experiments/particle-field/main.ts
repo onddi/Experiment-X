@@ -6407,6 +6407,7 @@ const CONTROLS: Control[] = [
     // The dock: the performance pages on the left, then the actions you
     // reach for mid-set; the rarer ones wait under ⋯.
     buttons: [
+      ['Watch: just the field, no menus', ICONS.eye, () => startWatching(), 'Watch'],
       ['On-screen controls: knobs and gestures on the field', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Controls', 'knobs'],
       ['Timeline', svg(TAB_ICONS.timeline), () => showTab('timeline'), 'Timeline', 'timeline'],
       ['Record a clip (V)', ICONS.record, dockRecord, 'Record'],
@@ -10619,6 +10620,7 @@ function renderControls() {
         }
         if (tab) dockTabs.push([tab, b]);
         if (short === 'More') { b.classList.add('dock-more-btn'); dockMoreBtn = b; }
+        if (short === 'Watch') b.classList.add('dock-watch');
         if (short && ['Controls', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
         // A dock page's button opens it, and a second press goes back.
         b.addEventListener('click', tab ? () => (currentTab === tab ? backFromPlay() : fn()) : fn);
@@ -12988,7 +12990,6 @@ xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapse
 // ⌘K / Ctrl+K (or /) finds any setting: opens the panel and the search field.
 function focusSearch() {
   if (panel.classList.contains('collapsed')) toggle.click();
-  if (sheetMode() && !panel.classList.contains('finding')) document.getElementById('sheet-find')!.click();
   const input = document.querySelector<HTMLInputElement>('.search input');
   input?.focus();
   input?.select();

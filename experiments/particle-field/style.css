@@ -219,7 +219,7 @@ button:hover, select:hover { border-color: #3c3f46; }
   }
   .panel.dragging { transition: none; }
   .panel header { position: relative; gap: 6px; padding: 10px 10px 8px 16px; }
-  .panel header h1 { display: none; }
+  .sheet-title, .panel header .sheet-btn { display: none !important; }
   .sheet-title { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; height: 40px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
   .sheet-title small { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
   .sheet-title b { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -234,11 +234,6 @@ button:hover, select:hover { border-color: #3c3f46; }
   .panel:not(.collapsed) header { border-bottom: 1px solid var(--line); }
 
   /* Fixed chrome goes: tabs live in the picker, search and actions behind icons. */
-  .panel .tabs, .panel .tabs.pages, .panel .tabs.intents, .panel .fold-all { display: none; }
-  .panel .search { display: none; margin: 10px 12px 0; }
-  .panel.finding .search { display: block; }
-  .panel .actionbar { display: none; }
-  .panel.more .actionbar, .panel.peek .actionbar { display: block; }
   .actionbar .icon-buttons { display: flex; justify-content: space-between; gap: 4px; }
   .actionbar .icon-buttons button { flex: 1; height: 44px; }
 
@@ -1567,8 +1562,8 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 #panel :is(.group-body, .ess-body, .more-body) > :is(.prow:has(> .kn), .row.kn) + .buttons:has(> button:only-child) > button { flex: 1; min-height: 60px; padding: 6px 4px; white-space: normal; line-height: 1.25; font-size: 12px; border-radius: 10px; }
 
 /* Desktop: every page in one row of icons (the open one named), and the
-   scene's name as the panel title. */
-@media (min-width: 721px) {
+   scene's name as the panel title. Phones too: the same hierarchy. */
+@media all {
   .panel .tabs.intents { display: none; }
   .tabs.pages { flex-wrap: nowrap; gap: 1px; margin: 8px 10px 0; padding: 3px; background: var(--tile); border: 1px solid var(--line); border-radius: 10px; }
   .tabs.pages button { flex: 1 1 0; min-width: 24px; height: 30px; padding: 0; border: 0; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); }
@@ -1635,9 +1630,9 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 .dock-more button svg { width: 17px; height: 17px; fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linecap: round; flex: none; }
 .dock-more button.on { color: #dfe3ff; }
 
-/* --- S1: scene strip, four tabs, React chips (desktop) -------------------- */
+/* --- S1: scene strip, four tabs, React chips (desktop and phones) -------- */
 .scene-strip, .react-sub { display: none; }
-@media (min-width: 721px) {
+@media all {
   .scene-strip { display: flex; flex-direction: column; gap: 6px; margin: 10px 10px 0; }
   .ss-head { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   .ss-browse { border: 0; background: none; padding: 0; color: var(--accent-soft); font: inherit; font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; cursor: pointer; }
@@ -1844,3 +1839,7 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .m-bar.knobbing .choice .sp-dots { justify-self: center; }
   .m-bar.knobbing .sp-dots { justify-self: start; }
 }
+
+/* Watch sits first in the dock on phones (where Watch lives). */
+.dock-watch { display: none !important; }
+@media (max-width: 720px) { .icon-buttons .dock-watch { display: flex !important; } }
