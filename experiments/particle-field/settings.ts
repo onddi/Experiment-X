@@ -6,7 +6,7 @@ export type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
 export type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex' | 'emitter';
 export type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointer';
 export type EmitMode = 'steady' | 'burst' | 'beat';
-export type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring';
+export type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring' | 'icon' | 'geo' | 'solid' | 'live' | 'sequence' | 'drawing';
 export type CamMode = 'face' | 'features' | 'mixed' | 'hands' | 'pose' | 'body' | 'edges' | 'bright' | 'dark';
 // What a hand gesture does (Gestures card).
 export type MaskFx = 'none' | 'flames' | 'crown' | 'tears' | 'beard' | 'halo' | 'lasers';
@@ -74,6 +74,14 @@ export interface Settings {
   spaceDist: number;
   shape: Shape;
   shapeText: string;
+  shapeIcon: string;
+  shapeGeo: string;
+  shapeSolid: string;
+  shapeLive: 'bars' | 'ring' | 'clock' | 'tempo';
+  shapeSeq: string;
+  shapeSeqEvery: 'bar' | '2bars' | '4bars' | '8bars' | 'drop';
+  shapeSeqSec: number;
+  shapeSpin: number;
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
   camMode: CamMode;
   camMirror: boolean;
@@ -375,6 +383,14 @@ export const DEFAULTS: Settings = {
   spaceDist: 12,
   shape: 'none',
   shapeText: 'HELLO',
+  shapeIcon: 'heart',
+  shapeGeo: 'star5',
+  shapeSolid: 'sphere',
+  shapeLive: 'bars',
+  shapeSeq: 'heart, star, moon, HELLO',
+  shapeSeqEvery: '4bars',
+  shapeSeqSec: 4,
+  shapeSpin: 0.3,
   imageMode: 'auto',
   camMode: 'face',
   camMirror: true,

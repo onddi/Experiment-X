@@ -2,6 +2,7 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
+import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
 import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
@@ -1583,12 +1584,31 @@ let shapeImage: HTMLImageElement | null = null;
 let shapeKey = '';
 const imageInput = document.createElement('input');
 imageInput.type = 'file';
-imageInput.accept = 'image/*';
+imageInput.accept = 'image/*,.svg';
 imageInput.addEventListener('change', () => {
   const f = imageInput.files?.[0];
   if (!f) return;
   const img = new Image();
+  const svg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
   img.onload = () => {
+    if (svg) {
+      // An SVG logo: draw it big and sharp first (some have no size of their own).
+      const iw = img.naturalWidth || 300;
+      const ih = img.naturalHeight || 300;
+      const k = 1600 / Math.max(iw, ih);
+      const c = document.createElement('canvas');
+      c.width = Math.round(iw * k);
+      c.height = Math.round(ih * k);
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+      const big = new Image();
+      big.onload = () => {
+        shapeImage = big;
+        shapeKey = '';
+        buildShape();
+      };
+      big.src = c.toDataURL('image/png');
+      return;
+    }
     shapeImage = img;
     shapeKey = '';
     buildShape();
@@ -2892,9 +2912,273 @@ function sampleImage(): [number, number][] {
   return pts;
 }
 
+// --- more shapes ---------------------------------------------------------------
+// Icons, a sequence of them, a clock, the tempo and your own drawing are
+// drawn and traced like text. Curves, 3D solids and the live spectrum are
+// points worked out every frame, so they can turn and move with the music.
+let paramShape: { kind: 'geo' | 'solid' | 'bars' | 'ring'; u: Float32Array; v: Float32Array } | null = null;
+let shapeT0 = performance.now();
+const shapeTime = () => (performance.now() - shapeT0) / 1000;
+let seqIdx = 0;
+const seqTokens = () => settings.shapeSeq.split(',').map((x) => x.trim()).filter(Boolean);
+const seqToken = () => {
+  const t = seqTokens();
+  return t.length ? t[seqIdx % t.length] : 'heart';
+};
+const clockText = () => {
+  const d = new Date();
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':');
+};
+const tempoText = () => (audio.source !== 'off' && audio.levels.bpm > 0 ? `${Math.round(audio.levels.bpm)}` : 'BPM');
+function shapeDetail() {
+  const S = settings;
+  switch (S.shape) {
+    case 'icon': return S.shapeIcon;
+    case 'geo': return S.shapeGeo;
+    case 'solid': return S.shapeSolid;
+    case 'sequence': return `${seqToken()}`;
+    case 'drawing': return `${drawVersion}`;
+    case 'live': return S.shapeLive === 'clock' ? clockText() : S.shapeLive === 'tempo' ? tempoText() : S.shapeLive;
+  }
+  return '';
+}
+// Rebuild the shape and let the particles glide to it.
+function reshape(ms = 700) {
+  const fx = hx.slice(0, n);
+  const fy = hy.slice(0, n);
+  const before = shapeKey;
+  shapeKey = '';
+  buildShape();
+  if (shapeKey !== before && !paramShape) homeGlide = { fx, fy, tx: hx.slice(0, n), ty: hy.slice(0, n), start: performance.now(), dur: ms };
+}
+
+// The spectrum, in a few bands from low to high, smoothed.
+const SPEC_N = 40;
+const specRaw = new Float32Array(SPEC_N);
+const spec = new Float32Array(SPEC_N);
+function paramPoint(kind: string, u: number, v: number, t: number, R: number, out: number[]) {
+  const S = settings;
+  const cx = w / 2;
+  const cy = h / 2;
+  if (kind === 'geo') {
+    let [x, y] = geoPoint(S.shapeGeo, u, v, t, (w / 2) / Math.max(1, R));
+    if (GEO_SPINS(S.shapeGeo) && S.shapeSpin > 0) {
+      const a = t * S.shapeSpin * 0.6;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      [x, y] = [x * c - y * sn, x * sn + y * c];
+    }
+    out[0] = cx + x * R;
+    out[1] = cy + y * R;
+    out[2] = -1;
+  } else if (kind === 'solid') {
+    const [x0, y0, z0] = solidPoint(S.shapeSolid, u, v);
+    const yaw = t * (0.15 + S.shapeSpin * 0.9);
+    const pitch = 0.45 + 0.2 * Math.sin(t * 0.3);
+    const cyw = Math.cos(yaw);
+    const syw = Math.sin(yaw);
+    const x1 = x0 * cyw + z0 * syw;
+    const z1 = -x0 * syw + z0 * cyw;
+    const cp = Math.cos(pitch);
+    const sp = Math.sin(pitch);
+    const y2 = y0 * cp - z1 * sp;
+    const z2 = y0 * sp + z1 * cp;
+    const persp = 2.6 / (2.6 + z2);
+    out[0] = cx + x1 * R * persp;
+    out[1] = cy + y2 * R * persp;
+    out[2] = Math.max(0, Math.min(1, (1 - z2) / 2));
+  } else if (kind === 'bars') {
+    // Mirrored bars from the middle: bass in the centre, highs at the sides.
+    const side = u < 0.5 ? -1 : 1;
+    const f = Math.abs(u - 0.5) * 2;
+    const b = Math.min(SPEC_N - 1, (f * SPEC_N) | 0);
+    const span = Math.min(w * 0.46, R * 1.6);
+    const bw = span / SPEC_N;
+    const hgt = (0.03 + spec[b] * 0.97) * R * 0.9;
+    out[0] = cx + side * (b + 0.5 + (v * 7919 % 1 - 0.5) * 0.6) * bw;
+    out[1] = cy + (v * 2 - 1) * hgt;
+    out[2] = -1;
+  } else {
+    // A ring: each angle reaches out as far as its band is loud.
+    const a = u * Math.PI * 2 + t * S.shapeSpin * 0.4;
+    const f = Math.abs(((u * 2) % 2) - 1);
+    const b = Math.min(SPEC_N - 1, (f * SPEC_N) | 0);
+    const r = R * (0.5 + v * (0.04 + spec[b] * 0.5));
+    out[0] = cx + Math.cos(a) * r;
+    out[1] = cy + Math.sin(a) * r;
+    out[2] = -1;
+  }
+}
+function buildParamShape() {
+  const S = settings;
+  const kind = S.shape === 'geo' ? 'geo' : S.shape === 'solid' ? 'solid' : S.shapeLive === 'ring' ? 'ring' : 'bars';
+  const R = (Math.min(w, h) / 2) * S.shapeSize;
+  const tu = new Float32Array(n);
+  const tv = new Float32Array(n);
+  const tx = new Float32Array(n);
+  const ty = new Float32Array(n);
+  const o = [0, 0, 0];
+  const t = shapeTime();
+  for (let k = 0; k < n; k++) {
+    tu[k] = (k + Math.random()) / n;
+    tv[k] = Math.random();
+    paramPoint(kind, tu[k], tv[k], t, R, o);
+    tx[k] = o[0];
+    ty[k] = o[1];
+  }
+  const owner = matchNearest(tx, ty);
+  const u = new Float32Array(n);
+  const v = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    u[owner[k]] = tu[k];
+    v[owner[k]] = tv[k];
+  }
+  // Glide from where the particles' homes were to the new points.
+  const fx = hx.slice(0, n);
+  const fy = hy.slice(0, n);
+  paramShape = { kind, u, v };
+  paramGlide = { fx, fy, start: performance.now(), dur: S.shape === settingsShapeBefore ? 300 : 900 };
+  settingsShapeBefore = S.shape;
+}
+let paramGlide: { fx: Float32Array; fy: Float32Array; start: number; dur: number } | null = null;
+let settingsShapeBefore = '';
+function animateShape(now: number) {
+  const S = settings;
+  if (S.shape === 'none') return;
+  // Things that change the traced shapes: the next item in a sequence, the
+  // clock's seconds, a new tempo.
+  if (S.shape === 'sequence') {
+    const L = audio.levels;
+    const music = audio.source !== 'off' && L.bpm > 0;
+    let fire = false;
+    if (music) {
+      if (S.shapeSeqEvery === 'drop') fire = L.drop;
+      else if (L.bar) {
+        seqBars++;
+        const every = S.shapeSeqEvery === '8bars' ? 8 : everyBars(S.shapeSeqEvery);
+        fire = seqBars % every === 0 || L.drop;
+      }
+      seqAt = now;
+    } else if (now - seqAt > S.shapeSeqSec * 1000) {
+      fire = true;
+      seqAt = now;
+    }
+    if (fire && seqTokens().length > 1) {
+      seqIdx++;
+      reshape(Math.min(1200, music ? 60000 / L.bpm : 900));
+    }
+  } else if (S.shape === 'live' && (S.shapeLive === 'clock' || S.shapeLive === 'tempo') && now - liveAt > 250) {
+    liveAt = now;
+    const d = S.shapeLive === 'clock' ? clockText() : tempoText();
+    if (d !== liveLast) {
+      liveLast = d;
+      reshape(400);
+    }
+  }
+  const ps = paramShape;
+  // Curves and solids glide on their own; a traced-shape glide would fight it.
+  if (ps && homeGlide) homeGlide = null;
+  if (!ps || ps.u.length !== n) {
+    if (ps) {
+      shapeKey = '';
+      buildShape();
+    }
+    return;
+  }
+  if (ps.kind === 'bars' || ps.kind === 'ring') {
+    audio.spectrum(specRaw);
+    for (let b = 0; b < SPEC_N; b++) spec[b] += (specRaw[b] - spec[b]) * (specRaw[b] > spec[b] ? 0.5 : 0.12);
+  }
+  const R = (Math.min(w, h) / 2) * S.shapeSize;
+  const t = shapeTime();
+  const o = [0, 0, 0];
+  const g = paramGlide;
+  let e = 1;
+  if (g) {
+    const k = Math.min(1, (now - g.start) / g.dur);
+    e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+    if (k >= 1) paramGlide = null;
+  }
+  for (let i = 0; i < n; i++) {
+    if (free[i]) continue;
+    paramPoint(ps.kind, ps.u[i], ps.v[i], t, R, o);
+    if (g && i < g.fx.length) {
+      hx[i] = g.fx[i] + (o[0] - g.fx[i]) * e;
+      hy[i] = g.fy[i] + (o[1] - g.fy[i]) * e;
+    } else {
+      hx[i] = o[0];
+      hy[i] = o[1];
+    }
+    if (o[2] >= 0) pz[i] = o[2];
+  }
+}
+let seqBars = 0;
+let seqAt = 0;
+let liveAt = 0;
+let liveLast = '';
+
+// Draw your own shape: strokes on the field, kept between visits.
+const DRAW_KEY = 'particle-field:drawing';
+let drawStrokes: number[][] = readJson<number[][]>(DRAW_KEY, []);
+let drawVersion = 0;
+let drawMode = false;
+let drawCur: number[] | null = null;
+let drawLastBuild = 0;
+function saveDrawing() {
+  drawVersion++;
+  writeJson(DRAW_KEY, drawStrokes);
+}
+function toggleDraw() {
+  drawMode = !drawMode;
+  if (drawMode) showToast('Draw on the field. Each stroke joins the shape.');
+  refresh();
+}
+function undoStroke() {
+  drawStrokes.pop();
+  saveDrawing();
+  reshape(500);
+}
+function clearShapeDrawing() {
+  drawStrokes = [];
+  saveDrawing();
+  reshape(500);
+}
+const drawing = () => drawMode && settings.shape === 'drawing';
+canvas.addEventListener('pointerdown', (e) => {
+  if (!drawing()) return;
+  e.stopImmediatePropagation();
+  canvas.setPointerCapture(e.pointerId);
+  drawCur = [e.offsetX / w, e.offsetY / h];
+  drawStrokes.push(drawCur);
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!drawCur || !drawing()) return;
+  const x = e.offsetX / w;
+  const y = e.offsetY / h;
+  const lx = drawCur[drawCur.length - 2];
+  const ly = drawCur[drawCur.length - 1];
+  if (Math.hypot((x - lx) * w, (y - ly) * h) < 4) return;
+  drawCur.push(x, y);
+  // Show it forming while you draw, a few times a second.
+  const now = performance.now();
+  if (now - drawLastBuild > 160) {
+    drawLastBuild = now;
+    drawVersion++;
+    reshape(200);
+  }
+});
+const endStroke = () => {
+  if (!drawCur) return;
+  drawCur = null;
+  saveDrawing();
+  reshape(300);
+};
+canvas.addEventListener('pointerup', endStroke);
+canvas.addEventListener('pointercancel', endStroke);
+
 function buildShape() {
   const S = settings;
-  const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : ''].join('|');
+  const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   if (S.shape === 'camera' && trackMode()) {
     // Face, hand and body modes: the homes follow the tracking every frame.
@@ -2910,6 +3194,11 @@ function buildShape() {
   const cx = w / 2;
   const cy = h / 2;
   const R = (Math.min(w, h) / 2) * S.shapeSize;
+  paramShape = null;
+  if (S.shape === 'geo' || S.shape === 'solid' || (S.shape === 'live' && (S.shapeLive === 'bars' || S.shapeLive === 'ring'))) {
+    buildParamShape();
+    return;
+  }
   if (S.shape === 'grid' || S.shape === 'sunflower' || S.shape === 'ring') {
     const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
     const rows = Math.max(1, Math.ceil(n / cols));
@@ -2936,8 +3225,8 @@ function buildShape() {
   }
   const tShape = performance.now();
   const pts = sampleTargets((g, W, H) => {
-    if (S.shape === 'text') {
-      const text = S.shapeText.trim() || ' ';
+    const word = (text: string) => {
+      text = text.trim() || ' ';
       g.fillStyle = '#fff';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
@@ -2948,6 +3237,33 @@ function buildShape() {
       size = Math.min(size, H * 0.7 * S.shapeSize + 4);
       g.font = `800 ${size}px system-ui, sans-serif`;
       g.fillText(text, W / 2, H / 2);
+      return true;
+    };
+    const icon = (id: string) => drawIcon(g, id, W / 2, H / 2, (Math.min(W, H) / 2) * S.shapeSize * 0.92);
+    if (S.shape === 'text') return word(S.shapeText);
+    if (S.shape === 'icon') return icon(S.shapeIcon);
+    if (S.shape === 'sequence') {
+      const tok = seqToken();
+      return isIcon(tok.toLowerCase()) ? icon(tok.toLowerCase()) : word(tok);
+    }
+    if (S.shape === 'live') return word(S.shapeLive === 'clock' ? clockText() : tempoText());
+    if (S.shape === 'drawing') {
+      if (!drawStrokes.length) return false;
+      g.strokeStyle = '#fff';
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.lineWidth = Math.max(4, Math.min(W, H) * 0.028);
+      for (const st of drawStrokes) {
+        g.beginPath();
+        for (let k = 0; k < st.length; k += 2) {
+          const x = st[k] * W;
+          const y = st[k + 1] * H;
+          if (k) g.lineTo(x, y);
+          else g.moveTo(x, y);
+        }
+        if (st.length === 2) g.lineTo(st[0] * W + 0.1, st[1] * H);
+        g.stroke();
+      }
       return true;
     }
     return false;
@@ -4998,6 +5314,7 @@ function frame(now: number) {
     updateGlyphs();
     cameraTick(now);
     runLinks(now);
+    animateShape(now);
     tickMorph(now, audio.source !== 'off' && audio.levels.beat);
     musicVisuals(now);
     tlTick(now);
@@ -5349,7 +5666,7 @@ const CAM_MODES: [string, string][] = [
   ['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['mixed', 'Features + a light mesh'],
   ['hands', 'Your hands (skeleton)'], ['pose', 'Your body (skeleton)'], ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
-const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['image', 'An image'], ['camera', 'Your camera'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
+const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'A geometric shape'], ['solid', 'A turning 3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
 const hasPointer = () => settings.pointerMode !== 'none';
@@ -5563,13 +5880,27 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
-    summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : label(SHAPES, settings.shape)) },
+    summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
   { kind: 'note', text: 'How the camera forms you (face, hands or body) is on the Camera tab.', show: isCam },
   { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
-  { kind: 'buttons', buttons: [['Choose an image…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'note', text: 'Symbols work too: try ★ ♥ ☾ ✿ ☮ or an emoji.', show: () => settings.shape === 'text' },
+  { kind: 'select', key: 'shapeIcon', label: 'Icon', options: ICON_SHAPES, show: () => settings.shape === 'icon' },
+  { kind: 'select', key: 'shapeGeo', label: 'Shape', options: GEO_SHAPES, show: () => settings.shape === 'geo' },
+  { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
+  { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
+  { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
+  { kind: 'note', text: '3D shapes look best with 3D depth on (Look tab); it turns on with them.', show: () => settings.shape === 'solid' },
+  { kind: 'note', text: 'The bars and the ring follow the sound source on the Music tab; without sound they rest flat.', show: () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring') },
+  { kind: 'text', key: 'shapeSeq', label: 'Sequence', placeholder: 'heart, star, LOVE', show: () => settings.shape === 'sequence' },
+  { kind: 'select', key: 'shapeSeqEvery', label: 'Next one', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['8bars', 'Every 8 bars'], ['drop', 'Only on drops']], show: () => settings.shape === 'sequence' },
+  { kind: 'range', key: 'shapeSeqSec', label: 'Without music, every', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
+  { kind: 'note', text: `Words and icons, separated by commas. Icons: ${ICON_SHAPES.map(([k]) => k).join(', ')}.`, show: () => settings.shape === 'sequence' },
+  { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
+  { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
+  { kind: 'buttons', buttons: [['Choose an image or SVG…', () => imageInput.click()]], show: () => settings.shape === 'image' },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
@@ -6164,7 +6495,7 @@ function morphTo(target: Settings, morphSec = settings.morph) {
   }
   // Shape changes: settle size and count at once so the new targets are
   // final, then let the targets glide there over the morph time.
-  const shapeKeys = ['shape', 'shapeText', 'imageMode'] as const;
+  const shapeKeys = ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'imageMode'] as const;
   if (T.shape !== 'none' && (shapeKeys.some((k) => instant.has(k)) || 'shapeSize' in to)) {
     for (const k of ['shapeSize', 'count'] as const) {
       if (k in to) {
@@ -6603,7 +6934,7 @@ const xfPalCache = new Map<string, { shades: Rgb[]; bg: Rgb }>();
 const XF_PAL = ['palette', 'customColors', 'customBg'] as const;
 let xfUi: (() => void)[] = [];
 let xfDip = 0; // 0..1, darkening around the middle when A and B differ in a big way
-const XF_BIG = new Set<string>(['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter', 'shape', 'shapeText', 'pointerMode']);
+const XF_BIG = new Set<string>(['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'pointerMode']);
 // Where each switch-only setting changes over: spread over 35-65% by name.
 const xfFlipAt = (k: string) => {
   if (XF_BIG.has(k)) return 0.5;
@@ -7988,7 +8319,13 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
   save();
   if (keys.has('count')) setCount(countNow());
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
-  if (keys.has('shape') || keys.has('shapeText') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
+  if (keys.has('shape') && settings.shape === 'solid' && settings.depth === 0) {
+    settings.depth = 0.7;
+    refresh();
+  }
+  if (keys.has('shapeSeq')) seqIdx = 0;
+  if (keys.has('shape') && settings.shape !== 'drawing') drawMode = false;
+  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
     const g = glideHomes && settings.shape !== 'none' ? glideHomes : null;
     const fx = g ? (g.fromFree ? px : hx).slice(0, n) : null;
     const fy = g ? (g.fromFree ? py : hy).slice(0, n) : null;
@@ -8044,7 +8381,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['homeStrength', 'morph'],
   look: ['render', 'mixStyles', 'size', 'trail', 'glow'],
   colour: ['palette', 'colorBy', 'customColors'],
-  shape: ['shape', 'shapeText', 'imageMode', 'shapeSize'],
+  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSpin', 'imageMode', 'shapeSize'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['count', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],

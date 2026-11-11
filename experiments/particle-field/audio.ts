@@ -371,6 +371,27 @@ export class AudioInput {
     return Math.round(1000 * (this.source === 'feed' ? this.feedLatency : c ? (c.outputLatency ?? 0) + (c.baseLatency ?? 0) : 0));
   }
 
+  /** The spectrum in `out.length` bands, low to high on a log scale (0–1). */
+  spectrum(out: Float32Array) {
+    const F = this.freq;
+    const hz = this.hzBin;
+    if (!F.length || !hz || this.source === 'off') return out.fill(0);
+    const lo = Math.log(40);
+    const hi = Math.log(12000);
+    for (let b = 0; b < out.length; b++) {
+      const f0 = Math.exp(lo + ((hi - lo) * b) / out.length);
+      const f1 = Math.exp(lo + ((hi - lo) * (b + 1)) / out.length);
+      const k0 = Math.max(0, Math.floor(f0 / hz));
+      const k1 = Math.min(F.length - 1, Math.max(k0, Math.ceil(f1 / hz)));
+      let m = 0;
+      for (let k = k0; k <= k1; k++) m = Math.max(m, F[k]);
+      // A little lift for the highs, which are always quieter.
+      out[b] = Math.min(1, Math.max(0, (m / 255 - 0.25) / 0.7) * (1 + b / out.length * 0.6));
+    }
+    return out;
+  }
+  private hzBin = 0;
+
   /** Call once per frame. */
   update(now: number) {
     const a = this.analyser;
@@ -394,6 +415,7 @@ export class AudioInput {
       hzPerBin = this.ctx.sampleRate / a.fftSize;
       drums = [{ bins: this.fastFreq, hz: this.ctx.sampleRate / this.fast.fftSize, t: now }];
     }
+    this.hzBin = hzPerBin;
     const band = (r: readonly [number, number]) => bandOf(this.freq, hzPerBin, r);
 
     // Hits first, on the short-window frames, each at the time it was measured.
