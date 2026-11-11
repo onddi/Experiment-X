@@ -552,9 +552,12 @@ export class AudioInput {
     let hi = 0;
     for (let k = h0; k <= h1; k++) hi += Math.max(0, bins[k] - fl[k] - MARGIN);
     const noisy = hi / ((h1 - h0 + 1) * 255) > Math.max(0.005, e) * 0.35;
+    // Consonants (s, t, ch) are noisy too, so a noisy frame still counts for
+    // the dips between syllables; it just can't start one.
+    const masked = noisy || t < R.mask;
     if (noisy) R.mask = t + 20;
-    if (t < R.mask) return;
-    R.peak = Math.max(e, R.peak * 0.9993, 0.02);
+    if (!masked) R.peak = Math.max(e, R.peak * 0.9993, 0.02);
+    else R.peak = Math.max(R.peak * 0.9993, 0.02);
     const openAt = Math.max(0.012, R.peak * 0.22);
     // The voice check runs on the long window, so it confirms a syllable a
     // little late; mid-verse (a voice heard in the last ~0.35 s) a fresh rise
@@ -577,16 +580,16 @@ export class AudioInput {
       R.accentMax = e;
     };
     if (!R.open) {
-      if (e > openAt && (voiced || (inVerse && e > R.prevE * 1.5))) {
+      if (!masked && e > openAt && (voiced || (inVerse && e > R.prevE * 1.5))) {
         R.open = true;
         R.below = 0;
         syllable();
       }
     } else {
-      R.sylPeak = Math.max(R.sylPeak, e);
+      if (!masked) R.sylPeak = Math.max(R.sylPeak, e);
       R.localMin = Math.min(R.localMin, e);
       // A new syllable inside a run of words: a fresh rise after a dip.
-      if (e > R.localMin * 2 && e > openAt && R.localMin < R.sylPeak * 0.45 && t - R.sylAt > 100 && inVerse) syllable();
+      if (!masked && e > R.localMin * 1.5 && e > openAt && R.localMin < R.sylPeak * 0.65 && t - R.sylAt > 75 && inVerse) syllable();
       // Shut when the level falls away, or when it's no longer a voice (a
       // snare tail or a chord change keeps the level up but has no comb).
       if (e < R.peak * 0.2 || t - R.voicedAt > 90) {
@@ -600,7 +603,7 @@ export class AudioInput {
       } else R.below = 0;
     }
     if (R.accentAt) {
-      R.accentMax = Math.max(R.accentMax, e);
+      if (!masked) R.accentMax = Math.max(R.accentMax, e);
       if (t >= R.accentAt) {
         const typical = median(R.sylMaxes);
         // Levels here are in dB steps, so "louder" is a step up: at least ~3 dB,
@@ -653,32 +656,31 @@ export class AudioInput {
       const i = Math.floor(x);
       return i + 1 < r.length ? Math.max(r[i], r[i + 1]) : 0;
     };
+    // (b) A voice is a comb of harmonics: for each candidate pitch, count the
+    // harmonics (up to 2 kHz) that stand clearly above the gaps either side
+    // of them. Real voices glide and sit in a busy mix, so the gaps are never
+    // empty; what matters is that most harmonics still poke out.
     let best = 0;
     let bestF = 0;
-    let bestE = 0;
+    let bestC = 0;
     for (let f0 = 90; f0 <= 300; f0 += 2) {
-      let pk = 0;
-      let va = 0;
       let n = 0;
       let harm = 0;
-      for (let h = 2; h * f0 < 3500 && h <= 14; h++) {
+      let c = 0;
+      for (let h = 2; h * f0 < 2000 && h <= 12; h++) {
         const p = at(h * f0);
-        const v = at((h + 0.5) * f0);
-        pk += p;
-        va += v;
+        const v = Math.max(at((h + 0.5) * f0), at((h - 0.5) * f0));
         n++;
-        if (p > 10 && p > v * 2) harm++;
+        if (p > 6 && p - v > 12) harm++, (c += p - v);
       }
-      // A voice has a whole comb of harmonics; a chord or a lone synth note
-      // has only a few clear tones.
-      const score = harm >= 6 && harm >= n * 0.45 ? (pk - va) / (pk + va + n * 2) : 0;
-      if (score > best) (best = score), (bestF = f0), (bestE = pk / n);
+      const score = harm >= 5 && harm >= n * 0.4 ? harm / n : 0;
+      if (score > best || (score === best && score > 0 && c > bestC)) (best = score), (bestF = f0), (bestC = c);
     }
-    R.score = best * Math.min(1, bestE / 8);
-    const voiced = best > 0.3 && bestE > 8;
-    // Two voiced frames in a row: a kick's sweep or a stray chord can pass once.
+    R.score = best;
+    const voiced = best > 0;
+    // Three voiced frames in a row: a kick's 808 or a chord stab can pass once or twice.
     R.vRun = voiced ? R.vRun + 1 : 0;
-    if (R.vRun >= 2) R.voicedAt = now;
+    if (R.vRun >= 3) R.voicedAt = now;
     // Pitch contour while the gate is open.
     if (voiced && L.voxOn) {
       const semi = 12 * Math.log2(bestF / 90);

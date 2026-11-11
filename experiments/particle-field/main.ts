@@ -1976,6 +1976,53 @@ function renderExMeters() {
   return box;
 }
 
+// Live meters for the Rap flow card: is it hearing a voice, and what fires.
+function renderRapMeters() {
+  const box = document.createElement('div');
+  box.className = 'ex-meters rap-meters';
+  const status = document.createElement('p');
+  status.className = 'rap-status';
+  box.append(status);
+  const rows: [string, () => number, () => boolean, (() => string)?][] = [
+    ['Voice', () => audio.levels.vocal, () => audio.levels.voxOn],
+    ['Syllable', () => audio.levels.syllEnv, () => audio.levels.syllable],
+    ['Pause', () => 0, () => audio.levels.pause],
+    ['Flow', () => audio.levels.flow, () => audio.levels.flow > 0.35, () => `${(audio.levels.flow * 8).toFixed(1)}/s`],
+    ['Accent', () => 0, () => audio.levels.accent],
+    ['Pitch', () => (audio.levels.voxOn ? audio.levels.voxPitch : 0), () => Math.abs(audio.levels.voxRise) > 0.5],
+    ['Rhyme', () => 0, () => audio.levels.rhyme],
+  ];
+  const els = rows.map(([name]) => {
+    const row = document.createElement('div');
+    row.className = 'ex-row';
+    row.innerHTML = `<span>${name}</span><i><b></b></i><small></small>`;
+    box.append(row);
+    return { b: row.querySelector('b')!, n: row.querySelector('small')!, seen: -1e9 };
+  });
+  let sylCount: number[] = [];
+  const tick = (now: number) => {
+    if (box.isConnected && box.offsetParent) {
+      const L = audio.levels;
+      if (L.syllable) sylCount.push(now);
+      sylCount = sylCount.filter((t) => now - t < 10000);
+      status.textContent = audio.source === 'off' ? 'Turn on a sound source (Sound source card) to see it listen.' : L.voxOn ? 'Hearing a voice.' : sylCount.length ? 'Between words.' : 'No voice heard yet.';
+      rows.forEach(([, lv, fire, txt], i) => {
+        const e = els[i];
+        if (fire()) e.seen = now;
+        const hot = now - e.seen < 180;
+        // Moments (pause, accent, rhyme) light the whole bar for a beat.
+        const v = lv() || (hot && !txt && i >= 2 ? 1 : 0);
+        e.b.style.width = `${(Math.min(1, v) * 100).toFixed(0)}%`;
+        e.b.classList.toggle('hot', hot);
+        e.n.textContent = txt ? txt() : i === 1 ? `${sylCount.length} in 10 s` : '';
+      });
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return box;
+}
+
 // Hands: fingertips push or pull (or swirl) the particles; a pinch grabs,
 // and a quick release throws what it holds.
 // Draw mode: a pinch is the pen (any finger, with a colour each, in finger
@@ -5006,6 +5053,7 @@ type ControlBody =
   | { kind: 'xfader' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
+  | { kind: 'rapmeters' }
   | { kind: 'mixgrid'; which: 'music' | 'camera' | 'lens' }
   | { kind: 'links' }
   | { kind: 'sub'; label: string }
@@ -5697,6 +5745,7 @@ const CONTROLS: Control[] = [
       off: { audioSylPush: 0, audioSylFlash: 0, audioSylHop: 0, audioPauseDim: 0, audioPauseFreeze: 0, audioFlowSpeed: 0, audioFlowHue: 0, audioAccentBurst: 0, audioAccentPunch: 0, audioPitchLift: 0, audioPitchTilt: 0, audioRhymeRipple: 0, audioRhymeHue: 0 }, start: { audioSylPush: 0.5, audioPauseDim: 0.5 } },
     summary: () => [settings.audioSylPush > 0 || settings.audioSylFlash > 0 || settings.audioSylHop > 0 ? 'syllables' : '', settings.audioPauseDim > 0 || settings.audioPauseFreeze > 0 ? 'pauses' : '', settings.audioFlowSpeed > 0 || settings.audioFlowHue > 0 ? 'flow' : '', settings.audioAccentBurst > 0 || settings.audioAccentPunch > 0 ? 'accents' : '', settings.audioPitchLift > 0 || settings.audioPitchTilt > 0 ? 'pitch' : '', settings.audioRhymeRipple > 0 || settings.audioRhymeHue > 0 ? 'rhymes' : ''].filter(Boolean).join(' · ') || 'off' },
   { kind: 'note', text: 'Follows a rapping or speaking voice over the beat, syllable by syllable. Quiet between words, so gaps read as silence.' },
+  { kind: 'rapmeters' },
   { kind: 'range', key: 'audioSylPush', label: 'Push on each syllable', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioSylFlash', label: 'Flash on each syllable', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioSylHop', label: 'Letters hop on syllables', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -9562,6 +9611,10 @@ function renderControls() {
 
     if (ctl.kind === 'exmeters') {
       searchItem(body, renderExMeters());
+      continue;
+    }
+    if (ctl.kind === 'rapmeters') {
+      searchItem(body, renderRapMeters());
       continue;
     }
 
