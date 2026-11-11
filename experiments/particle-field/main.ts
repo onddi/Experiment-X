@@ -856,7 +856,7 @@ function step(dt: number) {
   //   sub   → 808 / sub-bass swell on size, flow or speed
   //   energy (how far the music is above its recent average) → speed, flow
   const A = audio.levels;
-  const on = audio.source !== 'off';
+  const on = reacting();
   const S = settings;
   const I = S.audioIntensity;
   const sub2 = on ? A.sub * A.sub * S.audioSubAmt * I : 0; // squared: swells, not a constant
@@ -1633,6 +1633,19 @@ const trackMode = () => faceMode() || skelMode();
 const isCam = () => settings.shape === 'camera';
 const handsOn = () => settings.camHands !== 'off';
 const faceExtras = () => settings.maskFx !== 'none' || settings.gaze !== 'off' || settings.voice;
+// Whole tabs switched off (bypass): their settings stay as they are, and
+// scenes still load into them, but the engine leaves them out.
+const BYPASSABLE: Tab[] = ['timeline', 'xfader', 'knobs', 'music', 'camera', 'links'];
+const BYPASS_KEY = 'particle-field:bypass';
+const bypass = new Set<Tab>((() => {
+  try {
+    return (JSON.parse(localStorage.getItem(BYPASS_KEY) ?? '[]') as Tab[]).filter((t) => BYPASSABLE.includes(t));
+  } catch {
+    return [];
+  }
+})());
+// The music moves the field (a source is on and the Music tab isn't off).
+const reacting = () => audio.source !== 'off' && !bypass.has('music');
 // Connections (see runLinks): declared early, the camera helpers read them.
 const linkRun = new LinkRunner();
 // Density macro: multiplies the scene's particle count (see countNow).
@@ -1645,7 +1658,7 @@ const faceTracked = () => (isCam() && faceMode()) || faceExtras() || linkNeed.fa
 const handsTracked = () => handsOn() || settings.gestOn || (isCam() && settings.camMode === 'hands') || linkNeed.hands;
 const poseTracked = () => settings.poseOn || (isCam() && settings.camMode === 'pose') || linkNeed.pose;
 const bodyObs = () => settings.obstacles === 'body';
-const camWanted = () => isCam() || handsOn() || settings.gestOn || settings.poseOn || bodyObs() || faceExtras() || linkNeed.face || linkNeed.hands || linkNeed.pose;
+const camWanted = () => !bypass.has('camera') && (isCam() || handsOn() || settings.gestOn || settings.poseOn || bodyObs() || faceExtras() || linkNeed.face || linkNeed.hands || linkNeed.pose);
 // Which keys can turn the camera or a tracker on or off.
 const CAM_KEYS: (keyof Settings)[] = ['shape', 'camMode', 'camHands', 'gestOn', 'poseOn', 'obstacles', 'maskFx', 'gaze', 'voice', 'links'];
 
@@ -1874,7 +1887,7 @@ function mouthStream(amt: number) {
   if (!f || amt < 0.12) return;
   const mx = toSx((f.x[13] + f.x[14]) / 2);
   const my = toSy((f.y[13] + f.y[14]) / 2);
-  const loud = audio.source !== 'off' ? 0.4 + audio.levels.level * 1.2 : 1;
+  const loud = reacting() ? 0.4 + audio.levels.level * 1.2 : 1;
   const k = Math.min(n, Math.round(amt * 50 * loud));
   const sp = Math.min(w, h) / 800;
   for (let q = 0; q < k; q++) {
@@ -3763,7 +3776,7 @@ function shadeIndex(i: number) {
 }
 
 function audioSizeBoost() {
-  if (audio.source === 'off') return 1;
+  if (!reacting()) return 1;
   const L = audio.levels;
   const S = settings;
   let b = 1;
@@ -4078,7 +4091,7 @@ function updateSizes() {
   const sv = settings.sizeVar;
   const ls = settings.lifespan > 0 ? settings.lifeSize : 'none';
   const dp = settings.depth;
-  const bands = audio.source !== 'off' ? settings.audioBands : 0;
+  const bands = reacting() ? settings.audioBands : 0;
   uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0;
   if (uniformSize) return;
   const L = audio.levels;
@@ -4319,7 +4332,7 @@ const MIRROR_CYCLE = ['lr', 'tb', 'quad'] as const;
 function lensMusicTick(now: number) {
   const S = settings;
   const L = audio.levels;
-  const music = audio.source !== 'off';
+  const music = reacting();
   const m = music ? S.lensMusic : 0;
   const dt = lm.t ? Math.min(0.1, (now - lm.t) / 1000) : 0;
   lm.t = now;
@@ -4405,7 +4418,7 @@ function lensFrame(now: number) {
   const [br, bg, bb] = bgNow();
   const bgCol = `rgb(${br} ${bg} ${bb})`;
   const L = audio.levels;
-  const music = audio.source !== 'off';
+  const music = reacting();
   // Each step reads the frame so far and redraws all of lensCanvas.
   let first = true;
   const input = (): HTMLCanvasElement => {
@@ -5087,7 +5100,7 @@ let linkJumpAt = 0;
 const EX_OF: Record<string, ExKey> = { mouth: 'exMouth', smile: 'exSmile', brows: 'exBrows', blink: 'exBlink', wink: 'exWink', pucker: 'exPucker', tilt: 'exTilt' };
 const SIGN_OF: Record<string, string> = { fist: 'Closed_Fist', palm: 'Open_Palm', victory: 'Victory', thumbUp: 'Thumb_Up', thumbDown: 'Thumb_Down', point: 'Pointing_Up', love: 'ILoveYou' };
 function syncLinks() {
-  linkRun.sync(settings.links);
+  linkRun.sync(bypass.has('links') ? '' : settings.links);
   linkNeed = linkNeeds(linkRun.list);
 }
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -5185,7 +5198,8 @@ let heatShown = 0;
 const two = (x: number) => Math.pow(2, x);
 function runMacros() {
   const push = linkRun.out.macros;
-  const v = (k: MacroKey, p: number) => Math.max(-1, Math.min(1, (settings[k] - 0.5 + p) * 2));
+  const knobsOff = bypass.has('knobs');
+  const v = (k: MacroKey, p: number) => Math.max(-1, Math.min(1, ((knobsOff ? 0.5 : settings[k]) - 0.5 + p) * 2));
   const e = v('mEnergy', push.energy);
   const o = v('mOrder', push.order);
   const d = v('mDream', push.dream);
@@ -6603,7 +6617,7 @@ function newPalette(now: number, from: readonly string[] = darkPalettes()) {
 function musicVisuals(now: number) {
   const dt = lastVisual ? Math.min(0.1, (now - lastVisual) / 1000) : 0;
   lastVisual = now;
-  const on = audio.source !== 'off';
+  const on = reacting();
   const L = audio.levels;
   const S = settings;
   const barSec = 240 / (L.bpm || 120);
@@ -7034,7 +7048,7 @@ function xfApply(pos: number) {
   xfSettle = performance.now() + 250;
 }
 function xfTick(now: number) {
-  if (!xf.on) return;
+  if (!xf.on || bypass.has('xfader')) return;
   if (xfAuto) {
     const u = Math.min(1, (now - xfAuto.start) / xfAuto.dur);
     const e = u * u * (3 - 2 * u);
@@ -7593,7 +7607,7 @@ function tlGo(i: number) {
 const tlActive = () => tl.on && tl.clips.length > 0;
 
 function tlTick(now: number) {
-  if (!tlActive()) {
+  if (!tlActive() || bypass.has('timeline')) {
     tlRing(now);
     return;
   }
@@ -8423,6 +8437,29 @@ const intentButtons: [Intent, HTMLButtonElement][] = [];
 const INTENT_KEY = 'particle-field:intent-pages';
 // The page you were last on in each intent, so switching back lands there.
 const lastPage: Partial<Record<Intent, Tab>> = readJson<Partial<Record<Intent, Tab>>>(INTENT_KEY, {});
+function setBypass(t: Tab, off: boolean) {
+  if (off) bypass.add(t);
+  else bypass.delete(t);
+  try {
+    localStorage.setItem(BYPASS_KEY, JSON.stringify([...bypass]));
+  } catch {
+    /* not persisted */
+  }
+  if (t === 'links') syncLinks();
+  if (t === 'camera') {
+    if (camWanted() && !cam.on) void startCamera();
+    else if (!camWanted() && cam.on) stopCamera();
+  }
+  const label = TABS.find(([x]) => x === t)![1];
+  showToast(off ? `${label} is off: settings kept, nothing from it reaches the field` : `${label} is back on`);
+  syncBypassUi();
+  refresh();
+}
+// Grey out a switched-off tab's cards, and mark it in the page picker.
+function syncBypassUi() {
+  for (const [el, t] of sectionTabs) if (!el.classList.contains('tab-power')) el.classList.toggle('bypassed', bypass.has(t));
+  for (const b of document.querySelectorAll<HTMLElement>('.picker button[data-tab], .tabs button[data-tab]')) b.classList.toggle('bypassed', bypass.has(b.dataset.tab as Tab));
+}
 function showTab(tab: Tab) {
   currentTab = tab;
   const intent = intentOf(tab);
@@ -9761,6 +9798,7 @@ function renderControls() {
     b.type = 'button';
     b.setAttribute('role', 'tab');
     b.textContent = text;
+    b.dataset.tab = t;
     b.addEventListener('click', () => showTab(t));
     tabBar.append(b);
     tabButtons.push([t, b]);
@@ -10221,7 +10259,8 @@ function renderControls() {
     }
 
     // A label around chip buttons would forward clicks to the first chip.
-    const row = document.createElement(ctl.kind === 'multi' || ctl.kind === 'choice' || ctl.kind === 'colors' ? 'div' : 'label');
+    const rackKind = ctl.kind === 'range' || ctl.kind === 'select' || ctl.kind === 'toggle';
+    const row = document.createElement(rackKind || ctl.kind === 'multi' || ctl.kind === 'choice' || ctl.kind === 'colors' ? 'div' : 'label');
     row.className = `row ${ctl.kind}`;
     row.dataset.key = ctl.key;
     const name = document.createElement('span');
@@ -10230,23 +10269,21 @@ function renderControls() {
     row.append(name);
     const k = ctl.key;
 
+    // The rack's parts: numbers are knobs (the white dot is the scene's
+    // value, double-tap snaps back), choices step ‹ ›, switches are pills.
+    const homeOf = () => (sceneBase ?? DEFAULTS)[k];
     if (ctl.kind === 'range') {
-      const out = document.createElement('output');
-      const input = document.createElement('input');
-      Object.assign(input, { type: 'range', min: ctl.min, max: ctl.max, step: ctl.step });
-      input.addEventListener('input', () => set(k, Number(input.value) as never));
-      row.append(out, input);
-      refreshers.push(() => {
-        const v = settings[k] as number;
-        input.value = String(v);
-        out.textContent = ctl.format ? ctl.format(v) : String(v);
-      });
-    } else if (ctl.kind === 'select') {
-      const select = document.createElement('select');
-      for (const [value, text] of ctl.options) select.add(new Option(text, value));
-      select.addEventListener('change', () => set(k, select.value as never));
-      row.append(select);
-      refreshers.push(() => (select.value = String(settings[k])));
+      row.className = 'row kn';
+      name.remove();
+      const kb = rackKnob(ctl, () => homeOf() as number, RACK_LIVE);
+      row.append(kb.el);
+      refreshers.push(kb.update);
+    } else if (ctl.kind === 'select' || ctl.kind === 'toggle') {
+      row.className = `row rk ${ctl.kind}`;
+      name.remove();
+      const rr = rackRow(ctl, homeOf, RACK_LIVE);
+      row.append(rr.el);
+      refreshers.push(rr.update);
     } else if (ctl.kind === 'color') {
       const input = document.createElement('input');
       input.type = 'color';
@@ -10333,12 +10370,6 @@ function renderControls() {
       refreshers.push(() => {
         if (document.activeElement !== input) input.value = String(settings[k]);
       });
-    } else if (ctl.kind === 'toggle') {
-      const input = document.createElement('input');
-      input.type = 'checkbox';
-      input.addEventListener('change', () => set(k, input.checked as never));
-      row.prepend(input);
-      refreshers.push(() => (input.checked = Boolean(settings[k])));
     }
     let item: HTMLElement = row;
     if (essBody && fineBody) {
@@ -10386,6 +10417,31 @@ function renderControls() {
     if (ctl.show) conditional.push([item, ctl.show]);
   }
 
+  // Whole-tab switch at the top of the tabs that can be switched off.
+  for (const t of BYPASSABLE) {
+    const first = sectionTabs.find(([, tt]) => tt === t)?.[0];
+    if (!first) continue;
+    const bar = document.createElement('div');
+    bar.className = 'tab-power';
+    const label = TABS.find(([x]) => x === t)![1];
+    bar.innerHTML = `<span></span><button type="button" class="rack-switch"></button>`;
+    const txt = bar.querySelector('span')!;
+    const sw = bar.querySelector('button')!;
+    sw.addEventListener('click', () => setBypass(t, !bypass.has(t)));
+    const sync = () => {
+      const off = bypass.has(t);
+      bar.classList.toggle('off', off);
+      txt.textContent = off ? `${label} is off. Your settings are kept; the field ignores them until you turn it back on.` : `${label}: the whole tab is on`;
+      sw.textContent = off ? 'Turn on' : 'on';
+      sw.setAttribute('aria-pressed', String(!off));
+      sw.setAttribute('aria-label', `${label}: ${off ? 'turn the whole tab on' : 'switch the whole tab off'}`);
+    };
+    refreshers.push(sync);
+    sync();
+    first.before(bar);
+    sectionTabs.push([bar, t]);
+  }
+  syncBypassUi();
   const stats = document.createElement('p');
   stats.className = 'stats';
   stats.id = 'stats';
@@ -10722,11 +10778,24 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
   next.setAttribute('aria-label', `Next ${c.label}`);
   next.addEventListener('click', () => step(1));
   out.addEventListener('dblclick', () => src.put(c.key, home()));
+  // Long lists: tap the value to pick from all of them (the phone's own picker).
+  let pick: HTMLSelectElement | null = null;
+  if (c.options.length > 4) {
+    pick = document.createElement('select');
+    pick.className = 'rack-pick';
+    pick.setAttribute('aria-label', c.label);
+    for (const [value, text] of c.options) pick.add(new Option(text, value));
+    pick.addEventListener('change', () => src.put(c.key, pick!.value));
+    out.append(pick);
+  }
+  const txt = document.createElement('i');
+  out.prepend(txt);
   el.append(name, prev, out, next);
   return {
     el,
     update: () => {
-      out.textContent = c.options.find(([k]) => k === src.get(c.key))?.[1] ?? String(src.get(c.key));
+      txt.textContent = c.options.find(([k]) => k === src.get(c.key))?.[1] ?? String(src.get(c.key));
+      if (pick) pick.value = String(src.get(c.key));
       el.classList.toggle('moved', src.get(c.key) !== home());
     },
   };
