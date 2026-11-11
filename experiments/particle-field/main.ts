@@ -5492,7 +5492,7 @@ type Tab = 'presets' | 'look' | 'shape' | 'motion' | 'music' | 'camera' | 'timel
 type Intent = 'create' | 'perform' | 'react';
 const TABS: [Tab, string][] = [
   ['look', 'Look'], ['shape', 'Shape'], ['motion', 'Motion'],
-  ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'Knobs'], ['record', 'Record'],
+  ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'Live'], ['record', 'Record'],
   ['music', 'Music'], ['camera', 'Camera'], ['links', 'Connections'],
 ];
 // Desktop tab icons: one row of every page, the open one also named.
@@ -6401,7 +6401,7 @@ const CONTROLS: Control[] = [
     // The dock: the performance pages on the left, then the actions you
     // reach for mid-set; the rarer ones wait under ⋯.
     buttons: [
-      ['Knobs', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Knobs', 'knobs'],
+      ['Live: macros and field knobs', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Live', 'knobs'],
       ['Timeline', svg(TAB_ICONS.timeline), () => showTab('timeline'), 'Timeline', 'timeline'],
       ['Record a clip (V)', ICONS.record, dockRecord, 'Record'],
       ['Pause (Space)', ICONS.pause, togglePause, 'Pause'],
@@ -10553,7 +10553,7 @@ function renderControls() {
         }
         if (tab) dockTabs.push([tab, b]);
         if (short === 'More') { b.classList.add('dock-more-btn'); dockMoreBtn = b; }
-        if (short && ['Knobs', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
+        if (short && ['Live', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
         // A dock page's button opens it, and a second press goes back.
         b.addEventListener('click', tab ? () => (currentTab === tab ? backFromPlay() : fn()) : fn);
         if (fn === togglePause) pauseButtons.push(b);
