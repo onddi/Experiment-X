@@ -527,7 +527,7 @@ function drawObstacles(fade: number, light: boolean) {
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   // A second finger starts a two-finger play gesture instead.
-  if (settings.playOn && e.pointerType === 'touch' && playTouch.size >= 1) return;
+  if (playing() && e.pointerType === 'touch' && playTouch.size >= 1) return;
   pressAt = performance.now();
   if (settings.obstacles === 'circles' && settings.obsPlace && settings.placeWell === 'off') {
     toggleObstacle(e.offsetX, e.offsetY);
@@ -1646,6 +1646,9 @@ const bypass = new Set<Tab>((() => {
 })());
 // The music moves the field (a source is on and the Music tab isn't off).
 const reacting = () => audio.source !== 'off' && !bypass.has('music');
+// The on-field knobs are out (Knobs tab off) and the crossfader is still.
+const playing = () => settings.playOn && !bypass.has('knobs');
+const xfLive = () => xf.on && !bypass.has('xfader');
 // Connections (see runLinks): declared early, the camera helpers read them.
 const linkRun = new LinkRunner();
 // Density macro: multiplies the scene's particle count (see countNow).
@@ -3062,7 +3065,7 @@ function animateShape(now: number) {
   // clock's seconds, a new tempo.
   if (S.shape === 'sequence') {
     const L = audio.levels;
-    const music = audio.source !== 'off' && L.bpm > 0;
+    const music = reacting() && L.bpm > 0;
     let fire = false;
     if (music) {
       if (S.shapeSeqEvery === 'drop') fire = L.drop;
@@ -5106,7 +5109,7 @@ function syncLinks() {
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 function linkSignal(id: string, now: number): Signal {
   const L = audio.levels;
-  const music = audio.source !== 'off';
+  const music = reacting();
   const none = { level: 0 };
   switch (sourceDef(id)?.needs) {
     case 'audio':
@@ -5329,7 +5332,7 @@ function frame(now: number) {
     cameraTick(now);
     runLinks(now);
     animateShape(now);
-    tickMorph(now, audio.source !== 'off' && audio.levels.beat);
+    tickMorph(now, reacting() && audio.levels.beat);
     musicVisuals(now);
     tlTick(now);
     xfTick(now);
@@ -6443,7 +6446,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   }
   const target = sceneTarget(p, keepAudio);
   sceneBase = target;
-  if (settings.beatSnap && audio.source !== 'off' && !opts.now) {
+  if (settings.beatSnap && reacting() && !opts.now) {
     pendingLook = { target, since: performance.now() };
     return;
   }
@@ -6858,7 +6861,7 @@ function musicVisuals(now: number) {
   if (!on || (S.audioLetterHop <= 0 && S.audioSnareHop <= 0 && S.audioNoteHop <= 0 && S.audioSylHop <= 0)) hopKick = 0;
 
   // Auto VJ: a new look every few bars, and on drops.
-  if (on && S.audioVj > 0 && !tlActive() && !xf.on) {
+  if (on && S.audioVj > 0 && !tlActive() && !xfLive()) {
     if (L.bar) vjBars++;
     if (vjBars >= S.audioVj || (S.audioVjDrop && L.drop)) {
       vjBars = 0;
@@ -7049,7 +7052,7 @@ function xfApply(pos: number) {
   xfSettle = performance.now() + 250;
 }
 function xfTick(now: number) {
-  if (!xf.on || bypass.has('xfader')) return;
+  if (!xfLive()) return;
   if (xfAuto) {
     const u = Math.min(1, (now - xfAuto.start) / xfAuto.dur);
     const e = u * u * (3 - 2 * u);
@@ -7095,7 +7098,7 @@ function xfSetOn(on: boolean) {
 }
 function xfBarSec() {
   const L = audio.levels;
-  return 240 / (audio.source !== 'off' && L.bpm > 0 ? L.bpm : tl.bpm || 120);
+  return 240 / (reacting() && L.bpm > 0 ? L.bpm : tl.bpm || 120);
 }
 function xfFadeTo(to: number) {
   if (!xf.on) xfSetOn(true);
@@ -7221,14 +7224,14 @@ document.body.append(xfField);
     setTimeout(() => performance.now() >= hideAt && xfField.classList.remove('show'), 1700);
   };
   xfUi.push(() => {
-    xfField.hidden = !xf.on;
+    xfField.hidden = !xfLive();
     la.textContent = xf.a.name;
     lb.textContent = xf.b.name;
     const p = Math.max(0, Math.min(1, xfLast < 0 ? settings.xfPos : xfLast));
     fill.style.width = `${p * 100}%`;
     thumb.style.left = `${p * 100}%`;
     track.setAttribute('aria-valuenow', String(Math.round(p * 100)));
-    if (xf.on) show();
+    if (xfLive()) show();
   });
   const at = (e: PointerEvent) => {
     const r = track.getBoundingClientRect();
@@ -7383,7 +7386,7 @@ function makeShards(W: number, H: number): Shard[] {
 // and draw its overlay.
 function tlFxFrame(now: number) {
   const f = tlFx;
-  const dip = xf.on ? xfDip : 0;
+  const dip = xfLive() ? xfDip : 0;
   const need = (!!f && ['xfade', 'fade', 'flash', 'wipe', 'freeze', 'shatter'].includes(f.how)) || dip > 0.01;
   if (fxCanvas.hidden === need) fxCanvas.hidden = !need;
   if (!f) {
@@ -7608,15 +7611,15 @@ function tlGo(i: number) {
   showToast('The timeline has no scenes it can play');
   tlSetOn(false);
 }
-const tlActive = () => tl.on && tl.clips.length > 0;
+const tlActive = () => tl.on && tl.clips.length > 0 && !bypass.has('timeline');
 
 function tlTick(now: number) {
-  if (!tlActive() || bypass.has('timeline')) {
+  if (!tlActive()) {
     tlRing(now);
     return;
   }
   const L = audio.levels;
-  const music = tl.clock === 'music' && audio.source !== 'off' && L.bpm > 0;
+  const music = tl.clock === 'music' && reacting() && L.bpm > 0;
   let bar = false;
   if (music) {
     tlBarSec = 240 / L.bpm;
@@ -8280,7 +8283,7 @@ function renderTimeline() {
 
 let intKeys: Set<string> | null = null;
 function tickMorph(now: number, beat: boolean) {
-  if (pendingLook && (beat || now - pendingLook.since > 2500 || !settings.beatSnap || audio.source === 'off')) {
+  if (pendingLook && (beat || now - pendingLook.since > 2500 || !settings.beatSnap || !reacting())) {
     const t2 = pendingLook.target;
     pendingLook = null;
     morphTo(t2);
@@ -8450,10 +8453,11 @@ function setBypass(t: Tab, off: boolean) {
     /* not persisted */
   }
   if (t === 'links') syncLinks();
-  if (t === 'camera') {
-    if (camWanted() && !cam.on) void startCamera();
-    else if (!camWanted() && cam.on) stopCamera();
-  }
+  // Links can be what keeps the camera on, so check it whichever tab it is.
+  if (camWanted() && !cam.on) void startCamera();
+  else if (!camWanted() && cam.on) stopCamera();
+  if (t === 'xfader') for (const f of xfUi) f();
+  if (t === 'timeline') tlRingBuild();
   const label = TABS.find(([x]) => x === t)![1];
   showToast(off ? `${label} is off: settings kept, nothing from it reaches the field` : `${label} is back on`);
   syncBypassUi();
@@ -10469,7 +10473,7 @@ function sceneEdited() {
   if (!sceneBase) return false;
   const S = settings as unknown as Record<string, unknown>;
   const B = sceneBase as unknown as Record<string, unknown>;
-  const palAuto = settings.audioPalEvery > 0 && audio.source !== 'off';
+  const palAuto = settings.audioPalEvery > 0 && reacting();
   for (const k of Object.keys(DEFAULTS)) {
     if (SCENE_IGNORE.has(k) || (palAuto && (XF_PAL as readonly string[]).includes(k))) continue;
     const a = S[k];
@@ -10486,7 +10490,7 @@ function syncSceneNow() {
   if (!el) return;
   let name = '';
   let edited = false;
-  if (xf.on) name = `${xf.a.name} ↔ ${xf.b.name}`;
+  if (xfLive()) name = `${xf.a.name} ↔ ${xf.b.name}`;
   else if (tl.on && tlActive()) name = currentMine?.name ?? lastSceneName;
   else {
     name = currentMine?.name ?? lastSceneName;
@@ -10604,7 +10608,22 @@ const RACK_LIVE: RackSrc = {
 };
 // Which controls the rack shows, by card and tab group.
 type RackCard = { id: string; label: string; ctls: RackCtl[]; other: boolean };
+// A crossfader side's rack: which settings show (and come in pairs) depends
+// on that side's own values, so they stand in for the live ones while it's
+// worked out.
 function rackPlan(src: RackSrc) {
+  if (src === RACK_LIVE) return rackPlanOf(src);
+  const S = settings as unknown as Record<string, unknown>;
+  const side = Object.keys(DEFAULTS).map((k) => [k, src.get(k as keyof Settings)] as const);
+  const saved = { ...S };
+  for (const [k, v] of side) S[k] = v;
+  try {
+    return rackPlanOf(src);
+  } finally {
+    Object.assign(S, saved);
+  }
+}
+function rackPlanOf(src: RackSrc) {
   const base = src.base ?? (DEFAULTS as unknown as Record<string, unknown>);
   const S = new Proxy({}, { get: (_, k) => src.get(k as keyof Settings) }) as Record<string, unknown>;
   const D = DEFAULTS as unknown as Record<string, unknown>;
@@ -10627,8 +10646,8 @@ function rackPlan(src: RackSrc) {
     // What the scene set, plus anything you've changed since (not mid-morph,
     // when everything is still on its way over).
     // Hidden in the panel right now (the word, once the shape isn't text): hidden here too.
-    if (src === RACK_LIVE && c.show && !c.show()) continue;
-    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key])) && !(src === RACK_LIVE && pairOf(c, card))) continue;
+    if (c.show && !c.show()) continue;
+    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key])) && !pairOf(c, card)) continue;
     seen.add(c.key);
     if (!card) {
       const col = OV_COLS.find(([, tabs]) => tabs.includes(pageOf(sec!)))?.[0] ?? 'Play';
@@ -10674,7 +10693,7 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
     get settling() { return live.settling; },
     put: (k, v) => {
       live.put(k, v);
-      if (live !== RACK_LIVE || !wrap.isConnected) return;
+      if (!wrap.isConnected) return;
       if (rackSig(rackPlan(live).groups) !== sig) wrap.replaceWith(renderRack(live));
     },
   };
@@ -11905,7 +11924,7 @@ for (const [at, sk] of KNOB_KEYS) {
   // Keep the knob drawn with its current value, so hovering the row can
   // reveal all of them at once.
   const sync = () => {
-    f.hidden = !settings.playOn || !rangeOf(key());
+    f.hidden = !playing() || !rangeOf(key());
     if (!f.hidden) playPaint(at, key());
   };
   refreshers.push(sync);
@@ -11922,7 +11941,7 @@ const twoGeom = () => {
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
   playTouch.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (settings.playOn && playTouch.size === 2) {
+  if (playing() && playTouch.size === 2) {
     // The first finger stops acting on the particles.
     pointer.down = false;
     pointer.active = false;
@@ -11957,7 +11976,7 @@ window.addEventListener(
   (e) => {
     const t = e.target as Element | null;
     if (t?.closest?.('#panel, #toggle, .overview')) return;
-    if (!settings.playOn) return;
+    if (!playing()) return;
     e.preventDefault();
     const S = settings;
     const key = !e.shiftKey ? (e.altKey ? S.playWheel5 : S.playLeft) : e.metaKey || e.ctrlKey ? S.playWheel3 : e.altKey ? S.playWheel4 : S.playRight;
@@ -12203,7 +12222,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'f') surpriseVibe(vibeLead === 'any' ? undefined : vibeLead);
   else if (k === 'h') toggle.click();
   else if (k === 'v') toggleRecord();
-  else if (xf.on && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+  else if (xfLive() && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
     const right = e.key === 'ArrowRight';
     if (e.shiftKey) xfFadeTo(right ? 1 : 0);
