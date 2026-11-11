@@ -1870,3 +1870,11 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .panel.finding .search { display: block; position: relative; z-index: 6; margin: 8px 10px 0; padding: 6px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 12px 30px rgb(0 0 0 / 0.5); }
   .panel.finding .search input { font-size: 16px; }
 }
+/* Your picked field knobs, listed atop the overview. */
+.fk-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fk-chips[hidden] { display: none; }
+.fk-chips h3 { flex-basis: 100%; margin: 0 0 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.fk-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px 5px 11px; border: 1px solid var(--accent-soft); border-radius: 999px; background: var(--accent-bg); color: var(--accent-soft); font: inherit; font-size: 12.5px; cursor: pointer; }
+.fk-chip i { font-style: normal; opacity: 0.7; font-size: 11px; }
+.fk-chip.idle { border-style: dashed; opacity: 0.55; }
+.fk-chip.clear { border-color: transparent; background: none; color: var(--muted); padding-left: 6px; }

@@ -5926,7 +5926,7 @@ const CONTROLS: Control[] = [
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
   { kind: 'section', id: 'play', label: 'Field knobs & gestures', tab: 'presets',
     about: 'Five knobs along the bottom edge, two-finger drag and pinch, and the mouse wheel: turn settings with the menu closed.',
-    summary: () => (!settings.playOn ? 'off' : knobPicks().length ? `your ${knobPicks().length} picked knobs` : settings.knobsFollow && settings.knobsScene ? 'the scene\'s knobs' : (knobSetName() ?? 'own mix')),
+    summary: () => (!settings.playOn ? 'off' : knobPicks().length ? `your ${knobPicks().length} picked knobs${knobPicks().some(knobLive) ? '' : ' (none in this scene)'}` : settings.knobsFollow && settings.knobsScene ? 'the scene\'s knobs' : (knobSetName() ?? 'own mix')),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
   { kind: 'note', text: 'You picked these knobs yourself (the knob button on an overview setting), so they stay put through every scene and shuffle. Clear them to let each scene and shuffle bring its own again.', show: () => knobPicks().length > 0 },
   { kind: 'buttons', buttons: [['Clear my picked knobs', () => clearKnobPicks()]], show: () => knobPicks().length > 0 },
@@ -11201,6 +11201,37 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
     }
     wrap.append(box);
   }
+  // Your picked field knobs, always listed here, even ones this scene leaves out.
+  const picksEl = document.createElement('div');
+  picksEl.className = 'fk-chips';
+  wrap.insertBefore(picksEl, head);
+  let picksSig = '-';
+  const drawPicks = () => {
+    const sig = settings.knobsPick + '|' + knobPicks().map(knobLive).join();
+    if (sig === picksSig) return;
+    picksSig = sig;
+    const picks = knobPicks().filter((k, _, a) => { const f = families().get(k); return !f || f.parent === k || !a.includes(f.parent); });
+    picksEl.hidden = !picks.length;
+    picksEl.innerHTML = picks.length ? '<h3>Your field knobs</h3>' : '';
+    for (const k of picks) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fk-chip' + (knobLive(k) ? '' : ' idle');
+      b.title = knobLive(k) ? 'Take this knob off' : 'Not used by this scene, so it sits out. Tap to take it off';
+      b.innerHTML = `<span></span><i aria-hidden="true">✕</i>`;
+      b.querySelector('span')!.textContent = (knobSpec(k)?.label ?? k).replace(/ \(.*\)$/, '');
+      b.addEventListener('click', () => toggleFieldKnob(k));
+      picksEl.append(b);
+    }
+    const clr = document.createElement('button');
+    clr.type = 'button';
+    clr.className = 'fk-chip clear';
+    clr.textContent = 'Clear all';
+    clr.addEventListener('click', () => clearKnobPicks());
+    if (picks.length) picksEl.append(clr);
+  };
+  drawPicks();
+  updaters.push(drawPicks);
   head.classList.toggle('empty', !count);
   head.innerHTML = count
     ? `<h3>Knobs</h3><span>The ${count} setting${count === 1 ? '' : 's'} this scene changed, ready to play. ${matchMedia('(pointer: coarse)').matches ? 'Tap a knob for a big slider, or drag it sideways' : 'Drag a knob sideways to turn it'}; the white dot is the scene's own value${matchMedia('(pointer: coarse)').matches ? '' : ', double-click to snap back'}.</span>`
@@ -12626,7 +12657,9 @@ function knobPicked(picks: string[], key: string) {
 }
 function knobSpec(key: string): KnobSpec | null {
   key = knobTarget(key);
-  const c = CONTROLS.find((x) => (x.kind === 'range' || x.kind === 'select' || x.kind === 'choice') && x.key === key);
+  // Several controls can share a key (each pattern names patForm its own way): use the one in play.
+  const cs = CONTROLS.filter((x) => (x.kind === 'range' || x.kind === 'select' || x.kind === 'choice') && x.key === key) as Extract<Control, { kind: 'range' | 'select' | 'choice' }>[];
+  const c = cs.find((x) => !x.show || x.show()) ?? cs[0];
   if (!c) return null;
   const S = settings as unknown as Record<string, unknown>;
   if (c.kind === 'range')
@@ -12701,8 +12734,14 @@ function sceneKnobs(t: Settings): string[] {
   return out;
 }
 /** Every field knob's setting, in row order. */
+/** A setting that does something in this scene (its control is showing). */
+function knobLive(key: string) {
+  const t = knobTarget(key);
+  return CONTROLS.some((c) => 'key' in c && c.key === t && (!c.show || c.show()));
+}
 function fieldKnobKeys(): string[] {
-  const picks = knobPicks();
+  // Picks for settings this scene doesn't use sit out (they come back with it).
+  const picks = knobPicks().filter(knobLive);
   if (picks.length) return picks;
   const scene = settings.knobsFollow ? settings.knobsScene.split(',').filter((k) => knobSpec(k)) : [];
   return scene.length ? scene : baseKnobKeys();
