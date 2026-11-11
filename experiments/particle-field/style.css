@@ -1848,3 +1848,12 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
 /* Watch sits first in the dock on phones (where Watch lives). */
 .dock-watch { display: none !important; }
 @media (max-width: 720px) { .icon-buttons .dock-watch { display: flex !important; } }
+
+/* Phones: the scene now is the menu's title. */
+@media (max-width: 720px) {
+  .panel header:has(.scene-now:not([hidden])) h1 { display: none; }
+  .panel header .scene-now { flex: 1; padding: 0 4px 0 0; border: 0; font-size: 15px; gap: 8px; }
+  .panel header .scene-now .sn-label { display: none; }
+  .panel header .scene-now b { font-size: 17px; }
+  .panel header .scene-now em { font-size: 13px; }
+}

@@ -10928,18 +10928,11 @@ setTimeout(() => {
   if (currentMine) redrawMine();
 }, 0);
 document.getElementById('scene-now')!.addEventListener('click', () => openOverview());
-// Desktop: the scene's name is the panel's title. Phones keep it as a row
-// under the slim bar.
+// The scene's name sits in the panel's header (on phones in place of the
+// title, to leave the room to the settings).
 {
   const sn = document.getElementById('scene-now')!;
-  const head = document.querySelector<HTMLElement>('#panel header')!;
-  const phone = matchMedia('(max-width: 720px)');
-  const place = () => {
-    if (phone.matches) head.after(sn);
-    else head.querySelector('h1')!.after(sn);
-  };
-  place();
-  phone.addEventListener('change', place);
+  document.querySelector<HTMLElement>('#panel header h1')!.after(sn);
 }
 let ovEl: HTMLElement | null = null;
 function closeOverview() {
