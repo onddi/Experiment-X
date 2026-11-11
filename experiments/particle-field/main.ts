@@ -12485,3 +12485,20 @@ if (camWanted() && !cam.on) {
 }
 window.addEventListener('hashchange', () => presetFromUrl(false));
 requestAnimationFrame(frame);
+
+// Hovering a label that is cut short (an ellipsis or a two-line clamp) shows
+// its full text as a tooltip. Only labels without a tooltip of their own.
+document.addEventListener('pointerover', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  let el = e.target as HTMLElement | null;
+  for (let i = 0; el && i < 4; i++, el = el.parentElement) {
+    if (el.title && !el.dataset.autoTitle) return;
+    const clipped = el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+    if (clipped && getComputedStyle(el).overflow.includes('hidden') && !el.querySelector('input, select, canvas, svg')) {
+      const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+      if (text) { el.title = text; el.dataset.autoTitle = '1'; }
+      return;
+    }
+    if (el.dataset.autoTitle) { el.removeAttribute('title'); delete el.dataset.autoTitle; }
+  }
+}, { passive: true });
