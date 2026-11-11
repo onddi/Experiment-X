@@ -6568,12 +6568,14 @@ const playSettings = (): Partial<Settings> => ({
 // Presets go through here: they glide over (Morph) and can wait for the beat.
 function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
   p = upgradeShape(p);
+  // The scene playing until now: what it switched on goes when it does.
+  const prev = currentMine?.settings ?? PRESETS.find(([n]) => n === lastSceneName)?.[1] ?? null;
   lastSceneName = '';
   if (currentMine) {
     currentMine = null;
     redrawMine();
   }
-  const target = sceneTarget(p, keepAudio);
+  const target = sceneTarget(p, keepAudio, prev);
   sceneBase = target;
   if (settings.beatSnap && reacting() && !opts.now) {
     pendingLook = { target, since: performance.now() };
@@ -6584,14 +6586,21 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 
 // The full settings a scene ends up as: the scene over the defaults, with
 // what carries over (sound setup, how you play, inputs, your lenses, locks).
-function sceneTarget(p: Partial<Settings>, keepAudio: boolean): Settings {
+function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Settings> | null = null): Settings {
+  // Inputs and music reactions carry over as yours, but not ones the last
+  // scene itself switched on (and you left as it set them): a camera scene's
+  // hands, preview or body tracking end with it.
+  const P = prev ? (upgradeShape(prev) as Record<string, unknown>) : null;
+  const D = DEFAULTS as unknown as Record<string, unknown>;
+  const S0 = settings as unknown as Record<string, unknown>;
+  const fromScene = (k: string) => !!P && k in P && P[k] !== D[k] && S0[k] === P[k];
   // Your own presets bring their whole Sound setup back too (the music cards
   // included), all but Auto VJ, so a VJ stepping through them keeps going.
   const own = keepAudio ? {} : Object.fromEntries(MUSIC_KEYS.filter((k) => k in p && !k.startsWith('audioVj')).map((k) => [k, p[k]]));
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -6600,6 +6609,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean): Settings {
   // Lenses the scene doesn't set go back to your own, not the last scene's.
   for (const k of LENS_KEYS) if (!(k in p) && k in myLens) (hands as Record<string, unknown>)[k] = myLens[k];
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
+  for (const k of MUSIC_KEYS) if (keepAudio && !(k in p) && fromScene(k)) (target as unknown as Record<string, unknown>)[k] = D[k];
   // Locked cards keep what they have, whichever scene loads.
   for (const k of lockedKeys()) (target as unknown as Record<string, unknown>)[k] = settings[k];
   // Tweaks held by the timeline stay for the rest of the set.
