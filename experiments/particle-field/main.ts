@@ -5928,7 +5928,7 @@ const CONTROLS: Control[] = [
     about: 'Knobs along the bottom edge (up to eight from each scene) and the mouse wheel: turn settings with the menu closed.',
     summary: () => (!settings.playOn ? 'off' : knobPicks().length ? `your ${knobPicks().length} picked knobs${knobPicks().some(knobLive) ? '' : ' (none in this scene)'}` : settings.knobsFollow && settings.knobsScene ? 'the scene\'s knobs' : (knobSetName() ?? 'own mix')),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
-  { kind: 'note', text: 'You picked these knobs yourself (the knob button on an overview setting), so they stay put through every scene and shuffle. Clear them to let each scene and shuffle bring its own again.', show: () => knobPicks().length > 0 },
+  { kind: 'note', text: 'You picked these knobs yourself (the knob button on a Deck setting), so they stay put through every scene and shuffle. Clear them to let each scene and shuffle bring its own again.', show: () => knobPicks().length > 0 },
   { kind: 'buttons', buttons: [['Clear my picked knobs', () => clearKnobPicks()]], show: () => knobPicks().length > 0 },
   { kind: 'toggle', key: 'knobsFollow', label: 'Knobs follow the scene (each scene and shuffle brings its own)' },
   { kind: 'note', text: 'Each scene and each shuffle sets knobs for what it is about (its shape, motion, lens…). Your set below plays when this is off.', show: () => settings.knobsFollow && !knobPicks().length },
@@ -6421,7 +6421,7 @@ const CONTROLS: Control[] = [
     // The dock: the performance pages on the left, then the actions you
     // reach for mid-set; the rarer ones wait under ⋯.
     buttons: [
-      ['Watch: just the field, no menus', ICONS.eye, () => startWatching(), 'Watch'],
+      ['Stage: just the field, no menus', ICONS.eye, () => startWatching(), 'Stage'],
       ['Scenes', svg(TAB_ICONS.presets), () => showTab('presets'), 'Scenes', 'presets'],
       ['On-screen controls: knobs and gestures on the field', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Controls', 'knobs'],
       ['Timeline', svg(TAB_ICONS.timeline), () => showTab('timeline'), 'Timeline', 'timeline'],
@@ -10678,7 +10678,7 @@ function renderControls() {
         }
         if (tab) dockTabs.push([tab, b]);
         if (short === 'More') { b.classList.add('dock-more-btn'); dockMoreBtn = b; }
-        if (short === 'Watch' || short === 'Scenes') b.classList.add('dock-watch');
+        if (short === 'Stage' || short === 'Scenes') b.classList.add('dock-watch');
         if (short && ['Scenes', 'Controls', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
         // A dock page's button opens it, and a second press goes back.
         b.addEventListener('click', tab ? () => (currentTab === tab ? backFromPlay() : fn()) : fn);
@@ -10958,7 +10958,10 @@ function syncSceneNow() {
     // Mid-morph or waiting for the beat, it isn't "edited" yet.
     if (name && !morphState && !pendingLook) edited = sceneEdited();
   }
-  el.hidden = !name;
+  // Nothing picked (after a shuffle, say): still show it, as "Your mix", so
+  // the overview is always one tap away.
+  name ||= 'Your mix';
+  el.hidden = false;
   el.querySelector('b')!.textContent = name;
   el.classList.toggle('edited', edited);
   markLibrary();
@@ -11008,7 +11011,7 @@ function closeOverview() {
 // sideways plays the previous / next scene. Both fade while you watch.
 const watchBar = document.createElement('div');
 watchBar.className = 'watch-bar';
-watchBar.innerHTML = `<button type="button" class="watch-scene" aria-label="Back to the overview">${ICONS.sliders}<b></b></button><button type="button" class="watch-shuffle" aria-label="Shuffle">${ICONS.shuffle}</button>`;
+watchBar.innerHTML = `<button type="button" class="watch-scene" aria-label="Back to the Deck">${ICONS.sliders}<b></b></button><button type="button" class="watch-shuffle" aria-label="Shuffle">${ICONS.shuffle}</button>`;
 watchBar.querySelector('.watch-scene')!.addEventListener('click', stopWatching);
 watchBar.querySelector('.watch-shuffle')!.addEventListener('click', () => shuffle());
 document.querySelector('.stage')!.append(watchBar);
@@ -11018,7 +11021,7 @@ function startWatching() {
   closeOverview();
   if (!panel.classList.contains('collapsed')) toggle.click();
   revealKnobs();
-  watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || 'Overview';
+  watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || 'Deck';
 }
 function stopWatching() {
   openOverview();
@@ -11664,7 +11667,7 @@ function openOverview() {
   const el = document.createElement('div');
   el.className = 'overview';
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Overview');
+  el.setAttribute('aria-label', 'Deck');
   const head = document.createElement('div');
   head.className = 'ov-head';
   const body = document.createElement('div');
@@ -11740,7 +11743,7 @@ function openOverview() {
     const edited = document.getElementById('scene-now')?.classList.contains('edited');
     head.innerHTML = `<div class="ov-title"><button type="button" class="ov-step" aria-label="Previous scene">‹</button><span><small></small><b></b>${edited ? '<em>edited</em>' : ''}</span><button type="button" class="ov-step" aria-label="Next scene">›</button></div><button type="button" class="icon ov-close" aria-label="Close">✕</button>`;
     head.querySelector('b')!.textContent = name;
-    head.querySelector('small')!.textContent = lastSceneName && !currentMine ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Overview';
+    head.querySelector('small')!.textContent = lastSceneName && !currentMine ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Deck';
     const [prevB, nextB] = head.querySelectorAll<HTMLButtonElement>('.ov-step');
     prevB.addEventListener('click', () => stepScene(-1));
     nextB.addEventListener('click', () => stepScene(1));
@@ -11849,7 +11852,7 @@ function openOverview() {
   // settings opens the tabs, ⇄ starts or stops a crossfade.
   const foot = document.createElement('div');
   foot.className = 'ov-foot';
-  foot.innerHTML = `<button type="button" class="ov-watch">${ICONS.eye}<span>Watch</span></button><button type="button" class="ov-all">${ICONS.sliders}<span>All settings</span></button><button type="button" class="ov-xfb" aria-label="${xf.on ? 'Stop crossfading' : 'Crossfade with another scene'}" aria-pressed="${xf.on}">⇄</button>`;
+  foot.innerHTML = `<button type="button" class="ov-watch">${ICONS.eye}<span>Stage</span></button><button type="button" class="ov-all">${ICONS.sliders}<span>Studio</span></button><button type="button" class="ov-xfb" aria-label="${xf.on ? 'Stop crossfading' : 'Crossfade with another scene'}" aria-pressed="${xf.on}">⇄</button>`;
   foot.querySelector('.ov-watch')!.addEventListener('click', startWatching);
   foot.querySelector('.ov-all')!.addEventListener('click', () => {
     closeOverview();
@@ -11859,7 +11862,7 @@ function openOverview() {
     if (xf.on) {
       xfSetOn(false);
       openOverview();
-    } else body.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
+    } else head.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
   });
   el.append(head, body, foot);
   document.body.append(el);
@@ -13008,7 +13011,7 @@ const mbar = document.createElement('div');
 mbar.className = 'm-bar';
 const MENU_ICON = svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
 const KNOB_ICON = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l3.5-3.5"/>');
-mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}${svg('<path d="M6 12h12"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}${svg('<path d="M6 12h12M12 6v12"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div><div class="sp-chips" role="tablist" aria-label="Knobs"></div>`;
+mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Deck" title="Deck">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Studio" title="Studio">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}${svg('<path d="M6 12h12"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}${svg('<path d="M6 12h12M12 6v12"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div><div class="sp-chips" role="tablist" aria-label="Knobs"></div>`;
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 const chips = mbar.querySelector<HTMLElement>('.sp-chips')!;
