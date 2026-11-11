@@ -11188,6 +11188,8 @@ function rackPlan(src: RackSrc) {
     Object.assign(S, saved);
   }
 }
+// Default-on switches the Deck lists whenever their card is switched on.
+const DECK_WITH_CARD = new Set<string>(['obsShow', 'obsPlace', 'showWells']);
 function rackPlanOf(src: RackSrc) {
   const base = src.base ?? (DEFAULTS as unknown as Record<string, unknown>);
   const S = new Proxy({}, { get: (_, k) => src.get(k as keyof Settings) }) as Record<string, unknown>;
@@ -11212,7 +11214,9 @@ function rackPlanOf(src: RackSrc) {
     // when everything is still on its way over).
     // Hidden in the panel right now (the word, once the shape isn't text): hidden here too.
     if (c.show && !c.show()) continue;
-    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key])) && !pairOf(c, card)) continue;
+    // A few switches that default to on still show while their card is on.
+    const withCard = DECK_WITH_CARD.has(c.key) && !!sec.power?.on();
+    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key])) && !pairOf(c, card) && !withCard) continue;
     seen.add(c.key);
     if (!card) {
       const col = OV_COLS.find(([, tabs]) => tabs.includes(pageOf(sec!)))?.[0] ?? 'Play';
