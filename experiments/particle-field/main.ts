@@ -9932,7 +9932,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · Enter type a word · V record a clip · H hide panel · ⌘K or / find a setting · I debug info. Hold a number key to play it only while held.';
+  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · F shuffle the music vibe · Enter type a word · V record a clip · H hide panel · ⌘K or / find a setting · I debug info. Hold a number key to play it only while held.';
   controls.append(keys);
 }
 
@@ -11354,6 +11354,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === 's') scatter();
   else if (k === 'e') explode();
   else if (k === 'd' || k === 'r') shuffle();
+  // F, next to D: a random music vibe, as Surprise me in the Vibe card.
+  else if (k === 'f') surpriseVibe();
   else if (k === 'h') toggle.click();
   else if (k === 'v') toggleRecord();
   else if (xf.on && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
