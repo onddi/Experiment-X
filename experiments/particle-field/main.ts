@@ -12675,7 +12675,7 @@ syncFieldKnobs();
 // down to switch knob, tap a choice for its list.
 const pill = document.createElement('div');
 pill.className = 'swipe-pill';
-pill.innerHTML = '<div class="sp-zone"></div><div class="sp-body"><span class="sp-name"></span><b class="sp-val"></b><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div>';
+pill.innerHTML = '<div class="sp-zone"></div><div class="sp-body"><i class="sp-prev" aria-hidden="true">‹</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">›</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div>';
 stage.append(pill);
 let pillIdx = 0;
 let pillTimer = 0;
@@ -12688,6 +12688,7 @@ function pillPaint(wake = false) {
   const key = keys[pillIdx];
   const r = knobSpec(key)!;
   const v = playBase(key);
+  pill.classList.toggle('choice', !!r.options);
   pill.querySelector('.sp-name')!.textContent = r.label;
   pill.querySelector('.sp-val')!.textContent = r.text(v);
   pill.querySelector<HTMLElement>('.sp-bar u')!.style.width = `${((v - r.min) / (r.max - r.min)) * 100}%`;
@@ -12735,7 +12736,16 @@ refreshers.push(() => pillPaint());
     const tap = st && !st.mode && e.type === 'pointerup' && performance.now() - st.t < 450;
     st = null;
     const spec = knobSpec(pillKeys()[pillIdx] ?? '');
-    if (tap && spec?.options) knobMenu(pill.querySelector('.sp-body')!, spec);
+    // A choice: tap the ‹ or › side to step, the middle for its list.
+    if (tap && spec?.options) {
+      const b = pill.querySelector<HTMLElement>('.sp-body')!.getBoundingClientRect();
+      const side = e.clientX < b.left + b.width * 0.3 ? -1 : e.clientX > b.right - b.width * 0.3 ? 1 : 0;
+      const key = pillKeys()[pillIdx];
+      if (side) {
+        const n = spec.max + 1;
+        playSet(key, (Math.round(spec.get()) + side + n) % n);
+      } else knobMenu(pill.querySelector('.sp-body')!, spec);
+    }
     pillPaint(true);
   };
   zone.addEventListener('pointerup', end);

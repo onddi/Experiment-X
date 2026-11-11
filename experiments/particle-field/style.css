@@ -1828,4 +1828,14 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .sp-bar u { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(255 255 255 / 0.75); }
   .sp-dots { grid-column: 1 / -1; justify-self: center; font-size: 6px; letter-spacing: 3px; color: rgb(255 255 255 / 0.5); font-style: normal; }
   .sp-dots:empty { display: none; }
+  /* Choices: ‹ value › instead of a bar. */
+  .sp-prev, .sp-next { display: none; font-style: normal; font-size: 18px; line-height: 1; color: rgb(255 255 255 / 0.55); }
+  .swipe-pill.choice .sp-body { grid-template-columns: auto 1fr auto; align-items: center; row-gap: 2px; min-width: 190px; }
+  .swipe-pill.choice .sp-name { grid-row: 1; grid-column: 1 / -1; justify-self: center; }
+  .swipe-pill.choice .sp-prev, .swipe-pill.choice .sp-next { display: block; grid-row: 2; }
+  .swipe-pill.choice .sp-prev { grid-column: 1; padding-right: 10px; }
+  .swipe-pill.choice .sp-next { grid-column: 3; padding-left: 10px; }
+  .swipe-pill.choice .sp-val { grid-row: 2; grid-column: 2; justify-self: center; max-width: 220px; }
+  body.watching .swipe-pill.choice .sp-name { justify-self: start; padding-left: 18px; }
+  .swipe-pill.choice .sp-bar { display: none; }
 }
