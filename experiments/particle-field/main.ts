@@ -4357,6 +4357,12 @@ function feedAudioTap(): MediaStreamTrack | null {
   } catch {}
   return null;
 }
+// The dock's Record: first opens the Record view (length, size, sound),
+// then starts; while recording it stops. V records straight away.
+function dockRecord() {
+  if (recorder.on || currentTab === 'record') toggleRecord();
+  else showTab('record');
+}
 function toggleRecord() {
   if (!canRecord()) return showToast('This browser can’t record the canvas');
   const was = recorder.on;
@@ -6397,7 +6403,7 @@ const CONTROLS: Control[] = [
     buttons: [
       ['Knobs', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Knobs', 'knobs'],
       ['Timeline', svg(TAB_ICONS.timeline), () => showTab('timeline'), 'Timeline', 'timeline'],
-      ['Record a clip (V)', ICONS.record, toggleRecord, 'Record'],
+      ['Record a clip (V)', ICONS.record, dockRecord, 'Record'],
       ['Pause (Space)', ICONS.pause, togglePause, 'Pause'],
       ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle, 'Shuffle'],
       ['More actions', svg('<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/>'), () => toggleDockMore(), 'More'],
@@ -10552,7 +10558,10 @@ function renderControls() {
         b.addEventListener('click', tab ? () => (currentTab === tab ? backFromPlay() : fn()) : fn);
         if (fn === togglePause) pauseButtons.push(b);
         if (fn === toggleGather) gatherButtons.push(b);
-        if (fn === toggleRecord) recUi.push(() => b.classList.toggle('rec', recorder.on));
+        if (fn === dockRecord) {
+          recUi.push(() => b.classList.toggle('rec', recorder.on));
+          dockTabs.push(['record', b]);
+        }
         row.append(b);
       }
       searchItem(body, row);
