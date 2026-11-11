@@ -1831,9 +1831,10 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .m-bar.knobbing .sp-bar { height: 4px; }
   .m-bar.knobbing .sp-dots { display: block; grid-column: 1 / -1; font-size: 6px; letter-spacing: 3px; color: rgb(255 255 255 / 0.45); font-style: normal; line-height: 1; }
   .m-bar.knobbing .sp-dots:empty { display: none; }
-  .m-bar.knobbing .choice .sp-body { grid-template-columns: auto 1fr auto; align-items: center; row-gap: 2px; margin-left: -10px; }
+  .m-bar.knobbing .choice .sp-body { grid-template-columns: auto 1fr auto; align-items: center; row-gap: 2px; column-gap: 6px; margin-left: -10px; }
   .m-bar.knobbing .choice .sp-name { grid-row: 1; grid-column: 2; justify-self: center; }
-  .m-bar.knobbing .choice .sp-prev, .m-bar.knobbing .choice .sp-next { display: grid; place-items: center; grid-row: 1 / 4; align-self: center; width: 40px; height: 48px; font-style: normal; font-size: 40px; font-weight: 300; line-height: 1; color: rgb(255 255 255 / 0.85); margin-top: -4px; }
+  .m-bar.knobbing .choice .sp-prev, .m-bar.knobbing .choice .sp-next { display: grid; place-items: center; grid-row: 1 / 4; align-self: center; width: 40px; height: 40px; border-radius: 999px; background: rgb(255 255 255 / 0.07); color: rgb(255 255 255 / 0.85); }
+  .m-bar.knobbing .choice .sp-prev svg, .m-bar.knobbing .choice .sp-next svg { width: 18px; height: 18px; }
   .m-bar.knobbing .choice .sp-prev { grid-column: 1; }
   .m-bar.knobbing .choice .sp-next { grid-column: 3; }
   .m-bar.knobbing .choice .sp-val { grid-row: 2; grid-column: 2; justify-self: center; }
