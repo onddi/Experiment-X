@@ -10678,6 +10678,7 @@ function renderRack(src: RackSrc = RACK_LIVE) {
     }
     wrap.append(box);
   }
+  head.classList.toggle('empty', !count);
   head.innerHTML = count
     ? `<h3>Knobs</h3><span>The ${count} setting${count === 1 ? '' : 's'} this scene changed, ready to play. ${matchMedia('(pointer: coarse)').matches ? 'Tap a knob for a big slider, or drag it sideways' : 'Drag a knob sideways to turn it'}; the white dot is the scene's own value${matchMedia('(pointer: coarse)').matches ? '' : ', double-click to snap back'}.</span>`
     : '<h3>Knobs</h3><span>Everything is at its default.</span>';

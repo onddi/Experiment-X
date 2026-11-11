@@ -1423,3 +1423,8 @@ body.watching .fab, body.watching #toggle, body.watching .panel, body.watching .
 .tuner input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; margin-top: -10px; border-radius: 50%; background: var(--accent); border: 3px solid var(--panel); box-shadow: 0 0 0 1px var(--accent); }
 .tuner input[type='range']::-moz-range-thumb { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); border: 3px solid var(--panel); }
 .rack-knob.tuning { border-color: var(--accent); }
+/* Phone: the knobs speak for themselves; drop the intro and the first rule. */
+@media (max-width: 720px) {
+  .rack-head:not(.empty) { display: none; }
+  .rack-head:not(.empty) + .rack-group { border-top: 0; padding-top: 0; }
+}
