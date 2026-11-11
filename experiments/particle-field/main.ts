@@ -5839,7 +5839,9 @@ function knobSetName() {
 }
 function useKnobSet(keys: string[]) {
   KNOB_SLOTS.forEach((slot, i) => ((settings as unknown as Record<string, string>)[slot] = keys[i]));
-  changed(new Set<keyof Settings>(KNOB_SLOTS));
+  // Picking a set means playing it: overview picks step aside.
+  settings.knobsPick = '';
+  changed(new Set<keyof Settings>([...KNOB_SLOTS, 'knobsPick']));
 }
 
 const CONTROLS: Control[] = [
@@ -5913,8 +5915,10 @@ const CONTROLS: Control[] = [
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
   { kind: 'section', id: 'play', label: 'Field knobs & gestures', tab: 'presets',
     about: 'Five knobs along the bottom edge, two-finger drag and pinch, and the mouse wheel: turn settings with the menu closed.',
-    summary: () => (settings.playOn ? (knobSetName() ?? 'own mix') : 'off'),
+    summary: () => (!settings.playOn ? 'off' : knobPicks().length ? 'overview picks' : (knobSetName() ?? 'own mix')),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
+  { kind: 'note', text: 'Knobs you picked in the overview are playing instead of the set below. Clear them to bring the set back.', show: () => knobPicks().length > 0 },
+  { kind: 'buttons', buttons: [['Clear overview picks', () => clearKnobPicks()]], show: () => knobPicks().length > 0 },
   { kind: 'sub', label: 'Knob set' },
   { kind: 'buttons', buttons: KNOB_SETS.map(([name, keys]): [string, () => void] => [name, () => useKnobSet(keys)]), active: (t) => knobSetName() === t },
   ...KNOB_SETS.map(([name, , text]): Control => ({ kind: 'note', text, show: () => knobSetName() === name })),
@@ -6585,7 +6589,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean): Settings {
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -7679,7 +7683,7 @@ function wordStory(text: string): TlClip[] {
 }
 const tl: Timeline = { on: false, clips: [], clock: 'music', bpm: 120, knobs: 'keep', dropJump: false, ring: 'changes', hold: true, held: {}, ...readJson<Partial<Timeline>>(TL_KEY, {}) };
 // Not held: they already carry over, or belong to the timeline itself.
-const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
+const TL_NO_HOLD = new Set<string>(['links', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'audioVibe']);
 let tlChips: (() => void) | null = null;
 // A change you make while the timeline plays sticks for the rest of the set.
 function tlHold(keys: Iterable<keyof Settings>) {
@@ -10997,7 +11001,7 @@ function openSection(id: string) {
   if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
   sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-const RACK_SKIP = new Set(['actions', 'presets', 'mine', 'record']);
+const RACK_SKIP = new Set(['actions', 'presets', 'mine', 'record', 'play']);
 type RackCtl = Extract<Control, { kind: 'range' | 'select' | 'choice' | 'toggle' | 'text' }>;
 let rackTimer = 0;
 type RackSrc = { get: (k: keyof Settings) => unknown; put: (k: keyof Settings, v: unknown) => void; base: Record<string, unknown> | null; settling: boolean };
@@ -11703,7 +11707,12 @@ function openOverview() {
   pickK.innerHTML = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l4.2-4.2"/>');
   const pickNote = document.createElement('p');
   pickNote.className = 'ov-picknote';
-  pickNote.textContent = 'Tap sliders and choices to make them field knobs; tap again to take one off. The knob icon finishes.';
+  pickNote.innerHTML = '<span>Tap sliders and choices to play them as field knobs; tap again to take one off. Your picks stand in for your knob set (On-screen controls) until you clear them.</span><button type="button">Clear picks</button>';
+  pickNote.querySelector('button')!.addEventListener('click', () => {
+    clearKnobPicks();
+    for (const e of body.querySelectorAll('.fk')) e.classList.remove('fk');
+    showToast('Picks cleared: your knob set is back');
+  });
   const showPick = () => {
     el.classList.toggle('picking-knobs', ovPickKnobs);
     pickK.classList.toggle('on', ovPickKnobs);
@@ -11716,8 +11725,8 @@ function openOverview() {
     ovPickKnobs = !ovPickKnobs;
     showPick();
     if (!ovPickKnobs) {
-      const n = fieldKnobKeys().filter((k) => knobSpec(k)).length;
-      showToast(n ? `${n} field knob${n > 1 ? 's' : ''}: close the menu to play them` : 'No field knobs');
+      const n = knobPicks().length;
+      showToast(n ? `${n} picked knob${n > 1 ? 's' : ''}: close the menu to play them` : 'No picks: your knob set plays');
     }
   });
   dens.before(pickK);
@@ -12338,7 +12347,8 @@ function fillPlayable() {
   PLAYABLE.push(['', '— none —']);
   for (const c of CONTROLS) {
     if (c.kind === 'section') sec = c.label;
-    else if (c.kind === 'range' || ((c.kind === 'select' || c.kind === 'choice') && c.options.length > 1)) PLAYABLE.push([c.key, `${sec} · ${c.label}`]);
+    // Not the knob pickers themselves.
+    else if (c.kind === 'range' || ((c.kind === 'select' || c.kind === 'choice') && c.options.length > 1 && c.options !== PLAYABLE)) PLAYABLE.push([c.key, `${sec} · ${c.label}`]);
   }
 }
 fillPlayable();
@@ -12382,33 +12392,33 @@ const stage = document.querySelector<HTMLElement>('.stage')!;
 // or right to turn it up); its ring shows while you play it, then fades.
 // Two-finger drag and pinch get a knob of their own in the middle.
 const KNOB_KEYS: ['playLeft' | 'playWheel3' | 'playWheel4' | 'playRight' | 'playWheel5', number][] = [['playLeft', 0], ['playWheel3', 1], ['playWheel4', 2], ['playRight', 3], ['playWheel5', 4]];
-/** Every field knob's setting, in row order (A–E, then the extra ones). */
-function fieldKnobKeys(): string[] {
+/** Your knob set: A–E, then the extra ones (On-screen controls). */
+function baseKnobKeys(): string[] {
   return [...KNOB_KEYS.map(([sk]) => settings[sk] as string), ...settings.knobsMore.split(',').filter(Boolean)];
 }
-function isFieldKnob(key: string) {
-  return !!key && fieldKnobKeys().includes(key);
+/** Picks made in the overview; while there are any they replace your set. */
+const knobPicks = () => settings.knobsPick.split(',').filter(Boolean);
+/** Every field knob's setting, in row order. */
+function fieldKnobKeys(): string[] {
+  const picks = knobPicks();
+  return picks.length ? picks : baseKnobKeys();
 }
-/** Add a setting as a field knob (the first free of A–E, else at the end), or take it off. */
+function clearKnobPicks() {
+  settings.knobsPick = '';
+  changed(new Set<keyof Settings>(['knobsPick']));
+}
+function isFieldKnob(key: string) {
+  return !!key && knobPicks().includes(key);
+}
+/** Pick a setting as a field knob, or un-pick it. The first pick replaces
+ * your knob set until the picks are cleared. */
 function toggleFieldKnob(key: string) {
-  const S = settings as unknown as Record<string, string>;
-  const touched = new Set<keyof Settings>(['knobsMore', 'playOn']);
-  if (isFieldKnob(key)) {
-    for (const [sk] of KNOB_KEYS) if (S[sk] === key) (S[sk] = ''), touched.add(sk);
-    settings.knobsMore = settings.knobsMore.split(',').filter((k) => k && k !== key).join(',');
-  } else {
-    // Knobs were off: start a fresh set with this one, not the old A–E.
-    if (!settings.playOn) {
-      for (const [sk] of KNOB_KEYS) (S[sk] = ''), touched.add(sk);
-      settings.knobsMore = '';
-    }
-    const free = KNOB_KEYS.find(([sk]) => !S[sk] || !knobSpec(S[sk]));
-    if (free) (S[free[0]] = key), touched.add(free[0]);
-    else settings.knobsMore = [...settings.knobsMore.split(',').filter(Boolean), key].join(',');
-    settings.playOn = true;
-  }
-  changed(touched);
-  return isFieldKnob(key);
+  const picks = knobPicks();
+  const on = !picks.includes(key);
+  settings.knobsPick = (on ? [...picks, key] : picks.filter((k) => k !== key)).join(',');
+  if (on) settings.playOn = true;
+  changed(new Set<keyof Settings>(['knobsPick', 'playOn']));
+  return on;
 }
 const RING = 2 * Math.PI * 26;
 type KnobEl = { el: HTMLElement; arc: SVGCircleElement; pct: HTMLElement; name: HTMLElement; timer: number };
@@ -12587,8 +12597,8 @@ window.addEventListener(
     if (t?.closest?.('#panel, #toggle, .overview')) return;
     if (!playing()) return;
     e.preventDefault();
-    const S = settings;
-    const key = !e.shiftKey ? (e.altKey ? S.playWheel5 : S.playLeft) : e.metaKey || e.ctrlKey ? S.playWheel3 : e.altKey ? S.playWheel4 : S.playRight;
+    const slot = !e.shiftKey ? (e.altKey ? 4 : 0) : e.metaKey || e.ctrlKey ? 1 : e.altKey ? 2 : 3;
+    const key = fieldKnobKeys()[slot] ?? '';
     // Plain wheel follows the vertical axis only, so sideways drift on a
     // trackpad doesn't turn the knob. Shift turns vertical scrolling into
     // horizontal on macOS, so with Shift take whichever axis moved most.

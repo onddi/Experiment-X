@@ -1788,3 +1788,6 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 @media (max-width: 720px) { .overview .ov-xfstart.on { display: none; } }
 .ov-xfstop { justify-self: stretch; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--text); font-size: 13px; text-decoration: none; }
 .ov-xfstop:hover { border-color: var(--accent); }
+.picking-knobs .ov-picknote { display: flex; align-items: center; gap: 10px; }
+.ov-picknote span { flex: 1; }
+.ov-picknote button { flex: none; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(154, 168, 255, 0.4); background: transparent; color: var(--accent-soft); font: inherit; font-size: 12px; cursor: pointer; }

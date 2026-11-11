@@ -138,6 +138,8 @@ export interface Settings {
   playWheel5: string;
   /** Field knobs beyond A–E: setting keys, comma-separated. */
   knobsMore: string;
+  /** Knobs picked in the overview: while set, they replace the knob set. */
+  knobsPick: string;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -450,6 +452,7 @@ export const DEFAULTS: Settings = {
   playWheel4: 'mHeat',
   playWheel5: 'mDensity',
   knobsMore: '',
+  knobsPick: '',
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
