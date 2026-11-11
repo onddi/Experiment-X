@@ -11566,7 +11566,11 @@ function openOverview() {
   if (xf.on) {
     // Crossfader: both scenes, the fader between them, and the knobs of the
     // side you pick. Turning one changes that scene; the mix follows.
-    head.innerHTML = '<div class="ov-title"><span><small>Crossfader</small><b></b></span></div><button type="button" class="icon ov-close" aria-label="Close">✕</button>';
+    head.innerHTML = '<div class="ov-title"><span><small>Crossfader</small><b></b></span></div><button type="button" class="icon ov-xfstart on" aria-pressed="true" title="Back to one scene (stop crossfading)" aria-label="Back to one scene">⇄</button><button type="button" class="icon ov-close" aria-label="Close">✕</button>';
+    head.querySelector('.ov-xfstart')!.addEventListener('click', () => {
+      xfSetOn(false);
+      openOverview();
+    });
     head.querySelector('b')!.textContent = `${xf.a.name} ↔ ${xf.b.name}`;
     const box = document.createElement('div');
     box.className = 'ov-xf';
@@ -11603,7 +11607,7 @@ function openOverview() {
     const stop = document.createElement('button');
     stop.type = 'button';
     stop.className = 'ov-xfstop';
-    stop.textContent = 'Stop crossfading';
+    stop.textContent = '← Back to one scene';
     stop.addEventListener('click', () => {
       xfSetOn(false);
       openOverview();
@@ -11644,7 +11648,18 @@ function openOverview() {
     xfStart.addEventListener('click', () => {
       const a: XfRef | null = currentMine ? { name: currentMine.name, mine: true } : lastSceneName ? { name: lastSceneName } : null;
       const from = a ?? sceneAfter(null, 0);
-      xf.a = from;
+      // A is what's on the field now: the scene plus every tweak you made.
+      const base = xfScene(from);
+      const edits: Record<string, unknown> = {};
+      if (base) {
+        const S = settings as unknown as Record<string, unknown>;
+        const B = base as unknown as Record<string, unknown>;
+        for (const k of Object.keys(DEFAULTS)) {
+          if (SCENE_IGNORE.has(k) || k === 'xfPos') continue;
+          if (JSON.stringify(S[k]) !== JSON.stringify(B[k])) edits[k] = S[k];
+        }
+      }
+      xf.a = Object.keys(edits).length ? { ...from, edits } : from;
       xf.b = sceneAfter(from, 1);
       settings.xfPos = 0;
       ovSide = 'b';

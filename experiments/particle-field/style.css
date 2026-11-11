@@ -1783,3 +1783,8 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 .scene-blank b { font-size: 13px; font-weight: 600; }
 .scene-blank span { font-size: 11.5px; color: var(--muted); }
 .scene-blank:hover { border-color: var(--accent); }
+/* Crossfading: an obvious way back to one scene (header ⇄ lit, and a button). */
+.overview .ov-xfstart.on { color: var(--on-accent); background: var(--accent); }
+@media (max-width: 720px) { .overview .ov-xfstart.on { display: none; } }
+.ov-xfstop { justify-self: stretch; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--text); font-size: 13px; text-decoration: none; }
+.ov-xfstop:hover { border-color: var(--accent); }
