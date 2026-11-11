@@ -1806,7 +1806,9 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .play-row, body.watching .play-row, .watch-bar, body.watching .watch-bar { display: none; }
   .m-bar { display: flex; position: absolute; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 6; gap: 8px; align-items: center; transition: opacity 0.5s; }
   body.panel-open .m-bar, body.solo .m-bar, body:has(.overview) .m-bar, body:has(.tuner) .m-bar { display: none; }
-  body.field-idle .m-bar:not(.knobbing) { opacity: 0; pointer-events: none; }
+  /* Hidden until you tap the bottom of the screen; touching the field doesn't wake it. */
+  .m-bar:not(.shown):not(.knobbing) { opacity: 0; pointer-events: none; }
+  .m-bar:not(.shown):not(.knobbing) * { pointer-events: none !important; }
   .mb-btn { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(20 21 26 / 0.55); color: rgb(255 255 255 / 0.8); font: inherit; font-size: 17px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   .mb-btn svg { width: 19px; height: 19px; }
   .swipe-pill { position: relative; flex: 1; min-width: 0; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(20 21 26 / 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: rgb(255 255 255 / 0.8); touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; }

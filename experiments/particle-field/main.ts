@@ -12687,6 +12687,20 @@ mbar.querySelector('.mb-menu')!.addEventListener('click', () => {
   if (panel.classList.contains('collapsed')) toggle.click();
 });
 mbar.querySelector('.mb-shuffle')!.addEventListener('click', () => shuffle());
+// The bar shows only when you tap near the bottom edge (playing with the
+// particles elsewhere leaves the field clean), and hides again when left be.
+let mbarTimer = 0;
+function showBar(ms = 3500) {
+  mbar.classList.add('shown');
+  clearTimeout(mbarTimer);
+  mbarTimer = window.setTimeout(() => mbar.classList.remove('shown'), ms);
+}
+document.addEventListener('pointerdown', (e) => {
+  if (!sheetMode()) return;
+  if (mbar.contains(e.target as Node) || e.clientY > window.innerHeight - 110) showBar();
+}, true);
+// On arrival, once, so you know where it lives.
+showBar(4500);
 let pillIdx = 0;
 let pillTimer = 0;
 const pillKeys = () => fieldKnobKeys().filter((k) => knobSpec(k));
@@ -12806,6 +12820,7 @@ function revealKnobs(ms = 2600) {
   setTimeout(() => {
     syncFieldKnobs();
     pillPaint(true);
+    showBar();
     if (!playing()) return;
     const keys = fieldKnobKeys();
     playRow.querySelectorAll<HTMLElement>('.fader').forEach((f, i) => {
