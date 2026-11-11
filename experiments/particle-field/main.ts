@@ -10987,6 +10987,23 @@ function xfRackSrc(side: 'a' | 'b'): RackSrc {
   };
 }
 
+type OvDensity = 'roomy' | 'compact' | 'dense';
+const OV_DENSITIES: [OvDensity, string][] = [['roomy', 'Roomy'], ['compact', 'Compact'], ['dense', 'Dense']];
+const OV_DENSITY_KEY = 'particle-field:ov-density';
+let ovDensity: OvDensity = (() => {
+  try {
+    const v = localStorage.getItem(OV_DENSITY_KEY);
+    return OV_DENSITIES.some(([k]) => k === v) ? (v as OvDensity) : 'compact';
+  } catch {
+    return 'compact';
+  }
+})();
+// Dots that pack tighter as the density goes up.
+const DENSITY_ICON: Record<OvDensity, string> = {
+  roomy: '<circle cx="5.0" cy="5.0" r="2.6"/><circle cx="5.0" cy="19.0" r="2.6"/><circle cx="19.0" cy="5.0" r="2.6"/><circle cx="19.0" cy="19.0" r="2.6"/>',
+  compact: '<circle cx="5.0" cy="5.0" r="2"/><circle cx="5.0" cy="12.0" r="2"/><circle cx="5.0" cy="19.0" r="2"/><circle cx="12.0" cy="5.0" r="2"/><circle cx="12.0" cy="12.0" r="2"/><circle cx="12.0" cy="19.0" r="2"/><circle cx="19.0" cy="5.0" r="2"/><circle cx="19.0" cy="12.0" r="2"/><circle cx="19.0" cy="19.0" r="2"/>',
+  dense: '<circle cx="5.0" cy="5.0" r="1.5"/><circle cx="5.0" cy="9.7" r="1.5"/><circle cx="5.0" cy="14.3" r="1.5"/><circle cx="5.0" cy="19.0" r="1.5"/><circle cx="9.7" cy="5.0" r="1.5"/><circle cx="9.7" cy="9.7" r="1.5"/><circle cx="9.7" cy="14.3" r="1.5"/><circle cx="9.7" cy="19.0" r="1.5"/><circle cx="14.3" cy="5.0" r="1.5"/><circle cx="14.3" cy="9.7" r="1.5"/><circle cx="14.3" cy="14.3" r="1.5"/><circle cx="14.3" cy="19.0" r="1.5"/><circle cx="19.0" cy="5.0" r="1.5"/><circle cx="19.0" cy="9.7" r="1.5"/><circle cx="19.0" cy="14.3" r="1.5"/><circle cx="19.0" cy="19.0" r="1.5"/>',
+};
 function openOverview() {
   closeOverview();
   syncSceneNow();
@@ -11081,6 +11098,28 @@ function openOverview() {
     body.append(xfStart, renderRack());
   }
   head.querySelector('.ov-close')!.addEventListener('click', closeOverview);
+  // Density: how tightly the knobs, choices and switches pack (an experiment
+  // in compact controls; the rest of the menu may follow).
+  el.dataset.density = ovDensity;
+  const dens = document.createElement('button');
+  dens.type = 'button';
+  dens.className = 'icon ov-density';
+  const showDensity = () => {
+    const i = OV_DENSITIES.findIndex(([k]) => k === ovDensity);
+    dens.innerHTML = svg(DENSITY_ICON[ovDensity]);
+    dens.setAttribute('aria-label', `Density: ${OV_DENSITIES[i][1]} (tap for ${OV_DENSITIES[(i + 1) % OV_DENSITIES.length][1]})`);
+    dens.title = dens.getAttribute('aria-label')!;
+  };
+  showDensity();
+  dens.addEventListener('click', () => {
+    const i = OV_DENSITIES.findIndex(([k]) => k === ovDensity);
+    ovDensity = OV_DENSITIES[(i + 1) % OV_DENSITIES.length][0];
+    try { localStorage.setItem(OV_DENSITY_KEY, ovDensity); } catch {}
+    el.dataset.density = ovDensity;
+    showDensity();
+    showToast(OV_DENSITIES.find(([k]) => k === ovDensity)![1]);
+  });
+  head.querySelector('.ov-close')!.before(dens);
   // Phones: the overview fills the screen; Watch hides every menu, All
   // settings opens the tabs, ⇄ starts or stops a crossfade.
   const foot = document.createElement('div');

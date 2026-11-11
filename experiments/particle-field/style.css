@@ -1431,3 +1431,74 @@ body.watching .fab, body.watching #toggle, body.watching .panel, body.watching .
 .rack-row.rack-text { grid-template-columns: auto 1fr; gap: 12px; padding-right: 6px; }
 .rack-text input { min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--track); border-radius: 8px; background: var(--panel); color: var(--value); font: inherit; font-size: 16px; text-align: right; }
 .rack-text input:focus { outline: none; border-color: var(--accent); }
+
+/* Overview density: an experiment in compact controls. Roomy is the
+   original; Compact tightens everything; Dense packs knobs six to a row
+   with the value inside the ring, choices two-up and switches as pills. */
+.ov-density { margin-left: auto; }
+.ov-density svg { width: 20px; height: 20px; }
+.overview:not([data-density='roomy']) .ov-head { padding: 10px 12px; }
+.overview:not([data-density='roomy']) .ov-step { width: 38px; height: 38px; }
+.overview:not([data-density='roomy']) .ov-head b { font-size: 16px; }
+.overview:not([data-density='roomy']) .ov-head .icon { width: 38px; height: 38px; }
+.overview:not([data-density='roomy']) .ov-body { padding: 12px; gap: 12px; }
+.overview:not([data-density='roomy']) .rack { gap: 12px; }
+.overview:not([data-density='roomy']) .rack-group { gap: 8px; padding-top: 10px; }
+.overview:not([data-density='roomy']) .rack-card { gap: 6px; }
+.overview:not([data-density='roomy']) .rack-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.overview:not([data-density='roomy']) .rack-row { grid-column: 1 / -1; }
+.overview:not([data-density='roomy']) .rack-row:has(.rack-switch) { grid-column: auto; }
+
+.overview[data-density='compact'] .rack-knobs { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
+.overview[data-density='compact'] .rack-knob { padding: 6px 2px 7px; border-radius: 10px; }
+.overview[data-density='compact'] .rack-knob svg { width: 40px; height: 40px; }
+.overview[data-density='compact'] .rack-knob b { max-width: 100%; font-size: 11px; display: block; white-space: nowrap; text-overflow: ellipsis; }
+.overview[data-density='compact'] .rack-knob span { font-size: 10.5px; }
+.overview[data-density='compact'] .rack-row { grid-template-columns: minmax(0, 1fr) 32px minmax(64px, auto) 32px; min-height: 38px; padding-left: 10px; border-radius: 10px; font-size: 12.5px; }
+.overview[data-density='compact'] .rack-row:has(.rack-switch) { grid-template-columns: minmax(0, 1fr) auto; }
+.overview[data-density='compact'] .rack-row > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overview[data-density='compact'] .rack-row button { height: 38px; font-size: 16px; }
+.overview[data-density='compact'] .rack-row .rack-switch { min-width: 40px; height: 26px; margin: 6px 4px; font-size: 12px; }
+.overview[data-density='compact'] .rack-text input { height: 30px; }
+
+.overview[data-density='dense'] .ov-body { padding: 10px 12px; gap: 10px; }
+.overview[data-density='dense'] .rack { gap: 10px; }
+.overview[data-density='dense'] .rack-group { gap: 6px; padding-top: 8px; }
+.overview[data-density='dense'] .rack-group h3 { font-size: 10px; }
+.overview[data-density='dense'] .rack-card { gap: 4px; }
+.overview[data-density='dense'] .rack-cap { font-size: 11px; }
+.overview[data-density='dense'] .rack-knobs { grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 4px; }
+.overview[data-density='dense'] .rack-knob { position: relative; padding: 2px 0 4px; background: transparent; border-radius: 10px; }
+.overview[data-density='dense'] .rack-knob svg { width: 46px; height: 46px; }
+.overview[data-density='dense'] .rack-knob span { position: absolute; top: 19px; left: 0; right: 0; font-size: 10px; line-height: 12px; text-align: center; }
+.overview[data-density='dense'] .rack-knob b { max-width: 100%; font-size: 10px; font-weight: 500; color: var(--muted); display: block; white-space: nowrap; text-overflow: ellipsis; }
+.overview[data-density='dense'] .rack-knob.moved b { color: var(--label); }
+.overview[data-density='dense'] .rack-rows { gap: 4px; }
+.overview[data-density='dense'] .rack-row { grid-column: auto; grid-template-columns: 24px minmax(0, 1fr) 24px; grid-template-areas: 'name name name' 'prev val next'; align-content: center; gap: 0; min-height: 44px; padding: 4px 2px; border-radius: 10px; font-size: 12px; }
+.overview[data-density='dense'] .rack-row > span { grid-area: name; padding: 0 8px; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overview[data-density='dense'] .rack-row > button { height: 22px; font-size: 14px; }
+.overview[data-density='dense'] .rack-row > button:first-of-type { grid-area: prev; }
+.overview[data-density='dense'] .rack-row > button:last-of-type { grid-area: next; }
+.overview[data-density='dense'] .rack-row > b { grid-area: val; }
+/* Switches: the whole pill flips, lit when on. */
+.overview[data-density='dense'] .rack-row:has(.rack-switch) { position: relative; display: flex; align-items: center; padding: 0 10px; }
+.overview[data-density='dense'] .rack-row:has(.rack-switch) > span { padding: 0; font-size: 12px; color: var(--label); white-space: normal; }
+.overview[data-density='dense'] .rack-row .rack-switch { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; margin: 0; border: 0; border-radius: inherit; opacity: 0; }
+.overview[data-density='dense'] .rack-row:has(.rack-switch[aria-pressed='true']) { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.overview[data-density='dense'] .rack-row:has(.rack-switch[aria-pressed='true']) > span { color: var(--accent-soft); }
+.overview[data-density='dense'] .rack-row:has(.rack-switch) > span::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--track); vertical-align: 1px; }
+.overview[data-density='dense'] .rack-row:has(.rack-switch[aria-pressed='true']) > span::before { background: var(--accent); }
+.overview[data-density='dense'] .rack-row.rack-text { grid-column: 1 / -1; display: grid; grid-template-areas: none; grid-template-columns: auto 1fr; gap: 10px; padding: 4px 4px 4px 10px; }
+.overview[data-density='dense'] .rack-row.rack-text > span { grid-area: auto; padding: 0; }
+.overview[data-density='dense'] .rack-text input { height: 30px; font-size: 16px; }
+/* Cards that are only knobs flow side by side under one heading row. */
+.overview:not([data-density='roomy']) .rack-group { flex-direction: row; flex-wrap: wrap; align-items: flex-start; column-gap: 10px; }
+.overview:not([data-density='roomy']) .rack-group > h3 { flex: 0 0 100%; }
+.overview:not([data-density='roomy']) .rack-card { flex: 1 1 100%; min-width: 0; }
+.overview:not([data-density='roomy']) .rack-card:not(:has(.rack-rows)) { flex: 0 1 auto; }
+.overview:not([data-density='roomy']) .rack-card:not(:has(.rack-rows)) .rack-knobs { display: flex; flex-wrap: wrap; }
+.overview[data-density='compact'] .rack-card:not(:has(.rack-rows)) .rack-knob { width: 64px; }
+.overview[data-density='dense'] .rack-card:not(:has(.rack-rows)) .rack-knob { width: 54px; }
+.overview[data-density='compact'] .rack-row.rack-text { grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding-right: 4px; }
+.overview[data-density='dense'] .rack-knob span { padding: 0 8px; font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.ov-density svg circle { fill: currentColor; stroke: none; }
