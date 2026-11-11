@@ -13208,14 +13208,22 @@ function uPaint(force = false) {
     b.addEventListener('click', fn);
     tray.append(b);
   });
+  if (desk) uPlace();
 }
-// Desktop: the bar floats centred over the field, clear of the Studio or
+// Desktop: the bar floats over the field, clear of the Studio or
 // the Deck on the right. On the Stage it rests out of sight until the mouse moves.
+// The view switch keeps one spot in every view (centred over the field as
+// it is with the Studio open), so switching views doesn't slide the bar; only
+// the actions on its right change. On a narrow screen it moves left to stay clear.
 function uPlace() {
+  const studioW = Math.min(620, innerWidth * 0.52);
   let right = innerWidth;
   if (!panel.classList.contains('collapsed')) right = Math.min(right, panel.getBoundingClientRect().left);
   if (ovEl) right = Math.min(right, ovEl.getBoundingClientRect().left);
-  ubar.style.left = `${right / 2}px`;
+  const seg = ubar.querySelector<HTMLElement>('.u-seg')!.offsetWidth;
+  let left = (innerWidth - studioW) / 2 - seg / 2 - 5;
+  left = Math.min(left, right - ubar.offsetWidth - 12);
+  ubar.style.left = `${Math.max(12, Math.round(left))}px`;
 }
 {
   let rest = 0;
