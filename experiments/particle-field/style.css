@@ -1792,3 +1792,5 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 .ov-picknote span { flex: 1; }
 .ov-picknote button { flex: none; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(154, 168, 255, 0.4); background: transparent; color: var(--accent-soft); font: inherit; font-size: 12px; cursor: pointer; }
 @media (max-width: 720px) { .tuner-fk { display: none !important; } }
+/* Watch: the knob row sits above the Overview / shuffle bar. */
+body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }

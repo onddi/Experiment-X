@@ -10938,6 +10938,7 @@ document.getElementById('scene-now')!.addEventListener('click', () => openOvervi
 }
 let ovEl: HTMLElement | null = null;
 function closeOverview() {
+  if (document.querySelector('.overview')) revealKnobs();
   closeTuner();
   ovEl?.remove();
   ovEl = null;
@@ -10959,6 +10960,7 @@ function startWatching() {
   closeOverview();
   if (!panel.classList.contains('collapsed')) toggle.click();
   document.body.classList.add('watching');
+  revealKnobs();
   watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || 'Overview';
 }
 function stopWatching() {
@@ -12553,6 +12555,23 @@ function syncFieldKnobs() {
 }
 refreshers.push(syncFieldKnobs);
 syncFieldKnobs();
+// Show every field knob for a moment (touch screens can't hover the row):
+// when the menu closes or Watch starts, so you see what you can play.
+function revealKnobs(ms = 2600) {
+  setTimeout(() => {
+    syncFieldKnobs();
+    if (!playing()) return;
+    const keys = fieldKnobKeys();
+    playRow.querySelectorAll<HTMLElement>('.fader').forEach((f, i) => {
+      if (f.hidden) return;
+      const k = knobs.get(`k${i}`);
+      if (!k || !keys[i]) return;
+      k.el.classList.add('show');
+      clearTimeout(k.timer);
+      k.timer = window.setTimeout(() => k.el.classList.remove('show'), ms);
+    });
+  }, 60);
+}
 // Two fingers: drag up/down and pinch.
 const playTouch = new Map<number, { x: number; y: number }>();
 let twoStart: { cy: number; d: number; two: number; pinch: number } | null = null;
@@ -12620,6 +12639,7 @@ const panel = document.getElementById('panel')!;
 const toggle = document.getElementById('toggle')!;
 toggle.addEventListener('click', () => {
   const collapsed = panel.classList.toggle('collapsed');
+  if (collapsed) revealKnobs();
   if (!collapsed) document.body.classList.remove('watching');
   if (sheetMode()) applySheet();
   if (collapsed) {
