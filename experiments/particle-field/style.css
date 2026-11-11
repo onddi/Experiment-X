@@ -1620,3 +1620,6 @@ svg.ink.outline path.gone { opacity: 0.3; filter: none; stroke-dasharray: 2 6; s
 #panel .rk.toggle .rack-row .rack-switch { min-width: 38px; margin: 4px; }
 #panel :is(.group-body, .ess-body, .more-body):not(:has(> h3)) > p.note { order: 1; margin-top: 0; }
 #panel .rk.toggle .rack-row > span { white-space: normal; overflow: visible; }
+/* The rack's intro text adds nothing once you know the knobs: gone everywhere. */
+.rack-head:not(.empty) { display: none; }
+.rack-head:not(.empty) + .rack-group { border-top: 0; padding-top: 0; }
