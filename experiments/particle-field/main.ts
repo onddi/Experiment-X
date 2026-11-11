@@ -12363,7 +12363,7 @@ fillPlayable();
 const rangeOf = (key: string) => CONTROLS.find((c): c is Extract<Control, { kind: 'range' }> => c.kind === 'range' && c.key === key);
 // A field knob works on a number: a slider's value, or a choice's place in
 // its list (turning steps through the options).
-type KnobSpec = { key: keyof Settings; label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => boolean; text: (v: number) => string };
+type KnobSpec = { key: keyof Settings; label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => boolean; text: (v: number) => string; options?: [string, string][] };
 function knobSpec(key: string): KnobSpec | null {
   const c = CONTROLS.find((x) => (x.kind === 'range' || x.kind === 'select' || x.kind === 'choice') && x.key === key);
   if (!c) return null;
@@ -12383,7 +12383,7 @@ function knobSpec(key: string): KnobSpec | null {
   if (c.kind !== 'select' && c.kind !== 'choice') return null;
   const opts = c.options;
   return {
-    key: c.key, label: c.label, min: 0, max: Math.max(1, opts.length - 1), step: 1,
+    key: c.key, label: c.label, min: 0, max: Math.max(1, opts.length - 1), step: 1, options: opts,
     get: () => Math.max(0, opts.findIndex(([k]) => k === S[c.key])),
     set: (raw) => {
       const v = opts[Math.max(0, Math.min(opts.length - 1, Math.round(raw)))][0];
@@ -12526,27 +12526,80 @@ function buildFieldKnobs() {
     f.className = `fader ${id}`;
     f.append(k.el);
     const key = () => fieldKnobKeys()[i] ?? '';
-    let start: { x: number; y: number; v: number } | null = null;
+    let start: { x: number; y: number; v: number; t: number; moved: boolean } | null = null;
     f.addEventListener('pointerdown', (e) => {
       if (!knobSpec(key())) return;
       f.setPointerCapture(e.pointerId);
-      start = { x: e.clientX, y: e.clientY, v: playBase(key()) };
+      start = { x: e.clientX, y: e.clientY, v: playBase(key()), t: performance.now(), moved: false };
       playShow(key());
     });
     // Up or right turns it up, down or left turns it down: the knobs sit at the
     // bottom edge, so sideways gives the room that up/down lacks.
     f.addEventListener('pointermove', (e) => {
       if (!start) return;
+      if (!start.moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+      start.moved = true;
       playNudge(key(), start.v, (start.y - e.clientY + (e.clientX - start.x)) / Math.max(200, stage.clientHeight * 0.32));
     });
-    const end = () => {
+    const end = (e: PointerEvent) => {
+      // A tap (no drag) on a choice opens its list.
+      const tap = start && !start.moved && e.type === 'pointerup' && performance.now() - start.t < 450;
       start = null;
+      const spec = knobSpec(key());
+      if (tap && spec?.options) knobMenu(f, spec);
     };
     f.addEventListener('pointerup', end);
     f.addEventListener('pointercancel', end);
     playRow.append(f);
   });
 }
+// A choice knob's list: tap one to play it.
+let knobMenuEl: HTMLElement | null = null;
+function closeKnobMenu() {
+  knobMenuEl?.remove();
+  knobMenuEl = null;
+}
+function knobMenu(f: HTMLElement, spec: KnobSpec) {
+  closeKnobMenu();
+  const m = document.createElement('div');
+  m.className = 'knob-menu';
+  m.setAttribute('role', 'listbox');
+  m.setAttribute('aria-label', spec.label);
+  const head = document.createElement('b');
+  head.textContent = spec.label;
+  m.append(head);
+  const cur = spec.get();
+  spec.options!.forEach(([, text], i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.setAttribute('role', 'option');
+    if (i === Math.round(cur)) b.classList.add('on');
+    b.addEventListener('click', () => {
+      playSet(spec.key, i);
+      closeKnobMenu();
+    });
+    m.append(b);
+  });
+  stage.append(m);
+  knobMenuEl = m;
+  // Beside the knob, kept on screen.
+  const r = f.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  const mw = m.offsetWidth;
+  const mh = m.offsetHeight;
+  const side = r.left - sr.left > sr.width / 2;
+  let x = side ? r.left - sr.left - mw - 6 : r.right - sr.left + 6;
+  if (r.width > 100 && !side) x = r.left - sr.left + r.width / 2 - mw / 2;
+  let y = r.top - sr.top + r.height / 2 - mh / 2;
+  if (r.width > 100) y = r.top - sr.top - mh + 30;
+  m.style.left = `${Math.max(8, Math.min(sr.width - mw - 8, x))}px`;
+  m.style.top = `${Math.max(8, Math.min(sr.height - mh - 8, y))}px`;
+  m.querySelector<HTMLElement>('.on')?.scrollIntoView({ block: 'nearest' });
+}
+document.addEventListener('pointerdown', (e) => {
+  if (knobMenuEl && !knobMenuEl.contains(e.target as Node)) closeKnobMenu();
+}, true);
 // Keep the knobs drawn with their current values, so hovering the row can
 // reveal all of them at once.
 function syncFieldKnobs() {
