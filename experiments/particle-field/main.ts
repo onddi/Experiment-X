@@ -10115,8 +10115,8 @@ function renderControls() {
       reactSub.push([t, b]);
     }
     tabBar.after(sub);
-    // The scene strip: the scenes around the one playing, always on top.
-    (intentBar.previousElementSibling ?? intentBar).before(sceneStrip());
+    // The scene strip: the scenes around the one playing, under the search.
+    intentBar.before(sceneStrip());
   }
   // Fold or unfold every card on the open tab at once.
   const foldAll = document.createElement('div');
