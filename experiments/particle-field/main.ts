@@ -12349,6 +12349,32 @@ document.getElementById('sheet-find')!.addEventListener('click', () => {
     input.dispatchEvent(new Event('input'));
   }
 });
+// Tiles or List: how the menu lays out its knobs, selectors and switches.
+{
+  const KEY = 'pf-panel-view';
+  const TILE_ICON = '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/>';
+  let view = 'tiles';
+  try { if (localStorage.getItem(KEY) === 'list') view = 'list'; } catch {}
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'icon view-btn';
+  const show = () => {
+    panel.dataset.view = view;
+    // The icon shows what a tap switches to.
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${view === 'list' ? TILE_ICON : DENSITY_ICON.strips}</svg>`;
+    b.title = view === 'list' ? 'Show as tiles' : 'Show as a list';
+    b.setAttribute('aria-label', b.title);
+  };
+  show();
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    view = view === 'list' ? 'tiles' : 'list';
+    try { localStorage.setItem(KEY, view); } catch {}
+    show();
+    showToast(view === 'list' ? 'List' : 'Tiles');
+  });
+  document.getElementById('toggle')!.before(b);
+}
 document.getElementById('sheet-more')!.addEventListener('click', (e) => {
   const on = panel.classList.toggle('more');
   (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(on));
