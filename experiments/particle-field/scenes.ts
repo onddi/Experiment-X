@@ -108,6 +108,21 @@ export const PRESETS: [string, Partial<Settings>][] = [
   // --- Symbols ---
   ['Runes', { count: 900, size: 2.2, render: 'glyphs', glyphSet: 'runes', glyphPick: 'random', glyphChange: 'flicker', glyphRate: 0.01, glyphFont: 'serif', glyphScale: 1.4, glyphRotate: 'none', flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.5, friction: 0.05, jitter: 0.02, palette: 'ember', colorBy: 'palette', glow: true, pointerMode: 'vortex', radius: 180, force: 0.6, click: 'ripple' }],
   ['Weather map', { count: 1400, size: 2.6, render: 'glyphs', glyphSet: 'arrows', glyphPick: 'heading', glyphChange: 'fixed', glyphFont: 'sans', glyphScale: 1, glyphRotate: 'none', wind: 0.25, windDir: 20, flow: 0.7, flowType: 'curl', flowScale: 0.0025, flowSpeed: 0.08, trail: 0, friction: 0.05, jitter: 0.01, palette: 'paper', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 200, force: 0.5, click: 'none' }],
+  // --- Shapes (icons, geometry, turning solids, live readouts, sequences, your drawing) ---
+  ['Heartbeat', { count: 3200, size: 1.6, render: 'glow', shape: 'icon', shapeIcon: 'heart', shapeSize: 0.75, shapeCycle: 1, entrance: 'centre', entranceTime: 2, flow: 0.15, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.2, trail: 0.6, friction: 0.05, jitter: 0.02, palette: 'crimson', colorBy: 'radial', glow: true, pointerMode: 'repel', radius: 120, force: 0.8, click: 'shockwave' }],
+  ['Spirograph', { count: 4500, size: 1, render: 'streaks', shape: 'geo', shapeGeo: 'spiro', shapeSize: 0.9, shapeSpin: 0.15, entrance: 'drift', flow: 0.05, trail: 0.88, friction: 0.05, jitter: 0, palette: 'neon', colorBy: 'cycle', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
+  ['DNA', { count: 700, size: 2, render: 'links', linkDist: 46, shape: 'solid', shapeSolid: 'helix', shapeSize: 0.85, shapeSpin: 0.35, entrance: 'formed', flow: 0, trail: 0.3, friction: 0.05, jitter: 0, depth: 0.8, palette: 'toxic', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 110, force: 0.8, click: 'ripple' }],
+  ['Globe', { count: 3500, size: 1.3, render: 'dots', shape: 'solid', shapeSolid: 'sphere', shapeSize: 0.75, shapeSpin: 0.2, entrance: 'centre', entranceTime: 2.5, flow: 0, trail: 0.4, friction: 0.05, jitter: 0, depth: 1, depthParallax: 0.4, palette: 'blueprint', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 0.7, click: 'shockwave' }],
+  ['Equalizer', { count: 4000, size: 1.5, render: 'dots', shape: 'live', shapeLive: 'bars', shapeSize: 0.85, entrance: 'formed', flow: 0.05, trail: 0.5, friction: 0.08, jitter: 0.01, palette: 'cyber', colorBy: 'vertical', glow: true, pointerMode: 'repel', radius: 100, force: 0.8, click: 'ripple' }],
+  ['Midnight clock', { count: 3500, size: 1.3, render: 'glow', shape: 'live', shapeLive: 'clock', shapeSize: 0.8, entrance: 'drift', flow: 0.25, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, trail: 0.75, friction: 0.04, jitter: 0.03, palette: 'ice', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 120, force: 0.8, click: 'shockwave' }],
+  ['Oscilloscope', { count: 2500, size: 1.2, render: 'streaks', shape: 'geo', shapeGeo: 'lissajous', shapeSize: 0.85, entrance: 'formed', flow: 0, trail: 0.9, friction: 0.06, jitter: 0, palette: 'toxic', colorBy: 'palette', glow: true, pointerMode: 'attract', radius: 140, force: 0.5, click: 'ripple' }],
+  ['Hive', { count: 1400, size: 1.8, render: 'arrows', shape: 'geo', shapeGeo: 'hexagon', shapeSize: 0.8, shapeSpin: 0.05, entrance: 'drift', flock: 0.6, flockAlign: 1, flockCohesion: 0.6, flockSep: 0.8, flockRange: 30, flow: 0.1, trail: 0.55, friction: 0.03, jitter: 0.04, palette: 'gold', colorBy: 'direction', glow: false, pointerMode: 'repel', radius: 140, force: 1, click: 'shockwave' }],
+  ['Shapeshift', { count: 4000, size: 1.4, render: 'sparkles', shape: 'sequence', shapeSeq: 'heart, star, moon, flower', shapeSeqEvery: '4bars', shapeSeqSec: 5, shapeSize: 0.75, entrance: 'centre', flow: 0.2, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.2, trail: 0.6, friction: 0.05, jitter: 0.02, palette: 'pastel', colorBy: 'radial', glow: true, pointerMode: 'repel', radius: 120, force: 0.8, click: 'shockwave' }],
+  ['Doodle', { count: 4000, size: 1.3, render: 'glow', shape: 'drawing', shapeSize: 0.8, entrance: 'drift', flow: 0.2, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.2, trail: 0.7, friction: 0.05, jitter: 0.02, palette: 'vapor', colorBy: 'cycle', glow: true, pointerMode: 'repel', radius: 120, force: 0.8, click: 'ripple' }],
+  // For the "Sacred geometry" timeline set.
+  ['Triangle', { count: 3000, size: 1.3, render: 'sparkles', shape: 'geo', shapeGeo: 'triangle', shapeSize: 0.8, shapeSpin: 0.1, entrance: 'centre', flow: 0, trail: 0.7, friction: 0.05, jitter: 0, palette: 'gold', colorBy: 'radial', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
+  ['Hexagram', { count: 3500, size: 1.3, render: 'sparkles', shape: 'geo', shapeGeo: 'star6', shapeSize: 0.85, shapeSpin: -0.1, entrance: 'centre', flow: 0, trail: 0.7, friction: 0.05, jitter: 0, palette: 'cosmic', colorBy: 'radial', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
+  ['Rose curve', { count: 4000, size: 1.1, render: 'streaks', shape: 'geo', shapeGeo: 'rose', shapeSize: 0.9, shapeSpin: 0.12, entrance: 'drift', flow: 0, trail: 0.85, friction: 0.05, jitter: 0, palette: 'candy', colorBy: 'cycle', glow: true, pointerMode: 'vortex', radius: 160, force: 0.6, click: 'ripple' }],
 ];
 
 // --- Growth: "seed to tree" ---
@@ -218,10 +233,10 @@ story(
 
 
 // Preset families: each built around one engine feature (see the proposal doc).
-export type Family = 'all' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+export type Family = 'all' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 export const FAMILIES: [Family, string][] = [
   ['all', 'All'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
-  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['growth', 'Growth'], ['stories', 'Stories'],
+  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['shapes', 'Shapes'], ['growth', 'Growth'], ['stories', 'Stories'],
 ];
 export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
@@ -235,6 +250,7 @@ for (const [fam, names] of [
   ['forces', 'Riverstones, Windbreak, Orbit, Black hole, Slalom, Wind tunnel'],
   ['space', 'Deep space, Galaxy, Comet shower, Bokeh, Constellation, Warp speed, Nebula'],
   ['symbols', 'ASCII, Compass, Digital rain, Runes, Weather map'],
+  ['shapes', 'Heartbeat, Spirograph, DNA, Globe, Equalizer, Midnight clock, Oscilloscope, Hive, Shapeshift, Doodle, Triangle, Hexagram, Rose curve'],
   ['growth', 'Seed, Sprout, Bud, Roots, Branches, Canopy, Blossom, Extravaganza'],
   ['stories', 'Singularity, Big bang, Primordial gas, First stars, Galaxies, Event horizon, Dawn, Morning, Midday, Golden hour, Dusk embers, Firefly night, Starry night, Still pond, Wind rises, Rain, Lightning, Full storm, Clearing, Raindrop, Ripples, Streams, River, Falls, Open ocean, Star cloud, Collapse, Young star, Red giant, Supernova, Remnant, A few birds, Flock, Murmuration, The split, Sky shapes, Scatter'],
 ] as [Family, string][]) for (const n of names.split(', ')) FAMILY_OF[n] = fam;
