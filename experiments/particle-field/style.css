@@ -2055,3 +2055,13 @@ body.arranging .u-bar, body.arranging .m-bar, body.arranging .play-row, body.arr
 .u-tray button.rec.live svg circle:last-child { fill: #fff; }
 /* The field knobs belong to the Stage: hidden while the Studio or the Deck is open. */
 body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
+/* Locks, visible in the folder list and the Deck. */
+.fd-lock, .fd-hlock { display: none; color: var(--accent-soft); }
+.fd-card.locked .fd-lock { display: inline-grid; place-items: center; }
+.fd-card { grid-template-columns: 7px minmax(0, auto) minmax(0, 1fr) auto; }
+.fd-card.locked span { color: var(--accent-soft); }
+.fd.has-lock .fd-hlock { display: inline-grid; place-items: center; }
+.fd-head { grid-template-columns: 26px minmax(0, 1fr) auto auto 12px; }
+.rack-lock { color: var(--accent-soft); vertical-align: -1px; }
+@media (max-width: 720px) { .fd-head { grid-template-columns: 38px minmax(0, 1fr) auto 14px; } }
+.overview .rack-card.locked { box-shadow: inset 2px 0 0 var(--accent-soft); }

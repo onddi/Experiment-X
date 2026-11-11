@@ -8794,6 +8794,7 @@ const powerMemory: Record<string, Partial<Settings>> = {};
 
 let currentTab: Tab = 'presets';
 let folderSync: (() => void) | null = null;
+let lockPaint: (() => void) | null = null;
 let folderEnter: (() => void) | null = null;
 const intentButtons: [Intent, HTMLButtonElement][] = [];
 const INTENT_KEY = 'particle-field:intent-pages';
@@ -8879,6 +8880,7 @@ function openConnections() {
 
 // A dot on a tab when one of its cards is locked.
 function syncTabDots() {
+  lockPaint?.();
   for (const [t, b] of tabButtons) {
     const locked = CONTROLS.some((c) => c.kind === 'section' && pageOf(c) === t && locks.has(c.id));
     b.classList.toggle('has-lock', locked);
@@ -11305,6 +11307,11 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
       cap.textContent = cd.label;
       cap.title = `Open ${cd.label}`;
       cap.addEventListener('click', () => openSection(cd.id));
+      if (locks.has(cd.id)) {
+        part.classList.add('locked');
+        part.title = `${cd.label} is locked: scenes and Shuffle keep it`;
+        cap.insertAdjacentHTML('beforeend', ` <span class="rack-lock" title="Locked: scenes and Shuffle keep this card">${LOCK_SVG}</span>`);
+      }
       part.append(cap);
       const knobs = document.createElement('div');
       knobs.className = 'rack-knobs';
@@ -14060,7 +14067,7 @@ function buildFolders() {
     const head = document.createElement('button');
     head.type = 'button';
     head.className = 'fd-head';
-    head.innerHTML = `<span class="fd-ic">${svg(f.icon)}</span><span class="fd-txt"><b></b><small></small></span><span class="fd-n"></span><span class="fd-chev" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}</span>`;
+    head.innerHTML = `<span class="fd-ic">${svg(f.icon)}</span><span class="fd-txt"><b></b><small></small></span><span class="fd-n"></span><b class="fd-hlock" aria-hidden="true">${LOCK_SVG}</b><span class="fd-chev" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}</span>`;
     head.querySelector('b')!.textContent = f.label;
     const kids = document.createElement('div');
     kids.className = 'fd-kids';
@@ -14080,7 +14087,7 @@ function buildFolders() {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'fd-card';
-      b.innerHTML = '<i></i><span></span><small></small>';
+      b.innerHTML = `<i></i><span></span><small></small><b class="fd-lock" title="Locked: scenes, Shuffle and vibes keep this card">${LOCK_SVG}</b>`;
       b.querySelector('span')!.textContent = c.label;
       const it: Item = { el: b, ctl: c, sec: null, dot: b.querySelector('i')!, sum: b.querySelector('small')! };
       b.addEventListener('click', () => goCard(it));
@@ -14159,12 +14166,16 @@ function buildFolders() {
       const live = mine.filter((it) => !it.ctl.power || it.ctl.power.on());
       small.textContent = (live.length ? live : mine).map((it) => it.ctl.label).join(', ');
       head.querySelector<HTMLElement>('.fd-n')!.textContent = powered.length && on.length ? `${on.length} on` : '';
+      const nLocked = mine.filter((it) => locks.has(it.ctl.id)).length;
+      box.classList.toggle('has-lock', nLocked > 0);
+      head.title = nLocked ? `${nLocked} locked card${nLocked > 1 ? 's' : ''}: scenes and Shuffle keep ${nLocked > 1 ? 'them' : 'it'}` : '';
     }
     for (const it of items) {
       const sec = secOf(it);
       it.el.hidden = !!sec?.hidden;
       const pw = it.ctl.power;
       it.dot.className = pw ? (pw.on() ? 'on' : '') : 'always';
+      it.el.classList.toggle('locked', locks.has(it.ctl.id));
       it.sum.textContent = sec?.querySelector('.group-summary')?.textContent ?? '';
     }
     const t = fhead.querySelector('b')!;
@@ -14175,6 +14186,7 @@ function buildFolders() {
     paint();
   };
   refreshers.push(paint);
+  lockPaint = paint;
   afterShow.push(() => {
     for (const it of items) it.el.hidden = !!secOf(it)?.hidden;
   });
