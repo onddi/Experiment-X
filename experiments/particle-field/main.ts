@@ -10519,6 +10519,7 @@ setTimeout(() => {
 document.getElementById('scene-now')!.addEventListener('click', () => openOverview());
 let ovEl: HTMLElement | null = null;
 function closeOverview() {
+  closeTuner();
   ovEl?.remove();
   ovEl = null;
 }
@@ -10678,7 +10679,7 @@ function renderRack(src: RackSrc = RACK_LIVE) {
     wrap.append(box);
   }
   head.innerHTML = count
-    ? `<h3>Knobs</h3><span>The ${count} setting${count === 1 ? '' : 's'} this scene changed, ready to play. Drag a knob sideways to turn it; the white dot is the scene's own value, double-tap to snap back.</span>`
+    ? `<h3>Knobs</h3><span>The ${count} setting${count === 1 ? '' : 's'} this scene changed, ready to play. ${matchMedia('(pointer: coarse)').matches ? 'Tap a knob for a big slider, or drag it sideways' : 'Drag a knob sideways to turn it'}; the white dot is the scene's own value${matchMedia('(pointer: coarse)').matches ? '' : ', double-click to snap back'}.</span>`
     : '<h3>Knobs</h3><span>Everything is at its default.</span>';
   clearInterval(rackTimer);
   rackTimer = window.setInterval(() => {
@@ -10714,20 +10715,28 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     el.classList.toggle('moved', Math.abs(v - home()) > c.step / 2);
   };
   // Drag right (or up, with a mouse) to turn it up; the whole travel is ~180 px.
-  let start: { x: number; y: number; v: number } | null = null;
+  // On a touch screen a tap opens a big slider instead, so the finger
+  // doesn't hide what it's turning.
+  let start: { x: number; y: number; v: number; t: number; turned: boolean } | null = null;
   el.addEventListener('pointerdown', (e) => {
-    start = { x: e.clientX, y: e.clientY, v: src.get(c.key) as number };
+    start = { x: e.clientX, y: e.clientY, v: src.get(c.key) as number, t: performance.now(), turned: false };
     el.setPointerCapture(e.pointerId);
-    el.classList.add('turning');
+    if (e.pointerType !== 'touch') el.classList.add('turning');
   });
   el.addEventListener('pointermove', (e) => {
     if (!start) return;
-    // Touch: sideways only, so an up/down swipe still scrolls the list.
-    const d = (e.clientX - start.x - (e.pointerType === 'touch' ? 0 : e.clientY - start.y)) / 180;
+    const touch = e.pointerType === 'touch';
+    // Touch: sideways only, so an up/down swipe still scrolls the list, and
+    // only once it's clearly a drag (a tap opens the slider).
+    if (touch && !start.turned && Math.abs(e.clientX - start.x) < 10) return;
+    start.turned = true;
+    el.classList.add('turning');
+    const d = (e.clientX - start.x - (touch ? 0 : e.clientY - start.y)) / 180;
     put(start.v + d * (c.max - c.min));
     update();
   });
-  const end = () => {
+  const end = (e: PointerEvent) => {
+    if (start && e.type === 'pointerup' && e.pointerType === 'touch' && !start.turned && performance.now() - start.t < 500) openTuner(c, home, src, update, el);
     start = null;
     el.classList.remove('turning');
   };
@@ -10747,6 +10756,63 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   update();
   return { el, update };
 }
+// The tuner (touch screens): a full-width slider along the bottom for the
+// knob you tapped, with the scene's value marked and a snap back to it.
+let tunerEl: HTMLElement | null = null;
+let tunerKnob: HTMLElement | null = null;
+function closeTuner() {
+  tunerEl?.remove();
+  tunerEl = null;
+  tunerKnob?.classList.remove('tuning');
+  tunerKnob = null;
+}
+function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc, update: () => void, knob: HTMLElement) {
+  const again = tunerKnob === knob;
+  closeTuner();
+  if (again) return;
+  const el = document.createElement('div');
+  el.className = 'tuner';
+  el.innerHTML = `<div class="tuner-head"><b></b><output></output><button type="button" class="tuner-home">Scene value</button><button type="button" class="tuner-close" aria-label="Done">✕</button></div><div class="tuner-track"><input type="range"><i aria-hidden="true"></i></div>`;
+  el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
+  const out = el.querySelector('output')!;
+  const input = el.querySelector('input')!;
+  const mark = el.querySelector<HTMLElement>('.tuner-track i')!;
+  Object.assign(input, { min: c.min, max: c.max, step: c.step });
+  input.setAttribute('aria-label', c.label);
+  const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
+  const sync = () => {
+    const v = src.get(c.key) as number;
+    if (document.activeElement !== input || !el.contains(document.activeElement)) input.value = String(v);
+    out.textContent = c.format ? c.format(v) : String(+v.toFixed(3));
+    mark.style.left = `calc(14px + (100% - 28px) * ${pos(home())})`;
+    el.querySelector('.tuner-home')!.toggleAttribute('disabled', Math.abs(v - home()) <= c.step / 2);
+  };
+  input.addEventListener('input', () => {
+    src.put(c.key, Number(input.value));
+    update();
+    sync();
+  });
+  el.querySelector('.tuner-home')!.addEventListener('click', () => {
+    src.put(c.key, home());
+    input.value = String(home());
+    update();
+    sync();
+  });
+  el.querySelector('.tuner-close')!.addEventListener('click', closeTuner);
+  sync();
+  const timer = window.setInterval(() => (el.isConnected ? (document.activeElement === input ? null : sync()) : clearInterval(timer)), 200);
+  document.body.append(el);
+  tunerEl = el;
+  tunerKnob = knob;
+  knob.classList.add('tuning');
+}
+// A tap anywhere else (not another knob) puts the tuner away.
+document.addEventListener('pointerdown', (e) => {
+  if (!tunerEl) return;
+  const t = e.target as HTMLElement;
+  if (tunerEl.contains(t) || t.closest('.rack-knob')) return;
+  closeTuner();
+}, true);
 function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, home: () => unknown, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-row';
