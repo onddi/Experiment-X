@@ -10982,7 +10982,7 @@ function stopWatching() {
     const quick = performance.now() - sw.t < 600;
     sw = null;
     if (!quick || Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
-    const r = sceneAfter(lastSceneName ? { name: lastSceneName } : null, lastSceneName ? (dx < 0 ? 1 : -1) : 0);
+    const r = watchSceneAfter(dx < 0 ? 1 : -1);
     const p = PRESETS.find(([nm]) => nm === r.name);
     if (p) playPreset(p[0], p[1]);
     setTimeout(() => (watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || r.name), 50);
@@ -11511,6 +11511,15 @@ function stepScene(d: number) {
 
 // The next / previous scene after a given one: its family A–Z (or your own
 // scenes, in order), wrapping round.
+// Watch swipes: every scene, family by family (the library's order), so a
+// swipe past a family's last scene goes on into the next family.
+function watchSceneAfter(d: number): XfRef {
+  if (currentMine && myPresets.length) return sceneAfter({ name: currentMine.name, mine: true }, d);
+  const fams: string[] = FAMILIES.map(([f]) => f as string).filter((f) => f !== 'all');
+  const list = PRESETS.map(([n]) => n).filter((n) => fams.includes(FAMILY_OF[n])).sort((a, b) => fams.indexOf(FAMILY_OF[a]) - fams.indexOf(FAMILY_OF[b]) || a.localeCompare(b));
+  const i = lastSceneName ? list.indexOf(lastSceneName) : -1;
+  return { name: list[i < 0 ? 0 : (i + d + list.length) % list.length] };
+}
 function sceneAfter(r: XfRef | null, d: number): XfRef {
   if (r?.mine && myPresets.length) {
     const i = myPresets.findIndex((p) => p.name === r.name);
