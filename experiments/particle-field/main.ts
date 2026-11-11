@@ -10713,10 +10713,12 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
           updaters.push(k.update);
         } else if (c.kind === 'text') {
           const r = rackText(c, src);
+          holdToSolo(r.el, () => soloRowOpen(r.el, r.update));
           rows.append(r.el);
           updaters.push(r.update);
         } else {
           const r = rackRow(c, () => base[c.key], src);
+          holdToSolo(r.el, () => soloRowOpen(r.el, r.update));
           rows.append(r.el);
           updaters.push(r.update);
         }
@@ -10786,6 +10788,15 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     put(start.v + d * (c.max - c.min));
     update();
   });
+  // Hold (in the overview, on a touch screen): just this knob's slider over
+  // the field, every menu hidden.
+  holdToSolo(el, () => {
+    start = null;
+    el.classList.remove('turning');
+    closeTuner();
+    openTuner(c, home, src, update, el);
+    enterSolo();
+  });
   const end = (e: PointerEvent) => {
     if (start && e.type === 'pointerup' && e.pointerType === 'touch' && !start.turned && performance.now() - start.t < 500) openTuner(c, home, src, update, el);
     start = null;
@@ -10812,6 +10823,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
 let tunerEl: HTMLElement | null = null;
 let tunerKnob: HTMLElement | null = null;
 function closeTuner() {
+  if (document.body.classList.contains('solo')) exitSolo();
   tunerEl?.remove();
   tunerEl = null;
   tunerKnob?.classList.remove('tuning');
@@ -10857,8 +10869,71 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   tunerKnob = knob;
   knob.classList.add('tuning');
 }
+// Solo: hold a setting in the overview (touch screens) and every menu hides,
+// leaving the field and just that setting along the bottom. Let go of it with
+// ✕ or a tap anywhere else, and the overview is back where it was.
+let soloRow: { el: HTMLElement; parent: Node; next: Node | null; sheet: HTMLElement } | null = null;
+let soloSince = 0;
+function enterSolo() {
+  document.body.classList.add('solo');
+  soloSince = performance.now();
+  navigator.vibrate?.(8);
+}
+function exitSolo() {
+  document.body.classList.remove('solo');
+  if (!soloRow) return;
+  const r = soloRow;
+  soloRow = null;
+  r.parent.insertBefore(r.el, r.next && r.next.parentNode === r.parent ? r.next : null);
+  r.sheet.remove();
+}
+function soloRowOpen(row: HTMLElement, update: () => void) {
+  closeTuner();
+  const sheet = document.createElement('div');
+  sheet.className = 'tuner solo-sheet';
+  sheet.innerHTML = '<button type="button" class="tuner-close" aria-label="Done">✕</button>';
+  sheet.querySelector('.tuner-close')!.addEventListener('click', exitSolo);
+  soloRow = { el: row, parent: row.parentNode!, next: row.nextSibling, sheet };
+  sheet.prepend(row);
+  document.body.append(sheet);
+  // Kept current even if the overview redraws behind it.
+  const timer = window.setInterval(() => (sheet.isConnected ? update() : clearInterval(timer)), 150);
+  enterSolo();
+}
+// A touch held still for a moment on a control in the overview.
+function holdToSolo(el: HTMLElement, fire: () => void) {
+  let timer = 0;
+  let at: { x: number; y: number } | null = null;
+  const stop = () => {
+    clearTimeout(timer);
+    at = null;
+  };
+  el.addEventListener('pointerdown', (e) => {
+    stop();
+    if (e.pointerType !== 'touch' || !el.closest('.overview') || document.body.classList.contains('solo')) return;
+    at = { x: e.clientX, y: e.clientY };
+    timer = window.setTimeout(() => {
+      at = null;
+      // The finger lifting after a hold isn't a tap on whatever is under it.
+      const eat = (ev: Event) => ev.stopPropagation();
+      const done = () => setTimeout(() => document.removeEventListener('click', eat, true), 50);
+      document.addEventListener('click', eat, true);
+      document.addEventListener('pointerup', done, { once: true, capture: true });
+      document.addEventListener('pointercancel', done, { once: true, capture: true });
+      fire();
+    }, 450);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 10) stop();
+  });
+  el.addEventListener('pointerup', stop);
+  el.addEventListener('pointercancel', stop);
+  el.addEventListener('contextmenu', (e) => el.closest('.overview') && e.preventDefault());
+}
 // A tap anywhere else (not another knob) puts the tuner away.
 document.addEventListener('pointerdown', (e) => {
+  const t0 = e.target as HTMLElement;
+  if (soloRow && !soloRow.sheet.contains(t0) && performance.now() - soloSince > 300) exitSolo();
   if (!tunerEl) return;
   const t = e.target as HTMLElement;
   if (tunerEl.contains(t) || t.closest('.rack-knob')) return;

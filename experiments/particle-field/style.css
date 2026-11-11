@@ -1502,3 +1502,10 @@ body.watching .fab, body.watching #toggle, body.watching .panel, body.watching .
 .overview[data-density='compact'] .rack-row.rack-text { grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding-right: 4px; }
 .overview[data-density='dense'] .rack-knob span { padding: 0 8px; font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .ov-density svg circle { fill: currentColor; stroke: none; }
+/* Solo: one setting over the field, every menu hidden. */
+body.solo .overview { visibility: hidden; }
+body.solo .fab, body.solo #toggle, body.solo .panel, body.solo .hint, body.solo .desk-shuffle, body.solo .watch-bar { display: none !important; }
+.solo-sheet { flex-direction: row; align-items: center; }
+.solo-sheet .rack-row { flex: 1; min-width: 0; }
+.solo-sheet .tuner-close { flex: none; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--label); font: inherit; font-size: 13px; }
+.overview .rack-row, .overview .rack-knob { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
