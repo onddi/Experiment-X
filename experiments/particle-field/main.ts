@@ -5964,7 +5964,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'The bars and the ring follow the sound source on the Music tab; without sound they rest flat.', show: () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring') },
   { kind: 'text', key: 'shapeSeq', label: 'Sequence', placeholder: 'heart, star, LOVE', show: () => settings.shape === 'sequence' },
   { kind: 'select', key: 'shapeSeqEvery', label: 'Next one', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['8bars', 'Every 8 bars'], ['drop', 'Only on drops']], show: () => settings.shape === 'sequence' },
-  { kind: 'range', key: 'shapeSeqSec', label: 'Next (no music)', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
+  { kind: 'range', key: 'shapeSeqSec', label: 'Hold each (no music)', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
   { kind: 'note', text: `Words and icons, separated by commas. Icons: ${ICON_SHAPES.map(([k]) => k).join(', ')}.`, show: () => settings.shape === 'sequence' },
   { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
   { kind: 'toggle', key: 'drawOutline', label: 'Show the outline', show: () => settings.shape === 'drawing' },
@@ -8457,7 +8457,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['homeStrength', 'morph'],
   look: ['render', 'mixStyles', 'size', 'trail', 'glow'],
   colour: ['palette', 'colorBy', 'customColors'],
-  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSpin', 'imageMode', 'shapeSize'],
+  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['count', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
@@ -10314,7 +10314,8 @@ function renderControls() {
         if (ctl.active) refreshers.push(() => b.classList.toggle('on', ctl.active!(text)));
         row.append(b);
       });
-      searchItem(body, row);
+      // With a Fine-tune split, buttons stay with the setting before them.
+      searchItem(essBody && fineBody ? dest : body, row);
       if (ctl.show) conditional.push([row, ctl.show]);
       continue;
     }
@@ -12537,7 +12538,7 @@ requestAnimationFrame(frame);
 // Hovering a label that is cut short (an ellipsis or a two-line clamp) shows
 // its full text as a tooltip. Only labels without a tooltip of their own.
 document.addEventListener('pointerover', (e) => {
-  if (e.pointerType !== 'mouse') return;
+  if (e.pointerType === 'touch') return;
   let el = e.target as HTMLElement | null;
   for (let i = 0; el && i < 4; i++, el = el.parentElement) {
     if (el.title && !el.dataset.autoTitle) return;
