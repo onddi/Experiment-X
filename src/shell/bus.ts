@@ -105,6 +105,11 @@ export function hasSubscribers(name: string) {
   return (topics.get(name)?.subscribers.size ?? 0) > 0;
 }
 
+/** Who published the last value on a topic: an experiment's slug, or 'x-frame'. */
+export function lastFrom(name: string) {
+  return topics.get(name)?.last?.from;
+}
+
 /** The last value published on a topic, if any. */
 export function lastValue(name: string) {
   return topics.get(name)?.last?.data;

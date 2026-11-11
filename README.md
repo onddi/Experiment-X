@@ -126,8 +126,8 @@ is unchanged. Per layer you can set:
 
 A shared link opens clean: with several experiments on screen, their options
 panels start closed, and a view with a player in it (an experiment that provides
-`transport`) starts playing as soon as its track loads. If the browser blocks
-sound until the page is tapped, a **Tap to start** button starts everything.
+`transport`) opens paused, layers included. A big **Play** button in the middle
+(or the toolbar's play) starts the music and every layer together.
 
 The whole setup is in the URL, so it can be bookmarked or shared:
 

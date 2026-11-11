@@ -1,6 +1,6 @@
 import './shell.css';
 import { experiments, type Experiment } from './experiments.ts';
-import { busStats, dropFrame, dropPublisher, handleBusMessage, hasSubscribers, lastValue, setSlugResolver, shellPublish, shellSubscribe } from './bus.ts';
+import { busStats, dropFrame, dropPublisher, handleBusMessage, hasSubscribers, lastFrom, lastValue, setSlugResolver, shellPublish, shellSubscribe } from './bus.ts';
 import {
   BLENDS, PLACEMENTS, inputLayer, layout, newLayer, parseHash, toHash,
   type Layer, type Placement, type View,
@@ -632,55 +632,52 @@ function syncPlayAll() {
   playAll.setAttribute('aria-label', playAll.title);
 }
 playAll.addEventListener('click', () => {
-  const playing = isPlaying();
-  shellPublish('play', { playing: !playing });
-  if (!playing) shellPublish('transport.command', { action: 'play' });
-  hideStart();
+  if (isPlaying()) shellPublish('play', { playing: false });
+  else startAll();
   syncPlayAll();
 });
 shellSubscribe('play', syncPlayAll);
 
-// --- autostart -----------------------------------------------------------------
-// A view with a player in it (an experiment that provides "transport") starts
-// playing by itself once its track is loaded. Browsers often block sound until
-// the visitor has tapped the page; then a "Tap to start" button appears, and
-// that tap starts everything.
+// --- start together ----------------------------------------------------------
+// A view with a player in it (an experiment that provides "transport") opens
+// paused, layers included, once the track has loaded. A big play button in
+// the middle (or the toolbar's play) starts the music and every layer at once;
+// that tap also satisfies the browser's rule that sound needs a tap first.
 
 
 function hideStart() {
   startBtn.hidden = true;
 }
-/** Until this time, keep everything that hooks into 'play' in step with the player starting up. */
-let settleUntil = 0;
 function startAll() {
   hideStart();
-  settleUntil = performance.now() + 4000;
   shellPublish('play', { playing: true });
   shellPublish('transport.command', { action: 'play' });
 }
 startBtn.addEventListener('click', startAll);
 
-shellSubscribe('transport', (data) => {
+shellSubscribe('transport', (data, from) => {
   const t = data as { playing?: boolean; duration?: number } | undefined;
   syncPlayAll();
   if (t?.playing) {
     autostart = false;
     hideStart();
-    // Right after starting, a player can still send a stale "paused" (e.g. while
-    // its track finishes loading) that pauses the other layers. Once it really
-    // plays, make sure everyone else plays too.
+    // A player can send a stale "paused" while its track loads, which would
+    // leave the other layers paused. If the player itself says it's playing
+    // while its own last shared state says paused, play everyone.
     const shared = lastValue('play') as { playing?: boolean } | undefined;
-    if (performance.now() < settleUntil && shared?.playing === false) shellPublish('play', { playing: true });
+    if (shared?.playing === false && lastFrom('play') === from) shellPublish('play', { playing: true });
     return;
   }
   if (!autostart || !(t?.duration && t.duration > 0)) return;
   autostart = false;
-  // Let the player finish setting up its track before asking it to play.
-  setTimeout(startAll, 250);
-  // Still paused a moment later: the browser wants a tap first.
+  // Open paused: everything that hooks into 'play' (e.g. the particle field)
+  // waits too, and one big button starts it all together.
   setTimeout(() => {
-    if (!(lastValue('transport') as { playing?: boolean } | undefined)?.playing) startBtn.hidden = false;
-  }, 1200);
+    if ((lastValue('transport') as { playing?: boolean } | undefined)?.playing) return;
+    shellPublish('play', { playing: false });
+    syncPlayAll();
+    startBtn.hidden = false;
+  }, 250);
 });
 window.setInterval(syncPlayAll, 1000);
 layersBtn.addEventListener('click', () => openPanel(!!panel.hidden));
