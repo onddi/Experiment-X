@@ -1745,3 +1745,13 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 @media (min-width: 721px) {
   .tuner { left: 50%; right: auto; bottom: 28px; width: min(560px, calc(100vw - 32px)); transform: translateX(-50%); border: 1px solid var(--line); border-radius: 16px; padding-bottom: 16px; box-sizing: border-box; }
 }
+/* The on-field crossfader is retired: the overview's fader (hold it to play it alone) replaces it. */
+.xf-field { display: none !important; }
+.ov-fader-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr) minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.ov-fader-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-fader-row span:last-child { text-align: right; }
+.solo-sheet .ov-fader-row { flex: 1; min-width: 0; font-size: 13px; color: var(--text); }
+.solo-sheet .ov-fader-row { grid-template-columns: 1fr 1fr; grid-template-areas: 'a b' 'f f'; row-gap: 2px; }
+.solo-sheet .ov-fader-row span:first-child { grid-area: a; }
+.solo-sheet .ov-fader-row span:last-child { grid-area: b; }
+.solo-sheet .ov-fader-row .ov-fader { grid-area: f; height: 44px; }

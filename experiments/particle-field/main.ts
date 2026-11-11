@@ -5506,9 +5506,9 @@ const TAB_ICONS: Record<Tab, string> = {
 const INTENTS: [Intent, string, Tab[]][] = [
   ['create', 'Edit', ['shape', 'motion', 'look']],
   ['react', 'React', ['music', 'camera', 'links']],
-  ['perform', 'Play', ['presets', 'timeline', 'xfader', 'knobs', 'record']],
+  ['perform', 'Play', ['presets', 'timeline', 'knobs', 'record']],
 ];
-const intentOf = (tab: Tab) => INTENTS.find(([, , tabs]) => tabs.includes(tab))![0];
+const intentOf = (tab: Tab) => (INTENTS.find(([, , tabs]) => tabs.includes(tab)) ?? INTENTS[INTENTS.length - 1])[0];
 // Cards that sit on their own page rather than the tab they were written for.
 const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', record: 'record', links: 'links' };
 const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
@@ -6397,7 +6397,6 @@ const CONTROLS: Control[] = [
     buttons: [
       ['Knobs', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Knobs', 'knobs'],
       ['Timeline', svg(TAB_ICONS.timeline), () => showTab('timeline'), 'Timeline', 'timeline'],
-      ['Crossfader', svg(TAB_ICONS.xfader), () => showTab('xfader'), 'Fader', 'xfader'],
       ['Record a clip (V)', ICONS.record, toggleRecord, 'Record'],
       ['Pause (Space)', ICONS.pause, togglePause, 'Pause'],
       ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle, 'Shuffle'],
@@ -10088,7 +10087,8 @@ function renderControls() {
   const tabBar = document.createElement('div');
   tabBar.className = 'tabs pages';
   tabBar.setAttribute('role', 'tablist');
-  for (const [t, text] of TABS) {
+  // The Crossfader page is gone: the overview's crossfader does it better.
+  for (const [t, text] of TABS.filter(([x]) => x !== 'xfader')) {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('role', 'tab');
@@ -10918,7 +10918,7 @@ function stopWatching() {
 // and card. Tap a card's name to go to it.
 const OV_COLS: [string, Tab[]][] = [
   ['Look', ['look']], ['Shape', ['shape']], ['Motion', ['motion']], ['Music', ['music']], ['Camera', ['camera']],
-  ['Play', ['presets', 'timeline', 'xfader', 'knobs', 'record', 'links']],
+  ['Play', ['presets', 'timeline', 'knobs', 'record', 'links']],
 ];
 function openSection(id: string) {
   closeOverview();
@@ -11516,7 +11516,16 @@ function openOverview() {
       xfSetOn(false);
       openOverview();
     });
-    box.append(side('a'), fader, side('b'), stop);
+    // Hold the fader (touch or mouse) to play it alone over the field.
+    const fRow = document.createElement('div');
+    fRow.className = 'ov-fader-row';
+    fRow.innerHTML = '<span></span><span></span>';
+    const [na, nb] = fRow.querySelectorAll('span');
+    na.textContent = xf.a.name;
+    nb.textContent = xf.b.name;
+    na.after(fader);
+    holdToSolo(fRow, () => soloRowOpen(fRow, () => {}));
+    box.append(side('a'), fRow, side('b'), stop);
     body.append(box, renderRack(xfRackSrc(ovSide)));
     const sync = () => {
       if (!el.isConnected) return;
@@ -12839,7 +12848,7 @@ renderControls();
       return null;
     }
   })();
-  showTab(TABS.some(([t]) => t === saved) ? (saved as Tab) : 'presets');
+  showTab(TABS.some(([t]) => t === saved) && saved !== 'xfader' ? (saved as Tab) : 'presets');
   syncTabDots();
 }
 resize();
