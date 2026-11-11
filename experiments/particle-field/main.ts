@@ -812,6 +812,7 @@ function step(dt: number) {
   updateFlowFreqs();
   recordHistory();
   t += dt / 60;
+  shapeT += (dt / 60) * macro.spin;
   const { radius, force, pointerMode } = settings;
   // Macros move these relative to the scene.
   const friction = Math.min(0.5, settings.friction * macro.friction);
@@ -979,8 +980,8 @@ function step(dt: number) {
 
   const lifeOn = settings.lifespan > 0;
   const windA = (settings.windDir / 180) * Math.PI;
-  const windX = Math.cos(windA) * settings.wind * 0.05;
-  const windY = Math.sin(windA) * settings.wind * 0.05;
+  const windX = Math.cos(windA) * settings.wind * macro.wind * 0.05;
+  const windY = Math.sin(windA) * settings.wind * macro.wind * 0.05;
   const wellsNow = wellList().map((p) => ({ x: p.x * w, y: p.y * h, kind: p.kind }));
   const handR = settings.camHandReach;
   const handR2 = handR * handR;
@@ -1405,7 +1406,7 @@ let swy = new Float32Array(0);
 
 function swarmForces() {
   const S = settings;
-  const fl = S.flock;
+  const fl = S.flock * macro.flock;
   const sp = S.space;
   if (fl <= 0 && sp <= 0) return false;
   if (swx.length < n) {
@@ -1472,8 +1473,8 @@ function swarmForces() {
     let ay = ry * sp * 0.3;
     if (fl > 0) {
       if (cnt > 0) {
-        ax += ((avx / cnt - vx[i]) * 0.05 * S.flockAlign + (mx / cnt) * 0.0015 * S.flockCohesion + sx * 1.5 * S.flockSep) * fl;
-        ay += ((avy / cnt - vy[i]) * 0.05 * S.flockAlign + (my / cnt) * 0.0015 * S.flockCohesion + sy * 1.5 * S.flockSep) * fl;
+        ax += ((avx / cnt - vx[i]) * 0.05 * S.flockAlign * macro.align + (mx / cnt) * 0.0015 * S.flockCohesion + sx * 1.5 * S.flockSep) * fl;
+        ay += ((avy / cnt - vy[i]) * 0.05 * S.flockAlign * macro.align + (my / cnt) * 0.0015 * S.flockCohesion + sy * 1.5 * S.flockSep) * fl;
       }
       // Boids keep cruising: ease every bird towards a steady speed.
       const v = Math.hypot(vx[i], vy[i]) + 1e-6;
@@ -1507,7 +1508,7 @@ function recordHistory() {
   }
   // Rounded: while a look morphs, ribbonLen glides through fractions, and a
   // fractional length left the ring index fractional (nothing drew).
-  const L = Math.max(2, Math.round(settings.ribbonLen));
+  const L = Math.max(2, Math.round(settings.ribbonLen * macro.ribbon));
   if (histLen !== L || histCap < cap) {
     histLen = L;
     histCap = cap;
@@ -1666,7 +1667,9 @@ const linkRun = new LinkRunner();
 // Density macro: multiplies the scene's particle count (see countNow).
 let densityK = 1;
 // Macros (Macros card, plus Connections pushing them): what they do this frame.
-const macro = { speed: 1, flow: 1, flowMin: 0, jitter: 1, jitterAdd: 0, friction: 1, home: 1, trailAdd: 0, size: 1, filter: '' };
+const macro = { speed: 1, flow: 1, flowMin: 0, jitter: 1, jitterAdd: 0, friction: 1, home: 1, trailAdd: 0, size: 1, filter: '', flock: 1, align: 1, emit: 1, spin: 1, wind: 1, parallax: 1, ribbon: 1 };
+// Shape turning runs on its own clock, so Energy can speed it up without a jump.
+let shapeT = 0;
 let linkNeed = linkNeeds([]);
 let linkFlash = 0;
 const faceTracked = () => (isCam() && faceMode()) || faceExtras() || linkNeed.face;
@@ -2992,7 +2995,7 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
   if (kind === 'geo') {
     let [x, y] = geoPoint(S.shapeGeo, u, v, t, (w / 2) / Math.max(1, R));
     if (GEO_SPINS(S.shapeGeo) && S.shapeSpin > 0) {
-      const a = t * S.shapeSpin * 0.6;
+      const a = shapeT * S.shapeSpin * 0.6;
       const c = Math.cos(a);
       const sn = Math.sin(a);
       [x, y] = [x * c - y * sn, x * sn + y * c];
@@ -3002,7 +3005,7 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
     out[2] = -1;
   } else if (kind === 'solid') {
     const [x0, y0, z0] = solidPoint(S.shapeSolid, u, v);
-    const yaw = t * (0.15 + S.shapeSpin * 0.9);
+    const yaw = shapeT * (0.15 + S.shapeSpin * 0.9);
     const pitch = 0.45 + 0.2 * Math.sin(t * 0.3);
     const cyw = Math.cos(yaw);
     const syw = Math.sin(yaw);
@@ -3029,7 +3032,7 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
     out[2] = -1;
   } else {
     // A ring: each angle reaches out as far as its band is loud.
-    const a = u * Math.PI * 2 + t * S.shapeSpin * 0.4;
+    const a = u * Math.PI * 2 + shapeT * S.shapeSpin * 0.4;
     const f = Math.abs(((u * 2) % 2) - 1);
     const b = Math.min(SPEC_N - 1, (f * SPEC_N) | 0);
     const r = R * (0.5 + v * (0.04 + spec[b] * 0.5));
@@ -3651,7 +3654,7 @@ function runEmitter(dt: number, beat: boolean) {
   const S = settings;
   if (S.emitter === 'none') return;
   if (S.emitMode === 'steady') {
-    emitAcc += n * S.emitRate * (dt / 60);
+    emitAcc += n * S.emitRate * macro.emit * (dt / 60);
     const k = Math.floor(emitAcc);
     emitAcc -= k;
     emitMany(k);
@@ -4982,7 +4985,7 @@ function draw() {
     const ty = pointer.active && pointer.y > -1e3 ? (pointer.y / h - 0.5) * 2 : Math.cos(t * 0.11) * 0.4;
     camX += (tx - camX) * 0.05;
     camY += (ty - camY) * 0.05;
-    parAmt = 40 * settings.depthParallax * settings.depth;
+    parAmt = 40 * settings.depthParallax * macro.parallax * settings.depth;
     for (let i = 0; i < n; i++) {
       const k = (pz[i] - 0.5) * parAmt;
       px[i] -= camX * k;
@@ -5309,6 +5312,14 @@ function runMacros() {
   macro.home = two(1.3 * o);
   macro.trailAdd = -0.25 * up(e) + 0.15 * up(-e) + 0.3 * up(d) - 0.35 * up(-d);
   macro.size = (1 + 0.3 * up(d)) * two(-0.35 * den);
+  // The newer parts of the engine follow too, whichever the scene uses.
+  macro.flock = two(0.8 * e) * two(-0.5 * up(-o));
+  macro.align = two(1.2 * o);
+  macro.emit = two(1.0 * e);
+  macro.spin = two(1.2 * e) * two(-0.6 * up(d));
+  macro.wind = two(0.8 * e) * two(-1 * up(o));
+  macro.parallax = 1 + 1.2 * up(d) - 0.5 * up(-d);
+  macro.ribbon = 1 + 0.8 * up(d) - 0.4 * up(-d);
   const parts: string[] = [];
   if (Math.abs(d) > 0.02) parts.push(d > 0 ? `blur(${(d * 1.4).toFixed(2)}px) saturate(${(1 - 0.3 * d).toFixed(2)})` : `contrast(${(1 - 0.3 * d).toFixed(2)}) saturate(${(1 - 0.2 * d).toFixed(2)})`);
   if (Math.abs(t) > 0.02) {
