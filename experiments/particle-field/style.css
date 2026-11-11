@@ -1809,3 +1809,19 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
 .knob-menu button { padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--label); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .knob-menu button:hover { background: rgb(255 255 255 / 0.06); color: var(--text); }
 .knob-menu button.on { background: var(--accent-bg); color: var(--accent-soft); }
+/* Phones: the swipe pill replaces the knob column. */
+.swipe-pill { display: none; }
+@media (max-width: 720px) {
+  .play-row, body.watching .play-row { display: none; }
+  .swipe-pill:not([hidden]) { display: block; }
+  .swipe-pill { position: absolute; left: 0; right: 0; bottom: calc(84px + env(safe-area-inset-bottom)); height: 120px; z-index: 3; pointer-events: none; }
+  .sp-zone { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
+  .sp-body { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: grid; grid-template-columns: auto auto; align-items: baseline; justify-content: center; column-gap: 8px; row-gap: 5px; min-width: 150px; padding: 8px 16px 9px; border-radius: 999px; background: rgb(14 16 24 / 0.55); border: 1px solid rgb(255 255 255 / 0.08); backdrop-filter: blur(6px); opacity: 0.35; transition: opacity 0.4s; pointer-events: none; }
+  .swipe-pill.awake .sp-body { opacity: 1; transition-duration: 0.12s; }
+  .sp-name { font-size: 11.5px; color: rgb(255 255 255 / 0.6); }
+  .sp-val { font-size: 13px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-bar { grid-column: 1 / -1; position: relative; height: 3px; border-radius: 2px; background: rgb(255 255 255 / 0.12); overflow: hidden; }
+  .sp-bar u { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(255 255 255 / 0.75); }
+  .sp-dots { grid-column: 1 / -1; justify-self: center; font-size: 6px; letter-spacing: 3px; color: rgb(255 255 255 / 0.5); font-style: normal; }
+  .sp-dots:empty { display: none; }
+}

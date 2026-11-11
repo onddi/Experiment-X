@@ -12494,6 +12494,7 @@ function playSet(key: string, raw: number) {
     playFrame ||= requestAnimationFrame(playFlush);
   }
   playShow(key);
+  if (pill.classList.contains('awake')) pillPaint();
 }
 // The value play works from: its own if still in step with the setting.
 function playBase(key: string) {
@@ -12615,11 +12616,84 @@ function syncFieldKnobs() {
 }
 refreshers.push(syncFieldKnobs);
 syncFieldKnobs();
+// Phones: one swipe pill instead of the knob column. Swipe sideways along
+// the bottom to turn the knob it shows (the whole width is the travel), up or
+// down to switch knob, tap a choice for its list.
+const pill = document.createElement('div');
+pill.className = 'swipe-pill';
+pill.innerHTML = '<div class="sp-zone"></div><div class="sp-body"><span class="sp-name"></span><b class="sp-val"></b><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div>';
+stage.append(pill);
+let pillIdx = 0;
+let pillTimer = 0;
+const pillKeys = () => fieldKnobKeys().filter((k) => knobSpec(k));
+function pillPaint(wake = false) {
+  const keys = pillKeys();
+  pill.hidden = !playing() || !keys.length;
+  if (pill.hidden) return;
+  pillIdx = Math.min(pillIdx, keys.length - 1);
+  const key = keys[pillIdx];
+  const r = knobSpec(key)!;
+  const v = playBase(key);
+  pill.querySelector('.sp-name')!.textContent = r.label;
+  pill.querySelector('.sp-val')!.textContent = r.text(v);
+  pill.querySelector<HTMLElement>('.sp-bar u')!.style.width = `${((v - r.min) / (r.max - r.min)) * 100}%`;
+  const dots = pill.querySelector<HTMLElement>('.sp-dots')!;
+  dots.textContent = keys.length > 1 ? keys.map((_, i) => (i === pillIdx ? '●' : '○')).join('') : '';
+  if (wake) {
+    pill.classList.add('awake');
+    clearTimeout(pillTimer);
+    pillTimer = window.setTimeout(() => pill.classList.remove('awake'), 1800);
+  }
+}
+refreshers.push(() => pillPaint());
+{
+  const zone = pill.querySelector<HTMLElement>('.sp-zone')!;
+  let st: { x: number; y: number; v: number; t: number; mode: '' | 'turn' | 'switch' } | null = null;
+  zone.addEventListener('pointerdown', (e) => {
+    const key = pillKeys()[pillIdx];
+    if (!key) return;
+    zone.setPointerCapture(e.pointerId);
+    st = { x: e.clientX, y: e.clientY, v: playBase(key), t: performance.now(), mode: '' };
+    pillPaint(true);
+  });
+  zone.addEventListener('pointermove', (e) => {
+    if (!st) return;
+    const dx = e.clientX - st.x;
+    const dy = e.clientY - st.y;
+    if (!st.mode) {
+      if (Math.abs(dx) > 8 && Math.abs(dx) >= Math.abs(dy)) st.mode = 'turn';
+      else if (Math.abs(dy) > 30) st.mode = 'switch';
+      else return;
+    }
+    if (st.mode === 'turn') {
+      const key = pillKeys()[pillIdx];
+      playNudge(key, st.v, dx / Math.max(240, stage.clientWidth * 0.85));
+      pillPaint(true);
+    } else if (st.mode === 'switch' && Math.abs(dy) > 30) {
+      const n = pillKeys().length;
+      pillIdx = (pillIdx + (dy < 0 ? 1 : -1) + n) % n;
+      st = { ...st, y: e.clientY, v: playBase(pillKeys()[pillIdx]) };
+      navigator.vibrate?.(6);
+      pillPaint(true);
+    }
+  });
+  const end = (e: PointerEvent) => {
+    const tap = st && !st.mode && e.type === 'pointerup' && performance.now() - st.t < 450;
+    st = null;
+    const spec = knobSpec(pillKeys()[pillIdx] ?? '');
+    if (tap && spec?.options) knobMenu(pill.querySelector('.sp-body')!, spec);
+    pillPaint(true);
+  };
+  zone.addEventListener('pointerup', end);
+  zone.addEventListener('pointercancel', end);
+}
+pillPaint();
 // Show every field knob for a moment (touch screens can't hover the row):
 // when the menu closes or Watch starts, so you see what you can play.
 function revealKnobs(ms = 2600) {
   setTimeout(() => {
     syncFieldKnobs();
+    pillPaint(true);
     if (!playing()) return;
     const keys = fieldKnobKeys();
     playRow.querySelectorAll<HTMLElement>('.fader').forEach((f, i) => {
