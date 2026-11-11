@@ -1817,6 +1817,11 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .sp-prev, .sp-next, .sp-dots, .swipe-pill .mb-btn { display: none; }
   .swipe-pill.empty .sp-bar { display: none; }
   .swipe-pill.choice .sp-bar { display: none; }
+  /* Folded: just its icon, a round button like the rest. */
+  .m-bar:not(.knobbing) { justify-content: center; gap: 14px; }
+  .m-bar:not(.knobbing) .swipe-pill { flex: none; width: 46px; padding: 0; justify-content: center; }
+  .m-bar:not(.knobbing) .sp-body { display: none; }
+  .mb-kicon svg { width: 19px; height: 19px; }
   /* Open: the pill fills the bar. */
   .m-bar.knobbing > .mb-btn { display: none; }
   .m-bar.knobbing .swipe-pill { height: 64px; padding: 0 8px 0 18px; border-radius: 22px; background: rgb(20 21 26 / 0.8); cursor: default; }
