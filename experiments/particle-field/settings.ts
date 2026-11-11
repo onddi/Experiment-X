@@ -85,6 +85,7 @@ export interface Settings {
   shapeSeq: string;
   shapeSeqEvery: 'bar' | '2bars' | '4bars' | '8bars' | 'drop';
   shapeSeqSec: number;
+  drawOutline: boolean;
   shapeSpin: number;
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
   camMode: CamMode;
@@ -395,6 +396,7 @@ export const DEFAULTS: Settings = {
   shapeSeq: 'heart, star, moon, HELLO',
   shapeSeqEvery: '4bars',
   shapeSeqSec: 4,
+  drawOutline: false,
   shapeSpin: 0.3,
   imageMode: 'auto',
   camMode: 'face',

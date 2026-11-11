@@ -3154,11 +3154,13 @@ function toggleDraw() {
 function undoStroke() {
   drawStrokes.pop();
   saveDrawing();
+  inkSync();
   reshape(500);
 }
 function clearShapeDrawing() {
   drawStrokes = [];
   saveDrawing();
+  inkSync();
   reshape(500);
 }
 const drawing = () => drawMode && settings.shape === 'drawing';
@@ -3168,6 +3170,7 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   drawCur = [e.offsetX / w, e.offsetY / h];
   drawStrokes.push(drawCur);
+  inkSync();
 }, true);
 canvas.addEventListener('pointermove', (e) => {
   if (!drawCur || !drawing()) return;
@@ -3177,6 +3180,7 @@ canvas.addEventListener('pointermove', (e) => {
   const ly = drawCur[drawCur.length - 1];
   if (Math.hypot((x - lx) * w, (y - ly) * h) < 4) return;
   drawCur.push(x, y);
+  inkSync();
   // Show it forming while you draw, a few times a second.
   const now = performance.now();
   if (now - drawLastBuild > 160) {
@@ -3189,10 +3193,49 @@ const endStroke = () => {
   if (!drawCur) return;
   drawCur = null;
   saveDrawing();
+  inkSync();
   reshape(300);
 };
 canvas.addEventListener('pointerup', endStroke);
 canvas.addEventListener('pointercancel', endStroke);
+
+// Ink: the stroke shows as a soft line while you draw and fades a moment
+// after you lift, so the particles take over. "Show the outline" keeps it.
+const INK_NS = 'http://www.w3.org/2000/svg';
+const inkSvg = document.createElementNS(INK_NS, 'svg');
+inkSvg.classList.add('ink');
+inkSvg.setAttribute('aria-hidden', 'true');
+inkSvg.setAttribute('preserveAspectRatio', 'none');
+inkSvg.setAttribute('viewBox', '0 0 1 1');
+const inkPaths = new Map<number[], SVGPathElement>();
+const inkFade = new Map<number[], number>();
+function inkSync() {
+  if (inkSvg.previousElementSibling !== fxCanvas) fxCanvas.after(inkSvg);
+  const show = settings.shape === 'drawing';
+  for (const [st, p] of inkPaths) if (!drawStrokes.includes(st) || !show) { p.remove(); inkPaths.delete(st); inkFade.delete(st); }
+  if (!show) return;
+  for (const st of drawStrokes) {
+    let p = inkPaths.get(st);
+    if (!p) {
+      p = document.createElementNS(INK_NS, 'path');
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      inkSvg.append(p);
+      inkPaths.set(st, p);
+      // Strokes already there when the page opens start faded.
+      if (st !== drawCur) p.classList.add('gone');
+    }
+    let d = '';
+    for (let i = 0; i < st.length; i += 2) d += `${i ? 'L' : 'M'}${st[i].toFixed(4)} ${st[i + 1].toFixed(4)}`;
+    if (st.length === 2) d += `l0.0001 0`;
+    p.setAttribute('d', d);
+    const live = st === drawCur;
+    if (live) { p.classList.remove('gone'); inkFade.delete(st); }
+    else if (!inkFade.has(st) && !p.classList.contains('gone')) {
+      inkFade.set(st, window.setTimeout(() => { p!.classList.add('gone'); inkFade.delete(st); }, 900));
+    }
+  }
+  inkSvg.classList.toggle('outline', settings.drawOutline);
+}
 
 function buildShape() {
   const S = settings;
@@ -5924,7 +5967,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'shapeSeqSec', label: 'Next (no music)', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
   { kind: 'note', text: `Words and icons, separated by commas. Icons: ${ICON_SHAPES.map(([k]) => k).join(', ')}.`, show: () => settings.shape === 'sequence' },
   { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
-  { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
+  { kind: 'toggle', key: 'drawOutline', label: 'Show the outline', show: () => settings.shape === 'drawing' },
+  { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
   { kind: 'buttons', buttons: [['Choose an image or SVG…', () => imageInput.click()]], show: () => settings.shape === 'image' },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
@@ -7275,6 +7319,7 @@ fxCanvas.hidden = true;
 const fxCtx = fxCanvas.getContext('2d')!;
 const fxSnap = document.createElement('canvas');
 lensCanvas.after(fxCanvas);
+inkSync();
 let tlGatherNow = false;
 let whirlNow = 0;
 type Shard = { pts: number[]; cx: number; cy: number; vx: number; vy: number; va: number };
@@ -8355,6 +8400,7 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
   }
   if (keys.has('shapeSeq')) seqIdx = 0;
   if (keys.has('shape') && settings.shape !== 'drawing') drawMode = false;
+  if (keys.has('shape') || keys.has('drawOutline')) inkSync();
   if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapePattern') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
     const g = glideHomes && settings.shape !== 'none' ? glideHomes : null;
     const fx = g ? (g.fromFree ? px : hx).slice(0, n) : null;
