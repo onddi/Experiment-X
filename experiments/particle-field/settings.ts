@@ -6,7 +6,9 @@ export type LifeFade = 'edges' | 'out' | 'swell' | 'flash';
 export type PlaceWell = 'off' | 'attract' | 'repel' | 'vortex' | 'emitter';
 export type Emitter = 'none' | 'point' | 'line' | 'circle' | 'ring' | 'edges' | 'pointer';
 export type EmitMode = 'steady' | 'burst' | 'beat';
-export type Shape = 'none' | 'text' | 'image' | 'camera' | 'grid' | 'sunflower' | 'ring' | 'icon' | 'geo' | 'solid' | 'live' | 'sequence' | 'drawing';
+// 'grid', 'sunflower' and 'ring' are older names (now a pattern, or a geometric circle);
+// upgradeShape turns them into the new ones.
+export type Shape = 'none' | 'text' | 'image' | 'camera' | 'pattern' | 'grid' | 'sunflower' | 'ring' | 'icon' | 'geo' | 'solid' | 'live' | 'sequence' | 'drawing';
 export type CamMode = 'face' | 'features' | 'mixed' | 'hands' | 'pose' | 'body' | 'edges' | 'bright' | 'dark';
 // What a hand gesture does (Gestures card).
 export type MaskFx = 'none' | 'flames' | 'crown' | 'tears' | 'beard' | 'halo' | 'lasers';
@@ -78,6 +80,7 @@ export interface Settings {
   shapeGeo: string;
   shapeSolid: string;
   shapeLive: 'bars' | 'ring' | 'clock' | 'tempo';
+  shapePattern: 'sunflower' | 'grid';
   shapeSeq: string;
   shapeSeqEvery: 'bar' | '2bars' | '4bars' | '8bars' | 'drop';
   shapeSeqSec: number;
@@ -387,6 +390,7 @@ export const DEFAULTS: Settings = {
   shapeGeo: 'star5',
   shapeSolid: 'sphere',
   shapeLive: 'bars',
+  shapePattern: 'sunflower',
   shapeSeq: 'heart, star, moon, HELLO',
   shapeSeqEvery: '4bars',
   shapeSeqSec: 4,
@@ -607,3 +611,12 @@ export const DEFAULTS: Settings = {
   audioRhymeRipple: 0,
   audioRhymeHue: 0,
 };
+
+// Older shape names, as the new ones: the sunflower disc and the grid are
+// patterns, the ring is the geometric circle.
+export function upgradeShape<T extends Partial<Settings>>(p: T): T {
+  const sh = p.shape as string | undefined;
+  if (sh === 'sunflower' || sh === 'grid') return { ...p, shape: 'pattern', shapePattern: sh };
+  if (sh === 'ring') return { ...p, shape: 'geo', shapeGeo: 'circle', shapeSpin: p.shapeSpin ?? 0 };
+  return p;
+}

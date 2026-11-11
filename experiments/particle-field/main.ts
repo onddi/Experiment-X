@@ -1,7 +1,7 @@
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
-import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
+import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
 import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
@@ -21,7 +21,7 @@ function pal(): PaletteDef {
 }
 
 const STORAGE_KEY = 'particle-field:settings';
-const settings: Settings = { ...DEFAULTS, ...load() };
+const settings: Settings = { ...DEFAULTS, ...upgradeShape(load()) };
 if (settings.palette !== 'custom' && !(settings.palette in PALETTES)) settings.palette = DEFAULTS.palette;
 // Older saves used 'none' as a beat wave; that is now 'Kick does: Pulse'.
 if ((settings.audioBeat as string) === 'none') settings.audioBeat = 'ripple';
@@ -2952,6 +2952,7 @@ function shapeDetail() {
     case 'icon': return S.shapeIcon;
     case 'geo': return S.shapeGeo;
     case 'solid': return S.shapeSolid;
+    case 'pattern': return S.shapePattern;
     case 'sequence': return `${seqToken()}`;
     case 'drawing': return `${drawVersion}`;
     case 'live': return S.shapeLive === 'clock' ? clockText() : S.shapeLive === 'tempo' ? tempoText() : S.shapeLive;
@@ -3215,16 +3216,17 @@ function buildShape() {
     buildParamShape();
     return;
   }
-  if (S.shape === 'grid' || S.shape === 'sunflower' || S.shape === 'ring') {
+  const pat = S.shape === 'pattern' ? S.shapePattern : S.shape;
+  if (pat === 'grid' || pat === 'sunflower' || pat === 'ring') {
     const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
     const rows = Math.max(1, Math.ceil(n / cols));
     for (let i = 0; i < n; i++) {
-      if (S.shape === 'grid') {
+      if (pat === 'grid') {
         const gw = w * S.shapeSize;
         const gh = h * S.shapeSize;
         hx[i] = cx - gw / 2 + ((i % cols) + 0.5) * (gw / cols);
         hy[i] = cy - gh / 2 + (Math.floor(i / cols) + 0.5) * (gh / rows);
-      } else if (S.shape === 'sunflower') {
+      } else if (pat === 'sunflower') {
         // Golden-angle spiral: an even, organic-looking disc.
         const r = R * Math.sqrt((i + 0.5) / n);
         const a = i * 2.39996;
@@ -5683,7 +5685,8 @@ const CAM_MODES: [string, string][] = [
   ['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['mixed', 'Features + a light mesh'],
   ['hands', 'Your hands (skeleton)'], ['pose', 'Your body (skeleton)'], ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
-const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'A geometric shape'], ['solid', 'A turning 3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera'], ['grid', 'A grid'], ['sunflower', 'A sunflower disc'], ['ring', 'A ring']];
+const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'A geometric shape'], ['pattern', 'A pattern (fills an area)'], ['solid', 'A turning 3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera']];
+const PATTERNS: [string, string][] = [['sunflower', 'Sunflower disc'], ['grid', 'Grid']];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
 const hasPointer = () => settings.pointerMode !== 'none';
@@ -5899,15 +5902,16 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
-    summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
+    summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
   { kind: 'note', text: 'How the camera forms you (face, hands or body) is on the Camera tab.', show: isCam },
   { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
   { kind: 'note', text: 'Symbols work too: try ★ ♥ ☾ ✿ ☮ or an emoji.', show: () => settings.shape === 'text' },
   { kind: 'select', key: 'shapeIcon', label: 'Icon', options: ICON_SHAPES, show: () => settings.shape === 'icon' },
   { kind: 'select', key: 'shapeGeo', label: 'Shape', options: GEO_SHAPES, show: () => settings.shape === 'geo' },
+  { kind: 'select', key: 'shapePattern', label: 'Pattern', options: PATTERNS, show: () => settings.shape === 'pattern' },
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
@@ -6439,6 +6443,7 @@ const playSettings = (): Partial<Settings> => ({
 
 // Presets go through here: they glide over (Morph) and can wait for the beat.
 function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
+  p = upgradeShape(p);
   lastSceneName = '';
   if (currentMine) {
     currentMine = null;
@@ -8348,7 +8353,7 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
   }
   if (keys.has('shapeSeq')) seqIdx = 0;
   if (keys.has('shape') && settings.shape !== 'drawing') drawMode = false;
-  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
+  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapePattern') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
     const g = glideHomes && settings.shape !== 'none' ? glideHomes : null;
     const fx = g ? (g.fromFree ? px : hx).slice(0, n) : null;
     const fy = g ? (g.fromFree ? py : hy).slice(0, n) : null;
