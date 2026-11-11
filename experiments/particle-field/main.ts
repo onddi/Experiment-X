@@ -8,6 +8,7 @@ import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAM
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
+import { TIPS as ABOUT } from './tips.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
@@ -10264,6 +10265,84 @@ function mgFine(k: keyof Settings, draws: (() => void)[]) {
   return row;
 }
 
+// Setting descriptions: hover a setting's name (mouse) or hold it (touch)
+// for one line about what it does. The words live in tips.ts.
+function tipOn(el: HTMLElement, key: string) {
+  if (ABOUT[key]) el.dataset.tip = key;
+}
+let tipEl: HTMLElement | null = null;
+let tipTimer = 0;
+function tipHide() {
+  clearTimeout(tipTimer);
+  tipEl?.remove();
+  tipEl = null;
+}
+function tipShow(anchor: HTMLElement) {
+  tipHide();
+  const text = ABOUT[anchor.dataset.tip ?? ''];
+  if (!text || !anchor.isConnected) return;
+  const el = document.createElement('div');
+  el.className = 'tip';
+  el.setAttribute('role', 'tooltip');
+  el.textContent = text;
+  document.body.append(el);
+  const r = anchor.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const left = Math.max(8, Math.min(innerWidth - w - 8, r.left));
+  const top = r.top - h - 8 >= 8 ? r.top - h - 8 : r.bottom + 8;
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+  tipEl = el;
+}
+document.addEventListener('pointerover', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  const t = (e.target as HTMLElement).closest?.<HTMLElement>('[data-tip]');
+  if (!t) return;
+  clearTimeout(tipTimer);
+  tipTimer = window.setTimeout(() => tipShow(t), 450);
+});
+document.addEventListener('pointerout', (e) => {
+  const t = (e.target as HTMLElement).closest?.<HTMLElement>('[data-tip]');
+  if (t && !t.contains(e.relatedTarget as Node)) tipHide();
+});
+// Touch: hold a name for half a second. The click that ends the hold is
+// swallowed so a switch or label doesn't change.
+let tipHeld = false;
+document.addEventListener('pointerdown', (e) => {
+  const was = !!tipEl;
+  tipHide();
+  if (e.pointerType === 'mouse') return;
+  const t = (e.target as HTMLElement).closest?.<HTMLElement>('[data-tip]');
+  if (!t || t.closest('.rack-knob, .overview, .solo-sheet')) return;
+  tipHeld = false;
+  const [x, y] = [e.clientX, e.clientY];
+  tipTimer = window.setTimeout(() => {
+    tipHeld = true;
+    tipShow(t);
+  }, 500);
+  const cancel = (m: PointerEvent) => {
+    if (m.type !== 'pointermove' || Math.hypot(m.clientX - x, m.clientY - y) > 10) {
+      if (!tipHeld) clearTimeout(tipTimer);
+      removeEventListener('pointermove', cancel);
+      removeEventListener('pointerup', cancel);
+      removeEventListener('pointercancel', cancel);
+    }
+  };
+  addEventListener('pointermove', cancel);
+  addEventListener('pointerup', cancel);
+  addEventListener('pointercancel', cancel);
+  void was;
+}, true);
+document.addEventListener('click', (e) => {
+  if (!tipHeld) return;
+  tipHeld = false;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+addEventListener('scroll', tipHide, true);
+addEventListener('wheel', tipHide, { passive: true });
+
 function renderControls() {
   let collapsed: Record<string, boolean> = {};
   try {
@@ -10827,6 +10906,7 @@ function renderControls() {
     const name = document.createElement('span');
     name.className = 'name';
     name.textContent = ctl.label;
+    tipOn(name, ctl.key);
     row.append(name);
     const k = ctl.key;
 
@@ -11401,6 +11481,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   // The same value as a thin bar (the Strips density shows this instead of the ring).
   const [barFill, barHome] = [el.querySelector<HTMLElement>('.rack-bar i')!, el.querySelector<HTMLElement>('.rack-bar u')!];
   el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
+  tipOn(el.querySelector('b')!, c.key);
   const out = el.querySelector('span')!;
   const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
   const put = (v: number) => {
@@ -11493,6 +11574,12 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   el.innerHTML = `<div class="tuner-head"><b></b><output></output><button type="button" class="tuner-home">Scene value</button><button type="button" class="tuner-close" aria-label="Done">✕</button></div><div class="tuner-track"><input type="range"><i aria-hidden="true"></i></div>`;
   el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
   el.querySelector('.tuner-close')!.before(fieldKnobButton(c.key));
+  if (ABOUT[c.key]) {
+    const about = document.createElement('p');
+    about.className = 'tuner-about';
+    about.textContent = ABOUT[c.key];
+    el.querySelector('.tuner-head')!.after(about);
+  }
   const out = el.querySelector('output')!;
   const input = el.querySelector('input')!;
   const mark = el.querySelector<HTMLElement>('.tuner-track i')!;
@@ -11571,6 +11658,13 @@ function soloRowOpen(row: HTMLElement, update: () => void) {
   if (row.dataset.key) sheet.querySelector('.tuner-close')!.before(fieldKnobButton(row.dataset.key));
   soloRow = { el: row, parent: row.parentNode!, next: row.nextSibling, sheet };
   sheet.prepend(row);
+  const tipKey = row.querySelector<HTMLElement>('[data-tip]')?.dataset.tip;
+  if (tipKey && ABOUT[tipKey]) {
+    const about = document.createElement('p');
+    about.className = 'tuner-about solo-about';
+    about.textContent = ABOUT[tipKey];
+    row.after(about);
+  }
   document.body.append(sheet);
   // Kept current even if the overview redraws behind it.
   const timer = window.setInterval(() => (sheet.isConnected ? update() : clearInterval(timer)), 150);
@@ -11637,6 +11731,7 @@ function rackText(c: Extract<Control, { kind: 'text' }>, src: RackSrc) {
   el.className = 'rack-row rack-text';
   const name = document.createElement('span');
   name.textContent = c.label;
+  tipOn(name, c.key);
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = c.placeholder ?? '';
@@ -11657,6 +11752,7 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
   if (c.kind !== 'toggle') el.dataset.key = c.key;
   const name = document.createElement('span');
   name.textContent = c.label;
+  tipOn(name, c.key);
   const out = document.createElement('b');
   if (c.kind === 'toggle') {
     const sw = document.createElement('button');
