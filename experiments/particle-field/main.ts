@@ -13015,6 +13015,80 @@ mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Deck" t
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 const chips = mbar.querySelector<HTMLElement>('.sp-chips')!;
+// Phones: one bottom bar for Stage, Deck and Studio. The view switch on the
+// left never moves; the tray on the right holds what the view you're in needs.
+type UView = 'stage' | 'deck' | 'studio';
+const ubar = document.createElement('div');
+ubar.className = 'u-bar';
+ubar.innerHTML = `<div class="u-seg" role="tablist" aria-label="Views"><span class="u-thumb"></span><button type="button" role="tab" data-v="stage" aria-label="Stage" title="Stage">${ICONS.eye}</button><button type="button" role="tab" data-v="deck" aria-label="Deck" title="Deck">${ICONS.sliders}</button><button type="button" role="tab" data-v="studio" aria-label="Studio" title="Studio">${MENU_ICON}</button></div><div class="u-tray"></div>`;
+document.body.append(ubar);
+const uView = (): UView => (ovEl ? 'deck' : !panel.classList.contains('collapsed') ? 'studio' : 'stage');
+function uGo(v: UView) {
+  document.body.classList.remove('u-pages');
+  if (v === 'stage') startWatching();
+  else if (v === 'deck') {
+    if (!panel.classList.contains('collapsed')) toggle.click();
+    stopWatching();
+  } else {
+    closeOverview();
+    if (panel.classList.contains('collapsed')) toggle.click();
+  }
+  uPaint(true);
+}
+function uCrossfade() {
+  if (xf.on) {
+    xfSetOn(false);
+    openOverview();
+  } else ovEl?.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
+  uPaint(true);
+}
+const PAGES_ICON = svg('<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/>');
+const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
+const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
+  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ['Knobs', KNOB_ICON, openKnobPill]],
+  deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''], ['Shuffle', ICONS.shuffle, () => shuffle(), 'primary']],
+  studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], ['Pages', PAGES_ICON, () => {
+    document.body.classList.toggle('u-pages');
+    uPaint(true);
+  }, document.body.classList.contains('u-pages') ? 'on' : '']],
+};
+let uSig = '';
+function uPaint(force = false) {
+  const v = uView();
+  const sig = `${v}|${xf.on}|${document.body.classList.contains('u-pages')}`;
+  if (sig === uSig && !force) return;
+  uSig = sig;
+  ubar.classList.remove('stage', 'deck', 'studio');
+  ubar.classList.add(v);
+  const i = ['stage', 'deck', 'studio'].indexOf(v);
+  ubar.querySelector<HTMLElement>('.u-thumb')!.style.transform = `translateX(${i * 44}px)`;
+  ubar.querySelectorAll<HTMLButtonElement>('.u-seg button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.v === v);
+    b.setAttribute('aria-selected', String(b.dataset.v === v));
+  });
+  if (v !== 'studio') document.body.classList.remove('u-pages');
+  const tray = ubar.querySelector<HTMLElement>('.u-tray')!;
+  tray.innerHTML = '';
+  U_TRAY[v]().forEach(([label, ic, fn, cls], j) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = label;
+    b.setAttribute('aria-label', label);
+    b.innerHTML = ic + (j === 0 ? `<span>${label}</span>` : '');
+    if (cls) b.classList.add(cls);
+    b.addEventListener('click', fn);
+    tray.append(b);
+  });
+}
+ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-v]');
+  if (b) uGo(b.dataset.v as UView);
+});
+// (After the module has set everything up: the panel comes later in the file.)
+setTimeout(() => {
+  uPaint(true);
+  setInterval(() => sheetMode() && uPaint(), 250);
+});
 mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
   stopWatching();
 });
@@ -13033,12 +13107,16 @@ mbar.querySelector('.mb-scenes')!.addEventListener('click', () => {
 let mbarTimer = 0;
 function showBar(ms = 3500) {
   mbar.classList.add('shown');
+  ubar.classList.add('shown');
   clearTimeout(mbarTimer);
-  mbarTimer = window.setTimeout(() => mbar.classList.remove('shown'), ms);
+  mbarTimer = window.setTimeout(() => {
+    mbar.classList.remove('shown');
+    ubar.classList.remove('shown');
+  }, ms);
 }
 document.addEventListener('pointerdown', (e) => {
   if (!sheetMode()) return;
-  if (mbar.contains(e.target as Node) || e.clientY > window.innerHeight - 110) showBar();
+  if (mbar.contains(e.target as Node) || ubar.contains(e.target as Node) || e.clientY > window.innerHeight - 110) showBar();
 }, true);
 // On arrival, once, so you know where it lives.
 showBar(4500);
@@ -13046,6 +13124,22 @@ let pillIdx = 0;
 let pillTimer = 0;
 const pillKeys = () => fieldKnobKeys().filter((k) => knobSpec(k));
 const pillOpen = () => mbar.classList.contains('knobbing');
+function openKnobPill() {
+  pillPaint();
+  if (pill.classList.contains('empty')) {
+    if (knobPicks().length || baseKnobKeys().some((k) => knobSpec(k))) {
+      settings.playOn = true;
+      if (bypass.has('knobs')) setBypass('knobs', false);
+      changed(new Set<keyof Settings>(['playOn']));
+      setPillOpen(true);
+    } else {
+      openOverview();
+      ovEl?.querySelector<HTMLElement>('.ov-pickknobs')?.click();
+    }
+    return;
+  }
+  setPillOpen(true);
+}
 function setPillOpen(on: boolean) {
   mbar.classList.toggle('knobbing', on);
   closeKnobMenu();
@@ -13153,22 +13247,8 @@ mbar.querySelector('.mb-close')!.addEventListener('click', (e) => {
     const tap = st && !st.mode && e.type === 'pointerup' && performance.now() - st.t < 450;
     st = null;
     if (!tap) return;
-    // Folded: a tap opens it (or, with no knobs yet, the overview to pick some).
-    if (!pillOpen()) {
-      if (pill.classList.contains('empty')) {
-        if (knobPicks().length || baseKnobKeys().some((k) => knobSpec(k))) {
-          settings.playOn = true;
-          if (bypass.has('knobs')) setBypass('knobs', false);
-          changed(new Set<keyof Settings>(['playOn']));
-          setPillOpen(true);
-        } else {
-          openOverview();
-          ovEl?.querySelector<HTMLElement>('.ov-pickknobs')?.click();
-        }
-        return;
-      }
-      return setPillOpen(true);
-    }
+    // Folded: a tap opens it (or, with no knobs yet, the Deck to pick some).
+    if (!pillOpen()) return openKnobPill();
     const spec = knobSpec(pillKeys()[pillIdx] ?? '');
     // Tap the ‹ › (or − +) side to step; the middle of a choice opens its list.
     if (spec) {

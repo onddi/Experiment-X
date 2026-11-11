@@ -1891,3 +1891,40 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
 .fk-chip i { font-style: normal; opacity: 0.7; font-size: 11px; }
 .fk-chip.idle { border-style: dashed; opacity: 0.55; }
 .fk-chip.clear { border-color: transparent; background: none; color: var(--muted); padding-left: 6px; }
+
+/* --- One bottom bar for Stage, Deck and Studio (phones) -------------------- */
+.u-bar { display: none; }
+@media (max-width: 720px) {
+  /* The old per-view bars give way; the knob pill only shows while open. */
+  .m-bar:not(.knobbing) { display: none !important; }
+  .ov-foot { display: none !important; }
+  .panel .actionbar { display: none; }
+  .overview .ov-body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .panel .panel-body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+
+  .u-bar { display: flex; position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; align-items: center; gap: 8px; padding: 6px; border-radius: 26px; background: rgb(20 21 27 / 0.88); border: 1px solid rgb(255 255 255 / 0.12); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: opacity 0.4s; }
+  /* On Stage it stays hidden until you tap the bottom edge. */
+  .u-bar.stage:not(.shown) { opacity: 0; pointer-events: none; }
+  .u-bar.stage:not(.shown) * { pointer-events: none !important; }
+  body:has(.m-bar.knobbing) .u-bar, body.solo .u-bar, body:has(.tuner) .u-bar { display: none; }
+
+  .u-seg { position: relative; flex: none; display: flex; padding: 3px; border-radius: 20px; background: rgb(255 255 255 / 0.05); }
+  .u-seg button { position: relative; z-index: 1; width: 44px; height: 38px; padding: 0; border: 0; border-radius: 17px; background: none; color: rgb(255 255 255 / 0.55); display: grid; place-items: center; cursor: pointer; transition: color 0.2s; }
+  .u-seg button.on { color: #111; }
+  .u-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: 44px; border-radius: 17px; background: rgb(255 255 255 / 0.92); transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .u-seg svg, .u-tray svg { width: 18px; height: 18px; }
+  .u-tray { flex: 1; min-width: 0; display: flex; justify-content: flex-end; gap: 6px; }
+  .u-tray button { flex: none; height: 38px; min-width: 38px; padding: 0 12px; border: 0; border-radius: 19px; background: rgb(255 255 255 / 0.07); color: rgb(255 255 255 / 0.88); display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; animation: u-in 0.22s ease; }
+  .u-tray button:not(:has(span)) { padding: 0; width: 38px; }
+  .u-tray button.primary { background: var(--accent); color: var(--on-accent); }
+  .u-tray button.on { background: rgb(255 255 255 / 0.92); color: #111; }
+  @keyframes u-in { from { opacity: 0; transform: translateY(4px); } }
+
+  /* Studio's Pages: the page dock floats above the bar. */
+  body.u-pages .actionbar .dock-watch:first-child { display: none; }
+  body.u-pages .panel:not(.collapsed) .actionbar { display: block; position: fixed; left: 12px; right: 12px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 46; padding: 6px; border: 1px solid var(--line); border-radius: 18px; background: var(--page); box-shadow: 0 10px 30px rgb(0 0 0 / 0.4); }
+}
+@media (max-width: 720px) and (prefers-reduced-motion: reduce) {
+  .u-thumb, .u-seg button { transition: none; }
+  .u-tray button { animation: none; }
+}
