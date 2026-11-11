@@ -6567,6 +6567,7 @@ const playSettings = (): Partial<Settings> => ({
 
 // Presets go through here: they glide over (Morph) and can wait for the beat.
 function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
+  const blank = p === BLANK_SCENE;
   p = upgradeShape(p);
   // The scene playing until now: what it switched on goes when it does.
   const prev = currentMine?.settings ?? PRESETS.find(([n]) => n === lastSceneName)?.[1] ?? null;
@@ -6575,7 +6576,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
     currentMine = null;
     redrawMine();
   }
-  const target = sceneTarget(p, keepAudio, prev);
+  const target = blank ? blankTarget() : sceneTarget(p, keepAudio, prev);
   sceneBase = target;
   if (settings.beatSnap && reacting() && !opts.now) {
     pendingLook = { target, since: performance.now() };
@@ -6584,6 +6585,16 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
   morphTo(target, opts.morph);
 }
 
+// Blank is a clean start: the defaults and the blank look, with nothing
+// carried over (no camera inputs, music reactions, lenses or macros) but how
+// you play, your on-screen knobs and locked cards.
+function blankTarget(): Settings {
+  const S0 = settings as unknown as Record<string, unknown>;
+  const keep = ['morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch'];
+  const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
+  for (const k of lockedKeys()) target[k] = S0[k];
+  return target as unknown as Settings;
+}
 // The full settings a scene ends up as: the scene over the defaults, with
 // what carries over (sound setup, how you play, inputs, your lenses, locks).
 function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Settings> | null = null): Settings {
