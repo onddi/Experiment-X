@@ -1305,8 +1305,7 @@ body:not(.searching):not(.show-classic) .group[data-sec="lens"] .group-body > :n
 .ov-title em { order: 3; }
 .ov-step { flex: none; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--text); font: inherit; font-size: 20px; cursor: pointer; }
 .ov-step:hover { border-color: var(--accent); }
-.ov-xfstart { align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
-.ov-xfstart::before { content: 'A ↔ B  '; color: var(--accent-soft); font-weight: 600; }
+.ov-xfstart { font-size: 17px; color: var(--accent-soft); }
 .ov-xf { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .ov-side { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 6px; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: #16171c; }
 .ov-side.on { border-color: var(--accent); background: var(--accent-bg); }
@@ -1436,6 +1435,7 @@ body.watching .fab, body.watching #toggle, body.watching .panel, body.watching .
    original; Compact tightens everything; Dense packs knobs six to a row
    with the value inside the ring, choices two-up and switches as pills. */
 .ov-density { margin-left: auto; }
+.ov-xfstart + .ov-close, .ov-density + .ov-xfstart { margin-left: 0; }
 .ov-density svg { width: 20px; height: 20px; }
 .overview:not([data-density='roomy']) .ov-head { padding: 10px 12px; }
 .overview:not([data-density='roomy']) .ov-step { width: 38px; height: 38px; }

@@ -11269,8 +11269,10 @@ function openOverview() {
     // Start a crossfade from this scene to the next one along.
     const xfStart = document.createElement('button');
     xfStart.type = 'button';
-    xfStart.className = 'ov-xfstart';
-    xfStart.textContent = 'Crossfade with another scene';
+    xfStart.className = 'icon ov-xfstart';
+    xfStart.textContent = '⇄';
+    xfStart.title = 'Crossfade with another scene';
+    xfStart.setAttribute('aria-label', xfStart.title);
     xfStart.addEventListener('click', () => {
       const a: XfRef | null = currentMine ? { name: currentMine.name, mine: true } : lastSceneName ? { name: lastSceneName } : null;
       const from = a ?? sceneAfter(null, 0);
@@ -11284,7 +11286,8 @@ function openOverview() {
     // Every setting this scene changed, playable. Numbers are knobs (the
     // white dot is the scene's own value, double-tap to snap back), choices
     // step with ‹ ›, switches flip.
-    body.append(xfStart, renderRack());
+    head.querySelector('.ov-close')!.before(xfStart);
+    body.append(renderRack());
   }
   head.querySelector('.ov-close')!.addEventListener('click', closeOverview);
   // Density: how tightly the knobs, choices and switches pack (an experiment
@@ -11308,7 +11311,7 @@ function openOverview() {
     showDensity();
     showToast(OV_DENSITIES.find(([k]) => k === ovDensity)![1]);
   });
-  head.querySelector('.ov-close')!.before(dens);
+  (head.querySelector('.ov-xfstart') ?? head.querySelector('.ov-close')!).before(dens);
   // Phones: the overview fills the screen; Watch hides every menu, All
   // settings opens the tabs, ⇄ starts or stops a crossfade.
   const foot = document.createElement('div');
