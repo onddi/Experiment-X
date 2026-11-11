@@ -5925,7 +5925,7 @@ const CONTROLS: Control[] = [
     changed(new Set(['mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity']));
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
   { kind: 'section', id: 'play', label: 'Field knobs & gestures', tab: 'presets',
-    about: 'Five knobs along the bottom edge, two-finger drag and pinch, and the mouse wheel: turn settings with the menu closed.',
+    about: 'Knobs along the bottom edge (up to eight from each scene), two-finger drag and pinch, and the mouse wheel: turn settings with the menu closed.',
     summary: () => (!settings.playOn ? 'off' : knobPicks().length ? `your ${knobPicks().length} picked knobs${knobPicks().some(knobLive) ? '' : ' (none in this scene)'}` : settings.knobsFollow && settings.knobsScene ? 'the scene\'s knobs' : (knobSetName() ?? 'own mix')),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
   { kind: 'note', text: 'You picked these knobs yourself (the knob button on an overview setting), so they stay put through every scene and shuffle. Clear them to let each scene and shuffle bring its own again.', show: () => knobPicks().length > 0 },
@@ -12702,7 +12702,8 @@ function baseKnobKeys(): string[] {
 const knobPicks = () => settings.knobsPick.split(',').filter(Boolean);
 /** Knobs for what a scene is about: the lead amount of each card it uses
  * (its lens, shape, flocking, emitters, forces, depth, flow), then its
- * look (trail, speed, size, palette). Five at most, one per card. */
+ * look and two macros. Eight at most, one per card. */
+const SCENE_KNOBS = 8;
 function sceneKnobs(t: Settings): string[] {
   const S = t as unknown as Record<string, unknown>;
   const lensKey = LENS_KEYS.find((k) => !k.startsWith('audio') && k !== 'lensMusic' && (k === 'lensMirror' ? S[k] !== 'off' : k === 'lensTiles' ? (S[k] as number) >= 2 : (S[k] as number) > 0));
@@ -12725,12 +12726,14 @@ function sceneKnobs(t: Settings): string[] {
         return [k, c ? Math.abs((t[k] as number) - (DEFAULTS[k] as number)) / (c.max - c.min) : 0] as const;
       })
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 2)
+      .slice(0, 3)
       .map(([k]) => k),
-    'render', 'palette',
+    t.shape === 'pattern' && 'patForm',
+    // A macro moves a whole group of settings at once.
+    'mEnergy', 'palette', 'render', 'mDream',
   ];
   const out: string[] = [];
-  for (const k of cands) if (k && !out.includes(k) && knobSpec(k) && out.length < 5) out.push(k);
+  for (const k of cands) if (k && !out.includes(k) && knobSpec(k) && out.length < SCENE_KNOBS) out.push(k);
   return out;
 }
 /** Every field knob's setting, in row order. */
