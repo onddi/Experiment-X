@@ -10765,6 +10765,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     homeDot.setAttribute('cy', (26 + 20 * Math.sin(a)).toFixed(1));
     out.textContent = c.format ? c.format(v) : String(+v.toFixed(3));
     el.setAttribute('aria-valuetext', out.textContent);
+    out.classList.toggle('long', out.textContent.length > 5);
     el.classList.toggle('moved', Math.abs(v - home()) > c.step / 2);
   };
   // Drag right (or up, with a mouse) to turn it up; the whole travel is ~180 px.

@@ -1509,3 +1509,4 @@ body.solo .fab, body.solo #toggle, body.solo .panel, body.solo .hint, body.solo 
 .solo-sheet .rack-row { flex: 1; min-width: 0; }
 .solo-sheet .tuner-close { flex: none; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--tile); color: var(--label); font: inherit; font-size: 13px; }
 .overview .rack-row, .overview .rack-knob { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.overview[data-density='dense'] .rack-knob span.long { top: 20px; padding: 0 6px; font-size: 8px; letter-spacing: -0.02em; }
