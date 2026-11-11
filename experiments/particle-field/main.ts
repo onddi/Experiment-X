@@ -5923,7 +5923,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'playWheel4', label: 'Knob C', options: PLAYABLE },
   { kind: 'select', key: 'playRight', label: 'Knob D', options: PLAYABLE },
   { kind: 'select', key: 'playWheel5', label: 'Knob E', options: PLAYABLE },
-  { kind: 'note', text: 'Knobs A–E sit along the bottom of the field, left to right: slide a thumb up or down over one to play it, or hover the bottom edge to see them all. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D, ⌥ + wheel = E (Ctrl or Alt on Windows).' },
+  { kind: 'note', text: 'Knobs A–E sit along the bottom of the field, left to right: slide a thumb up or right over one to turn it up (down or left turns it down), or hover the bottom edge to see them all. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D, ⌥ + wheel = E (Ctrl or Alt on Windows).' },
   { kind: 'sub', label: 'Two fingers' },
   { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
@@ -12288,15 +12288,17 @@ for (const [at, sk] of KNOB_KEYS) {
   f.className = `fader ${at}`;
   f.append(knobs[at].el);
   const key = () => settings[sk];
-  let start: { y: number; v: number } | null = null;
+  let start: { x: number; y: number; v: number } | null = null;
   f.addEventListener('pointerdown', (e) => {
     f.setPointerCapture(e.pointerId);
-    start = { y: e.clientY, v: playBase(key()) };
+    start = { x: e.clientX, y: e.clientY, v: playBase(key()) };
     playShow(key());
   });
+  // Up or right turns it up, down or left turns it down: the knobs sit at the
+  // bottom edge, so sideways gives the room that up/down lacks.
   f.addEventListener('pointermove', (e) => {
     if (!start) return;
-    playNudge(key(), start.v, (start.y - e.clientY) / Math.max(200, stage.clientHeight * 0.32));
+    playNudge(key(), start.v, (start.y - e.clientY + (e.clientX - start.x)) / Math.max(200, stage.clientHeight * 0.32));
   });
   const end = () => {
     start = null;

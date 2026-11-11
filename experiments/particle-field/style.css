@@ -844,7 +844,7 @@ body.searching .tabs.pages { display: none; }
   grid-auto-columns: minmax(0, 1fr);
   pointer-events: none;
 }
-.fader { position: relative; pointer-events: auto; touch-action: none; cursor: ns-resize; }
+.fader { position: relative; pointer-events: auto; touch-action: none; cursor: move; }
 .fader[hidden] { display: none; }
 .knob {
   position: absolute;
