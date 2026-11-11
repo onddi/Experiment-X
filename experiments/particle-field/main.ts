@@ -5915,10 +5915,12 @@ const CONTROLS: Control[] = [
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
   { kind: 'section', id: 'play', label: 'Field knobs & gestures', tab: 'presets',
     about: 'Five knobs along the bottom edge, two-finger drag and pinch, and the mouse wheel: turn settings with the menu closed.',
-    summary: () => (!settings.playOn ? 'off' : knobPicks().length ? 'overview picks' : (knobSetName() ?? 'own mix')),
+    summary: () => (!settings.playOn ? 'off' : knobPicks().length ? 'overview picks' : settings.knobsFollow && settings.knobsScene ? 'the scene\'s knobs' : (knobSetName() ?? 'own mix')),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
   { kind: 'note', text: 'Knobs you picked in the overview are playing instead of the set below. Clear them to bring the set back.', show: () => knobPicks().length > 0 },
   { kind: 'buttons', buttons: [['Clear overview picks', () => clearKnobPicks()]], show: () => knobPicks().length > 0 },
+  { kind: 'toggle', key: 'knobsFollow', label: 'Knobs follow the scene (each scene and shuffle brings its own)' },
+  { kind: 'note', text: 'Each scene and each shuffle sets knobs for what it is about (its shape, motion, lens…). Your set below plays when this is off.', show: () => settings.knobsFollow && !knobPicks().length },
   { kind: 'sub', label: 'Knob set' },
   { kind: 'buttons', buttons: KNOB_SETS.map(([name, keys]): [string, () => void] => [name, () => useKnobSet(keys)]), active: (t) => knobSetName() === t },
   ...KNOB_SETS.map(([name, , text]): Control => ({ kind: 'note', text, show: () => knobSetName() === name })),
@@ -6577,6 +6579,8 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
     redrawMine();
   }
   const target = blank ? blankTarget() : sceneTarget(p, keepAudio, prev);
+  // The scene's own knobs (your saved scenes bring theirs).
+  if (!(typeof p.knobsScene === 'string' && p.knobsScene)) target.knobsScene = sceneKnobs(target).join(',');
   sceneBase = target;
   if (settings.beatSnap && reacting() && !opts.now) {
     pendingLook = { target, since: performance.now() };
@@ -6590,7 +6594,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 // you play, your on-screen knobs and locked cards.
 function blankTarget(): Settings {
   const S0 = settings as unknown as Record<string, unknown>;
-  const keep = ['morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch'];
+  const keep = ['morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'playTwo', 'playPinch'];
   const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
   for (const k of lockedKeys()) target[k] = S0[k];
   return target as unknown as Settings;
@@ -6611,7 +6615,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -12216,6 +12220,11 @@ function shuffle(again?: unknown) {
       keys.add(k as keyof Settings);
     }
   }
+  const kn = sceneKnobs(settings).join(',');
+  if (kn !== settings.knobsScene) {
+    settings.knobsScene = kn;
+    keys.add('knobsScene');
+  }
   try {
     localStorage.setItem(REMIX_KEY, JSON.stringify([...remixTally(), used].slice(-30)));
   } catch {
@@ -12647,10 +12656,36 @@ function baseKnobKeys(): string[] {
 }
 /** Picks made in the overview; while there are any they replace your set. */
 const knobPicks = () => settings.knobsPick.split(',').filter(Boolean);
+/** Knobs for what a scene is about: the lead amount of each card it uses
+ * (its lens, shape, flocking, emitters, forces, depth, flow), then its
+ * look (trail, speed, size, palette). Five at most, one per card. */
+function sceneKnobs(t: Settings): string[] {
+  const S = t as unknown as Record<string, unknown>;
+  const lensKey = LENS_KEYS.find((k) => !k.startsWith('audio') && k !== 'lensMusic' && (k === 'lensMirror' ? S[k] !== 'off' : k === 'lensTiles' ? (S[k] as number) >= 2 : (S[k] as number) > 0));
+  const shapeSub: Record<string, string> = { geo: 'shapeGeo', solid: 'shapeSolid', pattern: 'shapePattern', icon: 'shapeIcon' };
+  const cands: (string | false | undefined)[] = [
+    lensKey,
+    t.shape !== 'none' && 'shapeSize',
+    shapeSub[t.shape],
+    (t.flock > 0 || t.space > 0) && (t.flock > 0 ? 'flock' : 'space'),
+    t.emitter !== 'none' && 'emitRate',
+    t.lifespan > 0 && t.emitter === 'none' && 'lifespan',
+    t.wind > 0 ? 'wind' : t.gravity !== 0 ? 'gravity' : t.wells ? 'wellForce' : false,
+    t.depth > 0 && 'depth',
+    t.flow > 0 && 'flow',
+    t.render === 'glyphs' ? 'glyphScale' : t.render === 'links' ? 'linkDist' : t.render === 'ribbons' ? 'ribbonLen' : false,
+    'trail', 'speed', 'size', 'palette',
+  ];
+  const out: string[] = [];
+  for (const k of cands) if (k && !out.includes(k) && knobSpec(k) && out.length < 5) out.push(k);
+  return out;
+}
 /** Every field knob's setting, in row order. */
 function fieldKnobKeys(): string[] {
   const picks = knobPicks();
-  return picks.length ? picks : baseKnobKeys();
+  if (picks.length) return picks;
+  const scene = settings.knobsFollow ? settings.knobsScene.split(',').filter((k) => knobSpec(k)) : [];
+  return scene.length ? scene : baseKnobKeys();
 }
 function clearKnobPicks() {
   settings.knobsPick = '';
@@ -12860,6 +12895,8 @@ function syncFieldKnobs() {
   playRow.style.setProperty('--n', String(Math.max(1, shown)));
   playRow.classList.toggle('many', shown > 5);
 }
+// Opened without a scene's knobs yet: the ones for what's on screen.
+if (!settings.knobsScene) settings.knobsScene = sceneKnobs(settings).join(',');
 refreshers.push(syncFieldKnobs);
 syncFieldKnobs();
 // Phones: one bar along the bottom: Overview, Scenes, Menu, Shuffle and

@@ -140,6 +140,10 @@ export interface Settings {
   knobsMore: string;
   /** Knobs picked in the overview: while set, they replace the knob set. */
   knobsPick: string;
+  /** Knobs chosen for the scene playing (what it's about): comma-separated keys. */
+  knobsScene: string;
+  /** The knobs follow the scene (its own knobs) instead of your set. */
+  knobsFollow: boolean;
   shapeSize: number;
   homeStrength: number;
   shapeCycle: number;
@@ -453,6 +457,8 @@ export const DEFAULTS: Settings = {
   playWheel5: 'mDensity',
   knobsMore: '',
   knobsPick: '',
+  knobsScene: '',
+  knobsFollow: true,
   shapeSize: 0.8,
   homeStrength: 1,
   shapeCycle: 0,
