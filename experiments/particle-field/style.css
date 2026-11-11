@@ -1733,3 +1733,4 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 #panel[data-view='list'] .rk .rack-row .rack-switch[aria-pressed='true']::after { left: 17px; background: var(--on-accent); }
 .panel header .view-btn svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
 .panel.collapsed header .view-btn { display: none; }
+.panel.collapsed :is(.scene-strip, .react-sub, .dock-more) { display: none !important; }
