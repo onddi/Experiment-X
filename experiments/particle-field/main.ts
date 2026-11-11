@@ -7293,7 +7293,10 @@ function renderKnobsMore() {
   };
   const set = (list: string[]) => {
     settings.knobsMore = list.filter(Boolean).join(',');
-    if (settings.knobsMore) settings.playOn = true;
+    if (settings.knobsMore) {
+      settings.playOn = true;
+      if (bypass.has('knobs')) setBypass('knobs', false);
+    }
     changed(new Set<keyof Settings>(['knobsMore', 'playOn']));
   };
   const build = () => {
@@ -12421,7 +12424,11 @@ function toggleFieldKnob(key: string) {
   const picks = knobPicks();
   const on = !picks.includes(key);
   settings.knobsPick = (on ? [...picks, key] : picks.filter((k) => k !== key)).join(',');
-  if (on) settings.playOn = true;
+  if (on) {
+    settings.playOn = true;
+    // The whole Controls page switched off would hide them: switch it on.
+    if (bypass.has('knobs')) setBypass('knobs', false);
+  }
   changed(new Set<keyof Settings>(['knobsPick', 'playOn']));
   return on;
 }
