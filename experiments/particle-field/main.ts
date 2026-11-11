@@ -13058,6 +13058,8 @@ function pillPaint(wake = false) {
     pill.querySelector('.sp-val')!.textContent = '';
     return;
   }
+  // A new set of knobs (scene change, shuffle) starts from the first one.
+  if (chips.dataset.sig !== undefined && chips.dataset.sig !== keys.join()) pillIdx = 0;
   pillIdx = Math.min(pillIdx, keys.length - 1);
   const key = keys[pillIdx];
   const r = knobSpec(key)!;
