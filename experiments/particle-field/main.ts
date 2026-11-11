@@ -7023,6 +7023,16 @@ const TL_SETS: [string, TlClip[]][] = [
   ['Murmuration', [clip('A few birds', 8, 'fade'), clip('Flock', 8, 'grow'), clip('Murmuration', 8, 'morph'), clip('The split', 8, 'morph'), clip('Sky shapes', 8, 'whirl'), clip('Scatter', 4, 'drop')]],
   ['Word story', []],
   ['Journey', [clip('Deep space', 8, 'slow'), clip('Galaxy', 8, 'morph'), clip('Black hole', 4, 'drop'), clip('Mandala', 8, 'morph'), clip('Pollen', 8, 'slow')]],
+  // A short tour of every way to change scene, two bars each.
+  ['Every transition', [clip('Galaxy', 2, 'cut'), clip('Silk', 2, 'morph'), clip('Embers', 2, 'slow'), clip('Mandala', 2, 'gather'), clip('Black hole', 2, 'implode'), clip('Fireworks', 2, 'drop'), clip('Northern lights', 2, 'fade'), clip('Snowfall', 2, 'flash'), clip('Prism', 2, 'whirl'), clip('Sunflower', 2, 'grow'), clip('Ink', 2, 'wipe'), clip('Comet shower', 2, 'freeze'), clip('Neon storm', 2, 'shatter'), clip('Nebula', 4, 'vslow')]],
+  ['Hip hop', [clip('Neon storm', 4, 'cut'), clip('Shatter', 2, 'drop'), clip('Pulse rings', 4, 'cut'), clip('Warp speed', 4, 'flash'), clip('Neon sign', 4, 'shatter'), clip('Fireworks', 2, 'drop'), clip('Digital rain', 4, 'wipe'), clip('Black hole', 4, 'implode')]],
+  ['Four elements', [clip('Campfire', 8, 'gather'), clip('Waterfall', 8, 'wipe'), clip('Sandstorm', 8, 'whirl'), clip('Wind tunnel', 8, 'morph'), clip('Prism', 8, 'flash')]],
+  ['Fire and ice', [clip('Embers', 8, 'fade'), clip('Sparkler', 4, 'flash'), clip('Campfire', 8, 'morph'), clip('Snowfall', 8, 'freeze'), clip('Northern lights', 8, 'slow'), clip('Bubbles', 8, 'morph')]],
+  ['Signal', [clip('Dot matrix', 4, 'cut'), clip('Digital rain', 8, 'wipe'), clip('ASCII', 4, 'flash'), clip('Weather map', 8, 'morph'), clip('Compass', 4, 'whirl'), clip('Runes', 8, 'shatter')]],
+  ['Garden', [clip('Pond', 8, 'fade'), clip('Sunflower', 8, 'grow'), clip('Pollen', 8, 'slow'), clip('Fireflies', 8, 'morph'), clip('Lattice', 8, 'morph'), clip('Halo', 8, 'slow')]],
+  ['Swarms', [clip('Midges', 8, 'fade'), clip('School of fish', 8, 'morph'), clip('Starlings', 8, 'morph'), clip('Marbles', 4, 'drop'), clip('Crowd', 8, 'gather'), clip('Orbit', 8, 'whirl')]],
+  ['Ink and paper', [clip('Ink', 8, 'fade'), clip('Marbled paper', 8, 'slow'), clip('Smoke writing', 8, 'morph'), clip('Typewriter', 4, 'cut'), clip('Silk ribbons', 8, 'wipe'), clip('Dusk', 8, 'vslow')]],
+  ['Lullaby', [clip('Bokeh', 16, 'vslow'), clip('Fireflies', 16, 'vslow'), clip('Pond', 16, 'vslow'), clip('Starry night', 16, 'vslow'), clip('Deep space', 16, 'vslow')]],
 ];
 // Word story: your words one at a time, each in its own lettering, with a
 // short abstract scene between them.
