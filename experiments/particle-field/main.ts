@@ -10531,7 +10531,11 @@ watchBar.innerHTML = `<button type="button" class="watch-scene" aria-label="Back
 watchBar.querySelector('.watch-scene')!.addEventListener('click', stopWatching);
 watchBar.querySelector('.watch-shuffle')!.addEventListener('click', () => shuffle());
 document.querySelector('.stage')!.append(watchBar);
+// Where the overview was scrolled to, so coming back from Watch lands on the
+// same knobs.
+let watchScroll = 0;
 function startWatching() {
+  watchScroll = ovEl?.querySelector('.ov-body')?.scrollTop ?? 0;
   closeOverview();
   if (!panel.classList.contains('collapsed')) toggle.click();
   document.body.classList.add('watching');
@@ -10540,6 +10544,8 @@ function startWatching() {
 function stopWatching() {
   document.body.classList.remove('watching');
   openOverview();
+  const body = ovEl?.querySelector<HTMLElement>('.ov-body');
+  if (body) body.scrollTop = watchScroll;
 }
 {
   let sw: { x: number; y: number; t: number } | null = null;
