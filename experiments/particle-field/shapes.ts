@@ -487,6 +487,10 @@ export const SOLID_SHAPES: [string, string][] = [
   ['saturn', 'Ringed planet'], ['atom', 'Atom'], ['knot', 'Trefoil knot'], ['mobius', 'Möbius strip'], ['icosa', 'Icosahedron (wire)'],
   ['cubeframe', 'Cube (wire)'], ['pyramid', 'Pyramid'], ['cone', 'Cone'], ['shell', 'Seashell'], ['ripple', 'Ripple'], ['galaxy', 'Spiral galaxy'],
   ['heart3d', 'Heart'], ['dna', 'Spring'],
+  ['octa', 'Octahedron (wire)'], ['dodeca', 'Dodecahedron (wire)'], ['star3d', 'Spiky star'],
+  ['lissajous', 'Lissajous knot'], ['torusknot', 'Torus knot'], ['klein', 'Klein bottle'],
+  ['flower', 'Flower'], ['tornado', 'Tornado'], ['jelly', 'Jellyfish'],
+  ['hourglass', 'Hourglass'], ['crystals', 'Crystal cluster'], ['gyro', 'Gyroscope'],
 ];
 type V3 = [number, number, number];
 const lerp3 = (a: V3, b: V3, f: number): V3 => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
@@ -511,6 +515,37 @@ const CUBE: V3[] = [];
 for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) CUBE.push([x * 0.6, y * 0.6, z * 0.6]);
 const CUBE_EDGES: [number, number][] = [];
 for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) if ([0, 1, 2].filter((d) => CUBE[i][d] !== CUBE[j][d]).length === 1) CUBE_EDGES.push([i, j]);
+
+const OCTA: V3[] = [[0.85, 0, 0], [-0.85, 0, 0], [0, 0.85, 0], [0, -0.85, 0], [0, 0, 0.85], [0, 0, -0.85]];
+const OCTA_EDGES: [number, number][] = [];
+for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) if (Math.floor(i / 2) !== Math.floor(j / 2)) OCTA_EDGES.push([i, j]);
+const DODECA: V3[] = (() => {
+  const raw: V3[] = [];
+  for (const a of [-1, 1]) for (const b of [-1, 1]) {
+    for (const c of [-1, 1]) raw.push([a, b, c]);
+    raw.push([0, a / PHI, b * PHI], [a / PHI, b * PHI, 0], [a * PHI, 0, b / PHI]);
+  }
+  const n = Math.sqrt(3) / 0.85;
+  return raw.map(([x, y, z]) => [x / n, y / n, z / n]);
+})();
+const DODECA_EDGES: [number, number][] = (() => {
+  const e: [number, number][] = [];
+  const L = (2 / PHI) * (0.85 / Math.sqrt(3));
+  for (let i = 0; i < 20; i++) for (let j = i + 1; j < 20; j++) if (Math.abs(Math.hypot(DODECA[i][0] - DODECA[j][0], DODECA[i][1] - DODECA[j][1], DODECA[i][2] - DODECA[j][2]) - L) < 0.01) e.push([i, j]);
+  return e;
+})();
+// The icosahedron's 20 faces, each grown into a spike for the star.
+const ICO_FACES: [number, number, number][] = (() => {
+  const f: [number, number, number][] = [];
+  const near = (i: number, j: number) => ICO_EDGES.some(([a, b]) => (a === i && b === j) || (a === j && b === i));
+  for (let i = 0; i < 12; i++) for (let j = i + 1; j < 12; j++) for (let k = j + 1; k < 12; k++) if (near(i, j) && near(j, k) && near(i, k)) f.push([i, j, k]);
+  return f;
+})();
+// Crystal cluster: direction, length and thickness of each crystal.
+const CRYSTALS: [V3, number, number][] = [
+  [[0, -1, 0], 1.45, 0.2], [[0.55, -0.8, 0.2], 1.15, 0.17], [[-0.6, -0.75, -0.1], 1.05, 0.16],
+  [[0.1, -0.7, 0.7], 0.9, 0.14], [[-0.25, -0.6, -0.75], 0.85, 0.13], [[0.8, -0.45, -0.4], 0.7, 0.12],
+];
 
 /** A point on a 3D solid about 1 across, from two random numbers. */
 export function solidPoint(type: string, u: number, v: number): [number, number, number] {
@@ -622,6 +657,127 @@ export function solidPoint(type: string, u: number, v: number): [number, number,
       const r = 0.08 + 0.92 * u;
       const a = arm * Math.PI + r * 4.2 + (((v * 2) % 1) - 0.5) * 0.5;
       return [Math.cos(a) * r, (((v * 7) % 1) - 0.5) * 0.08 * (1 - r), Math.sin(a) * r];
+    }
+    case 'octa':
+      return onEdges(OCTA, OCTA_EDGES, u);
+    case 'dodeca':
+      return onEdges(DODECA, DODECA_EDGES, u);
+    case 'star3d': {
+      // A spike on each face of an icosahedron: points on the spike's three sides.
+      const [k, f] = pick(u, ICO_FACES.length * 3);
+      const face = ICO_FACES[Math.floor(k / 3)];
+      const s = k % 3;
+      const a = ICO[face[s]].map((x) => x * 0.48) as V3;
+      const b = ICO[face[(s + 1) % 3]].map((x) => x * 0.48) as V3;
+      const c = ICO[face[0]].map((x, i) => (x + ICO[face[1]][i] + ICO[face[2]][i]) / 3) as V3;
+      const n = Math.hypot(...c);
+      const tip: V3 = [(c[0] / n) * 0.95, (c[1] / n) * 0.95, (c[2] / n) * 0.95];
+      const t = Math.sqrt(v);
+      return lerp3(tip, lerp3(a, b, f), t);
+    }
+    case 'lissajous': {
+      const t = u * TAU;
+      const c: V3 = [Math.cos(3 * t + 0.7), Math.cos(2 * t + 0.2), Math.cos(7 * t)];
+      const b = v * TAU;
+      const w = 0.05;
+      return [c[0] * 0.62 + Math.cos(b) * w, c[1] * 0.62 + Math.sin(b) * w, c[2] * 0.62 + Math.cos(b + 2) * w];
+    }
+    case 'torusknot': {
+      const t = u * TAU;
+      const r = Math.cos(5 * t) + 2.2;
+      const c: V3 = [r * Math.cos(2 * t), -Math.sin(5 * t), r * Math.sin(2 * t)];
+      const b = v * TAU;
+      const w = 0.22;
+      return [(c[0] + Math.cos(b) * w) / 3.4, (c[1] + Math.sin(b) * w) / 3.4, (c[2] + Math.cos(b + 1) * w) / 3.4];
+    }
+    case 'klein': {
+      // The figure-8 Klein bottle.
+      const a = u * TAU;
+      const b = v * TAU;
+      const r = 2.2 + Math.cos(a / 2) * Math.sin(b) - Math.sin(a / 2) * Math.sin(2 * b);
+      return [(r * Math.cos(a)) / 3.4, (Math.sin(a / 2) * Math.sin(b) + Math.cos(a / 2) * Math.sin(2 * b)) / 3.4, (r * Math.sin(a)) / 3.4];
+    }
+    case 'flower': {
+      if (v < 0.1) {
+        // The middle: a small dome.
+        const r = Math.sqrt(u) * 0.16;
+        const b = (v / 0.1) * TAU;
+        return [Math.cos(b) * r, -0.05 - (0.16 - r) * 0.6, Math.sin(b) * r];
+      }
+      const t = u * TAU;
+      const R = 0.88 * Math.abs(Math.cos(3 * t)) ** 0.7;
+      const s = Math.sqrt((v - 0.1) / 0.9) * R;
+      return [Math.cos(t) * s, 0.05 - s * s * 0.55, Math.sin(t) * s];
+    }
+    case 'tornado': {
+      const h = u;
+      const r = 0.06 + 0.62 * h * h;
+      const a = v * TAU + h * 9;
+      return [Math.cos(a) * r + Math.sin(h * 6) * 0.08, 0.9 - h * 1.8, Math.sin(a) * r];
+    }
+    case 'jelly': {
+      if (v < 0.55) {
+        // The bell: a dome with a scalloped rim.
+        const b = (v / 0.55) * TAU;
+        const p = Math.sqrt(u) * 1.35;
+        const r = Math.sin(p) * 0.62 * (1 + 0.06 * Math.cos(b * 8) * (p / 1.35));
+        return [Math.cos(b) * r, -0.15 - Math.cos(p) * 0.5, Math.sin(b) * r];
+      }
+      // Eight wavy tentacles.
+      const k = Math.floor(((v - 0.55) / 0.45) * 8);
+      const a = (k / 8) * TAU;
+      const y = u;
+      const r = 0.45 - y * 0.12;
+      const sway = Math.sin(y * 9 + k) * 0.08;
+      return [Math.cos(a) * r + sway, -0.05 + y * 0.95, Math.sin(a) * r + Math.cos(y * 7 + k) * 0.06];
+    }
+    case 'hourglass': {
+      if (v < 0.16) {
+        // The two caps.
+        const r = Math.sqrt(u) * 0.62;
+        const b = (v / 0.16) * TAU * 2;
+        return [Math.cos(b) * r, v < 0.08 ? -0.88 : 0.88, Math.sin(b) * r];
+      }
+      const y = u * 2 - 1;
+      const r = 0.07 + 0.5 * y * y;
+      const b = ((v - 0.16) / 0.84) * TAU;
+      return [Math.cos(b) * r, y * 0.85, Math.sin(b) * r];
+    }
+    case 'crystals': {
+      const [k, f] = pick(v, CRYSTALS.length);
+      const [d0, len, th] = CRYSTALS[k];
+      const n = Math.hypot(...d0);
+      const d: V3 = [d0[0] / n, d0[1] / n, d0[2] / n];
+      // Two directions across the crystal.
+      const up: V3 = Math.abs(d[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+      const e1: V3 = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]];
+      const m = Math.hypot(...e1);
+      e1[0] /= m; e1[1] /= m; e1[2] /= m;
+      const e2: V3 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2], d[0] * e1[1] - d[1] * e1[0]];
+      // Six flat sides, pointed for the last quarter.
+      const side = Math.floor(f * 6);
+      const g = f * 6 - side;
+      const a0 = (side / 6) * TAU;
+      const a1 = ((side + 1) / 6) * TAU;
+      const cx = Math.cos(a0) * (1 - g) + Math.cos(a1) * g;
+      const cy = Math.sin(a0) * (1 - g) + Math.sin(a1) * g;
+      const w = th * (u > 0.75 ? (1 - u) / 0.25 : 1);
+      const L = u * len;
+      return [0, 0.75, 0].map((o, i) => o + d[i] * L + (e1[i] * cx + e2[i] * cy) * w) as V3;
+    }
+    case 'gyro': {
+      if (v < 0.08) return [0, (u * 2 - 1) * 0.95, 0]; // the axle
+      if (v < 0.22) {
+        // The spinning disc.
+        const r = Math.sqrt(u) * 0.42;
+        const b = ((v - 0.08) / 0.14) * TAU;
+        return [Math.cos(b) * r, 0, Math.sin(b) * r];
+      }
+      const ring = Math.min(2, Math.floor(((v - 0.22) / 0.78) * 3));
+      const a = u * TAU;
+      const r = [0.9, 0.76, 0.62][ring];
+      const [c, s] = [Math.cos(a) * r, Math.sin(a) * r];
+      return ring === 0 ? [c, s, 0] : ring === 1 ? [0, c, s] : [c * 0.8 + s * 0.2, s * 0.3, s * 0.95 - c * 0.2];
     }
     case 'heart3d': {
       // A puffy heart: slices of the outline, smaller towards front and back.
