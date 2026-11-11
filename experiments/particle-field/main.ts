@@ -11286,7 +11286,7 @@ applySheet();
   head.addEventListener('click', (e) => { if (eatClick) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
 // In X-Frame, only one layer's options panel is open at a time.
-xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click() });
+xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click(), open: () => toggle.click() });
 
 // ⌘K / Ctrl+K (or /) finds any setting: opens the panel and the search field.
 function focusSearch() {

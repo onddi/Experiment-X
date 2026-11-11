@@ -232,6 +232,11 @@ function cycleMouse() {
   if (stacked.length < 2) return;
   const next = stacked[(stacked.indexOf(inputLayer(view)) + 1) % stacked.length];
   updateView((v) => { v.input = next; });
+  // Hand the menu over with the mouse: close the others, open this layer's options.
+  const win = frames.get(view.layers[next].slug)?.contentWindow;
+  closePanels(win ?? undefined);
+  openPanel(false);
+  win?.postMessage({ type: 'xp:open-panel' }, location.origin);
 }
 
 function addLayer(slug: string, placement: Placement = 'full') {

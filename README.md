@@ -150,7 +150,7 @@ false since that layer can't be clicked anyway.
 **One options panel at a time.** Register your options panel with
 `xframe.panel({ element, isOpen, close })`. When it opens, X-Frame closes the
 other layers' panels and its own Layers panel; when another one opens, X-Frame calls
-your `close`. (Messages: `xp:panel` from the experiment, `xp:close-panel` to it.)
+your `close`. Pass `open` as well, and tapping the mouse chip opens your panel when the mouse moves to your layer (closing the rest). (Messages: `xp:panel` from the experiment, `xp:close-panel` and `xp:open-panel` to it.)
 
 ## Data bus
 

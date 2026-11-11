@@ -14,7 +14,7 @@
  *   xframe.onLayer((layer) => document.body.classList.toggle('see-through', layer.role === 'stacked'));
  *
  *   // Only one options panel open at a time across layers.
- *   xframe.panel({ element: panelEl, isOpen: () => !panelEl.classList.contains('collapsed'), close: () => hidePanel() });
+ *   xframe.panel({ element: panelEl, isOpen: () => !panelEl.classList.contains('collapsed'), close: hidePanel, open: showPanel });
  *
  *   // Hand the screen to another experiment, and get it back.
  *   xframe.handover('particle-field', { preset: '3' });
@@ -50,6 +50,7 @@ const subs = new Map<string, Set<Handler>>();
 const layerHandlers = new Set<(layer: LayerInfo) => void>();
 const releaseHandlers = new Set<() => void>();
 const closePanelHandlers = new Set<() => void>();
+const openPanelHandlers = new Set<() => void>();
 const listWaiters: ((list: ExperimentInfo[]) => void)[] = [];
 let layer: LayerInfo = { role: inFrame ? 'base' : 'standalone', placement: 'full', index: 0, count: 1, input: true };
 
@@ -68,6 +69,8 @@ if (inFrame) {
       layerHandlers.forEach((h) => h(layer));
     } else if (msg?.type === 'xp:close-panel') {
       closePanelHandlers.forEach((h) => h());
+    } else if (msg?.type === 'xp:open-panel') {
+      openPanelHandlers.forEach((h) => h());
     } else if (msg?.type === 'xp:release') {
       releaseHandlers.forEach((h) => h());
     } else if (msg?.type === 'xp:list' && Array.isArray(msg.experiments)) {
@@ -137,25 +140,32 @@ export const xframe = {
    * closes the others (and its own Layers panel), and asks you to close yours
    * when another one opens. While yours is open, layers stacked above you fade
    * back so it stays readable. When several experiments are on screen, X-Frame
-   * also closes panels as they load, so a shared link opens clean. Watches `element` for attribute changes and calls
-   * `isOpen()` to tell open from closed. Returns a function that stops it.
+   * also closes panels as they load, so a shared link opens clean. Pass `open`
+   * too and X-Frame opens your panel when the mouse is handed to your layer.
+   * Watches `element` for attribute changes and calls `isOpen()` to tell open
+   * from closed. Returns a function that stops it.
    */
-  panel({ element, isOpen, close }: { element: Element; isOpen: () => boolean; close: () => void }): () => void {
+  panel({ element, isOpen, close, open }: { element: Element; isOpen: () => boolean; close: () => void; open?: () => void }): () => void {
     if (!inFrame) return () => {};
-    let open = isOpen();
+    let wasOpen = isOpen();
     const observer = new MutationObserver(() => {
       const now = isOpen();
-      if (now !== open) send({ type: 'xp:panel', open: now });
-      open = now;
+      if (now !== wasOpen) send({ type: 'xp:panel', open: now });
+      wasOpen = now;
     });
     observer.observe(element, { attributes: true });
     const onClose = () => {
       if (isOpen()) close();
     };
+    const onOpen = () => {
+      if (open && !isOpen()) open();
+    };
     closePanelHandlers.add(onClose);
+    openPanelHandlers.add(onOpen);
     return () => {
       observer.disconnect();
       closePanelHandlers.delete(onClose);
+      openPanelHandlers.delete(onOpen);
     };
   },
 

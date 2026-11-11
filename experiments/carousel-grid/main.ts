@@ -1108,7 +1108,7 @@ toggle.addEventListener('click', () => {
 });
 if (window.innerWidth < 720) toggle.click();
 // In X-Frame, only one layer's options panel is open at a time.
-xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click() });
+xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click(), open: () => toggle.click() });
 
 renderControls();
 build();

@@ -1317,7 +1317,7 @@ function setPanel(open: boolean) {
 }
 toggle.addEventListener('click', () => setPanel(panel.classList.contains('collapsed')));
 // In X-Frame, only one layer's options panel is open at a time.
-xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => setPanel(false) });
+xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => setPanel(false), open: () => setPanel(true) });
 if (window.matchMedia('(max-width: 720px)').matches) setPanel(false);
 
 window.addEventListener('keydown', (e) => {
