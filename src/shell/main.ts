@@ -650,8 +650,11 @@ shellSubscribe('play', syncPlayAll);
 function hideStart() {
   startBtn.hidden = true;
 }
+/** Until this time, keep everything that hooks into 'play' in step with the player starting up. */
+let settleUntil = 0;
 function startAll() {
   hideStart();
+  settleUntil = performance.now() + 4000;
   shellPublish('play', { playing: true });
   shellPublish('transport.command', { action: 'play' });
 }
@@ -663,15 +666,21 @@ shellSubscribe('transport', (data) => {
   if (t?.playing) {
     autostart = false;
     hideStart();
+    // Right after starting, a player can still send a stale "paused" (e.g. while
+    // its track finishes loading) that pauses the other layers. Once it really
+    // plays, make sure everyone else plays too.
+    const shared = lastValue('play') as { playing?: boolean } | undefined;
+    if (performance.now() < settleUntil && shared?.playing === false) shellPublish('play', { playing: true });
     return;
   }
   if (!autostart || !(t?.duration && t.duration > 0)) return;
   autostart = false;
-  startAll();
+  // Let the player finish setting up its track before asking it to play.
+  setTimeout(startAll, 250);
   // Still paused a moment later: the browser wants a tap first.
   setTimeout(() => {
     if (!(lastValue('transport') as { playing?: boolean } | undefined)?.playing) startBtn.hidden = false;
-  }, 900);
+  }, 1200);
 });
 window.setInterval(syncPlayAll, 1000);
 layersBtn.addEventListener('click', () => openPanel(!!panel.hidden));
