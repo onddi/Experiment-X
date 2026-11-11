@@ -5471,9 +5471,9 @@ const TAB_ICONS: Record<Tab, string> = {
   links: '<path d="M10.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1M13.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/>',
 };
 const INTENTS: [Intent, string, Tab[]][] = [
-  ['create', 'Create', ['look', 'shape', 'motion']],
-  ['perform', 'Perform', ['presets', 'timeline', 'xfader', 'knobs', 'record']],
+  ['create', 'Edit', ['shape', 'motion', 'look']],
   ['react', 'React', ['music', 'camera', 'links']],
+  ['perform', 'Play', ['presets', 'timeline', 'xfader', 'knobs', 'record']],
 ];
 const intentOf = (tab: Tab) => INTENTS.find(([, , tabs]) => tabs.includes(tab))![0];
 // Cards that sit on their own page rather than the tab they were written for.
@@ -5507,7 +5507,7 @@ type ControlBody =
   | { kind: 'multi'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'text'; key: keyof Settings; label: string; placeholder?: string }
   | { kind: 'buttons'; buttons: [string, () => void][]; active?: (text: string) => boolean; limit?: number }
-  | { kind: 'icons'; buttons: [string, string, () => void][] }
+  | { kind: 'icons'; buttons: [string, string, () => void, string?, Tab?][] }
   | { kind: 'note'; text: string }
   | { kind: 'swatch' }
   | { kind: 'audio' };
@@ -6358,14 +6358,16 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'actions', label: 'Actions', fixed: true },
   {
     kind: 'icons',
+    // The dock: the performance pages on the left, then the actions you
+    // reach for mid-set; the rarer ones wait under ⋯.
     buttons: [
-      ['Pause (Space)', ICONS.pause, togglePause],
-      ['Gather to the centre (A)', ICONS.gather, toggleGather],
-      ['Explode from the centre (E)', ICONS.explode, () => explode()],
-      ['Scatter (S)', ICONS.scatter, scatter],
-      ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle],
-      ['Record a clip (V)', ICONS.record, toggleRecord],
-      ['Reset to defaults and clear locks', ICONS.reset, reset],
+      ['Knobs', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Knobs', 'knobs'],
+      ['Timeline', svg(TAB_ICONS.timeline), () => showTab('timeline'), 'Timeline', 'timeline'],
+      ['Crossfader', svg(TAB_ICONS.xfader), () => showTab('xfader'), 'Fader', 'xfader'],
+      ['Record a clip (V)', ICONS.record, toggleRecord, 'Record'],
+      ['Pause (Space)', ICONS.pause, togglePause, 'Pause'],
+      ['Shuffle, keeps locked sections (D)', ICONS.shuffle, shuffle, 'Shuffle'],
+      ['More actions', svg('<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/>'), () => toggleDockMore(), 'More'],
     ],
   },
 ];
@@ -8510,6 +8512,46 @@ const SEARCH_WORDS: Partial<Record<keyof Settings, string>> = {
 const TAB_KEY = 'particle-field:tab';
 const MORE_KEY = 'particle-field:more';
 const tabButtons: [Tab, HTMLButtonElement][] = [];
+// S1: one React tab holds Music, Camera and Connections, picked by chips.
+const REACT_TABS: Tab[] = ['music', 'camera', 'links'];
+let lastReact: Tab = 'music';
+const reactSub: [Tab, HTMLButtonElement][] = [];
+// The dock's page buttons light up while their page is open.
+const dockTabs: [Tab, HTMLButtonElement][] = [];
+let dockMoreBtn: HTMLButtonElement | null = null;
+let dockMoreEl: HTMLElement | null = null;
+function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
+  if (!dockMoreEl) {
+    dockMoreEl = document.createElement('div');
+    dockMoreEl.className = 'dock-more';
+    const items: [string, string, () => void][] = [
+      ['Gather to the centre (A)', ICONS.gather, toggleGather],
+      ['Explode from the centre (E)', ICONS.explode, () => explode()],
+      ['Scatter (S)', ICONS.scatter, scatter],
+      ['Recording settings', ICONS.record, () => showTab('record')],
+      ['Reset to defaults and clear locks', ICONS.reset, reset],
+    ];
+    for (const [t, ic, fn] of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = `${ic}<span></span>`;
+      b.querySelector('span')!.textContent = t;
+      b.addEventListener('click', () => {
+        fn();
+        toggleDockMore(false);
+      });
+      if (fn === toggleGather) gatherButtons.push(b);
+      dockMoreEl.append(b);
+    }
+    document.getElementById('actionbar')!.append(dockMoreEl);
+    document.addEventListener('pointerdown', (e) => {
+      const t = e.target as Node;
+      if (dockMoreEl?.classList.contains('open') && !dockMoreEl.contains(t) && !dockMoreBtn?.contains(t)) toggleDockMore(false);
+    });
+  }
+  dockMoreEl.classList.toggle('open', open);
+  dockMoreBtn?.classList.toggle('on', open);
+}
 const sectionTabs: [HTMLElement, Tab][] = [];
 // What a card had when you switched it off, so switching on brings it back.
 const powerMemory: Record<string, Partial<Settings>> = {};
@@ -8551,8 +8593,12 @@ function showTab(tab: Tab) {
     b.classList.toggle('on', i === intent);
     b.setAttribute('aria-selected', String(i === intent));
   }
+  for (const [t, b] of dockTabs) b.classList.toggle('on', t === tab);
+  if (REACT_TABS.includes(tab)) lastReact = tab;
+  for (const [t, b] of reactSub) b.classList.toggle('on', t === tab);
+  document.getElementById('panel')!.dataset.page = tab;
   for (const [t, b] of tabButtons) {
-    b.classList.toggle('on', t === tab);
+    b.classList.toggle('on', t === tab || (t === 'music' && REACT_TABS.includes(tab)));
     b.setAttribute('aria-selected', String(t === tab));
   }
   for (const [el, t] of sectionTabs) el.classList.toggle('other-tab', t !== tab);
@@ -8643,6 +8689,56 @@ function searchItem(to: HTMLElement, el: HTMLElement, words = '') {
   if (words) el.dataset.words = words;
   to.append(el);
 }
+// S1's scene strip: the scenes of the playing one's family as small
+// swatches (their palettes), the current one ringed. Browse opens the library.
+function sceneStrip() {
+  const el = document.createElement('div');
+  el.className = 'scene-strip';
+  el.innerHTML = '<div class="ss-head"><span></span><button type="button" class="ss-browse">Browse all ›</button></div><div class="ss-row"></div>';
+  const label = el.querySelector<HTMLElement>('.ss-head span')!;
+  const row = el.querySelector<HTMLElement>('.ss-row')!;
+  el.querySelector('.ss-browse')!.addEventListener('click', () => showTab('presets'));
+  const swatch = (p: Partial<Settings>) => {
+    const key = (p.palette ?? DEFAULTS.palette) as keyof typeof PALETTES;
+    const def = PALETTES[key] ?? PALETTES[DEFAULTS.palette as keyof typeof PALETTES];
+    const st = def.stops;
+    const c = (k: number) => { const [hh, ss, ll] = st[Math.min(st.length - 1, k)]; return `hsl(${hh} ${ss}% ${ll}%)`; };
+    const [r, g, b] = def.bg;
+    return `radial-gradient(circle at 35% 40%, ${c(0)}, ${c(Math.floor(st.length / 2))} 45%, ${c(st.length - 1)} 70%, rgb(${r} ${g} ${b}) 100%)`;
+  };
+  let key = '';
+  const sync = () => {
+    const cur = currentMine?.name ?? lastSceneName;
+    const fam: Family = (lastSceneName && !currentMine && FAMILY_OF[lastSceneName]) || (presetFamily === 'all' ? 'space' : presetFamily);
+    const k = `${fam}|${cur}`;
+    if (k === key) return;
+    key = k;
+    label.textContent = `Scenes · ${familyLabel(fam)}`;
+    row.textContent = '';
+    let on: HTMLElement | null = null;
+    for (const [name, p] of PRESETS.filter(([n]) => FAMILY_OF[n] === fam).sort(([a], [b]) => a.localeCompare(b))) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ss-scene';
+      b.innerHTML = '<i></i><span></span>';
+      b.querySelector<HTMLElement>('i')!.style.background = swatch(p);
+      b.querySelector('span')!.textContent = name;
+      b.title = name;
+      b.addEventListener('click', () => playPreset(name, p));
+      if (name === cur && !currentMine) { b.classList.add('on'); on = b; }
+      row.append(b);
+    }
+    if (on) requestAnimationFrame(() => {
+      const a = on!.getBoundingClientRect();
+      const r = row.getBoundingClientRect();
+      row.scrollLeft += a.left - r.left - r.width / 2 + a.width / 2;
+    });
+  };
+  sync();
+  setInterval(sync, 600);
+  return el;
+}
+
 function renderSearch() {
   const wrap = document.createElement('div');
   wrap.className = 'search';
@@ -9881,18 +9977,41 @@ function renderControls() {
     b.setAttribute('role', 'tab');
     b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${TAB_ICONS[t]}</svg><span></span>`;
     b.querySelector('span')!.textContent = ({ xfader: 'Fader', links: 'Links' } as Partial<Record<Tab, string>>)[t] ?? text;
+    if (t === 'music') {
+      b.querySelector('span')!.textContent = 'React';
+      b.title = 'React: music, camera and connections';
+      b.setAttribute('aria-label', 'React');
+      b.querySelector('svg')!.innerHTML = '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path d="M8 8a5.7 5.7 0 0 0 0 8M16 8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/>';
+    }
     b.title = text;
     b.setAttribute('aria-label', text);
     b.dataset.tab = t;
     // A gap before the first page of Perform and React.
     if (INTENTS.some(([, , pages], k) => k > 0 && pages[0] === t)) b.classList.add('intent-start');
-    b.addEventListener('click', () => showTab(t));
+    b.addEventListener('click', () => showTab(t === 'music' ? lastReact : t));
     tabBar.append(b);
     tabButtons.push([t, b]);
   }
   controls.before(tabBar);
   tabBar.before(intentBar);
   intentBar.before(renderSearch());
+  {
+    // Desktop: the React tab's own chips (Music, Camera, Connections).
+    const sub = document.createElement('div');
+    sub.className = 'react-sub';
+    for (const t of REACT_TABS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${TAB_ICONS[t]}</svg><span></span>`;
+      b.querySelector('span')!.textContent = TABS.find(([x]) => x === t)![1];
+      b.addEventListener('click', () => showTab(t));
+      sub.append(b);
+      reactSub.push([t, b]);
+    }
+    tabBar.after(sub);
+    // The scene strip: the scenes around the one playing, always on top.
+    (intentBar.previousElementSibling ?? intentBar).before(sceneStrip());
+  }
   // Fold or unfold every card on the open tab at once.
   const foldAll = document.createElement('div');
   foldAll.className = 'fold-all';
@@ -10297,12 +10416,21 @@ function renderControls() {
     if (ctl.kind === 'icons') {
       const row = document.createElement('div');
       row.className = 'icon-buttons';
-      for (const [title, icon, fn] of ctl.buttons) {
+      if (ctl.buttons.some((x) => x[3])) row.classList.add('dock');
+      for (const [title, icon, fn, short, tab] of ctl.buttons) {
         const b = document.createElement('button');
         b.type = 'button';
         b.title = title;
         b.setAttribute('aria-label', title.replace(/ \(.*\)$/, ''));
         b.innerHTML = icon;
+        if (short) {
+          const s = document.createElement('span');
+          s.textContent = short;
+          b.append(s);
+        }
+        if (tab) dockTabs.push([tab, b]);
+        if (short === 'More') { b.classList.add('dock-more-btn'); dockMoreBtn = b; }
+        if (short && ['Knobs', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
         b.addEventListener('click', fn);
         if (fn === togglePause) pauseButtons.push(b);
         if (fn === toggleGather) gatherButtons.push(b);
