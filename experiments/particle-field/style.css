@@ -1549,3 +1549,18 @@ body.solo .fab, body.solo #toggle, body.solo .panel, body.solo .hint, body.solo 
 .overview[data-density='strips'] .rack-text input { height: 24px; border: 0; background: transparent; font-size: 16px; padding: 0 6px; }
 .overview[data-density='strips'] .rack-knobs > :last-child, .overview[data-density='strips'] .rack-rows > :last-child { border-bottom: 0; }
 .overview[data-density='strips'] .rack-knobs:has(+ .rack-rows) > :last-child { border-bottom: 1px solid var(--line); }
+
+/* The rest of the menu in the overview's Compact parts: smaller knobs, 38 px
+   steppers and switches. */
+#panel .group-body, #panel .ess-body, #panel .more-body { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); }
+#panel .rack-knob { padding: 6px 2px 7px; border-radius: 10px; }
+#panel .rack-knob svg { width: 40px; height: 40px; }
+#panel .rack-knob b { max-width: 100%; font-size: 11px; display: block; white-space: nowrap; text-overflow: ellipsis; }
+#panel .rack-knob span { font-size: 10.5px; }
+#panel .rack-row { grid-template-columns: minmax(0, 1fr) 32px minmax(64px, auto) 32px; min-height: 38px; padding-left: 10px; border-radius: 10px; font-size: 12.5px; }
+#panel .rack-row:has(.rack-switch) { grid-template-columns: minmax(0, 1fr) auto; }
+#panel .rack-row > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#panel .rack-row button { height: 38px; font-size: 16px; }
+#panel .rack-row .rack-switch { min-width: 40px; height: 26px; margin: 6px 4px; font-size: 12px; }
+#panel .tab-power { padding: 2px 2px 2px 10px; font-size: 12px; }
+#panel .tab-power .rack-switch { min-width: 44px; height: 28px; font-size: 12px; }
