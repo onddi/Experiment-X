@@ -12669,13 +12669,13 @@ refreshers.push(syncFieldKnobs);
 syncFieldKnobs();
 // Phones: one bar along the bottom, the same in Watch: Overview, Menu,
 // Shuffle and the knob pill. Tap the pill and it fills the bar: drag across
-// it to turn the knob, swipe up or down (or tap ⇅) for the next knob, tap a
+// it to turn the knob, swipe up or down for the next knob, tap a
 // choice's ‹ › to step or its middle for the list; ✕ folds it back.
 const mbar = document.createElement('div');
 mbar.className = 'm-bar';
 const MENU_ICON = svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
 const KNOB_ICON = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l3.5-3.5"/>');
-mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">‹</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">›</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-next" aria-label="Next knob" title="Next knob">⇅</button><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
+mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">‹</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">›</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
@@ -12734,10 +12734,6 @@ function pillStep(by: number) {
 mbar.querySelector('.mb-close')!.addEventListener('click', (e) => {
   e.stopPropagation();
   setPillOpen(false);
-});
-mbar.querySelector('.mb-next')!.addEventListener('click', (e) => {
-  e.stopPropagation();
-  pillStep(1);
 });
 {
   const body = pill.querySelector<HTMLElement>('.sp-body')!;

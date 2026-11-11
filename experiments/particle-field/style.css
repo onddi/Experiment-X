@@ -1825,7 +1825,6 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .m-bar.knobbing .swipe-pill { height: 64px; padding: 0 8px 0 18px; border-radius: 22px; background: rgb(20 21 26 / 0.8); cursor: default; }
   .m-bar.knobbing .mb-kicon { display: none; }
   .m-bar.knobbing .swipe-pill .mb-btn { display: grid; width: 40px; height: 40px; border: 0; background: rgb(255 255 255 / 0.07); }
-  .m-bar.knobbing .swipe-pill.one .mb-next { display: none; }
   .m-bar.knobbing .sp-body { justify-content: stretch; grid-template-columns: auto 1fr; }
   .m-bar.knobbing .sp-name { font-size: 12.5px; }
   .m-bar.knobbing .sp-val { font-size: 15px; justify-self: end; }
