@@ -11868,6 +11868,76 @@ function openOverview() {
     const [prevB, nextB] = head.querySelectorAll<HTMLButtonElement>('.ov-step');
     prevB.addEventListener('click', () => stepScene(-1));
     nextB.addEventListener('click', () => stepScene(1));
+    // The scene's name opens a picker: families, then their scenes (and yours).
+    const nameBox = head.querySelector<HTMLElement>('.ov-title span')!;
+    nameBox.classList.add('ov-scenebtn');
+    nameBox.setAttribute('role', 'button');
+    nameBox.tabIndex = 0;
+    nameBox.title = 'Pick a scene';
+    nameBox.insertAdjacentHTML('beforeend', `<i class="ov-caret" aria-hidden="true">${svg('<path d="M6 9l6 6 6-6"/>')}</i>`);
+    const openPicker = () => {
+      const had = el.querySelector('.ov-picker');
+      if (had) {
+        had.remove();
+        nameBox.classList.remove('open');
+        return;
+      }
+      nameBox.classList.add('open');
+      const pk = document.createElement('div');
+      pk.className = 'ov-picker';
+      let fam: Family = (lastSceneName && FAMILY_OF[lastSceneName]) || presetFamily;
+      const chipsEl = document.createElement('div');
+      chipsEl.className = 'families';
+      const list = document.createElement('div');
+      list.className = 'ov-plist';
+      const play = (fn: () => void) => {
+        fn();
+        openOverview();
+      };
+      const draw = () => {
+        for (const c of chipsEl.children) c.classList.toggle('on', (c as HTMLElement).dataset.fam === fam);
+        list.innerHTML = '';
+        const item = (label: string, on: boolean, go: () => void) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = label;
+          b.classList.toggle('on', on);
+          b.addEventListener('click', go);
+          list.append(b);
+        };
+        if (fam === ('mine' as Family)) {
+          for (const m of myPresets) item(m.name, m === currentMine, () => play(() => playMine(m)));
+          return;
+        }
+        for (const [n, p] of PRESETS.filter(([n]) => fam === 'all' || FAMILY_OF[n] === fam).sort(([a], [b]) => a.localeCompare(b))) {
+          item(n, n === lastSceneName && !currentMine, () => play(() => playPreset(n, p)));
+        }
+      };
+      const fams: [string, string][] = [...(myPresets.length ? [['mine', 'My scenes'] as [string, string]] : []), ...FAMILIES];
+      for (const [f, label] of fams) {
+        const c = document.createElement('button');
+        c.type = 'button';
+        c.dataset.fam = f;
+        c.textContent = label;
+        c.addEventListener('click', () => {
+          fam = f as Family;
+          draw();
+        });
+        chipsEl.append(c);
+      }
+      if (currentMine) fam = 'mine' as Family;
+      pk.append(chipsEl, list);
+      head.after(pk);
+      draw();
+      list.querySelector<HTMLElement>('.on')?.scrollIntoView({ block: 'nearest' });
+    };
+    nameBox.addEventListener('click', openPicker);
+    nameBox.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openPicker();
+      }
+    });
     // Start a crossfade from this scene to the next one along.
     const xfStart = document.createElement('button');
     xfStart.type = 'button';
