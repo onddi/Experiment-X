@@ -12667,20 +12667,45 @@ function syncFieldKnobs() {
 }
 refreshers.push(syncFieldKnobs);
 syncFieldKnobs();
-// Phones: one swipe pill instead of the knob column. Swipe sideways along
-// the bottom to turn the knob it shows (the whole width is the travel), up or
-// down to switch knob, tap a choice for its list.
-const pill = document.createElement('div');
-pill.className = 'swipe-pill';
-pill.innerHTML = '<div class="sp-zone"></div><div class="sp-body"><i class="sp-prev" aria-hidden="true">‹</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">›</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div>';
-stage.append(pill);
+// Phones: one bar along the bottom, the same in Watch: Overview, Menu,
+// Shuffle and the knob pill. Tap the pill and it fills the bar: drag across
+// it to turn the knob, swipe up or down (or tap ⇅) for the next knob, tap a
+// choice's ‹ › to step or its middle for the list; ✕ folds it back.
+const mbar = document.createElement('div');
+mbar.className = 'm-bar';
+const MENU_ICON = svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
+const KNOB_ICON = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l3.5-3.5"/>');
+mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">‹</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">›</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-next" aria-label="Next knob" title="Next knob">⇅</button><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
+stage.append(mbar);
+const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
+mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
+  if (document.body.classList.contains('watching')) stopWatching();
+  else openOverview();
+});
+mbar.querySelector('.mb-menu')!.addEventListener('click', () => {
+  document.body.classList.remove('watching');
+  if (panel.classList.contains('collapsed')) toggle.click();
+});
+mbar.querySelector('.mb-shuffle')!.addEventListener('click', () => shuffle());
 let pillIdx = 0;
 let pillTimer = 0;
 const pillKeys = () => fieldKnobKeys().filter((k) => knobSpec(k));
+const pillOpen = () => mbar.classList.contains('knobbing');
+function setPillOpen(on: boolean) {
+  mbar.classList.toggle('knobbing', on);
+  closeKnobMenu();
+  pillPaint();
+}
 function pillPaint(wake = false) {
   const keys = pillKeys();
-  pill.hidden = !playing() || !keys.length;
-  if (pill.hidden) return;
+  const live = playing() && keys.length > 0;
+  pill.classList.toggle('empty', !live);
+  if (!live) {
+    if (pillOpen()) mbar.classList.remove('knobbing');
+    pill.querySelector('.sp-name')!.textContent = 'Knobs';
+    pill.querySelector('.sp-val')!.textContent = '';
+    return;
+  }
   pillIdx = Math.min(pillIdx, keys.length - 1);
   const key = keys[pillIdx];
   const r = knobSpec(key)!;
@@ -12691,6 +12716,7 @@ function pillPaint(wake = false) {
   pill.querySelector<HTMLElement>('.sp-bar u')!.style.width = `${((v - r.min) / (r.max - r.min)) * 100}%`;
   const dots = pill.querySelector<HTMLElement>('.sp-dots')!;
   dots.textContent = keys.length > 1 ? keys.map((_, i) => (i === pillIdx ? '●' : '○')).join('') : '';
+  pill.classList.toggle('one', keys.length < 2);
   if (wake) {
     pill.classList.add('awake');
     clearTimeout(pillTimer);
@@ -12698,55 +12724,84 @@ function pillPaint(wake = false) {
   }
 }
 refreshers.push(() => pillPaint());
+function pillStep(by: number) {
+  const n = pillKeys().length;
+  if (n < 2) return;
+  pillIdx = (pillIdx + by + n) % n;
+  navigator.vibrate?.(6);
+  pillPaint(true);
+}
+mbar.querySelector('.mb-close')!.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setPillOpen(false);
+});
+mbar.querySelector('.mb-next')!.addEventListener('click', (e) => {
+  e.stopPropagation();
+  pillStep(1);
+});
 {
-  const zone = pill.querySelector<HTMLElement>('.sp-zone')!;
+  const body = pill.querySelector<HTMLElement>('.sp-body')!;
   let st: { x: number; y: number; v: number; t: number; mode: '' | 'turn' | 'switch' } | null = null;
-  zone.addEventListener('pointerdown', (e) => {
+  pill.addEventListener('pointerdown', (e) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    st = { x: e.clientX, y: e.clientY, v: 0, t: performance.now(), mode: '' };
+    if (!pillOpen()) return;
     const key = pillKeys()[pillIdx];
-    if (!key) return;
-    zone.setPointerCapture(e.pointerId);
-    st = { x: e.clientX, y: e.clientY, v: playBase(key), t: performance.now(), mode: '' };
-    pillPaint(true);
+    if (!key) return (st = null);
+    pill.setPointerCapture(e.pointerId);
+    st.v = playBase(key);
   });
-  zone.addEventListener('pointermove', (e) => {
-    if (!st) return;
+  pill.addEventListener('pointermove', (e) => {
+    if (!st || !pillOpen()) return;
     const dx = e.clientX - st.x;
     const dy = e.clientY - st.y;
     if (!st.mode) {
       if (Math.abs(dx) > 8 && Math.abs(dx) >= Math.abs(dy)) st.mode = 'turn';
-      else if (Math.abs(dy) > 30) st.mode = 'switch';
+      else if (Math.abs(dy) > 24) st.mode = 'switch';
       else return;
     }
     if (st.mode === 'turn') {
-      const key = pillKeys()[pillIdx];
-      playNudge(key, st.v, dx / Math.max(240, stage.clientWidth * 0.85));
+      playNudge(pillKeys()[pillIdx], st.v, dx / Math.max(220, body.clientWidth));
       pillPaint(true);
-    } else if (st.mode === 'switch' && Math.abs(dy) > 30) {
-      const n = pillKeys().length;
-      pillIdx = (pillIdx + (dy < 0 ? 1 : -1) + n) % n;
+    } else if (Math.abs(dy) > 24) {
+      pillStep(dy < 0 ? 1 : -1);
       st = { ...st, y: e.clientY, v: playBase(pillKeys()[pillIdx]) };
-      navigator.vibrate?.(6);
-      pillPaint(true);
     }
   });
   const end = (e: PointerEvent) => {
     const tap = st && !st.mode && e.type === 'pointerup' && performance.now() - st.t < 450;
     st = null;
+    if (!tap) return;
+    // Folded: a tap opens it (or, with no knobs yet, the overview to pick some).
+    if (!pillOpen()) {
+      if (pill.classList.contains('empty')) {
+        if (knobPicks().length || baseKnobKeys().some((k) => knobSpec(k))) {
+          settings.playOn = true;
+          if (bypass.has('knobs')) setBypass('knobs', false);
+          changed(new Set<keyof Settings>(['playOn']));
+          setPillOpen(true);
+        } else {
+          openOverview();
+          ovEl?.querySelector<HTMLElement>('.ov-pickknobs')?.click();
+        }
+        return;
+      }
+      return setPillOpen(true);
+    }
     const spec = knobSpec(pillKeys()[pillIdx] ?? '');
     // A choice: tap the ‹ or › side to step, the middle for its list.
-    if (tap && spec?.options) {
-      const b = pill.querySelector<HTMLElement>('.sp-body')!.getBoundingClientRect();
+    if (spec?.options) {
+      const b = body.getBoundingClientRect();
       const side = e.clientX < b.left + b.width * 0.3 ? -1 : e.clientX > b.right - b.width * 0.3 ? 1 : 0;
-      const key = pillKeys()[pillIdx];
       if (side) {
         const n = spec.max + 1;
-        playSet(key, (Math.round(spec.get()) + side + n) % n);
-      } else knobMenu(pill.querySelector('.sp-body')!, spec);
+        playSet(pillKeys()[pillIdx], (Math.round(spec.get()) + side + n) % n);
+      } else knobMenu(body, spec);
     }
     pillPaint(true);
   };
-  zone.addEventListener('pointerup', end);
-  zone.addEventListener('pointercancel', end);
+  pill.addEventListener('pointerup', end);
+  pill.addEventListener('pointercancel', end);
 }
 pillPaint();
 // Show every field knob for a moment (touch screens can't hover the row):
@@ -12845,34 +12900,18 @@ toggle.addEventListener('click', () => {
   document.body.classList.toggle('panel-open', !collapsed);
   toggle.setAttribute('aria-expanded', String(!collapsed));
   toggle.title = collapsed ? 'Show controls (H)' : 'Hide controls (H)';
-  toggle.textContent = collapsed ? '⟨' : sheetMode() ? '⌄' : '⟩';
+  toggle.textContent = collapsed ? '⟨' : sheetMode() ? '✕' : '⟩';
   requestAnimationFrame(resize);
 });
-// Phones: the panel is a bottom sheet with one slim bar (page picker, search,
-// actions, close). Drag the bar to any height and it stays there; low down it
-// snaps to a peek that only shows the actions, lower still it closes. Closed,
-// all that's left on the field is a faint handle at the bottom edge.
+// Phones: the menu opens full screen with one slim bar (page picker,
+// search, actions, close); closed, the bottom bar brings it back.
 function sheetMode() {
   return matchMedia('(max-width: 720px)').matches;
 }
-const SHEET_KEY = 'particle-field:sheet';
-const sheet: { h: number; peek: boolean } = (() => {
-  try {
-    return { h: 0, peek: false, ...JSON.parse(localStorage.getItem(SHEET_KEY) ?? '{}') };
-  } catch {
-    return { h: 0, peek: false };
-  }
-})();
-const sheetMax = () => window.innerHeight - 24;
+const sheet = { peek: false };
 function applySheet() {
-  const phone = sheetMode();
-  panel.classList.toggle('peek', phone && sheet.peek);
-  panel.style.height = phone && !sheet.peek && sheet.h && !panel.classList.contains('collapsed') ? `${Math.min(sheet.h, sheetMax())}px` : '';
-  try {
-    localStorage.setItem(SHEET_KEY, JSON.stringify(sheet));
-  } catch {
-    /* not persisted */
-  }
+  panel.classList.remove('peek');
+  panel.style.height = '';
 }
 function setPicking(on: boolean) {
   panel.classList.toggle('picking', on);
@@ -12929,109 +12968,9 @@ document.getElementById('sheet-more')!.addEventListener('click', (e) => {
 });
 addEventListener('resize', () => {
   applySheet();
-  toggle.textContent = panel.classList.contains('collapsed') ? '⟨' : sheetMode() ? '⌄' : '⟩';
+  toggle.textContent = panel.classList.contains('collapsed') ? '⟨' : sheetMode() ? '✕' : '⟩';
 });
 applySheet();
-{
-  // The drag moves the sheet with a transform only (no layout per frame, so it
-  // stays smooth on phones); the new height is set once, on release.
-  const head = panel.querySelector<HTMLElement>('header')!;
-  let y0 = -1;
-  let h0 = 0;
-  let hNow = 0;
-  let top = 0;
-  let moved = false;
-  let wasClosed = false;
-  let lastY = 0;
-  let lastT = 0;
-  let vy = 0;
-  let eatClick = false;
-  head.addEventListener('pointerdown', (e) => {
-    if (!sheetMode() || e.button > 0) return;
-    wasClosed = panel.classList.contains('collapsed');
-    y0 = lastY = e.clientY;
-    lastT = e.timeStamp;
-    vy = 0;
-    moved = false;
-    h0 = wasClosed ? 0 : panel.getBoundingClientRect().height;
-    hNow = h0;
-    try {
-      head.setPointerCapture(e.pointerId);
-    } catch {
-      /* fine without */
-    }
-  });
-  // iOS: keep the page itself from scrolling or bouncing under the drag.
-  head.addEventListener('touchmove', (e) => { if (y0 >= 0) e.preventDefault(); }, { passive: false });
-  head.addEventListener('pointermove', (e) => {
-    if (y0 < 0) return;
-    if (!moved && Math.abs(e.clientY - y0) < 6) return;
-    if (!moved) {
-      moved = true;
-      if (wasClosed) toggle.click();
-      panel.classList.add('dragging');
-      panel.classList.remove('peek', 'picking');
-      top = sheetMax();
-      panel.style.height = `${top}px`;
-    }
-    const dt = Math.max(1, e.timeStamp - lastT);
-    vy = vy * 0.5 + ((e.clientY - lastY) / dt) * 0.5;
-    lastY = e.clientY;
-    lastT = e.timeStamp;
-    hNow = Math.max(0, Math.min(top, h0 - (e.clientY - y0)));
-    panel.style.transform = `translate3d(0, ${top - hNow}px, 0)`;
-  });
-  const settle = (fn: () => void) => {
-    // Release: swap the transform for the real height in one frame, no jump.
-    fn();
-    panel.style.transform = '';
-    requestAnimationFrame(() => panel.classList.remove('dragging'));
-  };
-  const end = () => {
-    if (y0 < 0) return;
-    y0 = -1;
-    if (!moved) {
-      // A tap on the closed handle opens the sheet where it was.
-      if (wasClosed) toggle.click();
-      return;
-    }
-    eatClick = true;
-    setTimeout(() => (eatClick = false), 0);
-    // Where the peek would sit: the bar plus the actions row.
-    panel.classList.add('peek');
-    panel.style.height = '';
-    const peekH = panel.getBoundingClientRect().height;
-    panel.classList.remove('peek');
-    panel.style.height = `${top}px`;
-    if (vy > 0.9 || hNow < peekH * 0.6) {
-      // Slide the rest of the way down, then close.
-      panel.classList.remove('dragging');
-      panel.style.transform = `translate3d(0, ${top}px, 0)`;
-      setTimeout(() => {
-        panel.classList.add('dragging');
-        if (!panel.classList.contains('collapsed')) toggle.click();
-        settle(applySheet);
-      }, 180);
-      return;
-    }
-    settle(() => {
-      if (vy < -0.9) {
-        sheet.peek = false;
-        sheet.h = sheetMax();
-      } else if (hNow < peekH + 70) {
-        sheet.peek = true;
-      } else {
-        sheet.peek = false;
-        sheet.h = Math.round(hNow);
-      }
-      applySheet();
-    });
-  };
-  head.addEventListener('pointerup', end);
-  head.addEventListener('pointercancel', end);
-  // A drag that started on the title or a button shouldn't also press it.
-  head.addEventListener('click', (e) => { if (eatClick) { e.stopPropagation(); e.preventDefault(); } }, true);
-}
 // In X-Frame, only one layer's options panel is open at a time.
 xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click(), open: () => toggle.click() });
 

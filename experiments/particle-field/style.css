@@ -210,19 +210,15 @@ button:hover, select:hover { border-color: #3c3f46; }
     right: 0;
     bottom: 0;
     width: auto;
-    height: 72vh;
-    height: 72dvh;
+    top: 0;
+    height: auto;
     z-index: 10;
-    border-left: none;
-    border-top: 1px solid var(--line);
-    border-radius: 18px 18px 0 0;
-    box-shadow: 0 -10px 30px rgb(0 0 0 / 0.45);
-    transition: height 0.22s ease, transform 0.18s ease-out;
-    will-change: transform;
+    border: none;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
   }
   .panel.dragging { transition: none; }
-  .panel header { position: relative; gap: 6px; padding: 16px 10px 8px 16px; touch-action: none; }
-  .panel header::before { content: ''; position: absolute; top: 6px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: #3a4058; }
+  .panel header { position: relative; gap: 6px; padding: 10px 10px 8px 16px; }
   .panel header h1 { display: none; }
   .sheet-title { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; height: 40px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
   .sheet-title small { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
@@ -259,13 +255,8 @@ button:hover, select:hover { border-color: #3c3f46; }
   .panel.peek { height: auto; }
   .panel.peek .panel-body, .panel.peek .search, .panel.peek .picker { display: none; }
 
-  /* Closed: no buttons on the field, only a faint handle to tap or swipe up. */
-  .panel.collapsed { top: auto; left: 50%; right: auto; bottom: 0; width: 280px; height: auto; margin-left: -140px; border: none; border-radius: 0; box-shadow: none; background: none; }
-  .panel.collapsed header { height: calc(64px + env(safe-area-inset-bottom)); padding: 0; border: none; cursor: pointer; }
-  .panel.collapsed header::before { top: auto; bottom: calc(14px + env(safe-area-inset-bottom)); width: 56px; margin-left: -28px; height: 4px; background: rgb(255 255 255 / 0.28); transition: opacity 0.4s; }
-  .panel.collapsed header > * { display: none; }
-  .panel.collapsed .picker, .panel.collapsed .actionbar { display: none; }
-  body.field-idle .panel.collapsed header::before { opacity: 0.35; }
+  /* Closed: gone; the bottom bar's Menu brings it back. */
+  .panel.collapsed { display: none; }
   /* The floating quick actions go too: they're one swipe away in the peek. */
   .fab { display: none !important; }
 }
@@ -1809,33 +1800,44 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
 .knob-menu button { padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--label); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .knob-menu button:hover { background: rgb(255 255 255 / 0.06); color: var(--text); }
 .knob-menu button.on { background: var(--accent-bg); color: var(--accent-soft); }
-/* Phones: the swipe pill replaces the knob column. */
-.swipe-pill { display: none; }
+/* Phones: one bottom bar (Overview, Menu, Shuffle, knob pill), in Watch too. */
+.m-bar { display: none; }
 @media (max-width: 720px) {
-  .play-row, body.watching .play-row { display: none; }
-  .swipe-pill:not([hidden]) { display: block; }
-  .swipe-pill { position: absolute; left: 0; right: 0; bottom: calc(84px + env(safe-area-inset-bottom)); height: 120px; z-index: 3; pointer-events: none; }
-  .sp-zone { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
-  .sp-body { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: grid; grid-template-columns: auto auto; align-items: baseline; justify-content: center; column-gap: 8px; row-gap: 5px; min-width: 150px; padding: 8px 16px 9px; border-radius: 999px; background: rgb(14 16 24 / 0.55); border: 1px solid rgb(255 255 255 / 0.08); backdrop-filter: blur(6px); opacity: 0; transition: opacity 0.8s; pointer-events: none; }
-  .swipe-pill.awake .sp-body { opacity: 1; transition-duration: 0.12s; }
-  /* Watch: no chrome, a quiet caption just above the scene button. */
-  body.watching .swipe-pill { bottom: calc(66px + env(safe-area-inset-bottom)); height: 110px; }
-  body.watching .sp-body { left: 20px; transform: none; bottom: 4px; justify-content: start; min-width: 140px; padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; text-shadow: 0 1px 6px rgb(0 0 0 / 0.8); }
-  body.watching .sp-dots { justify-self: start; }
-  .sp-name { font-size: 11.5px; color: rgb(255 255 255 / 0.6); }
-  .sp-val { font-size: 13px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sp-bar { grid-column: 1 / -1; position: relative; height: 3px; border-radius: 2px; background: rgb(255 255 255 / 0.12); overflow: hidden; }
-  .sp-bar u { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(255 255 255 / 0.75); }
-  .sp-dots { grid-column: 1 / -1; justify-self: center; font-size: 6px; letter-spacing: 3px; color: rgb(255 255 255 / 0.5); font-style: normal; }
-  .sp-dots:empty { display: none; }
-  /* Choices: ‹ value › instead of a bar. */
-  .sp-prev, .sp-next { display: none; font-style: normal; font-size: 18px; line-height: 1; color: rgb(255 255 255 / 0.55); }
-  .swipe-pill.choice .sp-body { grid-template-columns: auto 1fr auto; align-items: center; row-gap: 2px; min-width: 190px; }
-  .swipe-pill.choice .sp-name { grid-row: 1; grid-column: 1 / -1; justify-self: center; }
-  .swipe-pill.choice .sp-prev, .swipe-pill.choice .sp-next { display: block; grid-row: 2; }
-  .swipe-pill.choice .sp-prev { grid-column: 1; padding-right: 10px; }
-  .swipe-pill.choice .sp-next { grid-column: 3; padding-left: 10px; }
-  .swipe-pill.choice .sp-val { grid-row: 2; grid-column: 2; justify-self: center; max-width: 220px; }
-  body.watching .swipe-pill.choice .sp-name { justify-self: start; padding-left: 18px; }
+  .play-row, body.watching .play-row, .watch-bar, body.watching .watch-bar { display: none; }
+  .m-bar { display: flex; position: absolute; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 6; gap: 8px; align-items: center; transition: opacity 0.5s; }
+  body.panel-open .m-bar, body.solo .m-bar, body:has(.overview) .m-bar, body:has(.tuner) .m-bar { display: none; }
+  body.field-idle .m-bar:not(.knobbing) { opacity: 0; pointer-events: none; }
+  .mb-btn { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(20 21 26 / 0.55); color: rgb(255 255 255 / 0.8); font: inherit; font-size: 17px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .mb-btn svg { width: 19px; height: 19px; }
+  .swipe-pill { position: relative; flex: 1; min-width: 0; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(20 21 26 / 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: rgb(255 255 255 / 0.8); touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; }
+  .mb-kicon { flex: none; display: grid; place-items: center; color: rgb(255 255 255 / 0.6); }
+  .mb-kicon svg { width: 17px; height: 17px; }
+  .sp-body { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, auto) auto; justify-content: start; align-items: baseline; column-gap: 7px; row-gap: 4px; pointer-events: none; }
+  .sp-name { font-size: 12px; color: rgb(255 255 255 / 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sp-val { font-size: 13px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sp-bar { grid-column: 1 / -1; position: relative; height: 3px; border-radius: 2px; background: rgb(255 255 255 / 0.14); overflow: hidden; }
+  .sp-bar u { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(255 255 255 / 0.8); }
+  .sp-prev, .sp-next, .sp-dots, .swipe-pill .mb-btn { display: none; }
+  .swipe-pill.empty .sp-bar { display: none; }
   .swipe-pill.choice .sp-bar { display: none; }
+  /* Open: the pill fills the bar. */
+  .m-bar.knobbing > .mb-btn { display: none; }
+  .m-bar.knobbing .swipe-pill { height: 64px; padding: 0 8px 0 18px; border-radius: 22px; background: rgb(20 21 26 / 0.8); cursor: default; }
+  .m-bar.knobbing .mb-kicon { display: none; }
+  .m-bar.knobbing .swipe-pill .mb-btn { display: grid; width: 40px; height: 40px; border: 0; background: rgb(255 255 255 / 0.07); }
+  .m-bar.knobbing .swipe-pill.one .mb-next { display: none; }
+  .m-bar.knobbing .sp-body { justify-content: stretch; grid-template-columns: auto 1fr; }
+  .m-bar.knobbing .sp-name { font-size: 12.5px; }
+  .m-bar.knobbing .sp-val { font-size: 15px; justify-self: end; }
+  .m-bar.knobbing .sp-bar { height: 4px; }
+  .m-bar.knobbing .sp-dots { display: block; grid-column: 1 / -1; font-size: 6px; letter-spacing: 3px; color: rgb(255 255 255 / 0.45); font-style: normal; line-height: 1; }
+  .m-bar.knobbing .sp-dots:empty { display: none; }
+  .m-bar.knobbing .choice .sp-body { grid-template-columns: auto 1fr auto; align-items: center; row-gap: 2px; }
+  .m-bar.knobbing .choice .sp-name { grid-row: 1; grid-column: 1 / -1; justify-self: center; }
+  .m-bar.knobbing .choice .sp-prev, .m-bar.knobbing .choice .sp-next { display: block; grid-row: 2; font-style: normal; font-size: 20px; line-height: 1; color: rgb(255 255 255 / 0.6); }
+  .m-bar.knobbing .choice .sp-prev { grid-column: 1; }
+  .m-bar.knobbing .choice .sp-next { grid-column: 3; }
+  .m-bar.knobbing .choice .sp-val { grid-row: 2; grid-column: 2; justify-self: center; }
+  .m-bar.knobbing .choice .sp-dots { justify-self: center; }
+  .m-bar.knobbing .sp-dots { justify-self: start; }
 }
