@@ -2,7 +2,7 @@ import { fillPattern, FILL_PATTERNS, PATTERN_FORM, PATTERN_VARY, patternArms, is
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
-import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type Palette, type GlyphSet, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
+import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
 import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
@@ -5897,7 +5897,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'morph', label: 'Morph time', min: 0, max: 4, step: 0.1, format: (v) => (v === 0 ? 'instant' : `${v.toFixed(1)}s`) },
   { kind: 'range', key: 'homeStrength', label: 'Snap to shape', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'beatSnap', label: 'Switch on the next kick drum' },
-  { kind: 'toggle', key: 'shuffleCards', label: 'Shuffle also switches cards on and off' },
+  { kind: 'toggle', key: 'shuffleCards', label: 'Wild shuffle: bigger changes each time' },
   { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Scenes don\'t change these.' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
   { kind: 'section', id: 'macros', label: 'Macros', tab: 'presets',
@@ -12004,79 +12004,229 @@ function pick<T>(xs: readonly T[]): T {
   return xs[Math.floor(Math.random() * xs.length)];
 }
 
-function shuffle() {
-  // Wild shuffle: each unlocked card with an on/off switch flips a coin first.
-  if (settings.shuffleCards) {
-    for (const ctl of CONTROLS) {
-      if (ctl.kind !== 'section' || !ctl.power || locks.has(ctl.id) || ctl.tab === 'music' || ctl.tab === 'camera') continue;
-      setPower(ctl, Math.random() < (ctl.id === 'shape' ? 0.3 : 0.5));
+// --- Shuffle: a remix of the whole engine ------------------------------------
+// Each card of Shape, Motion and Look is taken from a scene that uses it
+// (crossing scenes: the motion of one, the style of another, the shape of a
+// third), then mutated: numbers nudged, choices sometimes re-rolled. Cards
+// with an on/off switch are switched on or off by chance, so emitters,
+// flocking, forces, obstacles, lenses and depth all come up. Everything comes
+// from the menu's own definitions and the scene list, so new settings join
+// in by themselves. A few rules keep the result readable, recent picks count
+// for less (so rare ones come up), and the screen is checked a moment later:
+// nearly blank or washed out, it quietly rolls again.
+type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
+const REMIX_TABS: string[] = ['shape', 'motion', 'look'];
+// Input modes and display helpers, not part of a look.
+const REMIX_SKIP = new Set(['placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
+// How often a switchable card is on in a remix.
+const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85 };
+const REMIX_KEY = 'particle-field:remix';
+let remixCardList: RemixCard[] | null = null;
+// Scenes usable as donors: not ones that need your camera, a drawing or an image.
+const remixDonor = (p: Partial<Settings>) => !['image', 'drawing', 'camera'].includes(p.shape ?? '') && p.obstacles !== 'body' && !p.camHands && !p.poseOn;
+function remixCards(): RemixCard[] {
+  if (remixCardList) return remixCardList;
+  const cards: RemixCard[] = [];
+  let cur: RemixCard | null = null;
+  for (const c of CONTROLS) {
+    if (c.kind === 'section') {
+      cur = c.tab && REMIX_TABS.includes(c.tab) ? { id: c.id, keys: [], ctls: new Map(), power: c.power, lockKeys: (c.lock ?? []) as string[], donors: [] } : null;
+      if (cur) cards.push(cur);
+      continue;
+    }
+    if (!cur || !('key' in c) || REMIX_SKIP.has(c.key as string)) continue;
+    if ((c.kind === 'range' || c.kind === 'select' || c.kind === 'choice' || c.kind === 'toggle') && !cur.ctls.has(c.key)) {
+      if ((c.kind === 'select' || c.kind === 'choice') && c.options === PLAYABLE) continue;
+      cur.ctls.set(c.key, c);
+      cur.keys.push(c.key);
     }
   }
-  const r: Partial<Settings> = {
-    count: rand(600, 4000, 100),
-    size: rand(0.8, 2.6, 0.1),
-    speed: rand(0.6, 2, 0.1),
-    friction: rand(0.02, 0.08, 0.005),
-    jitter: rand(0, 0.15, 0.01),
-    lifespan: Math.random() < 0.3 ? rand(3, 12, 0.5) : 0,
-    sizeVar: Math.random() < 0.4 ? rand(0.2, 0.8, 0.05) : 0,
-    gravity: Math.random() < 0.15 ? rand(-0.4, 0.6, 0.05) : 0,
-    flow: rand(0.2, 1.6, 0.05),
-    flowType: Math.random() < 0.4 ? 'curl' : 'waves',
-    flowScale: rand(0.002, 0.012, 0.0005),
-    flowSpeed: rand(0.05, 1, 0.05),
-    pointerMode: pick(['repel', 'attract', 'vortex'] as const),
-    radius: rand(80, 260, 5),
-    force: rand(0.3, 1.4, 0.05),
-    click: pick(['gather', 'emit', 'ripple', 'implode', 'shockwave'] as const),
-    clickForce: rand(0.6, 1.6, 0.1),
-    render: pick(['dots', 'circles', 'glow', 'bokeh', 'rings', 'sparkles', 'arrows', 'streaks', 'streaks', 'comets', 'ribbons', 'glyphs', 'links', 'mixed'] as const),
-    mixStyles: MIXABLE.map(([k]) => k).sort(() => Math.random() - 0.5).slice(0, 3 + ((Math.random() * 3) | 0)).sort((a, b) => MIXABLE.findIndex(([k]) => k === a) - MIXABLE.findIndex(([k]) => k === b)).join(','),
-    linkDist: rand(50, 100, 5),
-    trail: rand(0.5, 0.95, 0.01),
-    glow: Math.random() < 0.6,
-    glyphSet: pick(Object.keys(GLYPH_SETS) as GlyphSet[]),
-    glyphPick: pick(['random', 'random', 'speed', 'heading'] as const),
-    glyphChange: pick(['fixed', 'flicker', 'flicker'] as const),
-    glyphRate: rand(0.005, 0.04, 0.005),
-    glyphFont: pick(['mono', 'serif', 'sans', 'bold'] as const),
-    glyphScale: rand(0.8, 1.6, 0.1),
-    glyphRotate: pick(['none', 'none', 'heading', 'spin'] as const),
-    palette: pick(Object.keys(PALETTES) as Palette[]),
-    colorBy: pick(['palette', 'speed', 'direction', 'pointer', 'cycle', 'horizontal', 'radial'] as const),
-  };
-  // Shape: a new form and size. Forms that need something of yours (a
-  // drawing, an image, the camera) stay; text keeps its words but may turn
-  // into a shape, an icon, a pattern or a 3D solid.
-  if (!['drawing', 'image', 'camera'].includes(settings.shape)) {
-    const form = pick(['text', 'icon', 'geo', 'geo', 'pattern', 'pattern', 'solid', 'solid'] as const);
-    Object.assign(r, {
-      shape: form,
-      shapeIcon: pick(ICON_SHAPES)[0],
-      shapeGeo: pick(GEO_SHAPES)[0],
-      shapePattern: pick(PATTERNS)[0],
-      shapeSolid: pick(SOLID_SHAPES)[0],
-      shapeSpin: rand(0, 0.6, 0.05),
-      shapeSize: rand(0.55, 0.95, 0.05),
-    });
+  // Which scenes use each card (switchable cards: the scenes that have it on).
+  const S = settings as unknown as Record<string, unknown>;
+  for (const card of cards) {
+    const all = [...new Set([...card.keys, ...card.lockKeys])];
+    for (const [name, raw] of PRESETS) {
+      const p = upgradeShape(raw);
+      if (FAMILY_OF[name] === 'camera' || !remixDonor(p)) continue;
+      if (card.power) {
+        const was = all.map((k) => S[k]);
+        const P = { ...DEFAULTS, ...p } as unknown as Record<string, unknown>;
+        let on = false;
+        try {
+          for (const k of all) S[k] = P[k];
+          on = card.power.on();
+        } catch {
+          on = false;
+        } finally {
+          all.forEach((k, i) => (S[k] = was[i]));
+        }
+        if (!on) continue;
+      }
+      card.donors.push(name);
+    }
   }
-  // Only unlocked sections change; anything a section has that we don't
-  // randomise goes back to its default.
-  // Cards you switched off stay off; cards that are on stay on and keep
-  // whatever shuffle doesn't roll.
+  return (remixCardList = cards);
+}
+type RemixTally = string[][];
+function remixTally(): RemixTally {
+  try {
+    const v = JSON.parse(localStorage.getItem(REMIX_KEY) ?? '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+// Pick by weight: things used in recent remixes weigh less.
+function pickFresh<T>(xs: readonly T[], tag: (x: T) => string, seen: Map<string, number>): T {
+  const w = xs.map((x) => 1 / (1 + 2 * (seen.get(tag(x)) ?? 0)));
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < xs.length; i++) if ((r -= w[i]) <= 0) return xs[i];
+  return xs[xs.length - 1];
+}
+/** One remix: the settings it would play, and what it used (for the tally). */
+function rollRemix(): { patch: Record<string, unknown>; used: string[] } {
+  const seen = new Map<string, number>();
+  for (const t of remixTally()) for (const s of t) seen.set(s, (seen.get(s) ?? 0) + 1);
+  const wild = settings.shuffleCards;
+  const D = DEFAULTS as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  const used: string[] = [];
+  const presets = new Map(PRESETS.map(([n, p]) => [n, { ...DEFAULTS, ...upgradeShape(p) } as unknown as Record<string, unknown>]));
+  for (const card of remixCards()) {
+    if (locks.has(card.id)) continue;
+    const all = [...new Set([...card.keys, ...card.lockKeys])];
+    // Switched off: its defaults and its "off" values.
+    const onOdds = REMIX_ON[card.id] ?? 1;
+    const offSeen = seen.get(`${card.id}:off`) ?? 0;
+    const onSeen = seen.get(`${card.id}:on`) ?? 0;
+    const odds = Math.min(0.9, Math.max(0.1, onOdds + (offSeen - onSeen) * 0.01));
+    if (card.power && (!card.donors.length || Math.random() > odds)) {
+      for (const k of all) patch[k] = D[k];
+      Object.assign(patch, card.power.off);
+      used.push(`${card.id}:off`);
+      continue;
+    }
+    if (!card.donors.length) continue;
+    if (card.power) used.push(`${card.id}:on`);
+    // Taken from a scene that uses it…
+    const donor = pickFresh(card.donors, (n) => `${card.id}<${n}`, seen);
+    used.push(`${card.id}<${donor}`);
+    const src = presets.get(donor)!;
+    for (const k of all) patch[k] = src[k];
+    // …then mutated.
+    for (const k of card.keys) {
+      const c = card.ctls.get(k)!;
+      if (c.kind === 'range') {
+        if (Math.random() < 0.6) {
+          const span = (c.max - c.min) * (wild ? 0.3 : 0.15);
+          const v = Number(patch[k]) + (Math.random() * 2 - 1) * span;
+          patch[k] = Number((Math.round(Math.min(c.max, Math.max(c.min, v)) / c.step) * c.step).toFixed(6));
+        }
+      } else if (c.kind === 'select' || c.kind === 'choice') {
+        // The main choices of a card (style, palette, shape, flow type…) get
+        // re-rolled more often than the fine ones.
+        const lead = c.key === card.keys[0] || ['render', 'palette', 'colorBy', 'flowType', 'shapeGeo', 'shapeSolid', 'shapePattern', 'shapeIcon', 'pointerMode', 'click', 'emitter', 'edges'].includes(c.key);
+        if (Math.random() < (lead ? (wild ? 0.6 : 0.4) : wild ? 0.25 : 0.12)) {
+          let opts = c.options.map(([o]) => o);
+          if (c.key === 'shape') opts = opts.filter((o) => !['image', 'drawing', 'camera', 'none'].includes(o));
+          if (c.key === 'obstacles') opts = opts.filter((o) => o !== 'body');
+          if (opts.length) patch[k] = pickFresh(opts, (o) => `${k}=${o}`, seen);
+        }
+        used.push(`${k}=${patch[k]}`);
+      } else if (c.kind === 'toggle' && Math.random() < (wild ? 0.2 : 0.08)) patch[k] = !patch[k];
+    }
+  }
+  remixRules(patch);
+  return { patch, used };
+}
+// Rules that keep a remix readable: things that need each other come
+// together, one main motion, not every effect at full strength at once.
+function remixRules(p: Record<string, unknown>) {
+  const n = (k: string, d = 0) => (typeof p[k] === 'number' ? (p[k] as number) : ((settings as unknown as Record<string, unknown>)[k] as number) ?? d);
+  const has = (k: string) => k in p;
+  // Emitters need particles that come and go.
+  if (has('emitter') && p.emitter !== 'none' && n('lifespan') === 0) p.lifespan = rand(3, 8, 0.5);
+  // A shape needs the motion calm enough to hold it.
+  if (has('shape') && p.shape !== 'none') {
+    if (n('flow') > 0.7) p.flow = 0.5;
+    if (n('wind') > 0.3) p.wind = 0.2;
+    if (Math.abs(n('gravity')) > 0.25) p.gravity = 0.15 * Math.sign(n('gravity'));
+    if (n('flock') > 0.5) p.flock = 0.3;
+  }
+  // Flocking is the main motion when it's on: the flow steps back.
+  if (n('flock') > 0.4 && n('flow') > 0.8) p.flow = 0.4;
+  // Styles that draw motion need some.
+  if (['streaks', 'comets', 'ribbons', 'arrows'].includes(String(p.render)) && n('speed') < 0.8) p.speed = 0.9;
+  if (p.render === 'ribbons' && n('trail') < 0.6) p.trail = 0.7;
+  // Visible, and kind to slower devices.
+  if (has('count')) p.count = Math.max(400, Math.min(['glow', 'bokeh', 'mixed', 'links'].includes(String(p.render)) ? 2800 : 4500, n('count')));
+  if (has('size')) p.size = Math.max(0.7, Math.min(3, n('size')));
+  if (has('trail')) p.trail = Math.min(0.94, n('trail'));
+  // One picture effect at a time: a lens or 3D depth, and one lens.
+  const lensOn = LENS_KEYS.filter((k) => has(k) && (k === 'lensMirror' ? p[k] !== 'off' : k === 'lensTiles' ? n(k) >= 2 : typeof p[k] === 'number' && (p[k] as number) > 0 && !k.startsWith('audio')));
+  if (lensOn.length > 1) {
+    const keep = pick(lensOn);
+    for (const k of lensOn) if (k !== keep) p[k] = (DEFAULTS as unknown as Record<string, unknown>)[k];
+  }
+  if (lensOn.length && n('depth') > 0) {
+    if (Math.random() < 0.5) p.depth = 0;
+    else for (const k of lensOn) p[k] = (DEFAULTS as unknown as Record<string, unknown>)[k];
+  }
+  if (n('lensGlitch') > 0.5) p.lensGlitch = 0.5;
+}
+// A moment after a remix plays: is anything visible? Nearly blank or washed
+// out, roll again (twice at most in a row).
+let remixRetries = 0;
+let remixCheckTimer = 0;
+function remixCheck() {
+  clearTimeout(remixCheckTimer);
+  remixCheckTimer = window.setTimeout(() => {
+    const W = 48, H = 27;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    if (!g) return;
+    try {
+      g.drawImage(canvas, 0, 0, W, H);
+    } catch {
+      return;
+    }
+    const d = g.getImageData(0, 0, W, H).data;
+    const lum: number[] = [];
+    for (let i = 0; i < d.length; i += 4) lum.push(d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11);
+    const bg = [...lum].sort((a, b) => a - b)[lum.length >> 1];
+    const lit = lum.filter((v) => Math.abs(v - bg) > 24).length / lum.length;
+    if ((lit < 0.004 || lit > 0.92) && remixRetries < 2) {
+      remixRetries++;
+      shuffle(true);
+    } else remixRetries = 0;
+  }, 1400);
+}
+function shuffle(again?: unknown) {
+  // (A click hands its event in: only a re-roll passes true.)
+  const retry = again === true;
+  if (!retry) remixRetries = 0;
+  const { patch, used } = rollRemix();
   const keys = new Set<keyof Settings>();
   const S = settings as unknown as Record<string, unknown>;
-  for (const ctl of CONTROLS) {
-    if (ctl.kind !== 'section' || !ctl.lock || locks.has(ctl.id) || ctl.tab === 'music' || ctl.tab === 'camera') continue;
-    if (ctl.power && !ctl.power.on()) continue;
-    const before = Object.fromEntries(ctl.lock.map((k) => [k, S[k]]));
-    for (const k of ctl.lock) S[k] = k in r ? r[k] : ctl.power ? S[k] : DEFAULTS[k];
-    if (ctl.power && !ctl.power.on()) Object.assign(S, before);
-    for (const k of ctl.lock) keys.add(k);
+  for (const [k, v] of Object.entries(patch)) {
+    if (S[k] !== v) {
+      S[k] = v;
+      keys.add(k as keyof Settings);
+    }
+  }
+  try {
+    localStorage.setItem(REMIX_KEY, JSON.stringify([...remixTally(), used].slice(-30)));
+  } catch {
+    /* not kept */
   }
   if (keys.size) changed(keys);
-  showToast('New scene');
+  if (!retry) showToast('New scene');
+  remixCheck();
 }
+// For the coverage test: roll without playing.
+if (new URLSearchParams(location.search).has('remixstats')) (window as unknown as Record<string, unknown>).__remix = () => rollRemix();
 
 // --- locks & own presets -------------------------------------------------------
 
