@@ -9977,6 +9977,26 @@ function syncSceneNow() {
   el.title = edited ? `${name}, changed since you picked it` : name;
 }
 setInterval(syncSceneNow, 500);
+// The scene playing (its name and what it set) survives a reload, so the
+// name, "edited" and the library mark come back with the settings.
+const SCENE_KEY = 'particle-field:scene';
+let sceneSaved = '';
+setInterval(() => {
+  const v = JSON.stringify({ name: lastSceneName, mine: currentMine?.name ?? '', base: sceneBase });
+  if (v === sceneSaved) return;
+  sceneSaved = v;
+  writeJson(SCENE_KEY, { name: lastSceneName, mine: currentMine?.name ?? '', base: sceneBase });
+}, 1000);
+setTimeout(() => {
+  // A link (?preset=…) or something at start already picked one.
+  if (lastSceneName || currentMine || sceneBase) return;
+  const v = readJson<{ name?: string; mine?: string; base?: Settings | null }>(SCENE_KEY, {});
+  if (v.mine) currentMine = myPresets.find((p) => p.name === v.mine) ?? null;
+  else if (v.name && PRESETS.some(([n]) => n === v.name)) lastSceneName = v.name;
+  if (v.base && (currentMine || lastSceneName)) sceneBase = { ...DEFAULTS, ...v.base };
+  syncSceneNow();
+  if (currentMine) redrawMine();
+}, 0);
 document.getElementById('scene-now')!.addEventListener('click', () => openOverview());
 let ovEl: HTMLElement | null = null;
 function closeOverview() {
