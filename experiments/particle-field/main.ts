@@ -11092,6 +11092,8 @@ let ovEl: HTMLElement | null = null;
 let watchScroll = 0;
 function closeOverview() {
   if (document.querySelector('.overview')) revealKnobs();
+  // Picking knobs ends with the Deck, so a knob turned later isn't picked by accident.
+  ovPickKnobs = false;
   // Where it was scrolled to, so it opens again on the same knobs.
   if (ovEl) watchScroll = ovEl.querySelector('.ov-body')?.scrollTop ?? 0;
   closeTuner();
@@ -12395,6 +12397,9 @@ function shuffle(again?: unknown) {
   // (A click hands its event in: only a re-roll passes true.)
   const retry = again === true;
   if (!retry) remixRetries = 0;
+  // A shuffle brings its own knobs: knobs you picked for the last look go.
+  const hadPicks = !retry && !!settings.knobsPick;
+  if (hadPicks) settings.knobsPick = '';
   const { patch, used } = rollRemix();
   const keys = new Set<keyof Settings>();
   const S = settings as unknown as Record<string, unknown>;
@@ -12432,8 +12437,9 @@ function shuffle(again?: unknown) {
   } catch {
     /* not kept */
   }
+  if (hadPicks) keys.add('knobsPick');
   if (keys.size) changed(keys);
-  if (!retry) showToast('New scene');
+  if (!retry) showToast(hadPicks ? 'New scene · your picked knobs cleared' : 'New scene');
   remixCheck();
 }
 // For the coverage test: roll without playing.
