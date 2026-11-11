@@ -985,7 +985,8 @@ function step(dt: number) {
   const emitting = settings.emitter !== 'none';
   // Form & dissolve: the pull fades out and back in on a cycle.
   let homeK = 0;
-  if (settings.shape !== 'none') {
+  // An empty drawing holds nothing: the particles go free.
+  if (settings.shape !== 'none' && !(settings.shape === 'drawing' && !drawStrokes.length)) {
     const cyc = settings.shapeCycle;
     const phase = cyc > 0 ? (t % cyc) / cyc : 0;
     const formed = cyc > 0 ? Math.max(0, Math.min(1, Math.cos(phase * Math.PI * 2) * 1.6 + 0.4)) : 1;
@@ -3158,10 +3159,13 @@ function undoStroke() {
   reshape(500);
 }
 function clearShapeDrawing() {
+  const had = drawStrokes.length > 0;
   drawStrokes = [];
   saveDrawing();
   inkSync();
   reshape(500);
+  // Let go of the old shape with a soft push.
+  if (had) explode(w / 2, h / 2, 0.5);
 }
 const drawing = () => drawMode && settings.shape === 'drawing';
 canvas.addEventListener('pointerdown', (e) => {
