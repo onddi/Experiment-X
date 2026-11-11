@@ -6408,6 +6408,7 @@ const CONTROLS: Control[] = [
     // reach for mid-set; the rarer ones wait under ⋯.
     buttons: [
       ['Watch: just the field, no menus', ICONS.eye, () => startWatching(), 'Watch'],
+      ['Scenes', svg(TAB_ICONS.presets), () => showTab('presets'), 'Scenes', 'presets'],
       ['On-screen controls: knobs and gestures on the field', svg(TAB_ICONS.knobs), () => showTab('knobs'), 'Controls', 'knobs'],
       ['Timeline', svg(TAB_ICONS.timeline), () => showTab('timeline'), 'Timeline', 'timeline'],
       ['Record a clip (V)', ICONS.record, dockRecord, 'Record'],
@@ -10620,8 +10621,8 @@ function renderControls() {
         }
         if (tab) dockTabs.push([tab, b]);
         if (short === 'More') { b.classList.add('dock-more-btn'); dockMoreBtn = b; }
-        if (short === 'Watch') b.classList.add('dock-watch');
-        if (short && ['Controls', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
+        if (short === 'Watch' || short === 'Scenes') b.classList.add('dock-watch');
+        if (short && ['Scenes', 'Controls', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
         // A dock page's button opens it, and a second press goes back.
         b.addEventListener('click', tab ? () => (currentTab === tab ? backFromPlay() : fn()) : fn);
         if (fn === togglePause) pauseButtons.push(b);
