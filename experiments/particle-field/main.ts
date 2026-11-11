@@ -6593,6 +6593,8 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean): Settings {
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
+  // Your own scenes bring their overview knob picks back, and play them.
+  if (typeof p.knobsPick === 'string' && p.knobsPick) hands.playOn = true;
   // Lenses the scene doesn't set go back to your own, not the last scene's.
   for (const k of LENS_KEYS) if (!(k in p) && k in myLens) (hands as Record<string, unknown>)[k] = myLens[k];
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
@@ -12218,7 +12220,8 @@ function playMine(p: MyPreset) {
   apply(p.settings, false);
   currentMine = p;
   redrawMine();
-  showToast(`${p.key ? p.key + '  ' : ''}${p.name}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
+  const nk = knobPicks().length;
+  showToast(`${p.key ? p.key + '  ' : ''}${p.name}${nk && typeof p.settings.knobsPick === 'string' ? ` · ${nk} knob${nk > 1 ? 's' : ''}` : ''}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
 }
 
 // Number keys play own presets; Shift + number saves the current look there.
