@@ -245,3 +245,17 @@ export const TIPS: Record<string, string> = {
   poseSweep: 'How strongly your arms sweep.',
   mirrorWorld: 'The left half is reflected on the right in other colours.',
 };
+
+// Deck filters: what part of the picture a setting changes. A setting can be
+// in more than one. Picking a filter lists every setting in it, used or not.
+export const LENSES: [id: string, label: string, keys: string[]][] = [
+  ['colour', 'Colour', ['palette', 'customColors', 'customBg', 'colorBy', 'hueShift', 'audioHue', 'audioHueAmt', 'audioPalEvery', 'audioNoteHue', 'audioFlowHue', 'audioRhymeHue', 'audioMonoBuild', 'audioInvert', 'audioBgFlash', 'lensSplit', 'mirrorWorld', 'drawColour', 'maskFx']],
+  ['light', 'Light', ['glow', 'render', 'audioBright', 'audioBassGlow', 'audioVoxGlow', 'audioBgFlash', 'audioSnareFlash', 'audioHatTwinkle', 'audioSylFlash', 'audioPauseDim', 'lifeFade', 'depth', 'audioInvert']],
+  ['particle', 'Particle', ['render', 'mixStyles', 'size', 'sizeVar', 'lifeSize', 'lifeFade', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'audioBassThrob', 'depth']],
+  ['trails', 'Trails', ['trail', 'ribbonLen', 'linkDist', 'audioTrailEnergy', 'audioTunnel', 'audioTunnelTurn', 'audioEcho']],
+  ['amount', 'Amount', ['count', 'lifespan', 'emitter', 'emitMode', 'emitRate', 'burstEvery', 'burstSize', 'renew', 'densityMode', 'maskShare']],
+  ['movement', 'Movement', ['speed', 'friction', 'jitter', 'flow', 'flowType', 'flowScale', 'flowSpeed', 'gravity', 'wind', 'windDir', 'flock', 'flockAlign', 'flockCohesion', 'flockSep', 'flockRange', 'space', 'spaceDist', 'edges', 'launchSpeed', 'launchDir', 'launchSpread', 'audioSpeed', 'audioFlow', 'audioSway', 'audioEnergyShake', 'audioStutter', 'audioGravFlip', 'audioFlowSpeed']],
+  ['shape', 'Shape', ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'shapeSolid', 'shapeLive', 'shapeSize', 'shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shapeSpin', 'shapeSeq', 'shapeCycle', 'drawOutline', 'entrance', 'entranceTime', 'homeStrength', 'obstacles', 'obsText', 'emitX', 'emitY', 'emitSize', 'audioWordPulse', 'audioLetterHop', 'audioEnergyWords', 'audioBuildScatter']],
+  ['view', 'View', ['audioKaleido', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'depth', 'depthParallax', 'audioCam', 'audioBassZoom', 'audioSpin', 'audioPan', 'audioRoll', 'audioDolly', 'audioCuts', 'audioFlip', 'viewZoom', 'viewRot']],
+  ['music', 'Music', ['audioIntensity', 'audioKick', 'audioPulse', 'audioBeat', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioDrop', 'audioDropBuild', 'audioBands', 'audioHue', 'audioBright', 'audioCam', 'audioSpin', 'audioTunnel', 'audioSway', 'audioWordsOn', 'audioSpeed', 'audioFlow', 'audioBassThrob', 'audioTrailEnergy']],
+];

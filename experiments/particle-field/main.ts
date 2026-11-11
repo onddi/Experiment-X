@@ -8,7 +8,7 @@ import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAM
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
-import { TIPS as ABOUT } from './tips.ts';
+import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
@@ -11274,6 +11274,9 @@ function rackPlan(src: RackSrc) {
 }
 // Default-on switches the Deck lists whenever their card is switched on.
 const DECK_WITH_CARD = new Set<string>(['obsShow', 'obsPlace', 'showWells']);
+// Deck filters (Colour, Light, …): the picked ones, and every setting in them.
+const ovLens = new Set<string>();
+const lensKeys = () => new Set(LENSES.filter(([id]) => ovLens.has(id)).flatMap(([, , keys]) => keys));
 function rackPlanOf(src: RackSrc) {
   const base = src.base ?? (DEFAULTS as unknown as Record<string, unknown>);
   const S = new Proxy({}, { get: (_, k) => src.get(k as keyof Settings) }) as Record<string, unknown>;
@@ -11287,6 +11290,7 @@ function rackPlanOf(src: RackSrc) {
   const groups = new Map<string, Card[]>();
   let sec: Extract<Control, { kind: 'section' }> | null = null;
   let card: Card | null = null;
+  const lens = ovLens.size ? lensKeys() : null;
   for (const c of CONTROLS) {
     if (c.kind === 'section') {
       sec = c;
@@ -11300,7 +11304,8 @@ function rackPlanOf(src: RackSrc) {
     if (c.show && !c.show()) continue;
     // A few switches that default to on still show while their card is on.
     const withCard = DECK_WITH_CARD.has(c.key) && !!sec.power?.on();
-    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key])) && !pairOf(c, card) && !withCard) continue;
+    if (lens && !lens.has(c.key)) continue;
+    if (!lens && same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key])) && !pairOf(c, card) && !withCard) continue;
     seen.add(c.key);
     if (!card) {
       const col = OV_COLS.find(([, tabs]) => tabs.includes(pageOf(sec!)))?.[0] ?? 'Play';
@@ -11355,6 +11360,33 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
   const head = document.createElement('div');
   head.className = 'rack-head';
   wrap.append(head);
+  {
+    // Filter chips: show only what changes one part of the picture.
+    const chips = document.createElement('div');
+    chips.className = 'rack-lens';
+    chips.setAttribute('role', 'group');
+    chips.setAttribute('aria-label', 'Show settings for');
+    const chip = (id: string | null, label: string) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      const on = id ? ovLens.has(id) : !ovLens.size;
+      b.className = on ? 'on' : '';
+      b.setAttribute('aria-pressed', String(on));
+      b.addEventListener('click', () => {
+        if (!id) ovLens.clear();
+        else if (ovLens.has(id)) ovLens.delete(id);
+        else ovLens.add(id);
+        const scroller = wrap.closest('.ov-body');
+        const top = scroller?.scrollTop ?? 0;
+        wrap.replaceWith(renderRack(live));
+        if (scroller) scroller.scrollTop = Math.min(top, scroller.querySelector('.rack-lens') ? (scroller.querySelector('.rack-lens') as HTMLElement).offsetTop : 0);
+      });
+      return b;
+    };
+    chips.append(chip(null, 'In this scene'), ...LENSES.map(([id, label]) => chip(id, label)));
+    wrap.append(chips);
+  }
   for (const [label] of OV_COLS) {
     const cards = groups.get(label);
     if (!cards) continue;
