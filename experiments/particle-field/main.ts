@@ -5562,6 +5562,20 @@ function resetPlacement() {
   Object.assign(settings, { shapeX: 0, shapeY: 0, shapeAngle: 0, shapeTilt: 0, shapeFacing: 0 });
   changed(new Set<keyof Settings>(['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing']));
 }
+// Studio folders: the pages grouped into seven folders, always listed on the
+// left (on phones, the Studio's home). Opening one shows all its cards, open.
+type Folder = { id: string; label: string; tabs: Tab[]; icon: string };
+const REACT_ICON = '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path d="M8 8a5.7 5.7 0 0 0 0 8M16 8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/>';
+const FOLDERS: Folder[] = [
+  { id: 'scenes', label: 'Scenes', tabs: ['presets'], icon: TAB_ICONS.presets },
+  { id: 'shape', label: 'Shape', tabs: ['shape'], icon: TAB_ICONS.shape },
+  { id: 'motion', label: 'Motion', tabs: ['motion'], icon: TAB_ICONS.motion },
+  { id: 'look', label: 'Look', tabs: ['look'], icon: TAB_ICONS.look },
+  { id: 'react', label: 'React', tabs: ['music', 'camera', 'links'], icon: REACT_ICON },
+  { id: 'play', label: 'Play', tabs: ['knobs', 'timeline', 'xfader'], icon: TAB_ICONS.knobs },
+  { id: 'output', label: 'Output', tabs: ['record'], icon: TAB_ICONS.record },
+];
+const folderOf = (t: Tab) => FOLDERS.find((f) => f.tabs.includes(t)) ?? FOLDERS[0];
 const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', links: 'links' };
 const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
 // A card that can be switched off: `off` is what switching off sets, `start`
@@ -8778,6 +8792,8 @@ const sectionTabs: [HTMLElement, Tab][] = [];
 const powerMemory: Record<string, Partial<Settings>> = {};
 
 let currentTab: Tab = 'presets';
+let folderSync: (() => void) | null = null;
+let folderEnter: (() => void) | null = null;
 const intentButtons: [Intent, HTMLButtonElement][] = [];
 const INTENT_KEY = 'particle-field:intent-pages';
 // The page you were last on in each intent, so switching back lands there.
@@ -8825,7 +8841,8 @@ function showTab(tab: Tab) {
   document.getElementById('panel')!.dataset.page = tab;
   // Scenes and the Play pages are views of their own: a Back bar replaces
   // the strip and the tabs, and leads to the page you came from.
-  const play = PLAY_PAGES.includes(tab);
+  // With the folders, every page is a plain folder: no separate Play views.
+  const play = false && PLAY_PAGES.includes(tab);
   if (!play) playFrom = tab;
   document.getElementById('panel')!.toggleAttribute('data-play', play);
   for (const t of document.querySelectorAll('.ss-back b')) t.textContent = tab === 'presets' ? 'All scenes' : TABS.find(([x]) => x === tab)![1];
@@ -8833,7 +8850,9 @@ function showTab(tab: Tab) {
     b.classList.toggle('on', t === tab || (t === 'music' && REACT_TABS.includes(tab)));
     b.setAttribute('aria-selected', String(t === tab));
   }
-  for (const [el, t] of sectionTabs) el.classList.toggle('other-tab', t !== tab);
+  const ftabs = folderOf(tab).tabs;
+  for (const [el, t] of sectionTabs) el.classList.toggle('other-tab', !ftabs.includes(t));
+  folderSync?.();
   const title = document.getElementById('sheet-title');
   if (title) {
     title.querySelector('small')!.textContent = INTENTS.find(([i]) => i === intent)![1];
@@ -9588,6 +9607,7 @@ const cellValue = (fl: MgFlav[]) => Math.max(...fl.map((f) => f.get()));
 function mgGesture(el: HTMLElement, row: HTMLElement, bar: HTMLElement, fl: MgFlav[], text: () => string, tap: () => void, hold: () => void, redraw: () => void) {
   let x0 = 0;
   let y0 = 0;
+  let v0 = 0;
   let mode: '' | 'wait' | 'swipe' | 'held' = '';
   let timer = 0;
   let eat = false;
@@ -9604,6 +9624,8 @@ function mgGesture(el: HTMLElement, row: HTMLElement, bar: HTMLElement, fl: MgFl
     if (e.button > 0) return;
     x0 = e.clientX;
     y0 = e.clientY;
+    const on = fl.filter((f) => f.get() > 0.02);
+    v0 = (on.length ? on : [fl[0]])[0].get();
     mode = 'wait';
     clearTimeout(timer);
     timer = window.setTimeout(() => {
@@ -9632,8 +9654,8 @@ function mgGesture(el: HTMLElement, row: HTMLElement, bar: HTMLElement, fl: MgFl
       }
       row.classList.add('swiping');
     }
-    const rr = row.getBoundingClientRect();
-    const v = clamp01((e.clientX - rr.left - 8) / (rr.width - 16));
+    // Relative to where the drag started: about 140 px sweeps the whole range.
+    const v = clamp01(v0 + (dx - Math.sign(dx) * 8) / 140);
     put(v);
     show(v);
     redraw();
@@ -9998,6 +10020,14 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
 
   // anchor: show the panel right under this (the list), not at the end.
   function openDetail(sup: string, title: string | (() => string), fl: MgFlav[], key: string, remove?: () => void, anchor?: HTMLElement) {
+    // The same pill again closes its slider.
+    if (open === key && !detail.hidden) {
+      open = null;
+      dDraws = [];
+      detail.hidden = true;
+      redraw();
+      return;
+    }
     open = key;
     if (anchor && anchor.nextSibling !== detail) anchor.after(detail);
     dDraws = [];
@@ -10424,7 +10454,7 @@ function renderControls() {
           afterShow.push(() => {
             const n = fine.querySelectorAll(':scope > .prow:not([hidden])').length;
             btn.hidden = n === 0;
-            btn.lastElementChild!.textContent = `Fine-tune · ${n} more`;
+            btn.lastElementChild!.textContent = document.getElementById('panel')?.classList.contains('fmode') ? 'Fine-tune' : `Fine-tune · ${n} more`;
           });
           body.append(essBody, btn, fine);
           body = essBody;
@@ -11120,6 +11150,7 @@ function openSection(id: string) {
   if (!c) return;
   if (panel.classList.contains('collapsed')) toggle.click();
   showTab(pageOf(c));
+  folderEnter?.();
   const sec = document.querySelector<HTMLElement>(`[data-sec="${id}"]`);
   if (!sec) return;
   if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
@@ -11243,6 +11274,23 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
     const h = document.createElement('h3');
     h.textContent = label;
     box.append(h);
+    {
+      // The whole group's cards, open in the Studio.
+      const tab = (OV_COLS.find(([l]) => l === label)?.[1][0] ?? 'look') === 'presets' ? 'knobs' : OV_COLS.find(([l]) => l === label)![1][0];
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'rack-studio';
+      go.textContent = 'Open in Studio ›';
+      go.addEventListener('click', () => {
+        closeOverview();
+        if (panel.classList.contains('collapsed')) toggle.click();
+        showTab(tab);
+        folderEnter?.();
+        controls.scrollTop = 0;
+        uPaint(true);
+      });
+      h.append(go);
+    }
     for (const cd of cards) {
       const part = document.createElement('div');
       part.className = 'rack-card';
@@ -13079,7 +13127,7 @@ const chips = mbar.querySelector<HTMLElement>('.sp-chips')!;
 type UView = 'stage' | 'deck' | 'studio';
 const ubar = document.createElement('div');
 ubar.className = 'u-bar';
-ubar.innerHTML = `<div class="u-seg" role="tablist" aria-label="Views"><span class="u-thumb"></span><button type="button" role="tab" data-v="stage" aria-label="Stage" title="Stage">${ICONS.eye}</button><button type="button" role="tab" data-v="deck" aria-label="Deck" title="Deck">${ICONS.sliders}</button><button type="button" role="tab" data-v="studio" aria-label="Studio" title="Studio">${MENU_ICON}</button></div><div class="u-tray"></div>`;
+ubar.innerHTML = `<div class="u-seg" role="tablist" aria-label="Views"><span class="u-thumb"></span><button type="button" role="tab" data-v="stage" aria-label="Stage" title="Stage">${ICONS.eye}<span>Stage</span></button><button type="button" role="tab" data-v="deck" aria-label="Deck" title="Deck">${ICONS.sliders}<span>Deck</span></button><button type="button" role="tab" data-v="studio" aria-label="Studio" title="Studio (H)">${MENU_ICON}<span>Studio</span></button></div><div class="u-tray"></div>`;
 document.body.append(ubar);
 const uView = (): UView => (ovEl ? 'deck' : !panel.classList.contains('collapsed') ? 'studio' : 'stage');
 function uGo(v: UView) {
@@ -13111,16 +13159,36 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
     uPaint(true);
   }, document.body.classList.contains('u-pages') ? 'on' : '']],
 };
+// Desktop: icons for Shuffle and Pause, More for the rest of the actions.
+const MORE_ICON = svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>');
+const ARRANGE_ICON = svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>');
+const uPause = (): [string, string, () => void, string?] => [paused ? 'Play (Space)' : 'Pause (Space)', paused ? ICONS.play : ICONS.pause, () => {
+  togglePause();
+  uPaint(true);
+}, paused ? 'on' : ''];
+const uMore = (): [string, string, () => void, string?] => ['More actions', MORE_ICON, () => {
+  toggleDockMore();
+  if (dockMoreEl && dockMoreEl.parentElement !== ubar) ubar.append(dockMoreEl);
+}, 'more'];
+const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), 'label'] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
+  deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
+  studio: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
+};
 let uSig = '';
 function uPaint(force = false) {
   const v = uView();
-  const sig = `${v}|${xf.on}|${document.body.classList.contains("u-pages")}|${hasShape()}`;
+  const desk = !sheetMode();
+  if (desk) uPlace();
+  const sig = `${v}|${xf.on}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}`;
   if (sig === uSig && !force) return;
   uSig = sig;
   ubar.classList.remove('stage', 'deck', 'studio');
   ubar.classList.add(v);
-  const i = ['stage', 'deck', 'studio'].indexOf(v);
-  ubar.querySelector<HTMLElement>('.u-thumb')!.style.transform = `translateX(${i * 44}px)`;
+  const on = ubar.querySelector<HTMLElement>(`.u-seg button[data-v="${v}"]`)!;
+  const thumb = ubar.querySelector<HTMLElement>('.u-thumb')!;
+  thumb.style.width = `${on.offsetWidth}px`;
+  thumb.style.transform = `translateX(${on.offsetLeft - 3}px)`;
   ubar.querySelectorAll<HTMLButtonElement>('.u-seg button').forEach((b) => {
     b.classList.toggle('on', b.dataset.v === v);
     b.setAttribute('aria-selected', String(b.dataset.v === v));
@@ -13128,16 +13196,39 @@ function uPaint(force = false) {
   if (v !== 'studio') document.body.classList.remove('u-pages');
   const tray = ubar.querySelector<HTMLElement>('.u-tray')!;
   tray.innerHTML = '';
-  U_TRAY[v]().forEach(([label, ic, fn, cls], j) => {
+  (desk ? U_TRAY_DESK : U_TRAY)[v]().forEach(([label, ic, fn, cls], j) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.title = label;
-    b.setAttribute('aria-label', label);
-    b.innerHTML = ic + (j === 0 ? `<span>${label}</span>` : '');
-    if (cls) b.classList.add(cls);
+    b.setAttribute('aria-label', label.replace(/ \(.*\)$/, ''));
+    const named = desk ? cls?.includes('label') : j === 0;
+    b.innerHTML = ic + (named ? `<span>${label.replace(/ \(.*\)$/, '')}</span>` : '');
+    if (cls) b.classList.add(...cls.split(' '));
+    if (cls?.includes('more')) dockMoreBtn = b;
     b.addEventListener('click', fn);
     tray.append(b);
   });
+}
+// Desktop: the bar floats centred over the field, clear of the Studio or
+// the Deck on the right. On the Stage it rests out of sight until the mouse moves.
+function uPlace() {
+  let right = innerWidth;
+  if (!panel.classList.contains('collapsed')) right = Math.min(right, panel.getBoundingClientRect().left);
+  if (ovEl) right = Math.min(right, ovEl.getBoundingClientRect().left);
+  ubar.style.left = `${right / 2}px`;
+}
+{
+  let rest = 0;
+  const wake = () => {
+    ubar.classList.remove('rest');
+    clearTimeout(rest);
+    rest = window.setTimeout(() => {
+      if (!ubar.matches(':hover') && !dockMoreEl?.classList.contains('open')) ubar.classList.add('rest');
+    }, 2600);
+  };
+  window.addEventListener('pointermove', (e) => e.pointerType === 'mouse' && wake(), { passive: true });
+  ubar.addEventListener('pointerleave', wake);
+  addEventListener('resize', () => uPaint(true));
 }
 ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-v]');
@@ -13266,7 +13357,7 @@ addEventListener('keydown', (e) => {
 // (After the module has set everything up: the panel comes later in the file.)
 setTimeout(() => {
   uPaint(true);
-  setInterval(() => sheetMode() && uPaint(), 250);
+  setInterval(() => uPaint(), 250);
 });
 mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
   stopWatching();
@@ -13900,6 +13991,177 @@ renderControls();
   })();
   showTab(TABS.some(([t]) => t === saved) && saved !== 'xfader' ? (saved as Tab) : 'presets');
   syncTabDots();
+}
+buildFolders();
+// --- Studio folders ------------------------------------------------------------
+// The left column (on phones, the Studio's home): seven folders, one open at a
+// time with its cards listed. A folder shows all its cards on the right, each
+// fully open; a card in the list jumps to it. Cards don't fold here.
+function buildFolders() {
+  panel.classList.add('fmode');
+  const nav = document.createElement('nav');
+  nav.className = 'fidx';
+  nav.setAttribute('aria-label', 'Studio folders');
+  const split = document.createElement('div');
+  split.className = 'fsplit';
+  controls.before(split);
+  // Phones: a folder's own header, with Back to the folders.
+  const fhead = document.createElement('div');
+  fhead.className = 'fhead';
+  fhead.innerHTML = `<button type="button" class="fback" aria-label="Back to the folders">${svg('<path d="M15 5l-7 7 7 7"/>')}<span>Studio</span></button><b></b>`;
+  const pane = document.createElement('div');
+  pane.className = 'fpane';
+  controls.before(pane);
+  pane.append(fhead, controls);
+  split.append(nav, pane);
+  fhead.querySelector('.fback')!.addEventListener('click', () => setInside(false));
+  const setInside = (on: boolean) => {
+    panel.classList.toggle('f-in', on);
+    if (on) controls.scrollTop = 0;
+  };
+  let open: string | null = folderOf(currentTab).id;
+  type Item = { el: HTMLButtonElement; ctl: Extract<Control, { kind: 'section' }>; sec: HTMLElement | null; dot: HTMLElement; sum: HTMLElement };
+  const items: Item[] = [];
+  const heads: [Folder, HTMLElement, HTMLButtonElement, HTMLElement][] = [];
+  const sections = CONTROLS.filter((c): c is Extract<Control, { kind: 'section' }> => c.kind === 'section' && !c.fixed);
+  for (const f of FOLDERS) {
+    const box = document.createElement('div');
+    box.className = 'fd';
+    box.dataset.f = f.id;
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'fd-head';
+    head.innerHTML = `<span class="fd-ic">${svg(f.icon)}</span><span class="fd-txt"><b></b><small></small></span><span class="fd-n"></span><span class="fd-chev" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}</span>`;
+    head.querySelector('b')!.textContent = f.label;
+    const kids = document.createElement('div');
+    kids.className = 'fd-kids';
+    const mine = f.tabs.flatMap((t) => sections.filter((x) => pageOf(x) === t));
+    let lastTab: Tab | null = null;
+    for (const c of mine) {
+      // A folder with several pages (React) names each in the list.
+      if (f.tabs.length > 1 && pageOf(c) !== lastTab) {
+        lastTab = pageOf(c);
+        const h = document.createElement('p');
+        h.className = 'fd-sub';
+        h.textContent = TABS.find(([t]) => t === lastTab)![1];
+        kids.append(h);
+      }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fd-card';
+      b.innerHTML = '<i></i><span></span><small></small>';
+      b.querySelector('span')!.textContent = c.label;
+      const it: Item = { el: b, ctl: c, sec: null, dot: b.querySelector('i')!, sum: b.querySelector('small')! };
+      b.addEventListener('click', () => goCard(it));
+      items.push(it);
+      kids.append(b);
+    }
+    head.addEventListener('click', () => {
+      const here = folderOf(currentTab).id === f.id;
+      if (here && open === f.id && !sheetMode()) {
+        open = null;
+        return paint();
+      }
+      open = f.id;
+      if (!here) showTab(f.id === 'react' && f.tabs.includes(lastReact) ? lastReact : f.tabs[0]);
+      controls.scrollTop = 0;
+      if (sheetMode()) setInside(true);
+      paint();
+    });
+    box.append(head, kids);
+    nav.append(box);
+    heads.push([f, box, head, head.querySelector('small')!]);
+  }
+  const secOf = (it: Item) => (it.sec ??= controls.querySelector<HTMLElement>(`section[data-sec="${it.ctl.id}"]`));
+  function goCard(it: Item) {
+    const t = pageOf(it.ctl);
+    if (!folderOf(currentTab).tabs.includes(t)) showTab(t);
+    else if (currentTab !== t) showTab(t);
+    if (sheetMode()) setInside(true);
+    const sec = secOf(it);
+    if (!sec) return;
+    requestAnimationFrame(() => {
+      controls.scrollTo({ top: sec.offsetTop - controls.offsetTop - 8, behavior: 'smooth' });
+      sec.classList.remove('flash');
+      void sec.offsetWidth;
+      sec.classList.add('flash');
+    });
+    markSel(it);
+  }
+  let sel: Item | null = null;
+  function markSel(it: Item | null) {
+    sel = it;
+    for (const x of items) x.el.classList.toggle('sel', x === it);
+  }
+  // The card nearest the top of the pane is the one marked in the list.
+  controls.addEventListener('scroll', () => {
+    const top = controls.scrollTop + controls.offsetTop + 40;
+    let best: Item | null = null;
+    for (const it of items) {
+      const sec = secOf(it);
+      if (!sec || sec.classList.contains('other-tab') || sec.hidden) continue;
+      if (sec.offsetTop <= top) best = it;
+      else if (!best) best = it;
+    }
+    if (best !== sel) markSel(best);
+  }, { passive: true });
+  function paint() {
+    const cur = folderOf(currentTab).id;
+    if (open && open !== cur && !sheetMode()) open = cur;
+    for (const [f, box, head, small] of heads) {
+      box.classList.toggle('open', open === f.id);
+      box.classList.toggle('here', cur === f.id);
+      head.setAttribute('aria-expanded', String(open === f.id));
+      // Phones list what's on inside; desktop counts it.
+      const mine = items.filter((it) => f.tabs.includes(pageOf(it.ctl)) && !secOf(it)?.hidden);
+      const on = mine.filter((it) => it.ctl.power?.on());
+      const powered = mine.filter((it) => it.ctl.power);
+      const live = mine.filter((it) => !it.ctl.power || it.ctl.power.on());
+      small.textContent = (live.length ? live : mine).map((it) => it.ctl.label).join(', ');
+      head.querySelector<HTMLElement>('.fd-n')!.textContent = powered.length && on.length ? `${on.length} on` : '';
+    }
+    for (const it of items) {
+      const sec = secOf(it);
+      it.el.hidden = !!sec?.hidden;
+      const pw = it.ctl.power;
+      it.dot.className = pw ? (pw.on() ? 'on' : '') : 'always';
+      it.sum.textContent = sec?.querySelector('.group-summary')?.textContent ?? '';
+    }
+    const t = fhead.querySelector('b')!;
+    t.textContent = FOLDERS.find((f) => f.id === cur)!.label;
+  }
+  folderSync = () => {
+    open = folderOf(currentTab).id;
+    paint();
+  };
+  refreshers.push(paint);
+  afterShow.push(() => {
+    for (const it of items) it.el.hidden = !!secOf(it)?.hidden;
+  });
+  // Cards stay open here: their headers don't fold them.
+  controls.addEventListener('click', (e) => {
+    const h = (e.target as HTMLElement).closest('.group-head');
+    if (h && panel.classList.contains('fmode')) e.stopImmediatePropagation();
+  }, true);
+  // In a folder with several pages, its cards come page by page (Music, Camera, Connections).
+  const tabOfEl = new Map(sectionTabs);
+  for (const el of controls.children) {
+    const t = tabOfEl.get(el as HTMLElement);
+    (el as HTMLElement).style.order = t ? String(folderOf(t).tabs.indexOf(t) + 1) : '50';
+  }
+  for (const sec of controls.querySelectorAll<HTMLElement>('section.group.closed')) sec.classList.remove('closed');
+  // Fine-tune and More show as plain blocks under the essentials.
+  for (const m of controls.querySelectorAll<HTMLElement>('.more-body')) m.hidden = false;
+  // Phones open on the folders; the title brings them back.
+  document.getElementById('sheet-title')?.addEventListener('click', (e) => {
+    e.stopImmediatePropagation();
+    setInside(false);
+  }, true);
+  setInside(false);
+  paint();
+  folderEnter = () => sheetMode() && setInside(true);
+  // The Pages dock's page buttons open that folder.
+  for (const [, b] of dockTabs) b.addEventListener('click', () => folderEnter?.());
 }
 resize();
 refresh();
