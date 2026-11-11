@@ -1,4 +1,5 @@
 // Settings: every option's type and its default value. Pure data, no DOM.
+import type { FillPattern } from './patterns.ts';
 import type { Genre, VoxMode } from './audio.ts';
 export type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
 export type LifeSize = 'none' | 'grow' | 'shrink' | 'swell';
@@ -80,7 +81,7 @@ export interface Settings {
   shapeGeo: string;
   shapeSolid: string;
   shapeLive: 'bars' | 'ring' | 'clock' | 'tempo';
-  shapePattern: 'sunflower' | 'grid';
+  shapePattern: 'sunflower' | 'grid' | FillPattern;
   shapeSeq: string;
   shapeSeqEvery: 'bar' | '2bars' | '4bars' | '8bars' | 'drop';
   shapeSeqSec: number;

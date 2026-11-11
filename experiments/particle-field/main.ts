@@ -1,3 +1,4 @@
+import { fillPattern, FILL_PATTERNS } from './patterns.ts';
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
@@ -3217,6 +3218,7 @@ function buildShape() {
     return;
   }
   const pat = S.shape === 'pattern' ? S.shapePattern : S.shape;
+  if (S.shape === 'pattern' && fillPattern(pat, n, w, h, S.shapeSize, hx, hy)) return;
   if (pat === 'grid' || pat === 'sunflower' || pat === 'ring') {
     const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
     const rows = Math.max(1, Math.ceil(n / cols));
@@ -5686,7 +5688,7 @@ const CAM_MODES: [string, string][] = [
   ['hands', 'Your hands (skeleton)'], ['pose', 'Your body (skeleton)'], ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
 const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'A geometric shape'], ['pattern', 'A pattern (fills an area)'], ['solid', 'A turning 3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera']];
-const PATTERNS: [string, string][] = [['sunflower', 'Sunflower disc'], ['grid', 'Grid']];
+const PATTERNS: [string, string][] = [['sunflower', 'Sunflower disc'], ['grid', 'Grid'], ...FILL_PATTERNS];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
 const hasPointer = () => settings.pointerMode !== 'none';
@@ -5919,7 +5921,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'The bars and the ring follow the sound source on the Music tab; without sound they rest flat.', show: () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring') },
   { kind: 'text', key: 'shapeSeq', label: 'Sequence', placeholder: 'heart, star, LOVE', show: () => settings.shape === 'sequence' },
   { kind: 'select', key: 'shapeSeqEvery', label: 'Next one', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['8bars', 'Every 8 bars'], ['drop', 'Only on drops']], show: () => settings.shape === 'sequence' },
-  { kind: 'range', key: 'shapeSeqSec', label: 'Without music, every', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
+  { kind: 'range', key: 'shapeSeqSec', label: 'Next (no music)', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
   { kind: 'note', text: `Words and icons, separated by commas. Icons: ${ICON_SHAPES.map(([k]) => k).join(', ')}.`, show: () => settings.shape === 'sequence' },
   { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
