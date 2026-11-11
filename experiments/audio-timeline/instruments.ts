@@ -35,6 +35,21 @@ export interface Studio {
   lead(t: number, m: number, len: number, amp?: number): void;
   /** Vinyl crackle and hiss from `t` for `len` seconds. */
   crackle(t: number, len: number, amp?: number): void;
+  /**
+   * Dubstep wobble: detuned saws and a square through a resonant filter that
+   * opens and closes `rate` times a second (starting closed), over a sub.
+   */
+  wobble(t: number, m: number, len: number, rate: number, amp?: number, lo?: number, hi?: number): void;
+  /** A driven 808: a sine with a pitch punch, held for `len`, optionally gliding to `slideTo` at `slideAt` seconds in. */
+  boom(t: number, m: number, len: number, o?: { amp?: number; slideTo?: number; slideAt?: number; drive?: number }): void;
+  /** An FM bell. */
+  bell(t: number, m: number, len: number, amp?: number): void;
+  /** Organ bass: a few sine harmonics, low-passed, like a drawbar organ. */
+  organ(t: number, m: number, len: number, amp?: number): void;
+  /** A short rimshot click. */
+  rim(t: number, amp?: number, pan?: number): void;
+  /** Growl bass: driven saw and square through two moving formant filters ("oh" to "ah"), over a sub. */
+  growl(t: number, m: number, len: number, o?: { amp?: number; from?: [number, number]; to?: [number, number] }): void;
 }
 
 export interface RenderOptions {
@@ -42,6 +57,8 @@ export interface RenderOptions {
   delayTime?: number;
   /** Dull the top end and narrow the low end, like a worn tape. */
   lofi?: boolean;
+  /** Feedback of the stab delay (default 0.45); higher for dub. */
+  delayFeedback?: number;
 }
 
 /**
@@ -58,7 +75,7 @@ export async function renderBars(
 ): Promise<AudioBuffer> {
   const sr = 44100;
   const ctx = new OfflineAudioContext(2, Math.ceil((bars * barLen + tail) * sr), sr);
-  const scheduleBar = build(makeStudio(ctx, opts.delayTime ?? (barLen * 3) / 16, !!opts.lofi));
+  const scheduleBar = build(makeStudio(ctx, opts.delayTime ?? (barLen * 3) / 16, !!opts.lofi, opts.delayFeedback ?? 0.45));
   scheduleBar(0);
   for (let bar = 1; bar < bars; bar++) {
     void ctx.suspend(bar * barLen - 0.25).then(() => {
@@ -83,7 +100,7 @@ export function normalise(buf: AudioBuffer, length = buf.length) {
   }
 }
 
-function makeStudio(ctx: OfflineAudioContext, delayTime: number, lofi: boolean): Studio {
+function makeStudio(ctx: OfflineAudioContext, delayTime: number, lofi: boolean, feedback: number): Studio {
   const sr = ctx.sampleRate;
 
   const master = ctx.createGain();
@@ -175,7 +192,7 @@ function makeStudio(ctx: OfflineAudioContext, delayTime: number, lofi: boolean):
   const delay = ctx.createDelay(2);
   delay.delayTime.value = delayTime;
   const fb = ctx.createGain();
-  fb.gain.value = 0.45;
+  fb.gain.value = feedback;
   const dTone = ctx.createBiquadFilter();
   dTone.type = 'bandpass';
   dTone.frequency.value = 1400;
@@ -572,6 +589,168 @@ function makeStudio(ctx: OfflineAudioContext, delayTime: number, lofi: boolean):
       out(g, master, s);
       s.start(t, Math.random() * 2);
       s.stop(t + len);
+    },
+
+    wobble(t, m, len, rate, amp = 0.28, lo = 140, hi = 2600) {
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.Q.value = 10;
+      // Drawn cycle by cycle so every wobble starts closed, locked to the beat.
+      const period = 1 / rate;
+      f.frequency.setValueAtTime(lo, t);
+      for (let k = 0; k * period < len; k++) {
+        const c = t + k * period;
+        f.frequency.setValueAtTime(lo, c);
+        f.frequency.exponentialRampToValueAtTime(hi, c + period * 0.5);
+        f.frequency.exponentialRampToValueAtTime(lo, c + period);
+      }
+      const pre = ctx.createGain();
+      pre.gain.value = 0.5;
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = acidCurve;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.005);
+      g.gain.setValueAtTime(amp, t + len);
+      g.gain.setTargetAtTime(0.0001, t + len, 0.015);
+      f.connect(pre).connect(shaper).connect(g);
+      const end = t + len + 0.1;
+      saws(t, m, end, [-12, 12], f);
+      const sq = ctx.createOscillator();
+      sq.type = 'square';
+      sq.frequency.value = midi(m - 12);
+      sq.connect(f);
+      sq.start(t);
+      sq.stop(end);
+      out(g, master, sq, [[verbIn, 0.05]], [f, pre, shaper]);
+      this.sub(t, m - 12, len, amp * 1.4);
+    },
+
+    boom(t, m, len, { amp = 0.6, slideTo, slideAt = len * 0.6, drive = 2 } = {}) {
+      const f = midi(m);
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(f * 2.5, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.03);
+      if (slideTo !== undefined) {
+        o.frequency.setValueAtTime(f, t + slideAt);
+        o.frequency.exponentialRampToValueAtTime(midi(slideTo), t + slideAt + 0.09);
+      }
+      const pre = ctx.createGain();
+      pre.gain.value = drive;
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = curve;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.002);
+      g.gain.setTargetAtTime(amp * 0.6, t + 0.05, len * 0.6);
+      g.gain.setTargetAtTime(0.0001, t + len, 0.06);
+      o.connect(pre).connect(shaper).connect(g);
+      out(g, master, o, [], [pre, shaper]);
+      o.start(t);
+      o.stop(t + len + 0.35);
+    },
+
+    bell(t, m, len, amp = 0.08) {
+      const f = midi(m);
+      const car = ctx.createOscillator();
+      car.frequency.value = f;
+      const mod = ctx.createOscillator();
+      mod.frequency.value = f * 3.5;
+      const idx = ctx.createGain();
+      idx.gain.setValueAtTime(f * 2, t);
+      idx.gain.exponentialRampToValueAtTime(f * 0.2, t + 1);
+      mod.connect(idx).connect(car.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      car.connect(g);
+      out(g, bus(0.2), car, [[verbIn, 0.4], [delayIn, 0.2]], [idx]);
+      car.start(t);
+      mod.start(t);
+      car.stop(t + len + 0.05);
+      mod.stop(t + len + 0.05);
+      mod.onended = () => mod.disconnect();
+    },
+
+    organ(t, m, len, amp = 0.3) {
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 1100;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.004);
+      g.gain.setValueAtTime(amp * 0.85, t + len);
+      g.gain.setTargetAtTime(0.0001, t + len, 0.02);
+      f.connect(g);
+      const end = t + len + 0.1;
+      const oscs = [
+        [1, 1],
+        [2, 0.55],
+        [3, 0.35],
+        [4, 0.15],
+      ].map(([h, lvl]) => {
+        const o = ctx.createOscillator();
+        o.frequency.value = midi(m) * h;
+        const l = ctx.createGain();
+        l.gain.value = lvl;
+        o.connect(l).connect(f);
+        o.start(t);
+        o.stop(end);
+        o.onended = () => l.disconnect();
+        return o;
+      });
+      out(g, master, oscs[0], [], [f]);
+    },
+
+    rim(t, amp = 0.25, pan = 0.1) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = 1750;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+      o.connect(g);
+      out(g, bus(pan), o, [[verbIn, 0.15]]);
+      o.start(t);
+      o.stop(t + 0.05);
+      noiseHit(t, [['bandpass', 3200, 1.5]], amp * 0.6, 0.025, bus(pan));
+    },
+
+    growl(t, m, len, { amp = 0.3, from = [420, 900], to = [750, 1250] } = {}) {
+      const src = ctx.createGain();
+      const pre = ctx.createGain();
+      pre.gain.value = 2.5;
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = acidCurve;
+      src.connect(pre).connect(shaper);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.004);
+      g.gain.setValueAtTime(amp, t + len);
+      g.gain.setTargetAtTime(0.0001, t + len, 0.015);
+      const formants = [0, 1].map((i) => {
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.Q.value = 5;
+        bp.frequency.setValueAtTime(from[i], t);
+        bp.frequency.exponentialRampToValueAtTime(to[i], t + len * 0.7);
+        const lvl = ctx.createGain();
+        lvl.gain.value = i ? 0.7 : 1;
+        shaper.connect(bp).connect(lvl).connect(g);
+        return [bp, lvl];
+      });
+      const end = t + len + 0.08;
+      saws(t, m, end, [-6, 6], src);
+      const sq = ctx.createOscillator();
+      sq.type = 'square';
+      sq.frequency.value = midi(m - 12);
+      sq.connect(src);
+      sq.start(t);
+      sq.stop(end);
+      out(g, master, sq, [[verbIn, 0.05]], [src, pre, shaper, ...formants.flat()]);
+      this.sub(t, m - 12, len, amp * 1.2);
     },
   };
 }
