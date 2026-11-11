@@ -5910,8 +5910,8 @@ const CONTROLS: Control[] = [
     Object.assign(settings, { mEnergy: 0.5, mOrder: 0.5, mDream: 0.5, mHeat: 0.5, mDensity: 0.5 });
     changed(new Set(['mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity']));
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
-  { kind: 'section', id: 'play', label: 'Play on the field', tab: 'presets',
-    about: 'Play settings like an instrument with the menu closed.',
+  { kind: 'section', id: 'play', label: 'Field knobs & gestures', tab: 'presets',
+    about: 'Five knobs along the bottom edge, two-finger drag and pinch, and the mouse wheel: turn settings with the menu closed.',
     summary: () => (settings.playOn ? (knobSetName() ?? 'own mix') : 'off'),
     power: { on: () => settings.playOn, off: { playOn: false }, start: { playOn: true } } },
   { kind: 'sub', label: 'Knob set' },
@@ -5996,7 +5996,7 @@ const CONTROLS: Control[] = [
   ...LENS_MORE.slice(6).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) })),
   { kind: 'sub', label: 'Music' },
   { kind: 'range', key: 'lensMusic', label: 'Moves with the music', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. The twirl spins and winds tighter on kicks, waves swell with the bass, a ripple goes out on each kick, shards burst at a drop, echoes flash and the glow breathes. Without music they drift by themselves. Every one can go on a knob (Play on the field).' },
+  { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. The twirl spins and winds tighter on kicks, waves swell with the bass, a ripple goes out on each kick, shards burst at a drop, echoes flash and the glow breathes. Without music they drift by themselves. Every one can go on a knob (Field knobs & gestures).' },
 
   { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
