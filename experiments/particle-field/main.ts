@@ -27,6 +27,15 @@ const settings: Settings = { ...DEFAULTS, ...upgradeShape(load()) };
 if (settings.palette !== 'custom' && !(settings.palette in PALETTES)) settings.palette = DEFAULTS.palette;
 // Older saves used 'none' as a beat wave; that is now 'Kick does: Pulse'.
 if ((settings.audioBeat as string) === 'none') settings.audioBeat = 'ripple';
+// The on-field knobs went from on to off by default: switch them off once.
+try {
+  if (!localStorage.getItem('particle-field:knobs-off-v1')) {
+    settings.playOn = false;
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    if (saved && typeof saved === 'object') localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, playOn: false }));
+    localStorage.setItem('particle-field:knobs-off-v1', '1');
+  }
+} catch {}
 
 function load(): Partial<Settings> {
   try {
@@ -6564,6 +6573,8 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean): Settings {
   // Drawing and spraying belong to their look, so they don't carry over.
   const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
+  // The on-field knobs are yours to switch on: no scene turns them on.
+  hands.playOn = settings.playOn;
   // Lenses the scene doesn't set go back to your own, not the last scene's.
   for (const k of LENS_KEYS) if (!(k in p) && k in myLens) (hands as Record<string, unknown>)[k] = myLens[k];
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;

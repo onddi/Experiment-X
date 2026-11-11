@@ -439,7 +439,7 @@ export const DEFAULTS: Settings = {
   mHeat: 0.5,
   mDensity: 0.5,
   densityMode: 'fade',
-  playOn: true,
+  playOn: false,
   playLeft: 'mEnergy',
   playRight: 'mDream',
   playTwo: 'mHeat',
