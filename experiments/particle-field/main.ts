@@ -5565,13 +5565,14 @@ function resetPlacement() {
 // Studio folders: the pages grouped into seven folders, always listed on the
 // left (on phones, the Studio's home). Opening one shows all its cards, open.
 type Folder = { id: string; label: string; tabs: Tab[]; icon: string };
-const REACT_ICON = '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path d="M8 8a5.7 5.7 0 0 0 0 8M16 8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/>';
 const FOLDERS: Folder[] = [
   { id: 'scenes', label: 'Scenes', tabs: ['presets'], icon: TAB_ICONS.presets },
   { id: 'shape', label: 'Shape', tabs: ['shape'], icon: TAB_ICONS.shape },
   { id: 'motion', label: 'Motion', tabs: ['motion'], icon: TAB_ICONS.motion },
   { id: 'look', label: 'Look', tabs: ['look'], icon: TAB_ICONS.look },
-  { id: 'react', label: 'React', tabs: ['music', 'camera', 'links'], icon: REACT_ICON },
+  { id: 'music', label: 'Music', tabs: ['music'], icon: TAB_ICONS.music },
+  { id: 'camera', label: 'Camera', tabs: ['camera'], icon: TAB_ICONS.camera },
+  { id: 'links', label: 'Connections', tabs: ['links'], icon: TAB_ICONS.links },
   { id: 'play', label: 'Play', tabs: ['knobs', 'timeline', 'xfader'], icon: TAB_ICONS.knobs },
   { id: 'output', label: 'Output', tabs: ['record'], icon: TAB_ICONS.record },
 ];
@@ -14060,7 +14061,9 @@ function buildFolders() {
     const mine = f.tabs.flatMap((t) => sections.filter((x) => pageOf(x) === t));
     let lastTab: Tab | null = null;
     for (const c of mine) {
-      // A folder with several pages (React) names each in the list.
+      // The old music and camera cards live on as Reactions chips; they only show with show-classic.
+      if (CLASSIC_SECS.has(c.id)) continue;
+      // A folder with several pages names each in the list.
       if (f.tabs.length > 1 && pageOf(c) !== lastTab) {
         lastTab = pageOf(c);
         const h = document.createElement('p');
@@ -14085,7 +14088,7 @@ function buildFolders() {
         return paint();
       }
       open = f.id;
-      if (!here) showTab(f.id === 'react' && f.tabs.includes(lastReact) ? lastReact : f.tabs[0]);
+      if (!here) showTab(f.tabs[0]);
       controls.scrollTop = 0;
       if (sheetMode()) setInside(true);
       paint();
@@ -14102,8 +14105,11 @@ function buildFolders() {
     if (sheetMode()) setInside(true);
     const sec = secOf(it);
     if (!sec) return;
+    // While the jump scrolls, the list keeps the card you picked.
+    spyOff = performance.now() + 900;
     requestAnimationFrame(() => {
-      controls.scrollTo({ top: sec.offsetTop - controls.offsetTop - 8, behavior: 'smooth' });
+      const y = sec.getBoundingClientRect().top - controls.getBoundingClientRect().top + controls.scrollTop;
+      controls.scrollTo({ top: y - 8, behavior: 'smooth' });
       sec.classList.remove('flash');
       void sec.offsetWidth;
       sec.classList.add('flash');
@@ -14116,14 +14122,20 @@ function buildFolders() {
     for (const x of items) x.el.classList.toggle('sel', x === it);
   }
   // The card nearest the top of the pane is the one marked in the list.
+  let spyOff = 0;
   controls.addEventListener('scroll', () => {
-    const top = controls.scrollTop + controls.offsetTop + 40;
+    if (performance.now() < spyOff) return;
     let best: Item | null = null;
+    let bestY = -Infinity;
     for (const it of items) {
       const sec = secOf(it);
-      if (!sec || sec.classList.contains('other-tab') || sec.hidden) continue;
-      if (sec.offsetTop <= top) best = it;
-      else if (!best) best = it;
+      // Only cards actually laid out (a card inside a hidden block has no box).
+      if (!sec || sec.classList.contains('other-tab') || sec.hidden || !sec.getClientRects().length) continue;
+      const y = sec.getBoundingClientRect().top - controls.getBoundingClientRect().top;
+      if (y <= 40 && (!best || y >= bestY)) {
+        best = it;
+        bestY = y;
+      }
     }
     if (best !== sel) markSel(best);
   }, { passive: true });
