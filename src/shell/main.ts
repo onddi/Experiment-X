@@ -25,12 +25,13 @@ const bySlug = (slug: string) => experiments.find((e) => e.slug === slug);
 
 /** What's on screen: the base experiment plus any layers. */
 let view: View = { layers: [], input: -1 };
-/** Set when a player opens: start playing as soon as it reports a loaded track. */
+/** Set when a player opens: everything waits, paused, until a track is picked. */
 let autostart = false;
-const startBtn = $<HTMLButtonElement>('start-btn');
+/** The player's counter for the last track X-Frame acted on. */
+let seenTrack: number | undefined;
 function armAutostart() {
   autostart = true;
-  startBtn.hidden = true;
+  seenTrack = undefined;
 }
 /**
  * Browser features experiments may use inside X-Frame's iframes: autoplay for
@@ -119,8 +120,12 @@ function createFrame(exp: Experiment) {
   frame.src = exp.url;
   frame.addEventListener('load', () => {
     tellLayer(frame);
-    // With several experiments on screen, start with every options panel closed.
-    if (view.layers.length > 1) frame.contentWindow?.postMessage({ type: 'xp:close-panel' }, location.origin);
+    // With several experiments on screen, only the layer that has the mouse
+    // starts with its options open (e.g. the player, so a track is one tap away).
+    if (view.layers.length > 1) {
+      const active = view.layers[inputLayer(view)]?.slug === exp.slug;
+      frame.contentWindow?.postMessage({ type: active ? 'xp:open-panel' : 'xp:close-panel' }, location.origin);
+    }
   });
   stack.append(frame);
   return frame;
@@ -645,44 +650,33 @@ shellSubscribe('play', syncPlayAll);
 
 // --- start together ----------------------------------------------------------
 // A view with a player in it (an experiment that provides "transport") opens
-// paused, layers included, once the track has loaded. A big play button in
-// the middle (or the toolbar's play) starts the music and every layer at once;
-// that tap also satisfies the browser's rule that sound needs a tap first.
+// paused, layers included, with the player's options open. Picking a track
+// there (a demo or a file) starts the music and every layer together. The
+// toolbar's play button starts whatever is loaded.
 
-
-function hideStart() {
-  startBtn.hidden = true;
-}
 function startAll() {
-  hideStart();
   shellPublish('play', { playing: true });
   shellPublish('transport.command', { action: 'play' });
 }
-startBtn.addEventListener('click', startAll);
 
 shellSubscribe('transport', (data, from) => {
-  const t = data as { playing?: boolean; duration?: number } | undefined;
+  const t = data as { playing?: boolean; duration?: number; track?: number; picked?: boolean } | undefined;
   syncPlayAll();
   if (t?.playing) {
-    autostart = false;
-    hideStart();
     // A player can send a stale "paused" while its track loads, which would
     // leave the other layers paused. If the player itself says it's playing
     // while its own last shared state says paused, play everyone.
     const shared = lastValue('play') as { playing?: boolean } | undefined;
     if (shared?.playing === false && lastFrom('play') === from) shellPublish('play', { playing: true });
-    return;
   }
-  if (!autostart || !(t?.duration && t.duration > 0)) return;
-  autostart = false;
-  // Open paused: everything that hooks into 'play' (e.g. the particle field)
-  // waits too, and one big button starts it all together.
-  setTimeout(() => {
-    if ((lastValue('transport') as { playing?: boolean } | undefined)?.playing) return;
-    shellPublish('play', { playing: false });
-    syncPlayAll();
-    startBtn.hidden = false;
-  }, 250);
+  if (!autostart || !(t?.duration && t.duration > 0) || typeof t.track !== 'number' || t.track === seenTrack) return;
+  seenTrack = t.track;
+  if (t.playing) return;
+  // A track someone picked (a demo, a file) starts everything; the one the
+  // player opened with holds everything paused.
+  if (t.picked) startAll();
+  else shellPublish('play', { playing: false });
+  syncPlayAll();
 });
 window.setInterval(syncPlayAll, 1000);
 layersBtn.addEventListener('click', () => openPanel(!!panel.hidden));

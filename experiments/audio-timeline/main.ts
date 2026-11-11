@@ -324,12 +324,19 @@ audio.addEventListener('ended', syncPlayButton);
 // Other experiments on screen (e.g. the particle field) get the spectrum and
 // playback state, and can drive playback with transport.command.
 
+let tracksLoaded = 0;
+let trackPicked = false;
 function publishTransport() {
   xframe.publish('transport', {
     playing: !audio.paused,
     time: audio.currentTime || 0,
     duration: track?.duration ?? 0,
     title: trackName ? trackName.replace(/\.[a-z0-9]+$/i, '') : undefined,
+    // Goes up by one with every track loaded, and `picked` says whether someone
+    // chose it (a demo button, a file) rather than the player opening with it.
+    // X-Frame starts every layer when a track is picked.
+    track: tracksLoaded,
+    picked: trackPicked,
   });
 }
 for (const ev of ['play', 'pause', 'ended', 'seeked', 'ratechange', 'loadedmetadata']) audio.addEventListener(ev, publishTransport);
@@ -426,7 +433,7 @@ function busy(text: string | null, progress = 0) {
   }
 }
 
-async function load(blob: Blob, name: string, decoded?: AudioBuffer) {
+async function load(blob: Blob, name: string, decoded?: AudioBuffer, picked = true) {
   const token = ++loadToken;
   audio.pause();
   try {
@@ -441,6 +448,8 @@ async function load(blob: Blob, name: string, decoded?: AudioBuffer) {
     audio.playbackRate = settings.rate;
     track = result;
     trackName = name;
+    tracksLoaded++;
+    trackPicked = picked;
     playhead = 0;
     zoom = 1;
     viewStart = 0;
@@ -461,14 +470,14 @@ async function load(blob: Blob, name: string, decoded?: AudioBuffer) {
   }
 }
 
-async function loadDemo(demo: Demo = DEMOS[0]) {
+async function loadDemo(demo: Demo = DEMOS[0], picked = true) {
   const token = ++loadToken;
   busy(`Rendering ${demo.name}…`, 0.05);
   const buffer = await demo.render();
   if (token !== loadToken) return;
   // A loop demo is made to repeat seamlessly, so switch repeat on with it.
   if (demo.loop) setLoop(true);
-  await load(toWav(buffer), demo.name, buffer);
+  await load(toWav(buffer), demo.name, buffer, picked);
 }
 
 const loopSyncs: (() => void)[] = [];
@@ -1089,7 +1098,9 @@ function refreshPanel() {
 }
 
 {
-  const { body, summary } = group('track', 'Track');
+  const { section, body, summary } = group('track', 'Track');
+  // Picking a track is the first thing to do, so it sits at the top.
+  controls.prepend(section);
   const buttons = document.createElement('div');
   buttons.className = 'buttons';
   buttons.innerHTML = `<button type="button" id="open" class="wide">Open file…</button>`;
@@ -1424,4 +1435,4 @@ applyHue();
 applyVolume();
 refreshPanel();
 requestAnimationFrame(frame);
-void loadDemo();
+void loadDemo(DEMOS[0], false);

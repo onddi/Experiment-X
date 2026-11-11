@@ -124,10 +124,12 @@ is unchanged. Per layer you can set:
   open, stacked layers above it fade back to 20% so the panel stays readable. The chip in the toolbar names the layer
   with the mouse; tap it (or press **L**) to pass the mouse to the next one.
 
-A shared link opens clean: with several experiments on screen, their options
-panels start closed, and a view with a player in it (an experiment that provides
-`transport`) opens paused, layers included. A big **Play** button in the middle
-(or the toolbar's play) starts the music and every layer together.
+A shared link opens ready to start: with several experiments on screen, only the
+layer that has the mouse starts with its options panel open, and a view with a
+player in it (an experiment that provides `transport`) opens paused, layers
+included. Picking a track in the player (a demo or a file) starts the music and
+every layer together; the toolbar's play starts whatever is loaded. A player
+marks each newly loaded track by raising a `track` counter in `transport`.
 
 The whole setup is in the URL, so it can be bookmarked or shared:
 
