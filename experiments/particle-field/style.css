@@ -1847,6 +1847,15 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .m-bar.knobbing .swipe-pill.choice .sp-bar { display: block; visibility: hidden; }
   .m-bar.knobbing .sp-dots i { width: 8px; height: 2px; border-radius: 1px; background: rgb(255 255 255 / 0.22); }
   .m-bar.knobbing .sp-dots i.on { width: 14px; background: rgb(255 255 255 / 0.85); }
+  /* The knobs' names ride above the open pill as tabs; the pill then shows only the value. */
+  .sp-chips { display: none; }
+  .m-bar.knobbing .sp-chips { display: flex; position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); gap: 6px; overflow-x: auto; scrollbar-width: none; touch-action: pan-x; padding: 0 2px; scroll-padding: 0 24px; }
+  .m-bar.knobbing .sp-chips::-webkit-scrollbar { display: none; }
+  .m-bar.knobbing .sp-chips:has(> :only-child) { display: none; }
+  .sp-chips button { flex: none; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(20 21 26 / 0.7); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: rgb(255 255 255 / 0.65); font: 500 12.5px/1 inherit; padding: 9px 13px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .sp-chips button.on { background: rgb(255 255 255 / 0.92); color: #111; border-color: transparent; }
+  .m-bar.knobbing .swipe-pill:not(.one) :is(.sp-name, .sp-dots) { display: none; }
+  .m-bar.knobbing .swipe-pill:not(.one) { height: 58px; }
 }
 
 /* Watch sits first in the dock on phones (where Watch lives). */

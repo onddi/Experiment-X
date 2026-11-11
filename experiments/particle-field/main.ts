@@ -12969,9 +12969,10 @@ const mbar = document.createElement('div');
 mbar.className = 'm-bar';
 const MENU_ICON = svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
 const KNOB_ICON = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l3.5-3.5"/>');
-mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}${svg('<path d="M6 12h12"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}${svg('<path d="M6 12h12M12 6v12"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
+mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}${svg('<path d="M6 12h12"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}${svg('<path d="M6 12h12M12 6v12"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div><div class="sp-chips" role="tablist" aria-label="Knobs"></div>`;
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
+const chips = mbar.querySelector<HTMLElement>('.sp-chips')!;
 mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
   stopWatching();
 });
@@ -13026,6 +13027,33 @@ function pillPaint(wake = false) {
   pill.querySelector('.sp-name')!.textContent = r.label;
   pill.querySelector('.sp-val')!.textContent = r.text(v);
   pill.querySelector<HTMLElement>('.sp-bar u')!.style.width = `${((v - r.min) / (r.max - r.min)) * 100}%`;
+  // The knobs' names as a row of tabs above the pill: tap one to play it.
+  const chipSig = keys.join();
+  if (chips.dataset.sig !== chipSig) {
+    chips.dataset.sig = chipSig;
+    chips.innerHTML = '';
+    keys.forEach((k, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.textContent = (knobSpec(k)?.label ?? k).replace(/ \(.*\)$/, '');
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pillIdx = i;
+        navigator.vibrate?.(6);
+        pillPaint(true);
+      });
+      chips.append(b);
+    });
+  }
+  [...chips.children].forEach((b, i) => {
+    b.classList.toggle('on', i === pillIdx);
+    b.setAttribute('aria-selected', String(i === pillIdx));
+  });
+  if (chips.dataset.at !== String(pillIdx) && pillOpen()) {
+    chips.dataset.at = String(pillIdx);
+    (chips.children[pillIdx] as HTMLElement | undefined)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }
   const dots = pill.querySelector<HTMLElement>('.sp-dots')!;
   // Which knob of how many: short segments, the same place for every kind.
   dots.innerHTML = keys.length > 1 ? keys.map((_, i) => `<i${i === pillIdx ? ' class="on"' : ''}></i>`).join('') : '';
