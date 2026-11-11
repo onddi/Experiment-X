@@ -7490,7 +7490,7 @@ const TL_SETS: [string, TlClip[]][] = [
   ['Garden', [clip('Pond', 8, 'fade'), clip('Sunflower', 8, 'grow'), clip('Pollen', 8, 'slow'), clip('Fireflies', 8, 'morph'), clip('Lattice', 8, 'morph'), clip('Halo', 8, 'slow')]],
   ['Swarms', [clip('Midges', 8, 'fade'), clip('School of fish', 8, 'morph'), clip('Starlings', 8, 'morph'), clip('Marbles', 4, 'drop'), clip('Crowd', 8, 'gather'), clip('Orbit', 8, 'whirl')]],
   ['Ink and paper', [clip('Ink', 8, 'fade'), clip('Marbled paper', 8, 'slow'), clip('Smoke writing', 8, 'morph'), clip('Typewriter', 4, 'cut'), clip('Silk ribbons', 8, 'wipe'), clip('Dusk', 8, 'vslow')]],
-  ['Sacred geometry', [clip('Triangle', 8, 'gather'), clip('Hive', 8, 'morph'), clip('Hexagram', 8, 'morph'), clip('Rose curve', 8, 'whirl'), clip('Spirograph', 8, 'morph'), clip('Mandala', 16, 'slow')]],
+  ['Sacred geometry', [clip('Triangle', 8, 'gather'), clip('Hive', 8, 'morph'), clip('Hexagram', 8, 'morph'), clip('Flower of life', 8, 'grow'), clip('Rose curve', 8, 'whirl'), clip('Crystal', 8, 'morph'), clip('Spirograph', 8, 'morph'), clip('Mandala', 16, 'slow')]],
   ['Shapeshifter', [clip('Heartbeat', 8, 'gather'), clip('DNA', 8, 'morph'), clip('Globe', 8, 'whirl'), clip('Spirograph', 8, 'morph'), clip('Equalizer', 8, 'cut')]],
   ['Countdown', [clip('Midnight clock', 16, 'fade'), clip('Singularity', 4, 'implode'), clip('Big bang', 4, 'flash'), clip('Fireworks', 16, 'drop')]],
   ['Lullaby', [clip('Bokeh', 16, 'vslow'), clip('Fireflies', 16, 'vslow'), clip('Pond', 16, 'vslow'), clip('Starry night', 16, 'vslow'), clip('Deep space', 16, 'vslow')]],

@@ -6,6 +6,8 @@ export const ICON_SHAPES: [string, string][] = [
   ['heart', 'Heart'], ['star', 'Star'], ['spark', 'Spark'], ['moon', 'Moon'], ['sun', 'Sun'], ['bolt', 'Lightning'],
   ['flower', 'Flower'], ['leaf', 'Leaf'], ['drop', 'Drop'], ['cloud', 'Cloud'], ['note', 'Music note'], ['eye', 'Eye'],
   ['smile', 'Smile'], ['peace', 'Peace'], ['infinity', 'Infinity'], ['planet', 'Planet'], ['diamond', 'Diamond'],
+  ['crown', 'Crown'], ['snowflake', 'Snowflake'], ['tree', 'Pine tree'], ['fish', 'Fish'], ['rocket', 'Rocket'], ['butterfly', 'Butterfly'],
+  ['flame', 'Flame'], ['cat', 'Cat'], ['yinyang', 'Yin yang'], ['anchor', 'Anchor'], ['key', 'Key'], ['house', 'House'],
 ];
 export const isIcon = (id: string) => ICON_SHAPES.some(([k]) => k === id);
 
@@ -194,6 +196,130 @@ export function drawIcon(g: CanvasRenderingContext2D, id: string, cx: number, cy
         g.stroke();
       });
       break;
+    case 'crown':
+      poly(g, [[-0.95, 0.55], [-0.95, -0.55], [-0.5, -0.05], [0, -0.75], [0.5, -0.05], [0.95, -0.55], [0.95, 0.55]], cx, cy, s);
+      for (const x of [-0.95, 0, 0.95]) circle(g, cx + x * s, cy - (x ? 0.62 : 0.82) * s, s * 0.12);
+      g.fillRect(cx - s * 0.95, cy + s * 0.65, s * 1.9, s * 0.18);
+      break;
+    case 'snowflake':
+      g.lineWidth = s * 0.11;
+      g.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 - Math.PI / 2;
+        const [ux, uy] = [Math.cos(a), Math.sin(a)];
+        g.moveTo(cx, cy);
+        g.lineTo(cx + ux * s * 0.95, cy + uy * s * 0.95);
+        for (const [d, l] of [[0.45, 0.28], [0.7, 0.2]]) {
+          const [bx, by] = [cx + ux * s * d, cy + uy * s * d];
+          for (const sg of [-1, 1]) {
+            const b = a + sg * 0.75;
+            g.moveTo(bx, by);
+            g.lineTo(bx + Math.cos(b) * s * l, by + Math.sin(b) * s * l);
+          }
+        }
+      }
+      g.stroke();
+      break;
+    case 'tree':
+      poly(g, [[0, -1], [0.42, -0.45], [0.22, -0.45], [0.62, 0.05], [0.36, 0.05], [0.8, 0.6], [-0.8, 0.6], [-0.36, 0.05], [-0.62, 0.05], [-0.22, -0.45], [-0.42, -0.45]], cx, cy, s);
+      g.fillRect(cx - s * 0.12, cy + s * 0.6, s * 0.24, s * 0.35);
+      break;
+    case 'fish':
+      g.beginPath();
+      g.ellipse(cx - s * 0.12, cy, s * 0.72, s * 0.42, 0, 0, Math.PI * 2);
+      g.fill();
+      poly(g, [[0.45, 0], [0.98, -0.45], [0.98, 0.45]], cx, cy, s);
+      cut(g, () => circle(g, cx - s * 0.5, cy - s * 0.08, s * 0.08));
+      break;
+    case 'rocket':
+      g.beginPath();
+      g.moveTo(cx, cy - s);
+      g.quadraticCurveTo(cx + s * 0.42, cy - s * 0.45, cx + s * 0.3, cy + s * 0.5);
+      g.lineTo(cx - s * 0.3, cy + s * 0.5);
+      g.quadraticCurveTo(cx - s * 0.42, cy - s * 0.45, cx, cy - s);
+      g.fill();
+      poly(g, [[0.28, 0.1], [0.62, 0.6], [0.62, 0.8], [0.26, 0.55]], cx, cy, s);
+      poly(g, [[-0.28, 0.1], [-0.62, 0.6], [-0.62, 0.8], [-0.26, 0.55]], cx, cy, s);
+      poly(g, [[-0.16, 0.6], [0.16, 0.6], [0, 1]], cx, cy, s);
+      cut(g, () => circle(g, cx, cy - s * 0.3, s * 0.13));
+      break;
+    case 'butterfly':
+      for (const sg of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(cx + sg * s * 0.45, cy - s * 0.3, s * 0.5, s * 0.4, sg * -0.5, 0, Math.PI * 2);
+        g.fill();
+        g.beginPath();
+        g.ellipse(cx + sg * s * 0.35, cy + s * 0.4, s * 0.32, s * 0.28, sg * 0.5, 0, Math.PI * 2);
+        g.fill();
+      }
+      cut(g, () => g.fillRect(cx - s * 0.08, cy - s * 0.9, s * 0.16, s * 1.7));
+      g.fillRect(cx - s * 0.04, cy - s * 0.65, s * 0.08, s * 1.3);
+      break;
+    case 'flame':
+      g.beginPath();
+      g.moveTo(cx, cy - s);
+      g.bezierCurveTo(cx + s * 0.2, cy - s * 0.45, cx + s * 0.8, cy - s * 0.15, cx + s * 0.6, cy + s * 0.45);
+      g.bezierCurveTo(cx + s * 0.45, cy + s * 0.95, cx - s * 0.45, cy + s * 0.95, cx - s * 0.6, cy + s * 0.45);
+      g.bezierCurveTo(cx - s * 0.75, cy, cx - s * 0.3, cy - s * 0.2, cx - s * 0.25, cy - s * 0.55);
+      g.bezierCurveTo(cx - s * 0.05, cy - s * 0.4, cx, cy - s * 0.65, cx, cy - s);
+      g.fill();
+      cut(g, () => {
+        g.beginPath();
+        g.moveTo(cx, cy - s * 0.05);
+        g.bezierCurveTo(cx + s * 0.35, cy + s * 0.25, cx + s * 0.3, cy + s * 0.7, cx, cy + s * 0.72);
+        g.bezierCurveTo(cx - s * 0.3, cy + s * 0.7, cx - s * 0.3, cy + s * 0.3, cx, cy - s * 0.05);
+        g.fill();
+      });
+      break;
+    case 'cat':
+      circle(g, cx, cy + s * 0.15, s * 0.72);
+      poly(g, [[-0.7, -0.05], [-0.62, -0.95], [-0.15, -0.5]], cx, cy, s);
+      poly(g, [[0.7, -0.05], [0.62, -0.95], [0.15, -0.5]], cx, cy, s);
+      cut(g, () => {
+        for (const sg of [-1, 1]) {
+          g.beginPath();
+          g.ellipse(cx + sg * s * 0.28, cy + s * 0.05, s * 0.1, s * 0.16, 0, 0, Math.PI * 2);
+          g.fill();
+        }
+        poly(g, [[-0.09, 0.32], [0.09, 0.32], [0, 0.42]], cx, cy, s);
+      });
+      break;
+    case 'yinyang':
+      circle(g, cx, cy, s * 0.95);
+      cut(g, () => {
+        g.beginPath();
+        g.arc(cx, cy, s * 0.87, -Math.PI / 2, Math.PI / 2);
+        g.arc(cx, cy + s * 0.435, s * 0.435, Math.PI / 2, -Math.PI / 2, true);
+        g.arc(cx, cy - s * 0.435, s * 0.435, Math.PI / 2, -Math.PI / 2, false);
+        g.fill();
+        circle(g, cx, cy + s * 0.435, s * 0.13);
+      });
+      circle(g, cx, cy - s * 0.435, s * 0.13);
+      break;
+    case 'anchor':
+      g.lineWidth = s * 0.14;
+      g.beginPath();
+      g.arc(cx, cy - s * 0.72, s * 0.17, 0, Math.PI * 2);
+      g.moveTo(cx, cy - s * 0.55);
+      g.lineTo(cx, cy + s * 0.85);
+      g.moveTo(cx - s * 0.4, cy - s * 0.28);
+      g.lineTo(cx + s * 0.4, cy - s * 0.28);
+      g.moveTo(cx - s * 0.78, cy + s * 0.25);
+      g.quadraticCurveTo(cx - s * 0.65, cy + s * 0.85, cx, cy + s * 0.88);
+      g.quadraticCurveTo(cx + s * 0.65, cy + s * 0.85, cx + s * 0.78, cy + s * 0.25);
+      g.stroke();
+      break;
+    case 'key':
+      circle(g, cx - s * 0.55, cy, s * 0.42);
+      cut(g, () => circle(g, cx - s * 0.55, cy, s * 0.17));
+      g.fillRect(cx - s * 0.2, cy - s * 0.08, s * 1.15, s * 0.16);
+      g.fillRect(cx + s * 0.55, cy, s * 0.13, s * 0.32);
+      g.fillRect(cx + s * 0.8, cy, s * 0.13, s * 0.4);
+      break;
+    case 'house':
+      poly(g, [[0, -0.95], [0.95, -0.05], [0.72, -0.05], [0.72, 0.85], [-0.72, 0.85], [-0.72, -0.05], [-0.95, -0.05]], cx, cy, s);
+      cut(g, () => g.fillRect(cx - s * 0.18, cy + s * 0.3, s * 0.36, s * 0.56));
+      break;
     default:
       return false;
   }
@@ -206,6 +332,8 @@ export const GEO_SHAPES: [string, string][] = [
   ['triangle', 'Triangle'], ['square', 'Square'], ['pentagon', 'Pentagon'], ['hexagon', 'Hexagon'], ['star5', 'Star'], ['star6', 'Six-point star'],
   ['circle', 'Circle'], ['rings', 'Rings'], ['spiral', 'Spiral'], ['rose', 'Flower curve'], ['spiro', 'Spirograph'], ['lissajous', 'Figure of eight'],
   ['heartline', 'Heart outline'], ['wave', 'Wave line'],
+  ['octagon', 'Octagon'], ['rhombus', 'Rhombus'], ['star8', 'Eight-point star'], ['cross', 'Cross'], ['cardioid', 'Cardioid'], ['astroid', 'Astroid'],
+  ['bfly', 'Butterfly curve'], ['lemniscate', 'Infinity loop'], ['flowerlife', 'Flower of life'], ['honeycomb', 'Honeycomb'], ['sierpinski', 'Sierpiński triangle'], ['trefoil', 'Trefoil'],
 ];
 
 function along(pts: number[][], u: number) {
@@ -232,7 +360,33 @@ const ngon = (k: number) => Array.from({ length: k }, (_, j) => [Math.cos(-Math.
 const POLYS: Record<string, number[][]> = {
   triangle: ngon(3), square: ngon(4).map(([x, y]) => [x * Math.SQRT1_2 * 1.2 - y * Math.SQRT1_2 * 1.2, x * Math.SQRT1_2 * 1.2 + y * Math.SQRT1_2 * 1.2]),
   pentagon: ngon(5), hexagon: ngon(6), star5: starPts(5, 0.42), star6: starPts(6, 0.55),
+  octagon: ngon(8).map(([x, y]) => [x * Math.cos(Math.PI / 8) - y * Math.sin(Math.PI / 8), x * Math.sin(Math.PI / 8) + y * Math.cos(Math.PI / 8)]),
+  rhombus: [[0, -1], [0.62, 0], [0, 1], [-0.62, 0]], star8: starPts(8, 0.5),
+  cross: [[-0.3, -1], [0.3, -1], [0.3, -0.3], [1, -0.3], [1, 0.3], [0.3, 0.3], [0.3, 1], [-0.3, 1], [-0.3, 0.3], [-1, 0.3], [-1, -0.3], [-0.3, -0.3]],
 };
+// Several shapes at once: u picks one (by its share), then runs along it.
+function pick(u: number, n: number): [number, number] {
+  const k = Math.min(n - 1, Math.floor(u * n));
+  return [k, u * n - k];
+}
+const HEX_CENTRES = [[0, 0], ...ngon(6).map(([x, y]) => [x * 0.62, y * 0.62])];
+const hexAt = ngon(6).map(([x, y]) => [y, x]); // flat-topped
+function sierpinski(u: number, v: number): [number, number] {
+  // A point on one of the 27 small triangles' edges (three levels deep).
+  let k = Math.floor(u * 27);
+  const f = u * 27 - k;
+  let [ox, oy, sc] = [0, 0, 1];
+  const corners = ngon(3);
+  for (let d = 0; d < 3; d++) {
+    const c = corners[k % 3];
+    k = Math.floor(k / 3);
+    sc /= 2;
+    ox += c[0] * sc;
+    oy += c[1] * sc;
+  }
+  const [x, y] = along(corners, (f + v * 0.001) % 1);
+  return [ox + x * sc, oy + y * sc + 0.15];
+}
 
 /** A point on a curve, radius about 1. u runs along it; v (0–1) gives the line some width. */
 export function geoPoint(type: string, u: number, v: number, time: number, aspect: number): [number, number] {
@@ -277,6 +431,44 @@ export function geoPoint(type: string, u: number, v: number, time: number, aspec
       const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
       return [(x / 17) * (1 + wob), (-y / 17 - 0.05) * (1 + wob)];
     }
+    case 'cardioid': {
+      const t = u * TAU;
+      const r = 0.5 * (1 - Math.sin(t));
+      return [Math.cos(t) * r * 1.05 * (1 + wob), (-Math.sin(t) * r - 0.45) * (1 + wob)];
+    }
+    case 'astroid': {
+      const t = u * TAU;
+      return [Math.cos(t) ** 3 * (1 + wob), Math.sin(t) ** 3 * (1 + wob)];
+    }
+    case 'bfly': {
+      const t = u * TAU * 2;
+      const r = Math.exp(Math.cos(t)) - 2 * Math.cos(4 * t) - Math.sin(t / 12) ** 5;
+      return [(Math.sin(t) * r) / 3.2 * (1 + wob), (-Math.cos(t) * r) / 3.2 * (1 + wob) + 0.15];
+    }
+    case 'lemniscate': {
+      const t = u * TAU;
+      const d = 1 + Math.sin(t) ** 2;
+      return [(Math.cos(t) / d) * (1 + wob), ((Math.sin(t) * Math.cos(t)) / d) * 1.3 * (1 + wob)];
+    }
+    case 'flowerlife': {
+      // Seven overlapping circles, in a ring.
+      const [k, f] = pick(u, 8);
+      if (k === 7) return [Math.cos(f * TAU) * (1 + wob), Math.sin(f * TAU) * (1 + wob)];
+      const [ox, oy] = k ? ngon(6)[k - 1].map((c) => c * 0.5) : [0, 0];
+      return [ox + Math.cos(f * TAU) * (0.5 + wob), oy + Math.sin(f * TAU) * (0.5 + wob)];
+    }
+    case 'honeycomb': {
+      const [k, f] = pick(u, 7);
+      const [ox, oy] = HEX_CENTRES[k];
+      const [x, y] = along(hexAt, f);
+      return [ox + x * (0.36 + wob), oy + y * (0.36 + wob)];
+    }
+    case 'sierpinski':
+      return sierpinski(u, v);
+    case 'trefoil': {
+      const t = u * TAU;
+      return [(Math.sin(t) + 2 * Math.sin(2 * t)) / 3 * (1 + wob), (Math.cos(t) - 2 * Math.cos(2 * t)) / 3 * (1 + wob)];
+    }
     case 'wave': {
       const span = Math.min(1.6, aspect * 0.95);
       const x = (u * 2 - 1) * span;
@@ -290,7 +482,35 @@ export const GEO_SPINS = (type: string) => type !== 'wave' && type !== 'lissajou
 
 // --- solids --------------------------------------------------------------------
 
-export const SOLID_SHAPES: [string, string][] = [['sphere', 'Sphere'], ['torus', 'Ring donut'], ['cube', 'Cube'], ['helix', 'Double helix']];
+export const SOLID_SHAPES: [string, string][] = [
+  ['sphere', 'Sphere'], ['torus', 'Ring donut'], ['cube', 'Cube'], ['helix', 'Double helix'],
+  ['saturn', 'Ringed planet'], ['atom', 'Atom'], ['knot', 'Trefoil knot'], ['mobius', 'Möbius strip'], ['icosa', 'Icosahedron (wire)'],
+  ['cubeframe', 'Cube (wire)'], ['pyramid', 'Pyramid'], ['cone', 'Cone'], ['shell', 'Seashell'], ['ripple', 'Ripple'], ['galaxy', 'Spiral galaxy'],
+  ['heart3d', 'Heart'], ['dna', 'Spring'],
+];
+type V3 = [number, number, number];
+const lerp3 = (a: V3, b: V3, f: number): V3 => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+// Points along a set of edges (u picks the edge and how far along).
+function onEdges(pts: V3[], edges: [number, number][], u: number): V3 {
+  const [k, f] = pick(u, edges.length);
+  return lerp3(pts[edges[k][0]], pts[edges[k][1]], f);
+}
+const PHI = (1 + Math.sqrt(5)) / 2;
+const ICO: V3[] = (() => {
+  const raw: V3[] = [];
+  for (const a of [-1, 1]) for (const b of [-PHI, PHI]) raw.push([0, a, b], [a, b, 0], [b, 0, a]);
+  const n = Math.hypot(1, PHI);
+  return raw.map(([x, y, z]) => [x / n, y / n, z / n]);
+})();
+const ICO_EDGES: [number, number][] = (() => {
+  const e: [number, number][] = [];
+  for (let i = 0; i < 12; i++) for (let j = i + 1; j < 12; j++) if (Math.hypot(ICO[i][0] - ICO[j][0], ICO[i][1] - ICO[j][1], ICO[i][2] - ICO[j][2]) < 1.1) e.push([i, j]);
+  return e;
+})();
+const CUBE: V3[] = [];
+for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) CUBE.push([x * 0.6, y * 0.6, z * 0.6]);
+const CUBE_EDGES: [number, number][] = [];
+for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) if ([0, 1, 2].filter((d) => CUBE[i][d] !== CUBE[j][d]).length === 1) CUBE_EDGES.push([i, j]);
 
 /** A point on a 3D solid about 1 across, from two random numbers. */
 export function solidPoint(type: string, u: number, v: number): [number, number, number] {
@@ -323,6 +543,101 @@ export function solidPoint(type: string, u: number, v: number): [number, number,
       }
       const off = strand ? Math.PI : 0;
       return [Math.cos(a + off) * 0.42, y, Math.sin(a + off) * 0.42];
+    }
+    case 'saturn': {
+      if (v < 0.55) {
+        const z = u * 2 - 1;
+        const r = Math.sqrt(1 - z * z) * 0.55;
+        const b = (v / 0.55) * TAU;
+        return [Math.cos(b) * r, z * 0.55, Math.sin(b) * r];
+      }
+      const a = u * TAU;
+      const r = 0.72 + ((v - 0.55) / 0.45) * 0.3;
+      const tilt = 0.4;
+      const [x, z] = [Math.cos(a) * r, Math.sin(a) * r];
+      return [x, z * Math.sin(tilt), z * Math.cos(tilt)];
+    }
+    case 'atom': {
+      if (v < 0.12) {
+        const z = u * 2 - 1;
+        const r = Math.sqrt(1 - z * z) * 0.16;
+        const b = (v / 0.12) * TAU;
+        return [Math.cos(b) * r, z * 0.16, Math.sin(b) * r];
+      }
+      const ring = Math.min(2, Math.floor(((v - 0.12) / 0.88) * 3));
+      const a = u * TAU;
+      const p: V3 = [Math.cos(a) * 0.95, Math.sin(a) * 0.32, 0];
+      const r = (ring * Math.PI) / 3;
+      return [p[0] * Math.cos(r) - p[1] * Math.sin(r), p[0] * Math.sin(r) + p[1] * Math.cos(r), Math.sin(a) * 0.3 * (ring - 1)];
+    }
+    case 'knot': {
+      const t = u * TAU;
+      const c: V3 = [Math.sin(t) + 2 * Math.sin(2 * t), Math.cos(t) - 2 * Math.cos(2 * t), -Math.sin(3 * t)];
+      const b = v * TAU;
+      const w = 0.28;
+      return [(c[0] + Math.cos(b) * w) / 3.2, (c[1] + Math.sin(b) * w) / 3.2, (c[2] + Math.cos(b + 1) * w) / 3.2];
+    }
+    case 'mobius': {
+      const a = u * TAU;
+      const w = (v - 0.5) * 0.6;
+      const r = 0.72 + w * Math.cos(a / 2);
+      return [Math.cos(a) * r, w * Math.sin(a / 2), Math.sin(a) * r];
+    }
+    case 'icosa':
+      return onEdges(ICO, ICO_EDGES, u);
+    case 'cubeframe':
+      return onEdges(CUBE, CUBE_EDGES, u);
+    case 'pyramid': {
+      // Four sloping faces and the base.
+      const f = Math.min(4, Math.floor(u * 5));
+      const a = u * 5 - f;
+      const top: V3 = [0, -0.85, 0];
+      const base: V3[] = [[-0.7, 0.55, -0.7], [0.7, 0.55, -0.7], [0.7, 0.55, 0.7], [-0.7, 0.55, 0.7]];
+      if (f === 4) return [(a * 2 - 1) * 0.7, 0.55, (v * 2 - 1) * 0.7];
+      const p = lerp3(base[f], base[(f + 1) % 4], a);
+      return lerp3(top, p, Math.sqrt(v));
+    }
+    case 'cone': {
+      const h = Math.sqrt(u);
+      const b = v * TAU;
+      return [Math.cos(b) * h * 0.6, h * 1.6 - 0.8, Math.sin(b) * h * 0.6];
+    }
+    case 'shell': {
+      // A cone shell: a tube that widens as it winds down.
+      const g = Math.sqrt(u); // even spread: the wide end has more surface
+      const t = g * TAU * 4;
+      const b = v * TAU;
+      const R = g * 0.66;
+      const r = 0.02 + g * 0.17;
+      const cy = -0.9 + g * 1.6;
+      return [Math.cos(t) * (R + Math.cos(b) * r), cy + Math.sin(b) * r, Math.sin(t) * (R + Math.cos(b) * r)];
+    }
+    case 'ripple': {
+      const r = Math.sqrt(u);
+      const b = v * TAU;
+      return [Math.cos(b) * r, Math.sin(r * 14) * 0.12 * (1 - r * 0.6), Math.sin(b) * r];
+    }
+    case 'galaxy': {
+      const arm = Math.floor(v * 2);
+      const r = 0.08 + 0.92 * u;
+      const a = arm * Math.PI + r * 4.2 + (((v * 2) % 1) - 0.5) * 0.5;
+      return [Math.cos(a) * r, (((v * 7) % 1) - 0.5) * 0.08 * (1 - r), Math.sin(a) * r];
+    }
+    case 'heart3d': {
+      // A puffy heart: slices of the outline, smaller towards front and back.
+      const t = u * TAU;
+      const x = (16 * Math.sin(t) ** 3) / 17;
+      const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17;
+      const w = v * 2 - 1;
+      const k = Math.sqrt(1 - w * w);
+      return [x * k, (y + 0.1) * k - 0.1, w * 0.38];
+    }
+    case 'dna': {
+      // A coil spring.
+      const a = u * TAU * 6;
+      const b = v * TAU;
+      const r = 0.55 + Math.cos(b) * 0.08;
+      return [Math.cos(a) * r, (u * 2 - 1) * 0.85 + Math.sin(b) * 0.08, Math.sin(a) * r];
     }
     default: {
       const z = u * 2 - 1;
