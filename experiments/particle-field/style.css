@@ -1585,6 +1585,11 @@ svg.ink.outline path.gone { opacity: 0.3; filter: none; stroke-dasharray: 2 6; s
   .tabs.pages button svg { flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .tabs.pages button span { display: none; }
   .tabs.pages button:hover { color: var(--text); background: rgb(255 255 255 / 0.04); }
+  /* Hover a tab: it opens to show its name (the open one gives up its label meanwhile). */
+  .tabs.pages button:not(.on):hover { flex: none; padding: 0 10px 0 8px; }
+  .tabs.pages button:not(.on):hover span { display: inline; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .tabs.pages:has(button:not(.on):hover) button.on { flex: 1 1 0; padding: 0; }
+  .tabs.pages:has(button:not(.on):hover) button.on span { display: none; }
   .tabs.pages button.on { flex: none; padding: 0 10px 0 8px; background: rgba(154, 168, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(154, 168, 255, 0.5); color: #dfe3ff; }
   .tabs.pages button.on span { display: inline; max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
   .tabs.pages button.is-live::before { position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; margin: 0; }
