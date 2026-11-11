@@ -12013,6 +12013,21 @@ function shuffle() {
     palette: pick(Object.keys(PALETTES) as Palette[]),
     colorBy: pick(['palette', 'speed', 'direction', 'pointer', 'cycle', 'horizontal', 'radial'] as const),
   };
+  // Shape: a new form and size. Forms that need something of yours (a
+  // drawing, an image, the camera) stay; text keeps its words but may turn
+  // into a shape, an icon, a pattern or a 3D solid.
+  if (!['drawing', 'image', 'camera'].includes(settings.shape)) {
+    const form = pick(['text', 'icon', 'geo', 'geo', 'pattern', 'pattern', 'solid', 'solid'] as const);
+    Object.assign(r, {
+      shape: form,
+      shapeIcon: pick(ICON_SHAPES)[0],
+      shapeGeo: pick(GEO_SHAPES)[0],
+      shapePattern: pick(PATTERNS)[0],
+      shapeSolid: pick(SOLID_SHAPES)[0],
+      shapeSpin: rand(0, 0.6, 0.05),
+      shapeSize: rand(0.55, 0.95, 0.05),
+    });
+  }
   // Only unlocked sections change; anything a section has that we don't
   // randomise goes back to its default.
   // Cards you switched off stay off; cards that are on stay on and keep
