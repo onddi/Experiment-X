@@ -12969,7 +12969,7 @@ const mbar = document.createElement('div');
 mbar.className = 'm-bar';
 const MENU_ICON = svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
 const KNOB_ICON = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l3.5-3.5"/>');
-mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
+mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Overview" title="Overview">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Menu" title="Menu">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}${svg('<path d="M6 12h12"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}${svg('<path d="M6 12h12M12 6v12"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div>`;
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 mbar.querySelector('.mb-ov')!.addEventListener('click', () => {
@@ -13027,7 +13027,8 @@ function pillPaint(wake = false) {
   pill.querySelector('.sp-val')!.textContent = r.text(v);
   pill.querySelector<HTMLElement>('.sp-bar u')!.style.width = `${((v - r.min) / (r.max - r.min)) * 100}%`;
   const dots = pill.querySelector<HTMLElement>('.sp-dots')!;
-  dots.textContent = keys.length > 1 ? keys.map((_, i) => (i === pillIdx ? '●' : '○')).join('') : '';
+  // Which knob of how many: short segments, the same place for every kind.
+  dots.innerHTML = keys.length > 1 ? keys.map((_, i) => `<i${i === pillIdx ? ' class="on"' : ''}></i>`).join('') : '';
   pill.classList.toggle('one', keys.length < 2);
   if (wake) {
     pill.classList.add('awake');
@@ -13097,14 +13098,20 @@ mbar.querySelector('.mb-close')!.addEventListener('click', (e) => {
       return setPillOpen(true);
     }
     const spec = knobSpec(pillKeys()[pillIdx] ?? '');
-    // A choice: tap the ‹ or › side to step, the middle for its list.
-    if (spec?.options) {
+    // Tap the ‹ › (or − +) side to step; the middle of a choice opens its list.
+    if (spec) {
       const b = body.getBoundingClientRect();
-      const side = e.clientX < b.left + b.width * 0.3 ? -1 : e.clientX > b.right - b.width * 0.3 ? 1 : 0;
-      if (side) {
+      const side = e.clientX < b.left + b.width * 0.25 ? -1 : e.clientX > b.right - b.width * 0.25 ? 1 : 0;
+      const key = pillKeys()[pillIdx];
+      if (spec.options) {
         const n = spec.max + 1;
-        playSet(pillKeys()[pillIdx], (Math.round(spec.get()) + side + n) % n);
-      } else knobMenu(body, spec);
+        if (side) playSet(key, (Math.round(spec.get()) + side + n) % n);
+        else knobMenu(body, spec);
+      } else if (side) {
+        // Twenty steps across the range, on the setting's own step grid.
+        const by = Math.max(spec.step, Math.round((spec.max - spec.min) / 20 / spec.step) * spec.step);
+        playSet(key, playBase(key) + side * by);
+      }
     }
     pillPaint(true);
   };
