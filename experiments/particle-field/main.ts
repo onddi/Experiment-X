@@ -13628,6 +13628,8 @@ window.addEventListener(
     if (t?.closest?.('#panel, #toggle, .overview, .knob-menu')) return;
     if (!playing()) return;
     e.preventDefault();
+    // The knobs only play on the Stage (Studio and Deck closed).
+    if (!panel.classList.contains('collapsed') || ovEl) return;
     const slot = !e.shiftKey ? (e.altKey ? 4 : 0) : e.metaKey || e.ctrlKey ? 1 : e.altKey ? 2 : 3;
     const key = fieldKnobKeys()[slot] ?? '';
     // Plain wheel follows the vertical axis only, so sideways drift on a
