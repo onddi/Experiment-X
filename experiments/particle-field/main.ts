@@ -9973,11 +9973,14 @@ function syncSceneNow() {
 }
 setInterval(syncSceneNow, 500);
 document.getElementById('scene-now')!.addEventListener('click', () => openOverview());
-
+let ovEl: HTMLElement | null = null;
+function closeOverview() {
+  ovEl?.remove();
+  ovEl = null;
+}
 // --- overview ------------------------------------------------------------------
-// Everything that makes up the picture right now, in one place: a recipe in
-// plain sentences, then every card from every tab, lit when it does
-// something. Tap anything to go to it.
+// The scene rack: every setting the scene changed, playable, grouped by tab
+// and card. Tap a card's name to go to it.
 const OV_COLS: [string, Tab[]][] = [
   ['Look', ['look']], ['Shape', ['shape']], ['Motion', ['motion']], ['Music', ['music']], ['Camera', ['camera']],
   ['Play', ['presets', 'timeline', 'xfader', 'knobs', 'record', 'links']],
@@ -9993,54 +9996,6 @@ function openSection(id: string) {
   if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
   sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-const optLabel = (opts: [string, string][], v: unknown) => opts.find(([k]) => k === v)?.[1] ?? String(v);
-// The recipe: [text, section id] pieces, a section id of '' for plain words.
-function recipe(): { title: string; parts: [string, string][] }[] {
-  const S = settings;
-  const lc = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
-  const out: { title: string; parts: [string, string][] }[] = [];
-  const look: [string, string][] = [];
-  look.push([`${S.count.toLocaleString()} ${lc(optLabel(RENDERS, S.render))}`, 'look']);
-  look.push([' in ', '']);
-  look.push([`${S.palette === 'custom' ? 'your own' : optLabel(Object.entries(PALETTES).map(([k, p]) => [k, p.label]), S.palette)} colours`, 'colour']);
-  if (S.glow) look.push([' with glow', 'look']);
-  if (S.shape !== 'none') look.push([', forming ', ''], [lc(optLabel(SHAPES, S.shape)), 'shape']);
-  if (S.flow > 0) look.push([', drifting on ', ''], [`${S.flow < 0.3 ? 'gentle' : S.flow < 0.9 ? 'steady' : 'strong'} ${lc(optLabel(FLOW_TYPES, S.flowType))} flow`.replace(/ \(.*\)/, ''), 'flow']);
-  if (S.trail > 0.5) look.push([' with ', ''], [S.trail > 0.8 ? 'long trails' : 'trails', 'look']);
-  look.push(['.', '']);
-  if (S.pointerMode !== 'none' || S.click !== 'none') {
-    look.push([' Pointer: ', '']);
-    if (S.pointerMode !== 'none') look.push([lc(optLabel(POINTER_MODES, S.pointerMode)), 'pointer']);
-    if (S.click !== 'none') look.push([`${S.pointerMode !== 'none' ? ', ' : ''}click to `, ''], [lc(optLabel(CLICK_MODES, S.click)), 'pointer']);
-    look.push(['.', '']);
-  }
-  out.push({ title: '', parts: look });
-  const fromGrid = (g: MgGrid, sec: string, prefix = true) => {
-    const parts: [string, string][] = [];
-    for (const r of g.rows) for (const cell of r.cells) for (const f of cell ?? []) {
-      let on = false;
-      try {
-        on = f.get() > 0.01;
-      } catch {}
-      if (on) parts.push([`${prefix && r.name ? r.name.toLowerCase() + ' ' : ''}${f.label.toLowerCase()}`, sec]);
-    }
-    return parts;
-  };
-  const join = (parts: [string, string][]) => parts.flatMap((p, i) => (i ? [[i === parts.length - 1 ? ' and ' : ', ', ''] as [string, string], p] : [p]));
-  const lens = fromGrid(LENS_GRID, 'lens', false);
-  if (lens.length) out.push({ title: 'Lens', parts: [...join(lens), ['.', '']] });
-  const music = fromGrid(MUSIC_GRID, 'mgmusic');
-  if (music.length) out.push({ title: audio.source === 'off' ? 'With music (no sound on)' : 'With the music', parts: [...join(music.slice(0, 10)), [music.length > 10 ? `, and ${music.length - 10} more.` : '.', '']] });
-  const camParts = fromGrid(CAMERA_GRID, 'mgcam');
-  const links = parseLinks(settings.links).length;
-  if (camParts.length || links) out.push({ title: cam.on ? 'With the camera' : 'With the camera (off)', parts: [...join(camParts.slice(0, 8)), [links ? `${camParts.length ? '; ' : ''}${links} connection${links > 1 ? 's' : ''}.` : '.', links ? 'links' : '']] });
-  return out;
-}
-let ovEl: HTMLElement | null = null;
-function closeOverview() {
-  ovEl?.remove();
-  ovEl = null;
-}
 const RACK_SKIP = new Set(['actions', 'presets', 'mine', 'record']);
 type RackCtl = Extract<Control, { kind: 'range' | 'select' | 'choice' | 'toggle' }>;
 let rackTimer = 0;
@@ -10050,6 +10005,7 @@ function renderRack() {
   const base = (sceneBase ?? DEFAULTS) as unknown as Record<string, unknown>;
   const S = settings as unknown as Record<string, unknown>;
   const D = DEFAULTS as unknown as Record<string, unknown>;
+  const settling = !!(morphState || pendingLook);
   const same = (a: unknown, b: unknown) => a === b || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1e-6) || JSON.stringify(a) === JSON.stringify(b);
   // Tab group → card → its changed controls (a setting shown once, on the
   // first card that has it).
@@ -10065,7 +10021,9 @@ function renderRack() {
       continue;
     }
     if (!sec || RACK_SKIP.has(sec.id) || !('key' in c) || seen.has(c.key) || SCENE_IGNORE.has(c.key)) continue;
-    if (same(S[c.key], D[c.key])) continue;
+    // What the scene set, plus anything you've changed since (not mid-morph,
+    // when everything is still on its way over).
+    if (same(base[c.key], D[c.key]) && (settling || same(S[c.key], base[c.key]))) continue;
     seen.add(c.key);
     if (!card) {
       const col = OV_COLS.find(([, tabs]) => tabs.includes(pageOf(sec!)))?.[0] ?? 'Play';
@@ -10122,7 +10080,7 @@ function renderRack() {
     wrap.append(box);
   }
   head.innerHTML = count
-    ? `<h3>Knobs</h3><span>The ${count} setting${count === 1 ? '' : 's'} this scene changed, ready to play. The white dot is the scene's own value; double-tap to snap back.</span>`
+    ? `<h3>Knobs</h3><span>The ${count} setting${count === 1 ? '' : 's'} this scene changed, ready to play. Drag a knob sideways to turn it; the white dot is the scene's own value, double-tap to snap back.</span>`
     : '<h3>Knobs</h3><span>Everything is at its default.</span>';
   clearInterval(rackTimer);
   rackTimer = window.setInterval(() => {
@@ -10157,7 +10115,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number) {
     el.setAttribute('aria-valuetext', out.textContent);
     el.classList.toggle('moved', Math.abs(v - home()) > c.step / 2);
   };
-  // Drag up or right to turn it up; the whole travel is ~180 px.
+  // Drag right (or up, with a mouse) to turn it up; the whole travel is ~180 px.
   let start: { x: number; y: number; v: number } | null = null;
   el.addEventListener('pointerdown', (e) => {
     start = { x: e.clientX, y: e.clientY, v: settings[c.key] as number };
@@ -10166,7 +10124,8 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number) {
   });
   el.addEventListener('pointermove', (e) => {
     if (!start) return;
-    const d = (e.clientX - start.x - (e.clientY - start.y)) / 180;
+    // Touch: sideways only, so an up/down swipe still scrolls the list.
+    const d = (e.clientX - start.x - (e.pointerType === 'touch' ? 0 : e.clientY - start.y)) / 180;
     put(start.v + d * (c.max - c.min));
     update();
   });
@@ -10237,8 +10196,21 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
   };
 }
 
+// Previous / next scene from the overview: the scene playing's family, A–Z as
+// in the library, wrapping round. Then the rack redraws for the new scene.
+function stepScene(d: number) {
+  const fam = (lastSceneName && FAMILY_OF[lastSceneName]) || (presetFamily === 'all' ? 'space' : presetFamily);
+  const list = PRESETS.filter(([n]) => FAMILY_OF[n] === fam).sort(([a], [b]) => a.localeCompare(b));
+  if (!list.length) return;
+  const i = list.findIndex(([n]) => n === lastSceneName);
+  const [name, p] = list[i < 0 ? 0 : (i + d + list.length) % list.length];
+  playPreset(name, p);
+  openOverview();
+}
+
 function openOverview() {
   closeOverview();
+  syncSceneNow();
   const el = document.createElement('div');
   el.className = 'overview';
   el.setAttribute('role', 'dialog');
@@ -10247,40 +10219,20 @@ function openOverview() {
   const edited = document.getElementById('scene-now')?.classList.contains('edited');
   const head = document.createElement('div');
   head.className = 'ov-head';
-  head.innerHTML = `<div><small>Overview</small><b></b>${edited ? '<em>edited</em>' : ''}</div><button type="button" class="icon" aria-label="Close">✕</button>`;
+  head.innerHTML = `<div class="ov-title"><button type="button" class="ov-step" aria-label="Previous scene">‹</button><span><small></small><b></b>${edited ? '<em>edited</em>' : ''}</span><button type="button" class="ov-step" aria-label="Next scene">›</button></div><button type="button" class="icon ov-close" aria-label="Close">✕</button>`;
   head.querySelector('b')!.textContent = name;
-  head.querySelector('button')!.addEventListener('click', closeOverview);
+  head.querySelector('small')!.textContent = lastSceneName && !currentMine && !xf.on ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Overview';
+  head.querySelector('.ov-close')!.addEventListener('click', closeOverview);
+  const [prevB, nextB] = head.querySelectorAll<HTMLButtonElement>('.ov-step');
+  prevB.addEventListener('click', () => stepScene(-1));
+  nextB.addEventListener('click', () => stepScene(1));
   const body = document.createElement('div');
   body.className = 'ov-body';
-  // A: the recipe.
-  const rec = document.createElement('div');
-  rec.className = 'ov-recipe';
-  for (const para of recipe()) {
-    if (para.title) {
-      const t = document.createElement('h3');
-      t.textContent = para.title;
-      rec.append(t);
-    }
-    const p = document.createElement('p');
-    for (const [text, sec] of para.parts) {
-      if (!sec) p.append(text);
-      else {
-        const a = document.createElement('button');
-        a.type = 'button';
-        a.className = 'ov-link';
-        a.textContent = text.trim();
-        a.addEventListener('click', () => openSection(sec));
-        if (text.startsWith(' ')) p.append(' ');
-        p.append(a);
-      }
-    }
-    rec.append(p);
-  }
   // E: every setting this scene changed, playable. Numbers are knobs (drag
   // up or sideways; the white dot is the scene's own value, double-tap to
   // snap back), choices step with ‹ ›, switches flip.
   const rack = renderRack();
-  body.append(rec, rack);
+  body.append(rack);
   el.append(head, body);
   document.body.append(el);
   ovEl = el;
@@ -11025,7 +10977,7 @@ window.addEventListener(
   'wheel',
   (e) => {
     const t = e.target as Element | null;
-    if (t?.closest?.('#panel, #toggle')) return;
+    if (t?.closest?.('#panel, #toggle, .overview')) return;
     if (!settings.playOn) return;
     e.preventDefault();
     const S = settings;
