@@ -7,6 +7,7 @@ import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, g
 import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
+import { Projector } from './projector.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
@@ -4315,6 +4316,28 @@ const recorder = new Recorder({
   overlay: () => (fxCanvas.hidden ? null : fxCanvas),
   onChange: () => recUi.forEach((f) => f()),
 });
+// The field on a second window (projector), with no menus.
+const projectUi: (() => void)[] = [];
+const projector = new Projector({
+  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  size: () => [w, h],
+  filter: () => canvas.style.filter,
+  transform: () => canvas.style.transform,
+  bg: () => {
+    const [r, g, b] = bgNow();
+    return `rgb(${r} ${g} ${b})`;
+  },
+  overlay: () => (fxCanvas.hidden ? null : fxCanvas),
+  key: (e) => window.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, code: e.code, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey })),
+  onChange: () => projectUi.forEach((f) => f()),
+});
+function toggleProject() {
+  const was = projector.on;
+  projector.toggle();
+  if (was) showToast('Projector window closed');
+  else if (!projector.on) showToast('The browser blocked the window: allow pop-ups for this page');
+  else showToast('Drag the new window to the other display, then click it for fullscreen');
+}
 // In X-Frame the sound plays in the player next to us; it hands out a copy.
 function feedAudioTap(): MediaStreamTrack | null {
   try {
@@ -5408,6 +5431,7 @@ function frame(now: number) {
     recorder.tick();
     recTime();
   }
+  projector.tick();
   requestAnimationFrame(frame);
 }
 
@@ -5769,6 +5793,7 @@ const ICONS = {
   shuffle: svg('<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>'),
   reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
   record: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>'),
+  project: svg('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'),
 };
 
 
@@ -8528,6 +8553,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
       ['Explode from the centre (E)', ICONS.explode, () => explode()],
       ['Scatter (S)', ICONS.scatter, scatter],
+      ['Project to another screen (P)', ICONS.project, toggleProject],
       ['Recording settings', ICONS.record, () => showTab('record')],
       ['Reset to defaults and clear locks', ICONS.reset, reset],
     ];
@@ -8541,6 +8567,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
         toggleDockMore(false);
       });
       if (fn === toggleGather) gatherButtons.push(b);
+      if (fn === toggleProject) projectUi.push(() => (b.querySelector('span')!.textContent = projector.on ? 'Stop projecting (P)' : t));
       dockMoreEl.append(b);
     }
     document.getElementById('actionbar')!.append(dockMoreEl);
@@ -12537,6 +12564,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'f') surpriseVibe(vibeLead === 'any' ? undefined : vibeLead);
   else if (k === 'h') toggle.click();
   else if (k === 'v') toggleRecord();
+  else if (k === 'p') toggleProject();
   else if (xfLive() && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
     const right = e.key === 'ArrowRight';

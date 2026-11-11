@@ -196,38 +196,40 @@ export class Recorder {
     this.host.onChange();
   }
 
-  // Copy the visible picture, the way the browser shows it: cover-fit,
-  // with the CSS filter and the view moves (zoom, shake, roll, flip).
   private paint() {
-    const g = this.g;
-    const W = this.cv.width;
-    const H = this.cv.height;
-    const src = this.host.source();
-    const [w, h] = this.host.size();
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.filter = 'none';
-    g.imageSmoothingQuality = 'high';
-    g.fillStyle = this.host.bg();
-    g.fillRect(0, 0, W, H);
-    if (!src.width || !w) return;
-    const k = Math.max(W / w, H / h); // CSS px → recording px
-    g.translate(W / 2, H / 2);
-    g.scale(k, k);
-    const t = this.host.transform();
-    if (t) {
-      try {
-        const m = new DOMMatrix(t);
-        g.transform(m.a, m.b, m.c, m.d, m.e, m.f);
-      } catch {}
-    }
-    const f = this.host.filter();
-    if (f) g.filter = f;
-    g.drawImage(src, -w / 2, -h / 2, w, h);
-    g.filter = 'none';
-    const top = this.host.overlay();
-    if (top) {
-      g.setTransform(k, 0, 0, k, W / 2, H / 2);
-      g.drawImage(top, -w / 2, -h / 2, w, h);
-    }
+    paintField(this.g, this.cv.width, this.cv.height, this.host);
+  }
+}
+
+/** Copy the visible picture, the way the browser shows it: cover-fit, with
+ * the CSS filter and the view moves (zoom, shake, roll, flip). The recorder
+ * and the projector window both draw with this. */
+export function paintField(g: CanvasRenderingContext2D, W: number, H: number, host: Pick<RecordHost, 'source' | 'size' | 'filter' | 'transform' | 'bg' | 'overlay'>) {
+  const src = host.source();
+  const [w, h] = host.size();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.filter = 'none';
+  g.imageSmoothingQuality = 'high';
+  g.fillStyle = host.bg();
+  g.fillRect(0, 0, W, H);
+  if (!src.width || !w) return;
+  const k = Math.max(W / w, H / h); // CSS px → output px
+  g.translate(W / 2, H / 2);
+  g.scale(k, k);
+  const t = host.transform();
+  if (t) {
+    try {
+      const m = new DOMMatrix(t);
+      g.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+    } catch {}
+  }
+  const f = host.filter();
+  if (f) g.filter = f;
+  g.drawImage(src, -w / 2, -h / 2, w, h);
+  g.filter = 'none';
+  const top = host.overlay();
+  if (top) {
+    g.setTransform(k, 0, 0, k, W / 2, H / 2);
+    g.drawImage(top, -w / 2, -h / 2, w, h);
   }
 }
