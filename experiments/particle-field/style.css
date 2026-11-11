@@ -1675,3 +1675,24 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
   .react-sub button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .react-sub button.on { color: #dfe3ff; border-color: rgba(154, 168, 255, 0.5); background: rgba(154, 168, 255, 0.12); }
 }
+
+/* --- G2: every music reaction as a chip, coloured by what it changes ------ */
+.mixgrid { --c0: #9a8bff; --c1: #ff7bd9; --c2: #3fe0b8; --c3: #4dbbff; --c4: #ffd25b; --c5: #e8e8f0; }
+.mg-allhead { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.mg-allhead p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.mg-allhead p b { color: var(--text); font-weight: 600; }
+.mg-legend { display: flex; flex-wrap: wrap; gap: 4px; }
+.mg-legend span { padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid color-mix(in oklch, var(--cc) 40%, transparent); color: var(--cc); }
+:is(.mg-legend span, .mg-chip)[data-col='0'] { --cc: var(--c0); }
+:is(.mg-legend span, .mg-chip)[data-col='1'] { --cc: var(--c1); }
+:is(.mg-legend span, .mg-chip)[data-col='2'] { --cc: var(--c2); }
+:is(.mg-legend span, .mg-chip)[data-col='3'] { --cc: var(--c3); }
+:is(.mg-legend span, .mg-chip)[data-col='4'] { --cc: var(--c4); }
+:is(.mg-legend span, .mg-chip)[data-col='5'] { --cc: var(--c5); }
+.mg-chip[data-col] { height: 26px; padding: 0 9px; font-size: 11.5px; color: #0b0c14; background: linear-gradient(90deg, var(--cc) var(--v, 0%), color-mix(in oklch, var(--cc) 55%, #0b0c14) var(--v, 0%)); }
+.mg-chip.mg-off[data-col] { color: color-mix(in oklch, var(--cc) 75%, transparent); background: none; box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--cc) 35%, transparent); border: 0; }
+.mg-chip.mg-off[data-col]:hover { box-shadow: inset 0 0 0 1px var(--cc); color: var(--cc); }
+.mg-chip[data-col].open { box-shadow: 0 0 0 2px #fff; }
+.mixgrid:has(.mg-allhead) .mg-lrow .mg-name { width: 96px; }
+.mixgrid:has(.mg-allhead) .mg-lrow { min-height: 36px; padding: 5px 2px; }
+.mixgrid:has(.mg-allhead) .mg-fx { gap: 4px; }

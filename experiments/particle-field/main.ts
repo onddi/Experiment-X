@@ -8836,7 +8836,8 @@ type MgFlav = {
 type MgRow = { name: string; when?: string; group?: string; src?: string; level?: () => number; hi?: number; live?: () => boolean; cells: (MgFlav[] | null)[] };
 // list: draw as "When you… → …the particles" rows instead of a matrix (for sparse grids).
 // chips: one row of effects with no trigger (a card full of off-by-default effects); cols are the groups.
-type MgGrid = { cols: string[]; rows: MgRow[]; list?: boolean; chips?: boolean };
+// all: every reaction as a chip, the ones that are off dashed (the music page).
+type MgGrid = { cols: string[]; rows: MgRow[]; list?: boolean; chips?: boolean; all?: boolean };
 
 const ctlOf = (k: keyof Settings) => CONTROLS.find((c) => 'key' in c && c.key === k) as Extract<Control, { key: keyof Settings }> | undefined;
 function mgPut(k: keyof Settings, v: number) {
@@ -8936,6 +8937,8 @@ const lit = (id: string, now: boolean) => {
 };
 
 const MUSIC_GRID: MgGrid = {
+  list: true,
+  all: true,
   cols: ['Push', 'Colour', 'View', 'Flow', 'Words', 'Scene'],
   rows: [
     {
@@ -9542,7 +9545,32 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
     cap.innerHTML = '<span>When you…</span><span>…the particles</span>';
     if (!grid.chips) list.append(cap);
     let group = '';
+    const MUSIC_GROUPS: Record<string, string> = { Kick: 'Drums', Snare: 'Drums', 'Hi-hats': 'Drums', Bass: 'Tones', Melody: 'Tones', Vocals: 'Voice', Syllable: 'Voice', Pause: 'Voice', Flow: 'Voice', Accent: 'Voice', Pitch: 'Voice', Rhyme: 'Voice', Bars: 'The song', 'Build-up': 'The song', Drop: 'The song', Energy: 'The song' };
+    if (grid.all) {
+      // How many are on, how many more there are, and what the colours mean.
+      hint.textContent = 'Tap a dashed reaction to turn it on. Tap a lit one for its settings, slide it sideways for strength.';
+      const top = document.createElement('div');
+      top.className = 'mg-allhead';
+      top.innerHTML = '<p><b></b><span></span></p><div class="mg-legend"></div>';
+      const lg = top.querySelector('.mg-legend')!;
+      grid.cols.forEach((c, ci) => {
+        const s = document.createElement('span');
+        s.dataset.col = String(ci);
+        s.textContent = c;
+        lg.append(s);
+      });
+      const nOn = top.querySelector('b')!;
+      const nMore = top.querySelector('p span')!;
+      const flavs = grid.rows.flatMap((r) => r.cells.flatMap((c) => c ?? []));
+      draws.push(() => {
+        const on = flavs.filter((f) => f.get() > 0.02).length;
+        nOn.textContent = `${on} on`;
+        nMore.textContent = ` · ${flavs.length - on} more you can turn on`;
+      });
+      list.append(top);
+    }
     grid.rows.forEach((row, ri) => {
+      if (grid.all && !row.group) row.group = MUSIC_GROUPS[row.name];
       if (row.group && row.group !== group) {
         group = row.group;
         const g = document.createElement('p');
@@ -9551,14 +9579,14 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
         list.append(g);
       }
       const who = row.when ?? row.name;
-      const fixed = row.cells.flatMap((fl, ci) => (fl ?? []).map((f, fi) => ({ f, col: grid.cols[ci], key: `${ri}:${ci}:${fi}` })));
+      const fixed = row.cells.flatMap((fl, ci) => (fl ?? []).map((f, fi) => ({ f, col: grid.cols[ci], ci, key: `${ri}:${ci}:${fi}` })));
       // Connections from this input, made fresh from the links each time.
       const linkCache: Record<string, MgFlav> = {};
       const linked = () => {
         if (!row.src) return [];
         return parseLinks(settings.links)
           .filter((l) => l.src === row.src && !l.when)
-          .map((l) => ({ f: Object.values(linkCache).find((f) => f.choice!.get() === l.act) ?? (linkCache[l.act] = linkFlav(row.src!, l.act)), col: 'Connection', key: `${ri}:L:${l.act}` }));
+          .map((l) => ({ f: Object.values(linkCache).find((f) => f.choice!.get() === l.act) ?? (linkCache[l.act] = linkFlav(row.src!, l.act)), col: 'Connection', ci: -1, key: `${ri}:L:${l.act}` }));
       };
       const r = document.createElement('div');
       r.className = grid.chips ? 'mg-lrow mg-chips' : 'mg-lrow';
@@ -9602,6 +9630,38 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       const build = () => {
         const items = [...fixed, ...linked()];
         const on = items.filter(({ f }) => f.get() > 0.02);
+        if (grid.all) {
+          const next = 'A' + items.map(({ key, f }) => key + (f.get() > 0.02 ? '1' : '0') + chipName(f)).join('|') + (open ?? '');
+          if (next !== sig && !r.classList.contains('swiping')) {
+            sig = next;
+            fx.innerHTML = '';
+            for (const { f, col, ci, key } of items) {
+              const lit = f.get() > 0.02;
+              const c = document.createElement('button');
+              c.type = 'button';
+              c.className = lit ? 'mg-chip' : 'mg-chip mg-off';
+              c.dataset.col = String(ci);
+              c.title = `${who} → ${col}: ${f.label}${lit ? '' : ' (off: tap to turn on)'}`;
+              c.classList.toggle('open', open === key);
+              c.textContent = chipName(f);
+              if (lit) {
+                const opener = () => show(f, col, key);
+                mgGesture(c, r, bar, [f], () => `${who} › ${chipName(f)}`, opener, opener, redraw);
+              } else {
+                c.addEventListener('click', () => {
+                  f.put(2 / 3);
+                  redraw();
+                });
+              }
+              fx.append(c);
+            }
+          }
+          fx.querySelectorAll<HTMLElement>('.mg-chip').forEach((c, i) => {
+            const it = items[i];
+            if (it) c.style.setProperty('--v', `${Math.round(it.f.get() * 100)}%`);
+          });
+          return;
+        }
         const next = on.map(({ key, f }) => key + chipName(f)).join('|') + (open ?? '');
         if (next !== sig && !r.classList.contains('swiping')) {
           sig = next;
