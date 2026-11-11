@@ -8612,6 +8612,11 @@ function syncBypassUi() {
   for (const [el, t] of sectionTabs) if (!el.classList.contains('tab-power')) el.classList.toggle('bypassed', bypass.has(t));
   for (const b of document.querySelectorAll<HTMLElement>('.picker button[data-tab], .tabs button[data-tab]')) b.classList.toggle('bypassed', bypass.has(b.dataset.tab as Tab));
 }
+const PLAY_PAGES: Tab[] = ['presets', 'timeline', 'xfader', 'knobs', 'record'];
+let playFrom: Tab = 'shape';
+function backFromPlay() {
+  showTab(playFrom);
+}
 function showTab(tab: Tab) {
   currentTab = tab;
   const intent = intentOf(tab);
@@ -8624,6 +8629,12 @@ function showTab(tab: Tab) {
   if (REACT_TABS.includes(tab)) lastReact = tab;
   for (const [t, b] of reactSub) b.classList.toggle('on', t === tab);
   document.getElementById('panel')!.dataset.page = tab;
+  // Scenes and the Play pages are views of their own: a Back bar replaces
+  // the strip and the tabs, and leads to the page you came from.
+  const play = PLAY_PAGES.includes(tab);
+  if (!play) playFrom = tab;
+  document.getElementById('panel')!.toggleAttribute('data-play', play);
+  for (const t of document.querySelectorAll('.ss-back b')) t.textContent = tab === 'presets' ? 'All scenes' : TABS.find(([x]) => x === tab)![1];
   for (const [t, b] of tabButtons) {
     b.classList.toggle('on', t === tab || (t === 'music' && REACT_TABS.includes(tab)));
     b.setAttribute('aria-selected', String(t === tab));
@@ -8725,15 +8736,13 @@ function sceneStrip() {
   const label = el.querySelector<HTMLElement>('.ss-head span')!;
   const row = el.querySelector<HTMLElement>('.ss-row')!;
   // Browsing is its own view: the strip and the tabs give way to a Back bar.
-  let from: Tab = 'shape';
   el.querySelector('.ss-browse')!.addEventListener('click', () => {
-    if (currentTab !== 'presets') from = currentTab;
     showTab('presets');
     const lib = document.querySelector<HTMLElement>('[data-sec="presets"]');
     if (lib?.classList.contains('closed')) lib.querySelector<HTMLElement>('.group-head')?.click();
     controls.scrollTop = 0;
   });
-  el.querySelector('.ss-back button')!.addEventListener('click', () => showTab(from === 'presets' ? 'shape' : from));
+  el.querySelector('.ss-back button')!.addEventListener('click', backFromPlay);
   const swatch = (p: Partial<Settings>) => {
     const key = (p.palette ?? DEFAULTS.palette) as keyof typeof PALETTES;
     const def = PALETTES[key] ?? PALETTES[DEFAULTS.palette as keyof typeof PALETTES];
@@ -8744,6 +8753,7 @@ function sceneStrip() {
   };
   let key = '';
   const sync = () => {
+    el.querySelector('.ss-back b')!.textContent = currentTab === 'presets' ? 'All scenes' : TABS.find(([x]) => x === currentTab)![1];
     const cur = currentMine?.name ?? lastSceneName;
     const fam: Family = (lastSceneName && !currentMine && FAMILY_OF[lastSceneName]) || (presetFamily === 'all' ? 'space' : presetFamily);
     const k = `${fam}|${cur}`;
@@ -10527,7 +10537,8 @@ function renderControls() {
         if (tab) dockTabs.push([tab, b]);
         if (short === 'More') { b.classList.add('dock-more-btn'); dockMoreBtn = b; }
         if (short && ['Knobs', 'Timeline', 'Fader', 'Record'].includes(short)) b.classList.add('tool');
-        b.addEventListener('click', fn);
+        // A dock page's button opens it, and a second press goes back.
+        b.addEventListener('click', tab ? () => (currentTab === tab ? backFromPlay() : fn()) : fn);
         if (fn === togglePause) pauseButtons.push(b);
         if (fn === toggleGather) gatherButtons.push(b);
         if (fn === toggleRecord) recUi.push(() => b.classList.toggle('rec', recorder.on));
