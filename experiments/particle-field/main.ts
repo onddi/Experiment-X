@@ -9972,20 +9972,6 @@ const OV_COLS: [string, Tab[]][] = [
   ['Look', ['look']], ['Shape', ['shape']], ['Motion', ['motion']], ['Music', ['music']], ['Camera', ['camera']],
   ['Play', ['presets', 'timeline', 'xfader', 'knobs', 'record', 'links']],
 ];
-const OV_SKIP = new Set(['actions', 'presets', 'mine', 'record', 'vibe', 'mgmusic', 'mgcam']);
-function sectionKeys() {
-  const out = new Map<string, (keyof Settings)[]>();
-  let cur = '';
-  for (const c of CONTROLS) {
-    if (c.kind === 'section') cur = c.id;
-    else if ('key' in c && cur) {
-      const list = out.get(cur) ?? [];
-      list.push(c.key);
-      out.set(cur, list);
-    }
-  }
-  return out;
-}
 function openSection(id: string) {
   closeOverview();
   const c = CONTROLS.find((x) => x.kind === 'section' && x.id === id) as Extract<Control, { kind: 'section' }> | undefined;
@@ -10045,9 +10031,204 @@ function closeOverview() {
   ovEl?.remove();
   ovEl = null;
 }
+const RACK_SKIP = new Set(['actions', 'presets', 'mine', 'record']);
+type RackCtl = Extract<Control, { kind: 'range' | 'select' | 'choice' | 'toggle' }>;
+let rackTimer = 0;
+function renderRack() {
+  const wrap = document.createElement('div');
+  wrap.className = 'rack';
+  const base = (sceneBase ?? DEFAULTS) as unknown as Record<string, unknown>;
+  const S = settings as unknown as Record<string, unknown>;
+  const D = DEFAULTS as unknown as Record<string, unknown>;
+  const same = (a: unknown, b: unknown) => a === b || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1e-6) || JSON.stringify(a) === JSON.stringify(b);
+  // Tab group → card → its changed controls (a setting shown once, on the
+  // first card that has it).
+  type Card = { id: string; label: string; ctls: RackCtl[]; other: boolean };
+  const seen = new Set<string>();
+  const groups = new Map<string, Card[]>();
+  let sec: Extract<Control, { kind: 'section' }> | null = null;
+  let card: Card | null = null;
+  for (const c of CONTROLS) {
+    if (c.kind === 'section') {
+      sec = c;
+      card = null;
+      continue;
+    }
+    if (!sec || RACK_SKIP.has(sec.id) || !('key' in c) || seen.has(c.key) || SCENE_IGNORE.has(c.key)) continue;
+    if (same(S[c.key], D[c.key])) continue;
+    seen.add(c.key);
+    if (!card) {
+      const col = OV_COLS.find(([, tabs]) => tabs.includes(pageOf(sec!)))?.[0] ?? 'Play';
+      card = { id: sec.id, label: sec.label, ctls: [], other: false };
+      groups.set(col, [...(groups.get(col) ?? []), card]);
+    }
+    if (c.kind === 'range' || c.kind === 'select' || c.kind === 'choice' || c.kind === 'toggle') card.ctls.push(c as RackCtl);
+    else card.other = true;
+  }
+  let count = 0;
+  const updaters: (() => void)[] = [];
+  const head = document.createElement('div');
+  head.className = 'rack-head';
+  wrap.append(head);
+  for (const [label] of OV_COLS) {
+    const cards = groups.get(label);
+    if (!cards) continue;
+    const box = document.createElement('div');
+    box.className = 'rack-group';
+    const h = document.createElement('h3');
+    h.textContent = label;
+    box.append(h);
+    for (const cd of cards) {
+      const part = document.createElement('div');
+      part.className = 'rack-card';
+      const cap = document.createElement('button');
+      cap.type = 'button';
+      cap.className = 'rack-cap';
+      cap.textContent = cd.label;
+      cap.title = `Open ${cd.label}`;
+      cap.addEventListener('click', () => openSection(cd.id));
+      part.append(cap);
+      const knobs = document.createElement('div');
+      knobs.className = 'rack-knobs';
+      const rows = document.createElement('div');
+      rows.className = 'rack-rows';
+      for (const c of cd.ctls) {
+        count++;
+        if (c.kind === 'range') {
+          const k = rackKnob(c, () => base[c.key] as number);
+          knobs.append(k.el);
+          updaters.push(k.update);
+        } else {
+          const r = rackRow(c, () => base[c.key]);
+          rows.append(r.el);
+          updaters.push(r.update);
+        }
+      }
+      if (knobs.childElementCount) part.append(knobs);
+      if (rows.childElementCount) part.append(rows);
+      if (cd.other && !cd.ctls.length) cap.textContent += ' ›';
+      box.append(part);
+    }
+    wrap.append(box);
+  }
+  head.innerHTML = count
+    ? `<h3>Knobs</h3><span>The ${count} setting${count === 1 ? '' : 's'} this scene changed, ready to play. The white dot is the scene's own value; double-tap to snap back.</span>`
+    : '<h3>Knobs</h3><span>Everything is at its default.</span>';
+  clearInterval(rackTimer);
+  rackTimer = window.setInterval(() => {
+    if (!wrap.isConnected) return clearInterval(rackTimer);
+    for (const u of updaters) u();
+  }, 150);
+  return wrap;
+}
+const RACK_RING = 94.25; // 270° of a 20-radius circle
+function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number) {
+  const el = document.createElement('div');
+  el.className = 'rack-knob';
+  el.innerHTML = `<svg viewBox="0 0 52 52" aria-hidden="true"><circle class="bg" cx="26" cy="26" r="20" stroke-dasharray="${RACK_RING} 200" transform="rotate(135 26 26)"/><circle class="val" cx="26" cy="26" r="20" stroke-dasharray="0 200" transform="rotate(135 26 26)"/><circle class="home" r="2.5"/></svg><b></b><span></span>`;
+  el.tabIndex = 0;
+  el.setAttribute('role', 'slider');
+  el.setAttribute('aria-label', c.label);
+  const [val, homeDot] = [el.querySelector<SVGCircleElement>('.val')!, el.querySelector<SVGCircleElement>('.home')!];
+  el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
+  const out = el.querySelector('span')!;
+  const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
+  const put = (v: number) => {
+    const snapped = Math.round((Math.min(c.max, Math.max(c.min, v)) - c.min) / c.step) * c.step + c.min;
+    set(c.key, +snapped.toFixed(6) as never);
+  };
+  const update = () => {
+    const v = settings[c.key] as number;
+    val.setAttribute('stroke-dasharray', `${(RACK_RING * pos(v)).toFixed(1)} 200`);
+    const a = ((135 + 270 * pos(home())) * Math.PI) / 180;
+    homeDot.setAttribute('cx', (26 + 20 * Math.cos(a)).toFixed(1));
+    homeDot.setAttribute('cy', (26 + 20 * Math.sin(a)).toFixed(1));
+    out.textContent = c.format ? c.format(v) : String(+v.toFixed(3));
+    el.setAttribute('aria-valuetext', out.textContent);
+    el.classList.toggle('moved', Math.abs(v - home()) > c.step / 2);
+  };
+  // Drag up or right to turn it up; the whole travel is ~180 px.
+  let start: { x: number; y: number; v: number } | null = null;
+  el.addEventListener('pointerdown', (e) => {
+    start = { x: e.clientX, y: e.clientY, v: settings[c.key] as number };
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('turning');
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!start) return;
+    const d = (e.clientX - start.x - (e.clientY - start.y)) / 180;
+    put(start.v + d * (c.max - c.min));
+    update();
+  });
+  const end = () => {
+    start = null;
+    el.classList.remove('turning');
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('dblclick', () => {
+    set(c.key, home() as never);
+    update();
+  });
+  el.addEventListener('keydown', (e) => {
+    const dir = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    put((settings[c.key] as number) + dir * Math.max(c.step, (c.max - c.min) / 50));
+    update();
+  });
+  update();
+  return { el, update };
+}
+function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, home: () => unknown) {
+  const el = document.createElement('div');
+  el.className = 'rack-row';
+  const name = document.createElement('span');
+  name.textContent = c.label;
+  const out = document.createElement('b');
+  if (c.kind === 'toggle') {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'rack-switch';
+    sw.setAttribute('aria-label', c.label);
+    sw.addEventListener('click', () => set(c.key, !settings[c.key] as never));
+    el.append(name, sw);
+    return {
+      el,
+      update: () => {
+        sw.setAttribute('aria-pressed', String(!!settings[c.key]));
+        sw.textContent = settings[c.key] ? 'on' : 'off';
+      },
+    };
+  }
+  const step = (d: number) => {
+    const i = c.options.findIndex(([k]) => k === settings[c.key]);
+    const n = c.options.length;
+    set(c.key, c.options[(i + d + n) % n][0] as never);
+  };
+  const prev = document.createElement('button');
+  prev.type = 'button';
+  prev.textContent = '‹';
+  prev.setAttribute('aria-label', `Previous ${c.label}`);
+  prev.addEventListener('click', () => step(-1));
+  const next = document.createElement('button');
+  next.type = 'button';
+  next.textContent = '›';
+  next.setAttribute('aria-label', `Next ${c.label}`);
+  next.addEventListener('click', () => step(1));
+  out.addEventListener('dblclick', () => set(c.key, home() as never));
+  el.append(name, prev, out, next);
+  return {
+    el,
+    update: () => {
+      out.textContent = c.options.find(([k]) => k === settings[c.key])?.[1] ?? String(settings[c.key]);
+      el.classList.toggle('moved', settings[c.key] !== home());
+    },
+  };
+}
+
 function openOverview() {
   closeOverview();
-  const keys = sectionKeys();
   const el = document.createElement('div');
   el.className = 'overview';
   el.setAttribute('role', 'dialog');
@@ -10085,60 +10266,11 @@ function openOverview() {
     }
     rec.append(p);
   }
-  // C: every card, lit when it does something.
-  const map = document.createElement('div');
-  map.className = 'ov-map';
-  let lit = 0;
-  let total = 0;
-  for (const [label, tabs] of OV_COLS) {
-    const col = document.createElement('div');
-    col.className = 'ov-col';
-    const cards = CONTROLS.filter((c): c is Extract<Control, { kind: 'section' }> => c.kind === 'section' && !c.fixed && !OV_SKIP.has(c.id) && tabs.includes(pageOf(c)));
-    let n = 0;
-    const items = cards.map((c) => {
-      const ks = keys.get(c.id) ?? [];
-      let on = false;
-      try {
-        on = c.id === 'audio' ? audio.source !== 'off' : c.power ? c.power.on() : ks.some((k) => JSON.stringify(settings[k]) !== JSON.stringify(DEFAULTS[k]));
-      } catch {}
-      if (on) n++;
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = on ? 'ov-card on' : 'ov-card';
-      const t = document.createElement('b');
-      t.textContent = c.label;
-      b.append(t);
-      if (on && c.summary) {
-        const sm = document.createElement('span');
-        try {
-          sm.textContent = c.summary();
-        } catch {}
-        if (sm.textContent && sm.textContent !== 'off') b.append(sm);
-      }
-      b.addEventListener('click', () => openSection(c.id));
-      return b;
-    });
-    lit += n;
-    total += cards.length;
-    const h = document.createElement('div');
-    h.className = 'ov-colhead';
-    h.innerHTML = `<b></b><span>${n} / ${cards.length}</span>`;
-    h.querySelector('b')!.textContent = label;
-    col.append(h, ...items);
-    map.append(col);
-  }
-  const mapHead = document.createElement('div');
-  mapHead.className = 'ov-maphead';
-  mapHead.innerHTML = `<h3>Every card</h3><span><i class="on"></i>does something (${lit}) <i></i>default or off (${total - lit})</span>`;
-  const showAll = document.createElement('button');
-  showAll.type = 'button';
-  showAll.className = 'ov-all';
-  showAll.textContent = 'Show the ones that are off too';
-  showAll.addEventListener('click', () => {
-    map.classList.toggle('all');
-    showAll.textContent = map.classList.contains('all') ? 'Only the ones doing something' : 'Show the ones that are off too';
-  });
-  body.append(rec, mapHead, map, showAll);
+  // E: every setting this scene changed, playable. Numbers are knobs (drag
+  // up or sideways; the white dot is the scene's own value, double-tap to
+  // snap back), choices step with ‹ ›, switches flip.
+  const rack = renderRack();
+  body.append(rec, rack);
   el.append(head, body);
   document.body.append(el);
   ovEl = el;
