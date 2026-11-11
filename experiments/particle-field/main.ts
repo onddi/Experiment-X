@@ -5788,7 +5788,7 @@ const CAM_MODES: [string, string][] = [
   ['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['mixed', 'Features + a light mesh'],
   ['hands', 'Your hands (skeleton)'], ['pose', 'Your body (skeleton)'], ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
-const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'A geometric shape'], ['pattern', 'A pattern (fills an area)'], ['solid', 'A turning 3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera']];
+const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'Geometric shape'], ['pattern', 'Pattern (fills an area)'], ['solid', '3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera']];
 const PATTERNS: [string, string][] = [['sunflower', 'Sunflower disc'], ['grid', 'Grid'], ...FILL_PATTERNS];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
@@ -11076,7 +11076,7 @@ function rackPlanOf(src: RackSrc) {
   return { groups, base };
 }
 // A setting that only shows because of one already on the card (the shape
-// to draw once Shape is "A geometric shape", say) comes along with it.
+// to draw once Shape is "Geometric shape", say) comes along with it.
 function pairOf(c: Control, card: RackCard | null) {
   if (!c.show || !card || !('key' in c) || !c.show()) return false;
   const D = DEFAULTS as unknown as Record<string, unknown>;
@@ -12364,8 +12364,6 @@ const rangeOf = (key: string) => CONTROLS.find((c): c is Extract<Control, { kind
 // A field knob works on a number: a slider's value, or a choice's place in
 // its list (turning steps through the options).
 type KnobSpec = { key: keyof Settings; label: string; min: number; max: number; step: number; get: () => number; set: (v: number) => boolean; text: (v: number) => string; options?: [string, string][] };
-// Some choices only make sense as a few options on a knob.
-const KNOB_OPTIONS: Record<string, string[]> = { shape: ['solid', 'pattern', 'geo'] };
 // Related settings: a choice that decides which of several other choices
 // shows (Particles form → 3D shape / Geometric shape / Pattern…). Found by
 // trying each option and seeing which choices appear, once, on first use.
@@ -12429,8 +12427,7 @@ function knobSpec(key: string): KnobSpec | null {
       text: (v) => `${Math.round(((v - c.min) / (c.max - c.min)) * 100)}%`,
     };
   if (c.kind !== 'select' && c.kind !== 'choice') return null;
-  const only = KNOB_OPTIONS[c.key];
-  const opts = only ? c.options.filter(([k]) => only.includes(k)).sort((x, y) => only.indexOf(x[0]) - only.indexOf(y[0])) : c.options;
+  const opts = c.options;
   return {
     key: c.key, label: c.label, min: 0, max: Math.max(1, opts.length - 1), step: 1, options: opts,
     get: () => Math.max(0, opts.findIndex(([k]) => k === S[c.key])),
