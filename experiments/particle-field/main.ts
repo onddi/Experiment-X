@@ -13231,14 +13231,16 @@ function uPaint(force = false) {
 }
 // Desktop: the bar floats over the field, clear of the Studio or
 // the Deck on the right. On the Stage it rests out of sight until the mouse moves.
-// Centred over the field in each view. It moves at once (no slide) when the
-// field's width changes, so only the switch's thumb animates.
+// One spot in every view; moves at once (no slide) only when it has to.
+let stageBarW = 0;
 function uPlace() {
   let right = innerWidth;
   if (!panel.classList.contains('collapsed')) right = Math.min(right, panel.getBoundingClientRect().left);
   if (ovEl) right = Math.min(right, ovEl.getBoundingClientRect().left);
-  // The whole bar centred over the field, kept clear of its right edge.
-  let left = right / 2 - ubar.offsetWidth / 2;
+  // Placed where it sits on the Stage (centred on the screen) in every view,
+  // so the switch never moves; it only shifts left if the Studio or Deck would cover it.
+  if (ubar.classList.contains('stage')) stageBarW = ubar.offsetWidth;
+  let left = innerWidth / 2 - (stageBarW || ubar.offsetWidth) / 2;
   left = Math.min(left, right - ubar.offsetWidth - 12);
   ubar.style.left = `${Math.max(12, Math.round(left))}px`;
 }
