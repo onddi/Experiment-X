@@ -5675,6 +5675,8 @@ const hasClick = () => settings.click !== 'none';
 const svg = (d: string) =>
   `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const ICONS = {
+  eye: svg('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  sliders: svg('<path d="M4 6h10M18 6h2M4 18h4M12 18h8"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="18" r="2"/>'),
   pause: svg('<path d="M9 5v14M15 5v14"/>'),
   play: svg('<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>'),
   gather: svg('<circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M4 4l4 4M20 4l-4 4M4 20l4-4M20 20l-4-4"/><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/>'),
@@ -10464,6 +10466,43 @@ function closeOverview() {
   ovEl?.remove();
   ovEl = null;
 }
+// Watching (phones): no menus at all, just the field. A faint scene pill
+// brings the overview back, a faint shuffle rolls a new look, and a swipe
+// sideways plays the previous / next scene. Both fade while you watch.
+const watchBar = document.createElement('div');
+watchBar.className = 'watch-bar';
+watchBar.innerHTML = `<button type="button" class="watch-scene" aria-label="Back to the overview">${ICONS.sliders}<b></b></button><button type="button" class="watch-shuffle" aria-label="Shuffle">${ICONS.shuffle}</button>`;
+watchBar.querySelector('.watch-scene')!.addEventListener('click', stopWatching);
+watchBar.querySelector('.watch-shuffle')!.addEventListener('click', () => shuffle());
+document.querySelector('.stage')!.append(watchBar);
+function startWatching() {
+  closeOverview();
+  if (!panel.classList.contains('collapsed')) toggle.click();
+  document.body.classList.add('watching');
+  watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || 'Overview';
+}
+function stopWatching() {
+  document.body.classList.remove('watching');
+  openOverview();
+}
+{
+  let sw: { x: number; y: number; t: number } | null = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    sw = document.body.classList.contains('watching') ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!sw) return;
+    const dx = e.clientX - sw.x;
+    const dy = e.clientY - sw.y;
+    const quick = performance.now() - sw.t < 600;
+    sw = null;
+    if (!quick || Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    const r = sceneAfter(lastSceneName ? { name: lastSceneName } : null, lastSceneName ? (dx < 0 ? 1 : -1) : 0);
+    const p = PRESETS.find(([nm]) => nm === r.name);
+    if (p) playPreset(p[0], p[1]);
+    setTimeout(() => (watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || r.name), 50);
+  });
+}
 // --- overview ------------------------------------------------------------------
 // The scene rack: every setting the scene changed, playable, grouped by tab
 // and card. Tap a card's name to go to it.
@@ -10829,7 +10868,23 @@ function openOverview() {
     body.append(xfStart, renderRack());
   }
   head.querySelector('.ov-close')!.addEventListener('click', closeOverview);
-  el.append(head, body);
+  // Phones: the overview fills the screen; Watch hides every menu, All
+  // settings opens the tabs, ⇄ starts or stops a crossfade.
+  const foot = document.createElement('div');
+  foot.className = 'ov-foot';
+  foot.innerHTML = `<button type="button" class="ov-watch">${ICONS.eye}<span>Watch</span></button><button type="button" class="ov-all">${ICONS.sliders}<span>All settings</span></button><button type="button" class="ov-xfb" aria-label="${xf.on ? 'Stop crossfading' : 'Crossfade with another scene'}" aria-pressed="${xf.on}">⇄</button>`;
+  foot.querySelector('.ov-watch')!.addEventListener('click', startWatching);
+  foot.querySelector('.ov-all')!.addEventListener('click', () => {
+    closeOverview();
+    if (panel.classList.contains('collapsed')) toggle.click();
+  });
+  foot.querySelector('.ov-xfb')!.addEventListener('click', () => {
+    if (xf.on) {
+      xfSetOn(false);
+      openOverview();
+    } else body.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
+  });
+  el.append(head, body, foot);
   document.body.append(el);
   ovEl = el;
   el.addEventListener('keydown', (e) => {
@@ -11596,6 +11651,7 @@ const panel = document.getElementById('panel')!;
 const toggle = document.getElementById('toggle')!;
 toggle.addEventListener('click', () => {
   const collapsed = panel.classList.toggle('collapsed');
+  if (!collapsed) document.body.classList.remove('watching');
   if (sheetMode()) applySheet();
   if (collapsed) {
     panel.classList.remove('picking', 'more');
