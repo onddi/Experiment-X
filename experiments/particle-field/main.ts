@@ -3,7 +3,7 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
-import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel } from './shapes.ts';
+import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel } from './shapes.ts';
 import { modelFromFile, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
@@ -1965,6 +1965,23 @@ function mediaTick(now: number) {
   }
   picColours(now);
 }
+// An animated model's clock, in the clip's seconds.
+let modelT = 0;
+let modelAt = 0;
+function modelTick(now: number) {
+  const S = settings;
+  const dt = modelAt ? Math.min(0.1, (now - modelAt) / 1000) : 0;
+  modelAt = now;
+  if (S.shape !== 'solid' || S.shapeSolid !== 'model' || !modelClips().length) return;
+  const clip = S.modelClip - 1;
+  if (clip < 0 || paused) {
+    poseModel(clip, modelT);
+    return;
+  }
+  const beat = S.modelBeat && reacting() ? 0.3 + audio.levels.level * 2.2 : 1;
+  modelT += dt * S.modelSpeed * beat;
+  poseModel(Math.min(clip, modelClips().length - 1), modelT);
+}
 // 3D model files for the "Your 3D model" solid.
 const modelInput = document.createElement('input');
 modelInput.type = 'file';
@@ -1974,9 +1991,11 @@ modelInput.addEventListener('change', async () => {
   modelInput.value = '';
   if (!f) return;
   try {
-    const pts = await modelFromFile(f);
+    const { pts, anim } = await modelFromFile(f);
     if (pts.length < 30) throw new Error('empty');
-    setModel(pts, f.name.replace(/\.[^.]+$/, ''));
+    setModel(pts, f.name.replace(/\.[^.]+$/, ''), anim);
+    modelT = 0;
+    if (anim) showToast(`${anim.clips.length === 1 ? 'Its animation plays' : `${anim.clips.length} animations; the first one plays`}. Pick another under Shape.`);
     if (settings.shape !== 'solid' || settings.shapeSolid !== 'model') {
       settings.shape = 'solid';
       settings.shapeSolid = 'model';
@@ -3774,6 +3793,7 @@ function animateShape(now: number) {
       reshape(400);
     }
   }
+  modelTick(now);
   const ps = paramShape;
   // Curves and solids glide on their own; a traced-shape glide would fight it.
   if (ps && homeGlide) homeGlide = null;
@@ -8487,7 +8507,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'modelClip', 'modelSpeed', 'modelBeat', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -8503,7 +8523,10 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['New seed', () => set('patSeed', settings.patSeed + 1)]], show: () => settings.shape === 'pattern' && isFillPattern(settings.shapePattern) },
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
   { kind: 'buttons', buttons: [['Load a 3D model…', () => modelInput.click()]], show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
-  { kind: 'note', text: 'OBJ, STL or GLB files. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
+  { kind: 'range', key: 'modelClip', label: 'Animation', min: 0, max: 32, step: 1, format: (v) => { const c = modelClips(); return v === 0 ? 'still' : c[Math.min(v, c.length) - 1]?.name ?? '—'; }, show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' && modelClips().length > 0 },
+  { kind: 'range', key: 'modelSpeed', label: 'Animation speed', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' && modelClips().length > 0 && settings.modelClip > 0 },
+  { kind: 'toggle', key: 'modelBeat', label: 'Speed follows the music', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' && modelClips().length > 0 && settings.modelClip > 0 },
+  { kind: 'note', text: 'OBJ, STL or GLB files. A GLB with animations (bones or blend shapes) plays them; FBX can be turned into GLB in Blender. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
   { kind: 'note', text: '3D shapes look best with 3D depth on (Look tab); it turns on with them.', show: () => settings.shape === 'solid' },
@@ -16085,7 +16108,7 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set(['spriteCols', 'spriteRows', 'spriteRow', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
+const REMIX_SKIP = new Set(['modelClip', 'modelSpeed', 'modelBeat', 'spriteCols', 'spriteRows', 'spriteRow', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
 // How often a switchable card is on in a remix.
 const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85 };
 const REMIX_KEY = 'particle-field:remix';

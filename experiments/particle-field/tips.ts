@@ -139,6 +139,9 @@ export const TIPS: Record<string, string> = {
   spriteCols: 'Columns of frames in your sprite sheet. Auto finds the grid by the clear gaps between frames.',
   spriteRows: 'Rows of frames in your sprite sheet. Auto finds them by the clear gaps between frames.',
   spriteRow: 'Sheets often hold one animation per row (walk, run, jump). Play one row, or let each particle play its own.',
+  modelClip: 'Which of the model’s animations plays. Still holds its resting pose.',
+  modelSpeed: 'How fast the animation plays. 1 is its own speed.',
+  modelBeat: 'The animation speeds up with the music and slows in the quiet parts.',
   imageRate: 'How often a video or GIF shape is sampled again. Higher follows motion closer.',
   spawnOn: 'When a particle makes new ones: as it dies, when it hits something, a trail behind it, or on the beat.',
   spawnCount: 'How many children each burst makes (or each second, for trails).',
@@ -278,7 +281,7 @@ export const LENSES: [id: string, label: string, keys: string[]][] = [
   ['trails', 'Trails', ['trail', 'ribbonLen', 'linkDist', 'audioTrailEnergy', 'audioTunnel', 'audioTunnelTurn', 'audioEcho']],
   ['amount', 'Amount', ['count', 'lifespan', 'emitter', 'emitMode', 'emitRate', 'burstEvery', 'burstSize', 'renew', 'densityMode', 'maskShare']],
   ['movement', 'Movement', ['speed', 'friction', 'jitter', 'flow', 'flowType', 'flowScale', 'flowSpeed', 'gravity', 'wind', 'windDir', 'flock', 'flockAlign', 'flockCohesion', 'flockSep', 'flockRange', 'space', 'spaceDist', 'edges', 'hitWalls', 'hitDo', 'hitBounce', 'hitFriction', 'hitFloor', 'hitObstacles', 'spawnOn', 'spawnCount', 'spawnSpeed', 'spawnLife', 'launchSpeed', 'launchDir', 'launchSpread', 'audioSpeed', 'audioFlow', 'audioSway', 'audioEnergyShake', 'audioStutter', 'audioGravFlip', 'audioFlowSpeed']],
-  ['shape', 'Shape', ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'shapeSolid', 'shapeLive', 'shapeSize', 'shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shapeSpin', 'shapeSeq', 'shapeCycle', 'drawOutline', 'entrance', 'entranceTime', 'homeStrength', 'obstacles', 'obsText', 'emitX', 'emitY', 'emitSize', 'audioWordPulse', 'audioLetterHop', 'audioEnergyWords', 'audioBuildScatter']],
+  ['shape', 'Shape', ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'shapeSolid', 'modelClip', 'modelSpeed', 'modelBeat', 'shapeLive', 'shapeSize', 'shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shapeSpin', 'shapeSeq', 'shapeCycle', 'drawOutline', 'entrance', 'entranceTime', 'homeStrength', 'obstacles', 'obsText', 'emitX', 'emitY', 'emitSize', 'audioWordPulse', 'audioLetterHop', 'audioEnergyWords', 'audioBuildScatter']],
   ['view', 'View', ['audioKaleido', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'depth', 'depthParallax', 'audioCam', 'audioBassZoom', 'audioSpin', 'audioPan', 'audioRoll', 'audioDolly', 'audioCuts', 'audioFlip', 'viewZoom', 'viewRot']],
   ['music', 'Music', ['audioIntensity', 'audioKick', 'audioPulse', 'audioBeat', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioDrop', 'audioDropBuild', 'audioBands', 'audioHue', 'audioBright', 'audioCam', 'audioSpin', 'audioTunnel', 'audioSway', 'audioWordsOn', 'audioSpeed', 'audioFlow', 'audioBassThrob', 'audioTrailEnergy']],
 ];

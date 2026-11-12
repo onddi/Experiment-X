@@ -98,6 +98,9 @@ export interface Settings {
   shapeSpin: number;
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
   imageRate: number;
+  modelClip: number;
+  modelSpeed: number;
+  modelBeat: boolean;
   camMode: CamMode;
   camMirror: boolean;
   camCentre: boolean;
@@ -474,6 +477,9 @@ export const DEFAULTS: Settings = {
   shapeSpin: 0.3,
   imageMode: 'auto',
   imageRate: 10,
+  modelClip: 1,
+  modelSpeed: 1,
+  modelBeat: false,
   camMode: 'face',
   camMirror: true,
   camCentre: true,
