@@ -61,9 +61,10 @@ void main() {
 const QUAD_VS = `#version 300 es
 in vec2 corner;
 uniform float flip;
+uniform vec2 scale;
 out vec2 uv;
 void main() {
-  uv = vec2(corner.x, flip > 0.5 ? 1.0 - corner.y : corner.y);
+  uv = vec2(corner.x, flip > 0.5 ? 1.0 - corner.y : corner.y) * scale;
   gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0);
 }`;
 const FILL_FS = `#version 300 es
@@ -89,6 +90,14 @@ export class GLSprites {
   private vao: WebGLVertexArrayObject;
   private data = new Float32Array(4096 * STRIDE);
   private count = 0;
+  // Soft halos (only mode): drawn on a half-size layer, laid on the picture
+  // before the sharp parts. A blur costs a quarter of the pixels there.
+  private hdata = new Float32Array(1024 * STRIDE);
+  private hcount = 0;
+  private halo: WebGLTexture | null = null;
+  private haloFbo: WebGLFramebuffer | null = null;
+  private haloW = 0;
+  private haloH = 0;
   private cells = new Map<HTMLCanvasElement, number>();
   private uView: WebGLUniformLocation;
   private fillProg: WebGLProgram;
@@ -96,6 +105,7 @@ export class GLSprites {
   private uFlipFill: WebGLUniformLocation;
   private texProg: WebGLProgram;
   private uFlipTex: WebGLUniformLocation;
+  private uTexScale: WebGLUniformLocation;
   private quadVao: WebGLVertexArrayObject;
   // The picture in "only" mode, and a texture for 2D layers laid onto it.
   private pic: WebGLTexture | null = null;
@@ -141,6 +151,11 @@ export class GLSprites {
     this.uCol = gl.getUniformLocation(this.fillProg, 'col')!;
     this.uFlipFill = gl.getUniformLocation(this.fillProg, 'flip')!;
     this.uFlipTex = gl.getUniformLocation(this.texProg, 'flip')!;
+    this.uTexScale = gl.getUniformLocation(this.texProg, 'scale')!;
+    gl.useProgram(this.texProg);
+    gl.uniform2f(this.uTexScale, 1, 1);
+    gl.useProgram(this.fillProg);
+    gl.uniform2f(gl.getUniformLocation(this.fillProg, 'scale'), 1, 1);
     this.uView = gl.getUniformLocation(this.prog, 'view')!;
     const quad = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -206,15 +221,21 @@ export class GLSprites {
   }
 
   /** Queue one sprite, centred on x, y, sw × sh px, turned by angle (radians). */
-  pushR(img: HTMLCanvasElement, x: number, y: number, sw: number, sh: number, angle: number, alpha: number, tint = 0xffffff) {
-    if (this.count * STRIDE >= this.data.length) {
-      const next = new Float32Array(this.data.length * 2);
-      next.set(this.data);
-      this.data = next;
+  pushR(img: HTMLCanvasElement, x: number, y: number, sw: number, sh: number, angle: number, alpha: number, tint = 0xffffff, halo = false) {
+    if (halo && !this.only) halo = false;
+    const n = halo ? this.hcount : this.count;
+    if ((n + 1) * STRIDE > (halo ? this.hdata : this.data).length) {
+      const old = halo ? this.hdata : this.data;
+      const next = new Float32Array(old.length * 2);
+      next.set(old);
+      if (halo) this.hdata = next;
+      else this.data = next;
     }
     const c = this.cellOf(img);
-    const o = this.count++ * STRIDE;
-    const D = this.data;
+    const o = n * STRIDE;
+    if (halo) this.hcount++;
+    else this.count++;
+    const D = halo ? this.hdata : this.data;
     D[o] = x;
     D[o + 1] = y;
     D[o + 2] = sw;
@@ -227,7 +248,7 @@ export class GLSprites {
   }
 
   get pending() {
-    return this.count;
+    return this.count + this.hcount;
   }
 
   private fit(cw: number, ch: number) {
@@ -354,6 +375,10 @@ export class GLSprites {
     if (this.pic) gl.deleteTexture(this.pic);
     if (this.fbo) gl.deleteFramebuffer(this.fbo);
     if (this.layerTex) gl.deleteTexture(this.layerTex);
+    if (this.halo) gl.deleteTexture(this.halo);
+    if (this.haloFbo) gl.deleteFramebuffer(this.haloFbo);
+    this.halo = this.haloFbo = null;
+    this.haloW = this.haloH = 0;
     this.pic = this.fbo = this.layerTex = null;
     this.picW = this.picH = 0;
   }
@@ -363,10 +388,12 @@ export class GLSprites {
    * this canvas, then laid onto ctx (in its current composite mode).
    */
   flush(ctx: CanvasRenderingContext2D, w: number, h: number) {
-    if (!this.count) return;
+    if (!this.count && !this.hcount) return;
     const gl = this.gl;
     const cw = ctx.canvas.width;
     const ch = ctx.canvas.height;
+    if (this.hcount) this.flushHalo(cw, ch, w, h);
+    if (!this.count) return;
     if (this.only) this.toPic(cw, ch);
     else {
       this.fit(cw, ch);
@@ -386,6 +413,7 @@ export class GLSprites {
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
     gl.bufferData(gl.ARRAY_BUFFER, this.data.subarray(0, this.count * STRIDE), gl.STREAM_DRAW);
+    gl.disable(gl.SCISSOR_TEST);
     // Copy mode draws onto a clear canvas; the composite happens in the drawImage.
     this.setBlend(this.only ? this.blend : this.blend === 'add' ? 'add' : 'over');
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.count);
@@ -396,5 +424,57 @@ export class GLSprites {
     ctx.globalAlpha = 1;
     ctx.drawImage(this.canvas, 0, 0, cw, ch);
     ctx.restore();
+  }
+
+  // The halos: onto a clear half-size layer, then that layer onto the picture.
+  private flushHalo(cw: number, ch: number, w: number, h: number) {
+    const gl = this.gl;
+    const hw = Math.max(1, Math.ceil(cw / 2));
+    const hh = Math.max(1, Math.ceil(ch / 2));
+    if (!this.halo || this.haloW !== hw || this.haloH !== hh) {
+      if (!this.halo) {
+        this.halo = gl.createTexture()!;
+        this.haloFbo = gl.createFramebuffer()!;
+      }
+      gl.bindTexture(gl.TEXTURE_2D, this.halo);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, hw, hh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.haloFbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.halo, 0);
+      this.haloW = hw;
+      this.haloH = hh;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.haloFbo);
+    gl.viewport(0, 0, hw, hh);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(this.prog);
+    gl.bindVertexArray(this.vao);
+    // The layer is a touch bigger than half when the size is odd; keep CSS px lined up.
+    gl.uniform2f(this.uView, (w * hw * 2) / cw, (h * hh * 2) / ch);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    if (this.mipsDirty) {
+      gl.generateMipmap(gl.TEXTURE_2D);
+      this.mipsDirty = false;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.bufferData(gl.ARRAY_BUFFER, this.hdata.subarray(0, this.hcount * STRIDE), gl.STREAM_DRAW);
+    this.setBlend(this.blend === 'add' ? 'add' : 'over');
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.hcount);
+    this.hcount = 0;
+    // Lay it on the picture, stretched back to full size.
+    this.toPic(cw, ch);
+    gl.useProgram(this.texProg);
+    gl.bindVertexArray(this.quadVao);
+    gl.bindTexture(gl.TEXTURE_2D, this.halo);
+    gl.uniform1f(this.uFlipTex, 0);
+    gl.uniform2f(this.uTexScale, (cw / 2) / hw, (ch / 2) / hh);
+    this.setBlend(this.blend);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.uniform2f(this.uTexScale, 1, 1);
   }
 }
