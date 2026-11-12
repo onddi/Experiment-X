@@ -1,3 +1,4 @@
+import { rocketPoints } from './media.ts';
 // Ready-made shapes for the particles: icons drawn on a canvas (then traced
 // like text), and curves and 3D solids worked out as points, so they can
 // turn and breathe while the particles hold them.
@@ -491,7 +492,16 @@ export const SOLID_SHAPES: [string, string][] = [
   ['lissajous', 'Lissajous knot'], ['torusknot', 'Torus knot'], ['klein', 'Klein bottle'],
   ['flower', 'Flower'], ['tornado', 'Tornado'], ['jelly', 'Jellyfish'],
   ['hourglass', 'Hourglass'], ['crystals', 'Crystal cluster'], ['gyro', 'Gyroscope'],
+  ['model', 'Your 3D model (OBJ, STL, glTF)'],
 ];
+// The 3D model: surface points (x, y, z), a rocket until you load one.
+let modelPts: Float32Array | null = null;
+let modelName = '';
+export function setModel(pts: Float32Array, name: string) {
+  modelPts = pts.length >= 3 ? pts : null;
+  modelName = modelPts ? name : '';
+}
+export const modelLabel = () => modelName || 'the example rocket';
 type V3 = [number, number, number];
 const lerp3 = (a: V3, b: V3, f: number): V3 => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
 // Points along a set of edges (u picks the edge and how far along).
@@ -551,6 +561,12 @@ const CRYSTALS: [V3, number, number][] = [
 export function solidPoint(type: string, u: number, v: number): [number, number, number] {
   const TAU = Math.PI * 2;
   switch (type) {
+    case 'model': {
+      modelPts ??= rocketPoints();
+      const m = modelPts.length / 3;
+      const k = Math.min(m - 1, Math.floor(u * m)) * 3;
+      return [modelPts[k], modelPts[k + 1], modelPts[k + 2]];
+    }
     case 'torus': {
       const a = u * TAU;
       const b = v * TAU;

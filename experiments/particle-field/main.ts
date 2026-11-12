@@ -3,7 +3,8 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
-import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
+import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel } from './shapes.ts';
+import { modelFromFile, decodeFrames, sliceSheet, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
@@ -1907,12 +1908,114 @@ function drawRibbons(list: number[], k: number, s: number) {
 
 let shapeImage: HTMLImageElement | null = null;
 let shapeKey = '';
+// A playing picture for the image shape: a video or a GIF's frames.
+let shapeMedia: { video: HTMLVideoElement | null; frames: HTMLCanvasElement[] | null; ms: number[]; src: string } | null = null;
+let mediaFrameNo = 0;
+let mediaAt = 0;
+const mediaCanvas = document.createElement('canvas');
+function mediaStop() {
+  shapeMedia?.video?.pause();
+  shapeMedia = null;
+}
+// The picture as it is now (drawn into a canvas small enough to sample).
+function mediaFrame(): HTMLCanvasElement | null {
+  const m = shapeMedia;
+  if (!m) return null;
+  let src: CanvasImageSource;
+  let sw: number;
+  let sh: number;
+  if (m.video) {
+    if (m.video.readyState < 2) return null;
+    src = m.video;
+    sw = m.video.videoWidth;
+    sh = m.video.videoHeight;
+  } else {
+    const total = m.ms.reduce((a, b) => a + b, 0) || 1;
+    let t0 = performance.now() % total;
+    let k = 0;
+    while (k < m.ms.length - 1 && t0 >= m.ms[k]) t0 -= m.ms[k++];
+    src = m.frames![k];
+    sw = m.frames![k].width;
+    sh = m.frames![k].height;
+  }
+  const sc = Math.min(1, 640 / Math.max(sw, sh, 1));
+  const W = Math.max(2, Math.round(sw * sc));
+  const H = Math.max(2, Math.round(sh * sc));
+  if (mediaCanvas.width !== W || mediaCanvas.height !== H) {
+    mediaCanvas.width = W;
+    mediaCanvas.height = H;
+  }
+  const g = mediaCanvas.getContext('2d', { willReadFrequently: true })!;
+  g.clearRect(0, 0, W, H);
+  g.drawImage(src, 0, 0, W, H);
+  return mediaCanvas;
+}
+// Video and GIF shapes are sampled again a few times a second.
+function mediaTick(now: number) {
+  if (settings.shape !== 'image') return;
+  if (shapeMedia && now - mediaAt > 1000 / settings.imageRate) {
+    mediaAt = now;
+    mediaFrameNo++;
+    buildShape();
+  }
+  picColours(now);
+}
+// 3D model files for the "Your 3D model" solid.
+const modelInput = document.createElement('input');
+modelInput.type = 'file';
+modelInput.accept = '.obj,.stl,.glb,.gltf';
+modelInput.addEventListener('change', async () => {
+  const f = modelInput.files?.[0];
+  modelInput.value = '';
+  if (!f) return;
+  try {
+    const pts = await modelFromFile(f);
+    if (pts.length < 30) throw new Error('empty');
+    setModel(pts, f.name.replace(/\.[^.]+$/, ''));
+    if (settings.shape !== 'solid' || settings.shapeSolid !== 'model') {
+      settings.shape = 'solid';
+      settings.shapeSolid = 'model';
+      changed(new Set(['shape', 'shapeSolid']));
+    }
+    reshape(900);
+    refresh();
+  } catch {
+    showToast(/\.gltf$/i.test(f.name) ? 'This glTF keeps its data in a separate file. Try a .glb instead.' : 'Couldn’t read that model. OBJ, STL, GLB or glTF work.');
+  }
+});
 const imageInput = document.createElement('input');
 imageInput.type = 'file';
-imageInput.accept = 'image/*,.svg';
-imageInput.addEventListener('change', () => {
+imageInput.accept = 'image/*,.svg,video/*';
+imageInput.addEventListener('change', async () => {
   const f = imageInput.files?.[0];
   if (!f) return;
+  mediaStop();
+  // A video, or an animated GIF: the shape follows it as it plays.
+  if (f.type.startsWith('video/')) {
+    const v = document.createElement('video');
+    v.muted = true;
+    v.loop = true;
+    v.playsInline = true;
+    v.src = URL.createObjectURL(f);
+    v.addEventListener('loadeddata', () => {
+      shapeMedia = { video: v, frames: null, ms: [], src: v.src };
+      shapeImage = null;
+      shapeKey = '';
+      buildShape();
+    }, { once: true });
+    void v.play().catch(() => {});
+    return;
+  }
+  if (f.type === 'image/gif' || /\.(gif|webp|apng)$/i.test(f.name)) {
+    const an = await decodeFrames(f);
+    if (an) {
+      shapeMedia = { video: null, frames: an.frames, ms: an.ms, src: URL.createObjectURL(f) };
+      shapeImage = null;
+      shapeKey = '';
+      buildShape();
+      return;
+    }
+  }
   const img = new Image();
   const svg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
   img.onload = () => {
@@ -1941,6 +2044,7 @@ imageInput.addEventListener('change', () => {
     imageColoursOn();
   };
   img.src = URL.createObjectURL(f);
+  imageInput.value = '';
 });
 
 // A new image: its particles take the image's own colours (Undo keeps the old).
@@ -3093,7 +3197,21 @@ let camColourAt = 0;
 function camColours(now: number) {
   if (settings.colorBy !== 'camera' || !cam.ready || now - camColourAt < 400) return;
   camColourAt = now;
-  cgCtx.drawImage(cam.video, 0, 0, CG_W, CG_H);
+  rankColours(cam.video);
+}
+// Picture colours for the image shape (a still, a video or a GIF).
+let imgMap = { x: 0, y: 0, w: 1, h: 1 };
+const picOn = () => !cam.on && settings.shape === 'image' && (!!shapeImage || !!shapeMedia);
+function picColours(now: number) {
+  if (settings.colorBy !== 'camera' || !picOn() || now - camColourAt < (shapeMedia ? 400 : 2000)) return;
+  const src = mediaFrame() ?? shapeImage;
+  if (!src) return;
+  camColourAt = now;
+  rankColours(src);
+}
+function rankColours(src: CanvasImageSource) {
+  cgCtx.clearRect(0, 0, CG_W, CG_H);
+  cgCtx.drawImage(src, 0, 0, CG_W, CG_H);
   const d = cgCtx.getImageData(0, 0, CG_W, CG_H).data;
   const N = CG_W * CG_H;
   const lum = new Float32Array(N);
@@ -3121,6 +3239,11 @@ function camColours(now: number) {
 }
 function camShade(i: number) {
   if (!camShades) return tone[i];
+  if (!cam.on) {
+    const gx = Math.max(0, Math.min(CG_W - 1, (((hx[i] - imgMap.x) / imgMap.w) * CG_W) | 0));
+    const gy = Math.max(0, Math.min(CG_H - 1, (((hy[i] - imgMap.y) / imgMap.h) * CG_H) | 0));
+    return camRank[gy * CG_W + gx];
+  }
   const vxp = camMap.ox + (hx[i] - w / 2) / (camMap.sc * camMap.mir);
   const vyp = camMap.oy + (hy[i] - h / 2) / camMap.sc;
   const gx = Math.max(0, Math.min(CG_W - 1, ((vxp / cam.width) * CG_W) | 0));
@@ -3267,7 +3390,7 @@ function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number)
 function sampleImage(): [number, number][] {
   const camOn = settings.shape === 'camera';
   if (camOn) grabCamera();
-  const src: { width: number; height: number } | null = camOn ? (cam.ready ? camCanvas : null) : shapeImage;
+  const src: { width: number; height: number } | null = camOn ? (cam.ready ? camCanvas : null) : (mediaFrame() ?? shapeImage);
   if (!src) return [];
   const step = 2;
   const W = Math.max(1, Math.round(w / step));
@@ -3280,6 +3403,7 @@ function sampleImage(): [number, number][] {
   const ih = Math.max(2, Math.round(src.height * sc));
   const ix = Math.round((Wv - iw) / 2);
   const iy = Math.round((H - ih) / 2);
+  if (!camOn) imgMap = { x: ix * step, y: iy * step, w: iw * step, h: ih * step };
   const c = document.createElement('canvas');
   c.width = iw;
   c.height = ih;
@@ -3798,7 +3922,7 @@ function buildShape() {
   // An animated size plays as a scale on the built shape (see placeFrame), so
   // the shape is built once at the knob's own size, not every frame.
   const sz = animBase.shapeSize ?? S.shapeSize;
-  const key = [S.shape, S.shapeText, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
+  const key = [S.shape, S.shapeText, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', shapeMedia ? `${shapeMedia.src}#${mediaFrameNo}` : '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   if (S.shape === 'camera' && trackMode()) {
     // Face, hand and body modes: the homes follow the tracking every frame.
@@ -3929,7 +4053,7 @@ let entrance: { start: number; dur: number } | null = null;
 function playEntrance() {
   const S = settings;
   if (S.shape === 'none' || S.emitter !== 'none' || S.entrance === 'scatter') return;
-  if ((S.shape === 'image' && !shapeImage) || S.shape === 'camera') return;
+  if ((S.shape === 'image' && !shapeImage && !shapeMedia) || S.shape === 'camera') return;
   buildShape();
   const cx = w / 2;
   const cy = h / 2;
@@ -4499,7 +4623,7 @@ function shadeIndex(i: number) {
       break;
     }
     case 'camera':
-      u = cam.on ? camShade(i) : tone[i];
+      u = cam.on || picOn() ? camShade(i) : tone[i];
       break;
     case 'image':
       u = imgShade(i);
@@ -4524,6 +4648,117 @@ function audioSizeBoost() {
   if (S.audioSnare === 'flash') b += L.snareEnv * 1.5 * S.audioHits * S.audioIntensity;
   if (S.audioSub === 'size') b += L.sub * L.sub * 1.2 * S.audioSubAmt * S.audioIntensity;
   return b;
+}
+
+// --- your sprites ------------------------------------------------------------
+// The Your sprite style: frames from an image, a sprite sheet or a GIF (or
+// the built-in butterfly). Tinted copies take the palette's colours.
+const isSprite = () => settings.render === 'sprite' || (settings.render === 'mixed' && settings.mixStyles.includes('sprite'));
+let spriteSheet: HTMLImageElement | null = null;
+let spriteAnim: HTMLCanvasElement[] | null = null;
+let spriteRaw: HTMLCanvasElement[] = [];
+let spriteGrey: HTMLCanvasElement[] = [];
+let spriteRawKey = '';
+const spriteTints = new Map<string, HTMLCanvasElement>();
+const spriteInput = document.createElement('input');
+spriteInput.type = 'file';
+spriteInput.accept = 'image/*';
+spriteInput.addEventListener('change', async () => {
+  const f = spriteInput.files?.[0];
+  spriteInput.value = '';
+  if (!f) return;
+  const an = /gif|webp|png/i.test(f.type) ? await decodeFrames(f) : null;
+  if (an) return spriteUse(null, an.frames.map((c) => sliceSheet(c, 1, 1)[0]));
+  const img = new Image();
+  img.onload = () => spriteUse(img);
+  img.src = URL.createObjectURL(f);
+});
+function spriteUse(img: HTMLImageElement | null, frames: HTMLCanvasElement[] | null = null) {
+  spriteSheet = img;
+  spriteAnim = frames;
+  spriteRawKey = '';
+  if (settings.render !== 'sprite' && settings.render !== 'mixed') {
+    settings.render = 'sprite';
+    changed(new Set(['render']));
+  }
+  refresh();
+}
+function spriteFramesNow() {
+  const S = settings;
+  const key = `${spriteSheet?.src ?? (spriteAnim ? `anim${spriteAnim.length}` : 'fly')}|${S.spriteCols}|${S.spriteRows}`;
+  if (key !== spriteRawKey) {
+    spriteRawKey = key;
+    spriteRaw = spriteAnim ?? (spriteSheet ? sliceSheet(spriteSheet, S.spriteCols, S.spriteRows) : butterflySheet());
+    // Light grey copies keep the shading; the palette colour multiplies in.
+    spriteGrey = spriteRaw.map((c) => {
+      const o = document.createElement('canvas');
+      o.width = c.width;
+      o.height = c.height;
+      const g = o.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(c, 0, 0);
+      const im = g.getImageData(0, 0, o.width, o.height);
+      const d = im.data;
+      for (let q = 0; q < d.length; q += 4) {
+        const l = Math.min(255, (d[q] * 0.299 + d[q + 1] * 0.587 + d[q + 2] * 0.114) * 1.25 + 40);
+        d[q] = d[q + 1] = d[q + 2] = l;
+      }
+      g.putImageData(im, 0, 0);
+      return o;
+    });
+    spriteTints.clear();
+  }
+  return spriteRaw;
+}
+function spriteTinted(f: number, k: number) {
+  const key = `${f}:${k}`;
+  let c = spriteTints.get(key);
+  if (c) return c;
+  const src = spriteGrey[f];
+  c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const g = c.getContext('2d')!;
+  g.drawImage(src, 0, 0);
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = shades[k];
+  g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(src, 0, 0);
+  if (spriteTints.size > 2000) spriteTints.clear();
+  spriteTints.set(key, c);
+  return c;
+}
+function drawUserSprites(list: number[], k: number, s: number) {
+  const S = settings;
+  const frames = spriteFramesNow();
+  const F = frames.length;
+  const A = ctx.globalAlpha;
+  const d0 = s * S.spriteScale;
+  const rgb = shadeRgb[k] ?? [255, 255, 255];
+  const tint = S.spriteTint ? (Math.round(rgb[0]) << 16) | (Math.round(rgb[1]) << 8) | Math.round(rgb[2]) : 0xffffff;
+  const turn = S.spriteTurn;
+  for (const i of list) {
+    let f = 0;
+    if (F > 1) {
+      if (S.spriteFps > 0) f = Math.floor(t * S.spriteFps + rnd[i] * F) % F;
+      else f = span[i] > 0 ? Math.min(F - 1, Math.floor((age[i] / span[i]) * F)) : Math.floor(t * 8 + rnd[i] * F) % F;
+    }
+    const d = uniformSize ? d0 : d0 * psz[i];
+    const a = turn === 'heading' ? Math.atan2(vy[i], vx[i]) : turn === 'spin' ? t * 1.5 * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28 : 0;
+    if (glr) {
+      glr.pushR(S.spriteTint ? spriteGrey[f] : frames[f], px[i], py[i], d, d, a, A, tint);
+      continue;
+    }
+    const img = S.spriteTint ? spriteTinted(f, k) : frames[f];
+    if (a === 0) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    else {
+      const c = Math.cos(a) * dpr;
+      const sn = Math.sin(a) * dpr;
+      ctx.setTransform(c, sn, -sn, c, px[i] * dpr, py[i] * dpr);
+      ctx.drawImage(img, -d / 2, -d / 2, d, d);
+    }
+  }
+  if (!glr && turn !== 'none') ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 // --- sprites -----------------------------------------------------------------
@@ -5272,6 +5507,7 @@ function glShape(style: Render, list: number[], k: number, s: number) {
   return true;
 }
 function drawStyle(style: Render, list: number[], k: number, s: number) {
+  if (style === 'sprite') return drawUserSprites(list, k, s);
   if (!(style in SPRITES)) {
     if (glr && glShape(style, list, k, s)) return;
     if (glOnly) glDirty2d = true;
@@ -5585,7 +5821,7 @@ function drawGrid(style: string, bks: number[][], s: number) {
 const MIXABLE: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
-  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'], ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'], ['hair', 'Hair'], ['ink', 'Ink'], ['bubbles', 'Bubbles'],
+  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'], ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'], ['hair', 'Hair'], ['ink', 'Ink'], ['bubbles', 'Bubbles'], ['sprite', 'Your sprite'],
 ];
 
 function mixStyles(): Render[] {
@@ -7089,6 +7325,7 @@ function frame(now: number) {
   if (!frozen) {
     updateGlyphs();
     cameraTick(now);
+    mediaTick(now);
     animTick(rawMs);
     runLinks(now);
     animateShape(now);
@@ -7313,9 +7550,10 @@ const RENDERS: [string, string][] = [
   ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'],
   ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'],
+  ['sprite', 'Your sprite (image or sheet)'],
   ['mixed', 'Mixed'],
 ];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Picture colours (camera or image)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
@@ -7889,7 +8127,7 @@ const CAM_MODES: [string, string][] = [
   ['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['mixed', 'Features + a light mesh'],
   ['hands', 'Your hands (skeleton)'], ['pose', 'Your body (skeleton)'], ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
-const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'Geometric shape'], ['pattern', 'Pattern (fills an area)'], ['solid', '3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera']];
+const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'Geometric shape'], ['pattern', 'Pattern (fills an area)'], ['solid', '3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image, video or GIF'], ['camera', 'Your camera']];
 const PATTERNS: [string, string][] = [['sunflower', 'Sunflower disc'], ['grid', 'Grid'], ...FILL_PATTERNS];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
@@ -8100,10 +8338,18 @@ const CONTROLS: Control[] = [
   { kind: 'record' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
-    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
+    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows'],
     summary: () => label(RENDERS, settings.render) },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
+  { kind: 'buttons', buttons: [['Choose a sprite, sheet or GIF…', () => spriteInput.click()], ['Use the butterfly', () => spriteUse(null)]], show: isSprite },
+  { kind: 'range', key: 'spriteScale', label: 'Sprite size', min: 1, max: 12, step: 0.5, format: (v) => `${v.toFixed(1)}×`, show: isSprite },
+  { kind: 'select', key: 'spriteTurn', label: 'Turning', options: [['none', 'Upright'], ['heading', 'Face where it goes'], ['spin', 'Spin']], show: isSprite },
+  { kind: 'toggle', key: 'spriteTint', label: 'Take the palette’s colours', show: isSprite },
+  { kind: 'range', key: 'spriteFps', label: 'Frames per second', min: 0, max: 30, step: 1, format: (v) => (v === 0 ? 'by age' : `${v}`), show: () => isSprite() && spriteFramesNow().length > 1 },
+  { kind: 'range', key: 'spriteCols', label: 'Sheet columns', min: 0, max: 16, step: 1, format: (v) => (v === 0 ? 'auto' : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'range', key: 'spriteRows', label: 'Sheet rows', min: 0, max: 16, step: 1, format: (v) => (v === 0 ? 'auto' : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'note', text: 'A single image, a sprite sheet (frames in a grid; a strip of square frames is found by itself) or an animated GIF. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
@@ -8176,6 +8422,8 @@ const CONTROLS: Control[] = [
   ...FILL_PATTERNS.map(([p]): Control => ({ kind: 'range', key: 'patVary', label: PATTERN_VARY[p], min: 0, max: 1, step: 0.02, format: pct, show: () => settings.shape === 'pattern' && settings.shapePattern === p })),
   { kind: 'buttons', buttons: [['New seed', () => set('patSeed', settings.patSeed + 1)]], show: () => settings.shape === 'pattern' && isFillPattern(settings.shapePattern) },
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
+  { kind: 'buttons', buttons: [['Load a 3D model…', () => modelInput.click()]], show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
+  { kind: 'note', text: 'OBJ, STL or GLB files. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
   { kind: 'note', text: '3D shapes look best with 3D depth on (Look tab); it turns on with them.', show: () => settings.shape === 'solid' },
@@ -8186,7 +8434,8 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
   { kind: 'toggle', key: 'drawOutline', label: 'Show the outline', show: () => settings.shape === 'drawing' },
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
-  { kind: 'buttons', buttons: [['Choose an image or SVG…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'buttons', buttons: [['Choose an image, video or GIF…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
