@@ -492,28 +492,35 @@ export const SOLID_SHAPES: [string, string][] = [
   ['lissajous', 'Lissajous knot'], ['torusknot', 'Torus knot'], ['klein', 'Klein bottle'],
   ['flower', 'Flower'], ['tornado', 'Tornado'], ['jelly', 'Jellyfish'],
   ['hourglass', 'Hourglass'], ['crystals', 'Crystal cluster'], ['gyro', 'Gyroscope'],
+  ['fox', 'Running fox (animated)'],
   ['model', 'Your 3D model (OBJ, STL, glTF)'],
 ];
-// The 3D model: surface points (x, y, z), a rocket until you load one.
-let modelPts: Float32Array | null = null;
-let modelName = '';
-let modelRest: Float32Array | null = null;
-let modelAnim: ModelAnim | null = null;
-export function setModel(pts: Float32Array, name: string, anim: ModelAnim | null = null) {
-  modelPts = pts.length >= 3 ? pts : null;
-  modelName = modelPts ? name : '';
-  modelRest = modelPts ? modelPts.slice() : null;
-  modelAnim = modelPts ? anim : null;
+// 3D models: surface points (x, y, z) per solid. "model" is yours (a rocket
+// until you load one); "fox" is the bundled, animated example.
+type ModelSlot = { pts: Float32Array | null; rest: Float32Array | null; anim: ModelAnim | null; name: string };
+const slots: Record<string, ModelSlot> = {
+  model: { pts: null, rest: null, anim: null, name: '' },
+  fox: { pts: null, rest: null, anim: null, name: '' },
+};
+export const MODEL_SOLIDS = Object.keys(slots);
+export function setModel(pts: Float32Array, name: string, anim: ModelAnim | null = null, slot = 'model') {
+  const m = slots[slot];
+  m.pts = pts.length >= 3 ? pts : null;
+  m.name = m.pts ? name : '';
+  m.rest = m.pts ? m.pts.slice() : null;
+  m.anim = m.pts ? anim : null;
 }
-/** The loaded model's animation clips (none for a still model). */
-export const modelClips = () => modelAnim?.clips ?? [];
-/** Pose the model's points: a clip (0-based) at t seconds, or its still pose for clip -1. */
-export function poseModel(clip: number, t: number) {
-  if (!modelPts || !modelRest) return;
-  if (clip < 0 || !modelAnim?.clips[clip]) modelPts.set(modelRest);
-  else modelAnim.pose(clip, t, modelPts);
+export const hasModel = (slot: string) => !!slots[slot]?.pts;
+/** A model's animation clips (none for a still model). */
+export const modelClips = (slot = 'model') => slots[slot]?.anim?.clips ?? [];
+/** Pose a model's points: a clip (0-based) at t seconds, or its still pose for clip -1. */
+export function poseModel(clip: number, t: number, slot = 'model') {
+  const m = slots[slot];
+  if (!m?.pts || !m.rest) return;
+  if (clip < 0 || !m.anim?.clips[clip]) m.pts.set(m.rest);
+  else m.anim.pose(clip, t, m.pts);
 }
-export const modelLabel = () => modelName || 'the example rocket';
+export const modelLabel = () => slots.model.name || 'the example rocket';
 type V3 = [number, number, number];
 const lerp3 = (a: V3, b: V3, f: number): V3 => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
 // Points along a set of edges (u picks the edge and how far along).
@@ -573,8 +580,17 @@ const CRYSTALS: [V3, number, number][] = [
 export function solidPoint(type: string, u: number, v: number): [number, number, number] {
   const TAU = Math.PI * 2;
   switch (type) {
+    case 'fox': {
+      // A sphere for the moment it takes to load.
+      const fp = slots.fox.pts;
+      if (!fp) return solidPoint('sphere', u, v);
+      const m = fp.length / 3;
+      const k = Math.min(m - 1, Math.floor(u * m)) * 3;
+      return [fp[k], fp[k + 1], fp[k + 2]];
+    }
     case 'model': {
-      modelPts ??= rocketPoints();
+      slots.model.pts ??= rocketPoints();
+      const modelPts = slots.model.pts;
       const m = modelPts.length / 3;
       const k = Math.min(m - 1, Math.floor(u * m)) * 3;
       return [modelPts[k], modelPts[k + 1], modelPts[k + 2]];
