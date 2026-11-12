@@ -6862,21 +6862,21 @@ function frame(now: number) {
 // climb back up.
 let renderScale = 1;
 // Counted in time, not frames: a slow phone at 8 fps steps down in about a
-// second and a half, not the 8 seconds sixty slow frames would take.
+// second, not the 8 seconds sixty slow frames would take.
 let slowMs = 0;
 let fastMs = 0;
 const SCALE_STEPS = [1, 5 / 6, 2 / 3, 1 / 2];
-let upWait = 6000;
+let upWait = 3000;
 let lastUpAt = -1e9;
 // A new scene may be lighter: if the resolution was lowered, try going back
-// up after two smooth seconds, and forget the longer waits.
+// up after one smooth second, and forget the longer waits.
 function qualityRetry() {
   if (renderScale >= 1) return;
-  upWait = 2000;
+  upWait = 1000;
   lastUpAt = -1e9;
   fastMs = 0;
   slowMs = 0;
-  setTimeout(() => (upWait = Math.max(upWait, 6000)), 4000);
+  setTimeout(() => (upWait = Math.max(upWait, 3000)), 3000);
 }
 
 function adaptQuality(dt: number, ms: number) {
@@ -6885,21 +6885,21 @@ function adaptQuality(dt: number, ms: number) {
     if (dt > 1.3) linkBudget = Math.max(400, linkBudget * 0.92);
     else if (dt < 1.1) linkBudget = Math.min(6000, linkBudget * 1.02);
   }
-  if (dt > 1.4) {
+  if (dt > 1.25) {
     slowMs += ms;
     fastMs = 0;
   } else if (dt < 1.1) {
     fastMs += ms;
     slowMs = Math.max(0, slowMs - ms);
   }
-  // ~1.5 s mostly slow → drop resolution a step; smooth for a while → raise
+  // ~0.8 s mostly slow (under ~48 fps) → drop resolution a step; smooth for a while → raise
   // it. Small steps (3× → 2.5× → 2× → 1.5× on a phone), and if a step up
   // soon drops again, the next try waits longer, so it settles instead of
   // flipping back and forth.
   const now = performance.now();
-  if (slowMs > 1500 && renderScale > SCALE_STEPS[SCALE_STEPS.length - 1]) {
+  if (slowMs > 800 && renderScale > SCALE_STEPS[SCALE_STEPS.length - 1]) {
     renderScale = SCALE_STEPS[Math.min(SCALE_STEPS.length - 1, SCALE_STEPS.findIndex((v) => v < renderScale - 1e-3))];
-    if (now - lastUpAt < 10000) upWait = Math.min(30000, upWait * 2);
+    if (now - lastUpAt < 6000) upWait = Math.min(12000, upWait * 1.5);
     slowMs = 0;
     fastMs = 0;
     resize();
