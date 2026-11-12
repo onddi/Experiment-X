@@ -291,10 +291,8 @@ function fadeLife(i: number) {
   return a;
 }
 
-// Phones draw at most 1.5× pixel density (2× while recording a clip): about
-// 45% fewer pixels and hard to tell apart on a moving field. Desktop keeps 2×.
+// Phones (touch, small screen) can pick their density on the Quality card.
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.max(screen.width, screen.height) < 1100;
-let recHi = false;
 // Pixel density picked on the Quality card (this device only); 0 = automatic.
 let densityPref = 0;
 let autoQuality = true;
@@ -303,7 +301,9 @@ try {
   autoQuality = localStorage.getItem('pf-autoq') !== '0';
 } catch {}
 function resize() {
-  const cap = densityPref || (PHONE && !recHi ? 1.5 : 2);
+  // Auto: phones at their native density (a stretched canvas measured slower
+  // on iPhones than drawing every pixel), desktop at most 2× as before.
+  const cap = densityPref || (PHONE ? 3 : 2);
   dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, cap) * renderScale);
   w = canvas.clientWidth;
   h = canvas.clientHeight;
@@ -5819,10 +5819,6 @@ function frame(now: number) {
     drawMs = drawMs * 0.9 + (t2 - t1) * 0.1;
   }
   tlFxFrame(now);
-  if (PHONE && recorder.on !== recHi) {
-    recHi = recorder.on;
-    resize();
-  }
   if (recorder.on) {
     recorder.tick();
     recTime();
@@ -8458,7 +8454,7 @@ function renderQuality(): HTMLElement {
   const opts = [0, 0.75, 1, 1.25, 1.5, 2, 3].filter((v) => v <= Math.max(2, native));
   const chips = document.createElement('div');
   chips.className = 'anim-chips';
-  const autoLbl = `Auto (${PHONE ? 1.5 : 2}×)`;
+  const autoLbl = `Auto (${Math.min(native, PHONE ? 3 : 2)}×)`;
   const paint = () => chips.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
     const on = +b.dataset.v! === densityPref;
     b.classList.toggle('on', on);
