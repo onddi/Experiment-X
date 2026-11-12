@@ -5770,6 +5770,7 @@ function runLinks(now: number) {
 
 let last = performance.now();
 let fps = 60;
+let frameCount = 0; // frames drawn since load: the Quality readout counts real frames per second
 
 let stepMs = 0;
 let drawMs = 0;
@@ -5781,6 +5782,7 @@ function frame(now: number) {
   const dt = Math.min(3, (now - last) / (1000 / 60));
   last = now;
   fps = fps * 0.95 + (60 / Math.max(dt, 0.001)) * 0.05;
+  frameCount++;
   // Frozen by the user (Space) or by the audio player pausing with "hold" on.
   const frozen = paused;
   if (!frozen) adaptQuality(dt, rawMs);
@@ -8470,11 +8472,23 @@ function renderQuality(): HTMLElement {
   note.className = 'q-note';
   note.textContent = `This screen is ${native}× natively. Turn "lower by itself" off while you compare, so the numbers stay put.`;
   box.append(chips, auto, out, note);
+  // Real frames counted over each second (the old meter averaged per-frame
+  // rates and could not show less than 20). CPU is the script's own time per
+  // frame; the rest of a frame is the browser and GPU painting, or waiting
+  // for the screen (vsync).
+  let f0 = frameCount;
+  let t0 = performance.now();
   const timer = window.setInterval(() => {
     if (!box.isConnected) return clearInterval(timer);
     if (!box.offsetParent) return;
-    out.textContent = `${Math.round(fps)} fps · ${canvas.width}×${canvas.height} px · sim ${stepMs.toFixed(1)} ms · draw ${drawMs.toFixed(1)} ms${renderScale < 1 ? ` · lowered to ${Math.round(renderScale * 100)}%` : ''}`;
-  }, 500);
+    const now = performance.now();
+    const real = ((frameCount - f0) * 1000) / (now - t0);
+    f0 = frameCount;
+    t0 = now;
+    const frameMs = 1000 / Math.max(real, 0.1);
+    const cpu = stepMs + drawMs;
+    out.innerHTML = `<b>${real.toFixed(0)} fps</b> · ${frameMs.toFixed(1)} ms a frame · ${canvas.width}×${canvas.height} px${renderScale < 1 ? ` · lowered to ${Math.round(renderScale * 100)}%` : ''}<br>script ${cpu.toFixed(1)} ms (sim ${stepMs.toFixed(1)}, draw ${drawMs.toFixed(1)}) · painting and waiting ${Math.max(0, frameMs - cpu).toFixed(1)} ms`;
+  }, 1000);
   return box;
 }
 function renderRecord() {
