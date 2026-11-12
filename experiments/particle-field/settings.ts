@@ -18,6 +18,11 @@ export type MaskFx = 'none' | 'flames' | 'crown' | 'tears' | 'beard' | 'halo' | 
 export type CamHands = 'off' | 'attract' | 'repel' | 'vortex' | 'draw' | 'spray';
 export type FlowType = 'waves' | 'curl' | 'vortex' | 'wind' | 'cells' | 'rise' | 'tide' | 'spiral';
 export type Edges = 'wrap' | 'enter' | 'bounce';
+// Spawning: when a particle makes new ones.
+export type SpawnOn = 'none' | 'death' | 'hit' | 'trail' | 'beat';
+// Collisions: what is solid, and what a particle does when it hits it.
+export type HitWalls = 'none' | 'floor' | 'box' | 'bowl';
+export type HitDo = 'bounce' | 'slide' | 'stick' | 'pile';
 export type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none' | 'implodeHold' | 'thumb';
 export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links' | 'squares' | 'shards' | 'stars' | 'petals' | 'crosses' | 'neon' | 'flare' | 'embers' | 'hair' | 'threads' | 'ink' | 'lightning' | 'halftone' | 'bigpixels' | 'bubbles';
 export type KickAction = 'pulse' | 'wave' | 'both' | 'pump' | 'tick' | 'spawn' | 'none';
@@ -202,6 +207,20 @@ export interface Settings {
   obsForce: number;
   obsPlace: boolean;
   obsShow: boolean;
+  spawnOn: SpawnOn;
+  spawnCount: number;
+  spawnSpeed: number;
+  spawnLife: number;
+  spawnSize: number;
+  spawnTone: number;
+  spawnShare: number;
+  spawnChain: boolean;
+  hitWalls: HitWalls;
+  hitDo: HitDo;
+  hitBounce: number;
+  hitFriction: number;
+  hitFloor: number;
+  hitObstacles: boolean;
   pointerMode: PointerMode;
   click: ClickMode;
   clickForce: number;
@@ -537,6 +556,20 @@ export const DEFAULTS: Settings = {
   obsForce: 1,
   obsPlace: true,
   obsShow: true,
+  spawnOn: 'none',
+  spawnCount: 8,
+  spawnSpeed: 2.5,
+  spawnLife: 1.2,
+  spawnSize: 0.6,
+  spawnTone: 0.15,
+  spawnShare: 0.4,
+  spawnChain: false,
+  hitWalls: 'none',
+  hitDo: 'bounce',
+  hitBounce: 0.55,
+  hitFriction: 0.2,
+  hitFloor: 0.92,
+  hitObstacles: false,
   flowScale: 0.004,
   flowSpeed: 0.2,
   pointerMode: 'repel',

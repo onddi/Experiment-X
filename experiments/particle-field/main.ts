@@ -158,6 +158,8 @@ let pz = new Float32Array(0); // depth: 0 far, 1 near
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 let free = new Float32Array(0); // 1 for face-effect particles: no home, short life
 let gone = new Float32Array(0); // seconds when it started fading out (count going down), 0 = staying
+let kid = new Float32Array(0); // Spawning: 0 an ordinary particle, 1 a slot for children (a child while alive), 2 a grandchild
+let rest = new Float32Array(0); // Collisions: 1 while stuck or resting on a pile
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
 const FADE_IN = 45;
@@ -199,7 +201,7 @@ function ensureCount(want = countNow()) {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone, kid, rest] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone, kid, rest].map(grow);
     cap = want;
   }
   // With a shape on, newcomers appear beside an existing particle, so they
@@ -216,6 +218,7 @@ function ensureCount(want = countNow()) {
     } else spawn(i, Math.random() * w, Math.random() * h);
     dead[i] = settings.emitter !== 'none' ? 1 : 0;
     gone[i] = 0;
+    kid[i] = 0;
   }
   n = want;
 }
@@ -264,6 +267,7 @@ function launch(i: number) {
 
 function rebirth(i: number) {
   age[i] = 0;
+  rest[i] = 0;
   rnd[i] = Math.random();
   // Spread lifetimes (50–150%) so particles don't all fade at once.
   span[i] = settings.lifespan > 0 ? settings.lifespan * 60 * (0.5 + Math.random()) : 0;
@@ -930,6 +934,48 @@ function flowAngle(x: number, y: number) {
 }
 
 let renewAcc = 0;
+// What a particle does when it hits something solid (normal nx, ny points
+// out of the surface). Returns how hard it hit.
+function hitResp(i: number, nx: number, ny: number) {
+  const vn = vx[i] * nx + vy[i] * ny;
+  if (vn >= 0) return 0;
+  const S = settings;
+  if (S.hitDo === 'stick' || S.hitDo === 'pile') {
+    vx[i] = vy[i] = 0;
+    rest[i] = 1;
+    return -vn;
+  }
+  const tx = vx[i] - vn * nx;
+  const ty = vy[i] - vn * ny;
+  const keep = 1 - S.hitFriction * (S.hitDo === 'slide' ? 0.3 : 1);
+  const b = S.hitDo === 'bounce' ? S.hitBounce : 0;
+  vx[i] = tx * keep - vn * nx * b;
+  vy[i] = ty * keep - vn * ny * b;
+  return -vn;
+}
+// Piles: the top of the heap in each narrow column of the floor, rebuilt
+// each frame from the particles at rest.
+let pileTop = new Float32Array(0);
+let pileN = 0;
+let pileCell = 3;
+let pileGrain = 1;
+function pileBuild(floorY: number, bowlD: number) {
+  const sz = Math.max(1, settings.size);
+  pileCell = Math.max(2, Math.round(sz * 1.4));
+  pileGrain = Math.max(0.5, sz * 0.55);
+  pileN = Math.ceil(w / pileCell) + 1;
+  if (pileTop.length < pileN) pileTop = new Float32Array(pileN);
+  for (let c = 0; c < pileN; c++) {
+    const u = (((c + 0.5) * pileCell) / w) * 2 - 1;
+    pileTop[c] = floorY - bowlD * u * u;
+  }
+  // Each grain on a heap (rest 2, not one stuck on an obstacle) raises its column.
+  for (let i = 0; i < n; i++) {
+    if (rest[i] !== 2 || dead[i]) continue;
+    pileTop[Math.min(pileN - 1, Math.max(0, (px[i] / pileCell) | 0))] -= pileGrain;
+  }
+}
+
 function step(dt: number) {
   updateFlowFreqs();
   recordHistory();
@@ -1028,7 +1074,7 @@ function step(dt: number) {
     const m = Math.min(400, Math.ceil(n * 0.035 * kickAmt));
     for (let q = 0; q < m; q++) {
       const i = (Math.random() * n) | 0;
-      if (dead[i] || free[i]) continue;
+      if (dead[i] || free[i] || kid[i]) continue;
       const a = Math.random() * Math.PI * 2;
       const r = Math.random() * 14;
       px[i] = ox[i] = sx + Math.cos(a) * r;
@@ -1146,6 +1192,19 @@ function step(dt: number) {
     else entK = Math.min(1, left / 1200);
   }
   runEmitter(dt, on && A.beat);
+  syncKids();
+  spawnTick(dt, on && A.beat);
+  const deathKids = S.spawnOn === 'death' ? S.spawnCount : 0;
+  const hitKids = S.spawnOn === 'hit';
+  // Collisions: floors, walls, a bowl, obstacles.
+  const hitW = S.hitWalls;
+  const hitOb = S.hitObstacles && !!ob;
+  const sticky = (hitW !== 'none' || hitOb) && (S.hitDo === 'stick' || S.hitDo === 'pile');
+  const pile = sticky && S.hitDo === 'pile' && hitW !== 'none';
+  const floorY = Math.min(h - 1, S.hitFloor * h);
+  const bowlD = hitW === 'bowl' ? h * 0.3 : 0;
+  if (pile) pileBuild(floorY, bowlD);
+  const restHold = (0.3 + jitterNow * 0.6) ** 2;
   const swarm = swarmForces();
   const depthOn = settings.depth > 0;
   // Keep fresh: mark a trickle of particles to fade out and start over, so
@@ -1161,7 +1220,14 @@ function step(dt: number) {
   for (let i = 0; i < n; i++) {
     if (dead[i]) continue;
     age[i] += dt;
-    if (free[i]) {
+    if (kid[i] && !free[i]) {
+      // A child (or a slot's old particle fading out) at the end of its life.
+      if (age[i] >= span[i]) {
+        if (kid[i] === 1 && S.spawnChain && span[i] - age[i] > -dt - 1 && i >= kidFrom) spawnBurst(i, 2);
+        kidDied(i);
+        continue;
+      }
+    } else if (free[i]) {
       // Face effects: short-lived sparks with their own drift, no home.
       if (age[i] >= span[i]) {
         dead[i] = 1;
@@ -1171,6 +1237,7 @@ function step(dt: number) {
       vy[i] += fxAy + (Math.random() - 0.5) * fxJit;
     } else if (lifeOn && (span[i] <= 0 || age[i] >= span[i])) {
       // End of life (or lifespan just switched on): start again somewhere new.
+      if (span[i] > 0 && deathKids) spawnBurst(i, deathKids);
       if (span[i] > 0 && emitting) {
         dead[i] = 1; // wait for the emitter
         continue;
@@ -1220,7 +1287,7 @@ function step(dt: number) {
       ax += swx[i];
       ay += swy[i];
     }
-    if (homeK > 0 && !free[i]) {
+    if (homeK > 0 && !free[i] && !kid[i]) {
       // Spring towards the home position, with a little extra damping so it
       // settles instead of wobbling forever.
       // Word pulse scales the target about the centre with the kick.
@@ -1461,6 +1528,18 @@ function step(dt: number) {
       }
     }
 
+    if (rest[i]) {
+      // Stuck or resting on a pile: stays put until something pushes harder
+      // than gravity (a blast, a wave, the pointer).
+      const ey = ay - gravNow * 0.05;
+      if (sticky && blastK === 0 && ax * ax + ey * ey < restHold) {
+        vx[i] = vy[i] = 0;
+        ox[i] = px[i];
+        oy[i] = py[i];
+        continue;
+      }
+      rest[i] = 0;
+    }
     vx[i] = (vx[i] + ax * dt) * Math.pow(damp, dt);
     vy[i] = (vy[i] + ay * dt) * Math.pow(damp, dt);
     ox[i] = px[i];
@@ -1468,6 +1547,70 @@ function step(dt: number) {
     const zs = depthOn ? depthK(0.35 + pz[i], settings.depth) : 1;
     px[i] += vx[i] * speedNow * zs * dt;
     py[i] += vy[i] * speedNow * zs * dt;
+
+    if (hitW !== 'none') {
+      let hit = 0;
+      let hnx = 0;
+      let hny = -1;
+      // The floor (a bowl curves up to the sides), with piles on top.
+      let fy = floorY;
+      if (bowlD) {
+        const u = (px[i] / w) * 2 - 1;
+        fy = floorY - bowlD * u * u;
+        const sl = (-bowlD * 2 * u * 2) / w;
+        const l = Math.hypot(sl, 1);
+        hnx = sl / l;
+        hny = -1 / l;
+      }
+      if (pile) {
+        const c = Math.min(pileN - 1, Math.max(0, (px[i] / pileCell) | 0));
+        const top = pileTop[c];
+        if (py[i] >= top && oy[i] <= top + pileGrain * 2) {
+          const lo = c > 0 ? pileTop[c - 1] : -1e9;
+          const ro = c < pileN - 1 ? pileTop[c + 1] : -1e9;
+          const right = ro > lo || (ro === lo && Math.random() < 0.5);
+          if (Math.max(lo, ro) - top > pileGrain * 1.5) {
+            // Rolls down the side of the heap.
+            px[i] += (right ? 1 : -1) * pileCell;
+            py[i] = top;
+            vx[i] = (right ? 1 : -1) * 0.4;
+            vy[i] = 0.3;
+          } else {
+            py[i] = oy[i] = top;
+            hit = Math.max(0, vy[i]);
+            vx[i] = vy[i] = 0;
+            rest[i] = 2;
+            pileTop[c] -= pileGrain;
+          }
+        } else if (py[i] > fy) {
+          py[i] = fy;
+          hit = hitResp(i, hnx, hny);
+        }
+      } else if (py[i] > fy) {
+        py[i] = fy;
+        hit = hitResp(i, hnx, hny);
+      }
+      // A ceiling, so nothing wraps round to below the floor.
+      if (py[i] < 0 && !emitting) {
+        py[i] = 0;
+        hit = Math.max(hit, hitResp(i, 0, 1));
+      }
+      if (hitW === 'box') {
+        if (px[i] < 0) {
+          px[i] = 0;
+          hit = Math.max(hit, hitResp(i, 1, 0));
+          hnx = 1;
+          hny = 0;
+        } else if (px[i] >= w) {
+          px[i] = w - 0.5;
+          hit = Math.max(hit, hitResp(i, -1, 0));
+          hnx = -1;
+          hny = 0;
+        }
+      }
+      if (hit > 0.6 && hitKids && (!kid[i] || (kid[i] === 1 && S.spawnChain))) spawnBurst(i, kid[i] ? 2 : S.spawnCount, hnx, hny, Math.min(1.5, 0.4 + hit / 2.5));
+      if (rest[i]) continue;
+    }
 
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
       const edges = settings.edges;
@@ -1498,7 +1641,17 @@ function step(dt: number) {
       if (gx >= 0 && gy >= 0 && gx < ob.W && gy < ob.H) {
         const c = gy * ob.W + gx;
         const d = ob.sd[c];
-        if (d < OB_MARGIN) {
+        if (hitOb) {
+          // Solid: bounce, slide or stick on the edge.
+          if (d < 1.5) {
+            const nx = ob.nx[c];
+            const ny = ob.ny[c];
+            px[i] += nx * (1.5 - d);
+            py[i] += ny * (1.5 - d);
+            const hit = hitResp(i, nx, ny);
+            if (hit > 0.6 && hitKids && (!kid[i] || (kid[i] === 1 && S.spawnChain))) spawnBurst(i, kid[i] ? 2 : S.spawnCount, nx, ny, Math.min(1.5, 0.4 + hit / 2.5));
+          }
+        } else if (d < OB_MARGIN) {
           const nx = ob.nx[c];
           const ny = ob.ny[c];
           const near = 1 - Math.max(0, d) / OB_MARGIN;
@@ -3943,6 +4096,129 @@ function matchNearest(tx: Float32Array, ty: Float32Array): Int32Array {
   return owner;
 }
 
+// --- spawning: particles that make particles ----------------------------------
+// A share of the particles (just below the face-effect pool) is set aside as
+// children. A parent makes children when it dies, hits something, on the
+// beat, or leaves a trail as it moves. Children live short lives with no
+// home, and with "chain" a dying child leaves a puff of slower, longer
+// grandchildren (fireworks → sparks → smoke). When the pool is busy, new
+// children are skipped instead of cutting old ones short.
+let kidFrom = 0;
+let kidTo = 0;
+let kidStack = new Int32Array(0);
+let kidTop = 0;
+let trailAcc = 0;
+const spawnOn = () => settings.spawnOn !== 'none';
+function syncKids() {
+  const S = settings;
+  const end = poolTo === n ? Math.min(n, poolFrom) : n;
+  const want = spawnOn() ? Math.round(end * S.spawnShare) : 0;
+  const from = end - want;
+  if (from === kidFrom && end === kidTo) return;
+  // Slots leaving the pool become ordinary particles again, fading in.
+  for (let i = kidFrom; i < Math.min(kidTo, n); i++) {
+    if (i >= from && i < end) continue;
+    if (!kid[i]) continue;
+    kid[i] = 0;
+    if (free[i]) continue;
+    spawn(i, Math.random() * w, Math.random() * h);
+    dead[i] = settings.emitter !== 'none' ? 1 : 0;
+  }
+  // New slots: whoever was there fades out, then waits to be a child.
+  for (let i = from; i < end; i++) {
+    if (kid[i]) continue;
+    kid[i] = 1;
+    if (!dead[i]) span[i] = Math.min(span[i] > 0 ? span[i] : Infinity, Math.max(age[i], FADE_IN) + FADE_OUT * 0.5);
+  }
+  kidFrom = from;
+  kidTo = end;
+  if (kidStack.length < want) kidStack = new Int32Array(Math.max(want, cap));
+  kidTop = 0;
+  for (let i = from; i < end; i++) if (dead[i]) kidStack[kidTop++] = i;
+}
+function kidDied(i: number) {
+  if (dead[i]) return;
+  dead[i] = 1;
+  rest[i] = 0;
+  if (i >= kidFrom && i < kidTo && kidTop < kidStack.length) kidStack[kidTop++] = i;
+}
+// A child at x, y; false once the pool is busy.
+function kidEmit(x: number, y: number, vX: number, vY: number, tn: number, z: number, gen: number) {
+  let i = -1;
+  while (kidTop > 0) {
+    const j = kidStack[--kidTop];
+    if (j >= kidFrom && j < kidTo && dead[j] && kid[j]) {
+      i = j;
+      break;
+    }
+  }
+  if (i < 0) return false;
+  const S = settings;
+  px[i] = ox[i] = x;
+  py[i] = oy[i] = y;
+  vx[i] = vX;
+  vy[i] = vY;
+  tone[i] = (((tn + S.spawnTone * gen) % 1) + 1) % 1;
+  gl[i] = Math.random();
+  pz[i] = z;
+  rnd[i] = Math.random();
+  rest[i] = 0;
+  gone[i] = 0;
+  kid[i] = gen;
+  dead[i] = 0;
+  age[i] = FADE_IN * 0.8;
+  // Grandchildren (smoke) linger longer.
+  span[i] = age[i] + S.spawnLife * 60 * (gen > 1 ? 2.5 : 1) * (0.6 + Math.random() * 0.8);
+  return true;
+}
+// A burst of children from particle i, around direction (dx, dy) if given.
+function spawnBurst(i: number, count: number, dx = 0, dy = 0, kick = 1) {
+  const S = settings;
+  const gen = kid[i] ? 2 : 1;
+  const sp0 = S.spawnSpeed * (gen > 1 ? 0.25 : 1) * kick;
+  const aim = dx || dy ? Math.atan2(dy, dx) : 0;
+  for (let k = 0; k < count; k++) {
+    const a = dx || dy ? aim + (Math.random() - 0.5) * 2.4 : Math.random() * Math.PI * 2;
+    const sp = sp0 * (0.35 + Math.random() * 0.65);
+    if (!kidEmit(px[i], py[i], Math.cos(a) * sp + vx[i] * 0.25, Math.sin(a) * sp + vy[i] * 0.25, tone[i], pz[i], gen)) return;
+  }
+}
+// Once a frame: trails and beat bursts (death and hit bursts happen in step).
+function spawnTick(dt: number, beat: boolean) {
+  const S = settings;
+  const pool = kidTo - kidFrom;
+  if (!spawnOn() || pool <= 0 || kidFrom <= 0) return;
+  if (S.spawnOn === 'trail') {
+    // Each moving parent drops about Count children a second, held to what
+    // the pool can keep alive.
+    const want = kidFrom * S.spawnCount * (dt / 60);
+    const most = (pool / Math.max(0.2, S.spawnLife * 60)) * dt * 1.3;
+    trailAcc += Math.min(want, most);
+    let tries = 0;
+    while (trailAcc >= 1 && tries++ < 4000) {
+      const i = (Math.random() * kidFrom) | 0;
+      if (dead[i] || free[i] || rest[i]) continue;
+      const sp = Math.hypot(vx[i], vy[i]);
+      if (sp < 0.15) continue;
+      trailAcc--;
+      const a = Math.random() * Math.PI * 2;
+      const j = S.spawnSpeed * 0.15 * Math.random();
+      if (!kidEmit(px[i], py[i], vx[i] * 0.15 + Math.cos(a) * j, vy[i] * 0.15 + Math.sin(a) * j, tone[i], pz[i], 1)) {
+        trailAcc = 0;
+        break;
+      }
+    }
+    if (tries >= 4000) trailAcc = 0;
+  } else if (S.spawnOn === 'beat' && beat) {
+    // A handful of parents burst on each kick.
+    const m = Math.max(1, Math.min(40, Math.round(pool / Math.max(1, S.spawnCount) / 4)));
+    for (let q = 0; q < m; q++) {
+      const i = (Math.random() * kidFrom) | 0;
+      if (!dead[i] && !free[i]) spawnBurst(i, S.spawnCount);
+    }
+  }
+}
+
 // --- emitter -------------------------------------------------------------------
 
 let emitAcc = 0;
@@ -4019,13 +4295,15 @@ function emitOne(i: number) {
   }
 }
 
+// Children have their own slots; the emitter launches the parents.
+const emitN = () => (kidTo > kidFrom && kidFrom > 0 ? kidFrom : n);
 function emitMany(k: number) {
   if (n === 0) return;
   // Prefer particles waiting to be born, then the oldest by turn.
   for (let j = 0; j < k; j++) {
     let i = -1;
     for (let tries = 0; tries < n; tries++) {
-      const c = emitNext++ % n;
+      const c = emitNext++ % emitN();
       if (dead[c]) {
         i = c;
         break;
@@ -4035,7 +4313,7 @@ function emitMany(k: number) {
         break;
       }
     }
-    if (i < 0) i = emitNext++ % n;
+    if (i < 0) i = emitNext++ % emitN();
     emitOne(i);
   }
 }
@@ -4044,7 +4322,7 @@ function runEmitter(dt: number, beat: boolean) {
   const S = settings;
   if (S.emitter === 'none') return;
   if (S.emitMode === 'steady') {
-    emitAcc += n * S.emitRate * macro.emit * (dt / 60);
+    emitAcc += emitN() * S.emitRate * macro.emit * (dt / 60);
     const k = Math.floor(emitAcc);
     emitAcc -= k;
     emitMany(k);
@@ -4052,9 +4330,9 @@ function runEmitter(dt: number, beat: boolean) {
     burstClock += dt / 60;
     if (burstClock >= S.burstEvery) {
       burstClock = 0;
-      emitMany(Math.round(n * S.burstSize));
+      emitMany(Math.round(Math.max(1, emitN() * S.burstSize)));
     }
-  } else if (beat) emitMany(Math.round(n * S.burstSize));
+  } else if (beat) emitMany(Math.round(Math.max(1, emitN() * S.burstSize)));
 }
 
 // Switching the emitter on empties the screen so it fills from the emitter;
@@ -5329,7 +5607,9 @@ function updateSizes() {
   const ls = settings.lifespan > 0 ? settings.lifeSize : 'none';
   const dp = settings.depth;
   const bands = reacting() ? settings.audioBands : 0;
-  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0;
+  const kids = kidTo > kidFrom;
+  const ks = settings.spawnSize;
+  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0 && !kids;
   if (uniformSize) return;
   const L = audio.levels;
   // Bass particles are big and swell with the bass, highs small and bright.
@@ -5343,6 +5623,11 @@ function updateSizes() {
     }
     if (dp > 0) z *= depthK(0.3 + pz[i] * 1.4, dp);
     if (bands > 0) z *= bandSize[i % 3];
+    // Children shrink away over their short life; grandchildren (smoke) swell.
+    if (kids && kid[i] && span[i] > 0 && i >= kidFrom && i < kidTo) {
+      const lt = Math.min(1, age[i] / span[i]);
+      z *= kid[i] > 1 ? ks * (1 + lt * 1.5) : ks * (1 - lt * 0.6);
+    }
     psz[i] = z;
   }
 }
@@ -7608,6 +7893,10 @@ const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text']
 const PATTERNS: [string, string][] = [['sunflower', 'Sunflower disc'], ['grid', 'Grid'], ...FILL_PATTERNS];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
+const SPAWN_ON: [string, string][] = [['none', 'Off'], ['death', 'Burst when they die'], ['hit', 'Splash when they hit'], ['trail', 'A trail as they move'], ['beat', 'Bursts on the beat']];
+const HIT_WALLS: [string, string][] = [['none', 'Nothing (obstacles only)'], ['floor', 'A floor'], ['box', 'A floor and walls'], ['bowl', 'A bowl']];
+const HIT_DO: [string, string][] = [['bounce', 'Bounce'], ['slide', 'Slide'], ['stick', 'Stick'], ['pile', 'Pile up']];
+const hitOn = () => settings.hitWalls !== 'none' || (settings.hitObstacles && settings.obstacles !== 'none');
 const hasPointer = () => settings.pointerMode !== 'none';
 const hasClick = () => settings.click !== 'none';
 
@@ -7940,6 +8229,24 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
+  { kind: 'section', about: 'Particles that make particles: bursts when they die or hit something, trails, bursts on the beat.', id: 'spawning', label: 'Spawning', tab: 'shape',
+    lock: ['spawnOn', 'spawnCount', 'spawnSpeed', 'spawnLife', 'spawnSize', 'spawnTone', 'spawnShare', 'spawnChain'],
+    power: { on: spawnOn, off: { spawnOn: 'none' }, start: { spawnOn: 'death', lifespan: 2.5, lifeFade: 'edges' } },
+    summary: () => (spawnOn() ? `${label(SPAWN_ON, settings.spawnOn).toLowerCase()} · ${settings.spawnCount}` : 'off') },
+  { kind: 'select', key: 'spawnOn', label: 'New particles', options: SPAWN_ON },
+  { kind: 'note', text: 'Bursts come when a particle\'s life ends: switch on a Lifespan (Birth & lifespan) or an emitter.', show: () => settings.spawnOn === 'death' && settings.lifespan <= 0 },
+  { kind: 'note', text: 'Hits come from Collisions: switch on a floor, walls or solid obstacles.', show: () => settings.spawnOn === 'hit' && settings.hitWalls === 'none' && !(settings.hitObstacles && settings.obstacles !== 'none') },
+  { kind: 'note', text: 'Bursts on each kick drum; turn on Audio first.', show: () => settings.spawnOn === 'beat' && audio.source === 'off' },
+  { kind: 'range', key: 'spawnCount', label: 'How many', min: 1, max: 30, step: 1, format: (v) => (settings.spawnOn === 'trail' ? `${v} / s each` : `${v} each`), show: spawnOn },
+  { kind: 'range', key: 'spawnSpeed', label: 'Burst speed', min: 0, max: 8, step: 0.1, format: (v) => v.toFixed(1), show: spawnOn },
+  { kind: 'range', key: 'spawnLife', label: 'Child life', min: 0.2, max: 5, step: 0.1, format: (v) => `~${v.toFixed(1)}s`, show: spawnOn },
+  { kind: 'more', label: 'More spawning settings' },
+  { kind: 'range', key: 'spawnSize', label: 'Child size', min: 0.2, max: 2, step: 0.05, format: pct, show: spawnOn },
+  { kind: 'range', key: 'spawnTone', label: 'Child colour shift', min: 0, max: 0.5, step: 0.01, format: (v) => (v === 0 ? 'same' : `+${Math.round(v * 100)}%`), show: spawnOn },
+  { kind: 'toggle', key: 'spawnChain', label: 'Children leave smoke when they die', show: spawnOn },
+  { kind: 'range', key: 'spawnShare', label: 'Share kept for children', min: 0.1, max: 0.8, step: 0.05, format: pct, show: spawnOn },
+  { kind: 'note', text: 'Children use their own share of the particles. If bursts look thin, raise the share or the Count; if the parents look thin, lower it.', show: spawnOn },
+
   { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges', 'renew'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'count', label: 'Count', min: 1, max: MAX_COUNT, step: 1 },
@@ -7998,6 +8305,18 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
+
+  { kind: 'section', about: 'A floor, walls or a bowl, and what particles do when they hit: bounce, slide, stick or pile up.', id: 'collide', label: 'Collisions', tab: 'motion',
+    lock: ['hitWalls', 'hitDo', 'hitBounce', 'hitFriction', 'hitFloor', 'hitObstacles'],
+    power: { on: hitOn, off: { hitWalls: 'none', hitObstacles: false }, start: { hitWalls: 'floor', hitDo: 'bounce', gravity: 0.5 } },
+    summary: () => (hitOn() ? [settings.hitWalls !== 'none' ? label(HIT_WALLS, settings.hitWalls).toLowerCase() : '', settings.hitObstacles ? 'obstacles' : '', label(HIT_DO, settings.hitDo).toLowerCase()].filter(Boolean).join(', ') : 'off') },
+  { kind: 'select', key: 'hitWalls', label: 'Solid', options: HIT_WALLS },
+  { kind: 'choice', key: 'hitDo', label: 'On a hit', options: HIT_DO, show: hitOn },
+  { kind: 'range', key: 'hitBounce', label: 'Bounciness', min: 0, max: 1, step: 0.05, format: pct, show: () => hitOn() && settings.hitDo === 'bounce' },
+  { kind: 'range', key: 'hitFriction', label: 'Grip', min: 0, max: 1, step: 0.05, format: pct, show: () => hitOn() && (settings.hitDo === 'bounce' || settings.hitDo === 'slide') },
+  { kind: 'range', key: 'hitFloor', label: 'Floor height', min: 0.4, max: 1, step: 0.01, format: (v) => `${Math.round((1 - v) * 100)}% up`, show: () => settings.hitWalls !== 'none' },
+  { kind: 'toggle', key: 'hitObstacles', label: 'Obstacles are solid too (Obstacles card)' },
+  { kind: 'note', text: 'Needs something pulling: Gravity (Forces), wind, a launch or an emitter. Pile up heaps on the floor; on obstacles it sticks.', show: () => hitOn() && settings.gravity <= 0 && settings.wind <= 0 && settings.launchSpeed <= 0 && settings.emitter === 'none' },
 
   { kind: 'section', id: 'audio', label: 'Listening', tab: 'music', summary: listenSummary },
   { kind: 'audio' },
