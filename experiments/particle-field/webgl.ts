@@ -77,7 +77,7 @@ export type Blend = 'over' | 'add' | 'multiply' | 'copy';
 
 export class GLSprites {
   readonly canvas = document.createElement('canvas');
-  private gl: WebGL2RenderingContext;
+  readonly gl: WebGL2RenderingContext;
   private prog: WebGLProgram;
   private tex: WebGLTexture;
   private buf: WebGLBuffer;
@@ -253,8 +253,9 @@ export class GLSprites {
     }
     gl.bindTexture(gl.TEXTURE_2D, this.pic);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cw, ch, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    // Linear: lenses and feedback effects draw it scaled and turned.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
@@ -332,6 +333,12 @@ export class GLSprites {
     gl.uniform1f(this.uFlipTex, 0);
     this.setBlend('copy');
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  /** The picture as a target for effects (only mode), sized to the canvas. */
+  picture(cw: number, ch: number) {
+    if (this.toPic(cw, ch)) this.clearPic(0, 0, 0);
+    return { tex: this.pic!, fbo: this.fbo!, w: cw, h: ch };
   }
 
   /** Free the picture (leaving only mode). */
