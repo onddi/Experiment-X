@@ -4518,7 +4518,11 @@ function glWhy() {
   if (!glr) return 'no WebGL';
   if (new URLSearchParams(location.search).get('gl') === 'copy') return 'gl=copy';
   if (seeThrough) return 'see-through';
-  if (lensOn()) return 'lens';
+  if (lensOn()) {
+    const S = settings as unknown as Record<string, unknown>;
+    const k = LENS_KEYS.find((k) => (k === 'lensMirror' ? S[k] !== 'off' : k === 'lensTiles' ? (S[k] as number) >= 2 : !k.startsWith('audio') && typeof S[k] === 'number' && (S[k] as number) > 0));
+    return `lens: ${k ? k.replace(/^lens/, '').toLowerCase() : 'on'}${k && animMap()[k] ? ', moving' : ''}`;
+  }
   if (settings.audioTunnel > 0) return 'tunnel';
   if (kaleidoNow >= 2) return 'kaleidoscope';
   if (settings.mirrorWorld) return 'mirror world';
