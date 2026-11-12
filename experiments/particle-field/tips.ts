@@ -147,6 +147,7 @@ export const TIPS: Record<string, string> = {
   spawnTone: 'Moves children along the palette from their parent’s colour.',
   spawnShare: 'The share of particles set aside as children.',
   spawnChain: 'Dying children leave slow puffs of smoke.',
+  spawnFrom: 'Trails from every moving particle, or a jet pouring down from the lowest part of the shape, like an exhaust (works on still shapes too).',
   hitWalls: 'What is solid: a floor, a floor with walls, or a bowl.',
   hitDo: 'What particles do when they hit: bounce, slide, stick or pile up in heaps.',
   hitBounce: 'How much speed a bounce keeps.',

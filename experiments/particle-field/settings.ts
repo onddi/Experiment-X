@@ -216,6 +216,8 @@ export interface Settings {
   spawnTone: number;
   spawnShare: number;
   spawnChain: boolean;
+  // Trails: from every moving particle, or only the lowest part of the shape (an exhaust).
+  spawnFrom: 'moving' | 'bottom';
   hitWalls: HitWalls;
   hitDo: HitDo;
   hitBounce: number;
@@ -572,6 +574,7 @@ export const DEFAULTS: Settings = {
   spawnTone: 0.15,
   spawnShare: 0.4,
   spawnChain: false,
+  spawnFrom: 'moving',
   hitWalls: 'none',
   hitDo: 'bounce',
   hitBounce: 0.55,

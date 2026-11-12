@@ -1616,7 +1616,11 @@ function step(dt: number) {
 
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
       const edges = settings.edges;
-      if (emitting) {
+      if (kid[i] && kid[i] < 3 && i >= kidFrom && i < kidTo) {
+        // Children that leave the screen are done (no wrapping back in).
+        kidDied(i);
+        continue;
+      } else if (emitting) {
         // Emitted particles leave for good and wait to be emitted again.
         dead[i] = 1;
         px[i] = ox[i] = Math.min(w - 1, Math.max(0, px[i]));
@@ -4309,12 +4313,44 @@ function spawnBurst(i: number, count: number, dx = 0, dy = 0, kick = 1) {
     if (!kidEmit(px[i], py[i], Math.cos(a) * sp + vx[i] * 0.25, Math.sin(a) * sp + vy[i] * 0.25, tone[i], pz[i], gen)) return;
   }
 }
+// Exhaust: a jet pouring down from the lowest tenth of the parents, moving or not.
+const lowIdx: number[] = [];
+function exhaustTick(dt: number) {
+  const S = settings;
+  const pool = kidTo - kidFrom;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < kidFrom; i++) {
+    if (dead[i] || free[i]) continue;
+    if (py[i] < lo) lo = py[i];
+    if (py[i] > hi) hi = py[i];
+  }
+  if (!(hi > lo)) return;
+  const cut = hi - (hi - lo) * 0.1;
+  lowIdx.length = 0;
+  for (let i = 0; i < kidFrom; i++) if (!dead[i] && !free[i] && py[i] >= cut) lowIdx.push(i);
+  if (!lowIdx.length) return;
+  // Count is per second for each particle in the jet's mouth.
+  const want = lowIdx.length * S.spawnCount * 3 * (dt / 60);
+  const most = (pool / Math.max(0.2, S.spawnLife * 60)) * dt * 1.3;
+  trailAcc += Math.min(want, most);
+  while (trailAcc >= 1) {
+    trailAcc--;
+    const i = lowIdx[(Math.random() * lowIdx.length) | 0];
+    const a = Math.PI / 2 + (Math.random() - 0.5) * 0.7;
+    const sp = Math.max(0.3, S.spawnSpeed) * (0.5 + Math.random() * 0.8);
+    if (!kidEmit(px[i], py[i], Math.cos(a) * sp + vx[i] * 0.3, Math.sin(a) * sp + vy[i] * 0.3, tone[i], pz[i], 1)) {
+      trailAcc = 0;
+      break;
+    }
+  }
+}
 // Once a frame: trails and beat bursts (death and hit bursts happen in step).
 function spawnTick(dt: number, beat: boolean) {
   const S = settings;
   const pool = kidTo - kidFrom;
   if (!spawnOn() || pool <= 0 || kidFrom <= 0) return;
-  if (S.spawnOn === 'trail') {
+  if (S.spawnOn === 'trail' && S.spawnFrom !== 'bottom') {
     // Each moving parent drops about Count children a second, held to what
     // the pool can keep alive.
     const want = kidFrom * S.spawnCount * (dt / 60);
@@ -4335,6 +4371,8 @@ function spawnTick(dt: number, beat: boolean) {
       }
     }
     if (tries >= 4000) trailAcc = 0;
+  } else if (S.spawnOn === 'trail' && S.spawnFrom === 'bottom') {
+    exhaustTick(dt);
   } else if (S.spawnOn === 'beat' && beat) {
     // A handful of parents burst on each kick.
     const m = Math.max(1, Math.min(40, Math.round(pool / Math.max(1, S.spawnCount) / 4)));
@@ -8481,13 +8519,14 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
   { kind: 'section', about: 'Particles that make particles: bursts when they die or hit something, trails, bursts on the beat.', id: 'spawning', label: 'Spawning', tab: 'shape',
-    lock: ['spawnOn', 'spawnCount', 'spawnSpeed', 'spawnLife', 'spawnSize', 'spawnTone', 'spawnShare', 'spawnChain'],
+    lock: ['spawnOn', 'spawnFrom', 'spawnCount', 'spawnSpeed', 'spawnLife', 'spawnSize', 'spawnTone', 'spawnShare', 'spawnChain'],
     power: { on: spawnOn, off: { spawnOn: 'none' }, start: { spawnOn: 'death', lifespan: 2.5, lifeFade: 'edges' } },
     summary: () => (spawnOn() ? `${label(SPAWN_ON, settings.spawnOn).toLowerCase()} · ${settings.spawnCount}` : 'off') },
   { kind: 'select', key: 'spawnOn', label: 'New particles', options: SPAWN_ON },
   { kind: 'note', text: 'Bursts come when a particle\'s life ends: switch on a Lifespan (Birth & lifespan) or an emitter.', show: () => settings.spawnOn === 'death' && settings.lifespan <= 0 },
   { kind: 'note', text: 'Hits come from Collisions: switch on a floor, walls or solid obstacles.', show: () => settings.spawnOn === 'hit' && settings.hitWalls === 'none' && !(settings.hitObstacles && settings.obstacles !== 'none') },
   { kind: 'note', text: 'Bursts on each kick drum; turn on Audio first.', show: () => settings.spawnOn === 'beat' && audio.source === 'off' },
+  { kind: 'select', key: 'spawnFrom', label: 'Trails from', options: [['moving', 'Moving particles'], ['bottom', 'The bottom (exhaust)']], show: () => settings.spawnOn === 'trail' },
   { kind: 'range', key: 'spawnCount', label: 'How many', min: 1, max: 30, step: 1, format: (v) => (settings.spawnOn === 'trail' ? `${v} / s each` : `${v} each`), show: spawnOn },
   { kind: 'range', key: 'spawnSpeed', label: 'Burst speed', min: 0, max: 8, step: 0.1, format: (v) => v.toFixed(1), show: spawnOn },
   { kind: 'range', key: 'spawnLife', label: 'Child life', min: 0.2, max: 5, step: 0.1, format: (v) => `~${v.toFixed(1)}s`, show: spawnOn },
