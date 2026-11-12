@@ -12072,7 +12072,7 @@ function animRecordMany(keys: string[], bars: number, done: (n: number) => void)
 // Call before writing a setting that a recording may take over.
 function animRecTouch(k: string) {
   const r = animRec;
-  if (!r || r.live.has(k) || !r.keys.includes(k) || animBeat < r.from) return;
+  if (!r || r.live.has(k) || !(r.keys.includes(k) || r.keys[0] === '*') || animBeat < r.from) return;
   const c = rangeCtl(k);
   if (!c) return;
   const cur = (settings as unknown as Record<string, number>)[k];
@@ -14065,6 +14065,7 @@ function playSet(key: string, raw: number) {
   if (!r) return;
   raw = Math.max(r.min, Math.min(r.max, raw));
   playRaw[key] = raw;
+  if (animRec) animRecTouch(r.key);
   if (r.set(raw)) {
     playDirty.add(r.key);
     playFrame ||= requestAnimationFrame(playFlush);
@@ -14202,7 +14203,7 @@ const mbar = document.createElement('div');
 mbar.className = 'm-bar';
 const MENU_ICON = svg('<path d="M4 7h16M4 12h16M4 17h16"/>');
 const KNOB_ICON = svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l3.5-3.5"/>');
-mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Deck" title="Deck">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Studio" title="Studio">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}${svg('<path d="M6 12h12"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}${svg('<path d="M6 12h12M12 6v12"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div><div class="sp-chips" role="tablist" aria-label="Knobs"></div>`;
+mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Deck" title="Deck">${ICONS.sliders}</button><button type="button" class="mb-btn mb-scenes" aria-label="Scenes" title="Scenes">${svg(TAB_ICONS.presets)}</button><button type="button" class="mb-btn mb-menu" aria-label="Studio" title="Studio">${MENU_ICON}</button><button type="button" class="mb-btn mb-shuffle" aria-label="Shuffle" title="Shuffle">${ICONS.shuffle}</button><div class="swipe-pill" role="slider" tabindex="0" aria-label="Knobs" title="Knobs"><span class="mb-kicon">${KNOB_ICON}</span><div class="sp-body"><i class="sp-prev" aria-hidden="true">${svg('<path d="M15 5l-7 7 7 7"/>')}${svg('<path d="M6 12h12"/>')}</i><span class="sp-name"></span><b class="sp-val"></b><i class="sp-next" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}${svg('<path d="M6 12h12M12 6v12"/>')}</i><i class="sp-bar"><u></u></i><em class="sp-dots"></em></div><button type="button" class="mb-btn mb-loop" aria-label="Record knob moves (hold for loop length and clearing)" title="Record knob moves · hold for more"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.8-4.3"/><path d="M16.5 3.5v3.2h-3.2"/><circle cx="10" cy="10" r="2.4" fill="currentColor" stroke="none"/></svg><b class="lp-n">4</b></button><button type="button" class="mb-btn mb-close" aria-label="Done" title="Done">✕</button></div><div class="sp-chips" role="tablist" aria-label="Knobs"></div>`;
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 const chips = mbar.querySelector<HTMLElement>('.sp-chips')!;
@@ -14956,7 +14957,10 @@ function pillPaint(wake = false) {
       chips.append(b);
     });
   }
+  const amap = animMap();
   [...chips.children].forEach((b, i) => {
+    const sk = knobSpec(keys[i])?.key;
+    b.classList.toggle('moving', !!sk && !!amap[sk]);
     b.classList.toggle('on', i === pillIdx);
     b.setAttribute('aria-selected', String(i === pillIdx));
   });
@@ -15215,6 +15219,159 @@ addEventListener('resize', () => {
 applySheet();
 // In X-Frame, only one layer's options panel is open at a time.
 xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click(), open: () => toggle.click() });
+
+// Knob recording: the loop icon in the open knob pill (L on a keyboard).
+// Tap: counts in to the next bar, then every knob you turn over the loop
+// becomes keyframes and plays back. Tap while recording to stop early (keeps
+// the take). Hold it (or right-click) for loop length, clearing and undo.
+const KNOB_REC = ['*'];
+const KNOB_BARS_KEY = 'pf-knob-bars';
+let knobBars = 4;
+try { knobBars = +(localStorage.getItem(KNOB_BARS_KEY) ?? '') || 4; } catch {}
+let knobUndo: string | null = null;
+const knobRecOn = () => !!animRec && animRec.keys === KNOB_REC;
+function knobRecToggle() {
+  const r = animRec;
+  if (r && r.keys === KNOB_REC) {
+    if (animBeat < r.from || !r.live.size) {
+      animRec = null;
+      showToast('Knob recording cancelled');
+    } else r.from = animBeat - r.beats; // ends next frame; same loop alignment
+  } else {
+    if (animRec) return showToast('Another recording is running');
+    knobUndo = settings.anim;
+    animRecordMany(KNOB_REC, knobBars, (made) => {
+      if (!made) knobUndo = null;
+      showToast(made ? `Recorded ${made} knob${made > 1 ? 's' : ''} · ${cycleLabel(knobBars)} loop` : 'No knob moved, nothing recorded', made ? ['Undo', knobUndoTake] : undefined);
+    });
+  }
+  knobLoopPaint();
+}
+function knobUndoTake() {
+  if (knobUndo === null) return;
+  set('anim', knobUndo as never);
+  knobUndo = null;
+  showToast('Last take undone');
+  knobLoopPaint();
+}
+function knobSetBars(b: number) {
+  knobBars = b;
+  try { localStorage.setItem(KNOB_BARS_KEY, String(b)); } catch {}
+  knobLoopPaint();
+}
+// The settings the field knobs move (macros and choices can't be recorded).
+const knobAnimKeys = () => pillKeys().map((k) => knobSpec(k)?.key as string | undefined).filter((k): k is string => !!k && !!animMap()[k]);
+function knobClear(keys: string[]) {
+  if (!keys.length) return;
+  const m = { ...animMap() };
+  for (const k of keys) delete m[k];
+  set('anim', formatAnim(m) as never);
+  pillPaint();
+  knobLoopPaint();
+}
+const loopBtn = pill.querySelector<HTMLButtonElement>('.mb-loop')!;
+const krBadge = document.createElement('div');
+krBadge.className = 'kr-badge';
+krBadge.setAttribute('aria-live', 'polite');
+document.body.append(krBadge);
+function knobLoopPaint() {
+  const r = knobRecOn() ? animRec! : null;
+  const wait = !!r && animBeat < r.from;
+  loopBtn.classList.toggle('rec', !!r && !wait);
+  loopBtn.classList.toggle('wait', wait);
+  loopBtn.classList.toggle('has', !r && knobAnimKeys().length > 0);
+  loopBtn.querySelector('.lp-n')!.textContent = wait ? String(Math.max(1, Math.ceil(r!.from - animBeat))) : r ? `${Math.min(r.beats / 4, Math.floor((animBeat - r.from) / 4) + 1)}` : String(knobBars);
+  loopBtn.style.setProperty('--p', r && !wait ? String(Math.min(1, (animBeat - r.from) / r.beats)) : '0');
+  pill.classList.toggle('kr-rec', !!r && !wait);
+  krBadge.classList.toggle('show', !!r);
+  if (r) krBadge.textContent = wait ? `Knob loop · starts in ${Math.max(1, Math.ceil(r.from - animBeat))}…` : `Recording knobs ${Math.min(r.beats / 4, Math.floor((animBeat - r.from) / 4) + 1)} / ${r.beats / 4}`;
+}
+window.setInterval(() => {
+  if (knobRecOn() || pillOpen()) knobLoopPaint();
+  else if (krBadge.classList.contains('show')) knobLoopPaint();
+}, 100);
+let krMenu: HTMLElement | null = null;
+function knobMenuClose() {
+  krMenu?.remove();
+  krMenu = null;
+  loopBtn.classList.remove('menu');
+}
+function knobLoopMenu() {
+  if (krMenu) return knobMenuClose();
+  const el = document.createElement('div');
+  el.className = 'kr-menu';
+  const key = pillKeys()[pillIdx];
+  const spec = key ? knobSpec(key) : null;
+  const name = spec ? spec.label.replace(/ \(.*\)$/, '') : '';
+  const oneOn = !!spec && !!animMap()[spec.key];
+  const all = knobAnimKeys();
+  el.innerHTML = `<span class="kr-h">Loop length</span><div class="kr-len">${[1, 2, 4, 8].map((b) => `<button type="button" data-b="${b}"${b === knobBars ? ' class="on"' : ''}>${b === 1 ? '1 bar' : b}</button>`).join('')}</div><i></i>` +
+    `<button type="button" class="kr-row" data-a="one"${oneOn ? '' : ' disabled'}>Clear ${name}<small>${oneOn ? '◆' : 'no move'}</small></button>` +
+    `<button type="button" class="kr-row" data-a="all"${all.length ? '' : ' disabled'}>Clear all moves<small>${all.length ? `${all.length} knob${all.length > 1 ? 's' : ''}` : 'none'}</small></button>` +
+    `<button type="button" class="kr-row" data-a="undo"${knobUndo !== null && !knobRecOn() ? '' : ' disabled'}>Undo last take</button>`;
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!b) return;
+    if (b.dataset.b) {
+      knobSetBars(+b.dataset.b);
+      el.querySelectorAll('.kr-len button').forEach((x) => x.classList.toggle('on', x === b));
+      return;
+    }
+    if (b.dataset.a === 'one' && spec) knobClear([spec.key as string]);
+    else if (b.dataset.a === 'all') knobClear(all);
+    else if (b.dataset.a === 'undo') knobUndoTake();
+    knobMenuClose();
+  });
+  mbar.append(el);
+  krMenu = el;
+  loopBtn.classList.add('menu');
+  navigator.vibrate?.(10);
+}
+document.addEventListener('pointerdown', (e) => {
+  if (krMenu && !(e.target as HTMLElement).closest('.mb-loop, .kr-menu')) knobMenuClose();
+}, true);
+{
+  let holdT = 0;
+  let held = false;
+  loopBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    held = false;
+    clearTimeout(holdT);
+    holdT = window.setTimeout(() => {
+      held = true;
+      knobLoopMenu();
+    }, 450);
+  });
+  const cancel = () => clearTimeout(holdT);
+  loopBtn.addEventListener('pointerup', cancel);
+  loopBtn.addEventListener('pointerleave', cancel);
+  loopBtn.addEventListener('pointercancel', cancel);
+  loopBtn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    clearTimeout(holdT);
+    if (!held) knobLoopMenu();
+    held = true;
+  });
+  loopBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (held) return void (held = false);
+    if (krMenu) return knobMenuClose();
+    navigator.vibrate?.(8);
+    knobRecToggle();
+  });
+}
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+  if (typing || e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.key.toLowerCase() !== 'l') return;
+  e.preventDefault();
+  if (e.shiftKey) {
+    const L = [1, 2, 4, 8];
+    knobSetBars(L[(L.indexOf(knobBars) + 1) % L.length]);
+    showToast(`Knob loop: ${cycleLabel(knobBars)}`);
+  } else knobRecToggle();
+});
 
 // ⌘K / Ctrl+K (or /) finds any setting: opens the panel and the search field.
 function focusSearch() {
