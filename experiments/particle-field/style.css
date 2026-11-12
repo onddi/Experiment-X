@@ -2227,3 +2227,16 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .scene-sheet.dragging, .scene-sheet.dragging .ss-grip, .scene-sheet.dragging .ss-now { cursor: grabbing; }
 .scene-sheet.dragging, .scene-sheet.moved { animation: none; }
 @media (max-width: 720px) { .scene-sheet .ss-now { cursor: default; } }
+/* Animated settings in the Deck: an accent outline and ring, the icon always on. */
+.rack-knob.anim { border-color: var(--accent-line); background: color-mix(in srgb, var(--accent) 9%, var(--tile)); }
+.rack-knob.anim circle.val { stroke: var(--accent-soft); }
+.rack-knob.anim .rk-anim svg { width: 18px; height: 10px; }
+.rack-row.anim { box-shadow: inset 2px 0 0 var(--accent); }
+.rack-lens button.lens-anim:not(.on) { color: var(--accent-soft); border-color: var(--accent-line); }
+@media (pointer: coarse) { .rack-knob.anim .rk-anim { display: flex; pointer-events: none; } .rack-knob.anim::after { display: none; } }
+/* Strips / list: an accent edge, an accent bar and the icon before the name. */
+.overview[data-density='strips'] .rack-knob.anim, #panel[data-view='list'] .rack-knob.anim { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--tile)); }
+.overview[data-density='strips'] .rack-knob.anim .rack-bar i, #panel[data-view='list'] .rack-knob.anim .rack-bar i { background: var(--accent-soft); }
+.overview[data-density='strips'] .rack-knob.anim .rk-anim, #panel[data-view='list'] .rack-knob.anim .rk-anim { top: 50%; right: auto; left: calc(40% - 18px); transform: translateY(-50%); }
+.overview[data-density='strips'] .rack-knob.anim .rk-anim svg { display: block; }
+.overview[data-density='strips'] .rack-knob.anim .rk-anim { left: 100px; }

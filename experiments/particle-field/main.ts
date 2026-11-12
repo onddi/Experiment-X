@@ -11583,7 +11583,8 @@ function rackPlan(src: RackSrc) {
 const DECK_WITH_CARD = new Set<string>(['obsShow', 'obsPlace', 'showWells']);
 // Deck filters (Colour, Light, …): the picked ones, and every setting in them.
 const ovLens = new Set<string>();
-const lensKeys = () => new Set(LENSES.filter(([id]) => ovLens.has(id)).flatMap(([, , keys]) => keys));
+// 'moving' is the Animated chip: every setting with a swing or keyframes.
+const lensKeys = () => new Set([...LENSES.filter(([id]) => ovLens.has(id)).flatMap(([, , keys]) => keys), ...(ovLens.has('moving') ? Object.keys(animMap()) : [])]);
 function rackPlanOf(src: RackSrc) {
   const base = src.base ?? (DEFAULTS as unknown as Record<string, unknown>);
   const S = new Proxy({}, { get: (_, k) => src.get(k as keyof Settings) }) as Record<string, unknown>;
@@ -11691,7 +11692,10 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
       });
       return b;
     };
-    chips.append(chip(null, 'In this scene'), ...LENSES.map(([id, label]) => chip(id, label)));
+    const nAnim = Object.keys(animMap()).length;
+    const animChip = nAnim || ovLens.has('moving') ? [chip('moving', `∿ Animated${nAnim ? ` ${nAnim}` : ''}`)] : [];
+    animChip[0]?.classList.add('lens-anim');
+    chips.append(chip(null, 'In this scene'), ...animChip, ...LENSES.map(([id, label]) => chip(id, label)));
     wrap.append(chips);
   }
   for (const [label] of OV_COLS) {
@@ -11806,7 +11810,15 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
     const moving = animMap();
     for (const e of wrap.querySelectorAll<HTMLElement>('[data-key]')) {
       e.classList.toggle('fk', isFieldKnob(e.dataset.key!));
-      e.classList.toggle('anim', !!moving[e.dataset.key!]);
+      const a = moving[e.dataset.key!];
+      e.classList.toggle('anim', !!a);
+      // Swing shows a wave, keyframes a row of diamonds.
+      const mode = a ? a.m : '';
+      if (e.dataset.anim !== mode) {
+        e.dataset.anim = mode;
+        const ab = e.querySelector<HTMLElement>('.rk-anim');
+        if (ab) ab.innerHTML = mode === 'keys' ? KEYS_ICON : waveIcon(a?.m === 'wave' ? a.s : 'sine');
+      }
     }
   }, 150);
   return wrap;
@@ -12385,6 +12397,7 @@ function renderAnimList(): HTMLElement {
   return box;
 }
 
+const KEYS_ICON = '<svg viewBox="0 0 20 10" fill="currentColor" aria-hidden="true"><path d="M3 2 L6 5 L3 8 L0 5Z M10 2 L13 5 L10 8 L7 5Z M17 2 L20 5 L17 8 L14 5Z"/></svg>';
 function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc, update: () => void, knob: HTMLElement, animOpen: boolean | 'closed' = false) {
   const again = tunerKnob === knob;
   closeTuner();
