@@ -6921,26 +6921,7 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   tlHold([k]);
 }
 
-// Lenses (and the kaleidoscope) are a layer over the scenes: the ones you set
-// yourself carry from scene to scene. One that a scene turns on lasts only
-// for that scene; the next scene goes back to yours.
 const LENS_KEYS = ['lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt', 'audioKaleido', 'audioKaleidoDrop'] as const;
-const MYLENS_KEY = 'particle-field:mylens';
-// Until you set one, yours are the defaults (all off), whatever a scene left on.
-const myLens: Partial<Settings> = readJson<Partial<Settings>>(MYLENS_KEY, Object.fromEntries(LENS_KEYS.map((k) => [k, DEFAULTS[k]])));
-function noteMyLens(keys: Iterable<keyof Settings>) {
-  let any = false;
-  for (const k of keys) {
-    if (!(LENS_KEYS as readonly string[]).includes(k)) continue;
-    (myLens as Record<string, unknown>)[k] = settings[k];
-    any = true;
-  }
-  if (any) {
-    try {
-      localStorage.setItem(MYLENS_KEY, JSON.stringify(myLens));
-    } catch {}
-  }
-}
 
 // Visual presets, shuffle and reset keep the audio settings you've tuned.
 const audioSettings = (): Partial<Settings> =>
@@ -7017,14 +6998,14 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
   // Your own scenes bring their overview knob picks back, and play them.
   if (typeof p.knobsPick === 'string' && p.knobsPick) hands.playOn = true;
-  // Lenses the scene doesn't set go back to your own, not the last scene's.
-  for (const k of LENS_KEYS) if (!(k in p) && k in myLens) (hands as Record<string, unknown>)[k] = myLens[k];
+  // Lenses belong to the scene like any other look setting: the scene's own,
+  // else off. Lock the Lens card to keep yours through scene changes.
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   for (const k of MUSIC_KEYS) if (keepAudio && !(k in p) && fromScene(k)) (target as unknown as Record<string, unknown>)[k] = D[k];
   // Locked cards keep what they have, whichever scene loads.
@@ -8128,7 +8109,6 @@ const TL_NO_HOLD = new Set<string>([...VIEW_KEYS, 'links', 'playOn', 'playLeft',
 let tlChips: (() => void) | null = null;
 // A change you make while the timeline plays sticks for the rest of the set.
 function tlHold(keys: Iterable<keyof Settings>) {
-  noteMyLens(keys);
   if (!tlActive() || !tl.hold) return;
   let any = false;
   for (const k of keys) {
