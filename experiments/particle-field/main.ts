@@ -4508,12 +4508,27 @@ const glr = new URLSearchParams(location.search).get('renderer') === '2d' ? null
 // 2D canvas for markers. It keeps its frame and fades it for the trails, so
 // no full-screen 2D fade or copy happens.
 let glDirect = false;
+// Why direct mode is off right now (shown in the Stage fps readout).
+let glWhyNot = '';
 function glDirectWanted() {
-  if (!glr || seeThrough || lensOn() || settings.audioTunnel > 0 || kaleidoNow >= 2 || settings.mirrorWorld || echoA > 0.01) return false;
-  if (settings.obstacles !== 'none' && settings.obsShow) return false;
-  if (recorder.on || projector.on || new URLSearchParams(location.search).get('gl') === 'copy') return false;
+  glWhyNot = glWhy();
+  return !glWhyNot;
+}
+function glWhy() {
+  if (!glr) return 'no WebGL';
+  if (new URLSearchParams(location.search).get('gl') === 'copy') return 'gl=copy';
+  if (seeThrough) return 'see-through';
+  if (lensOn()) return 'lens';
+  if (settings.audioTunnel > 0) return 'tunnel';
+  if (kaleidoNow >= 2) return 'kaleidoscope';
+  if (settings.mirrorWorld) return 'mirror world';
+  if (echoA > 0.01) return 'echo';
+  if (settings.obstacles !== 'none' && settings.obsShow) return 'obstacles';
+  if (recorder.on) return 'recording';
+  if (projector.on) return 'projector';
   const styles = settings.render === 'mixed' ? mixStyles() : [settings.render];
-  return styles.every((st) => st in SPRITES);
+  const not = styles.find((st) => !(st in SPRITES));
+  return not ? `${not} style` : '';
 }
 function glSetDirect(on: boolean, r: number, g: number, b: number) {
   if (!glr) return;
@@ -9159,7 +9174,7 @@ perfHud.setAttribute('aria-hidden', 'true');
     t0 = now;
     perfNow.frameMs = 1000 / Math.max(perfNow.real, 0.1);
     perfNow.cpu = stepMs + drawMs;
-    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? (glDirect ? ' · WebGL direct' : ' · WebGL') : ' · 2D'}`;
+    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? (glDirect ? ' · WebGL direct' : ` · WebGL copy (${glWhyNot})`) : ' · 2D'}`;
   }, 1000);
 }
 function setPerfHud(on: boolean) {
