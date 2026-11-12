@@ -6565,7 +6565,7 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges', 'renew'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
-  { kind: 'range', key: 'count', label: 'Count', min: 100, max: 8000, step: 100 },
+  { kind: 'range', key: 'count', label: 'Count', min: 1, max: 8000, step: 1 },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'more', label: 'More settings' },
@@ -12065,6 +12065,47 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
   return wrap;
 }
 const RACK_RING = 94.25; // 270° of a 20-radius circle
+// Type a value: the number as shown (30 for 30%, 2.5 for 2.5×), kept in range.
+function shownScale(c: Extract<Control, { kind: 'range' }>) {
+  if (!c.format) return 1;
+  const txt = c.format(c.max);
+  const nums = [txt.replace(/[^\d.\-−]/g, ''), txt.replace(/[^\d\-−]/g, '')].map((t) => parseFloat(t.replace('−', '-')));
+  for (const f of [1, 100, 1000, 0.001]) if (nums.some((n) => Number.isFinite(n) && Math.abs(n - c.max * f) <= Math.abs(c.max * f) * 0.02 + 1e-9)) return f;
+  return 1;
+}
+function typeValue(c: Extract<Control, { kind: 'range' }>, out: HTMLElement, get: () => number, put: (v: number) => void, done: () => void) {
+  if (out.parentElement?.querySelector('.kn-type')) return;
+  const f = shownScale(c);
+  const input = document.createElement('input');
+  input.className = 'kn-type';
+  input.type = 'text';
+  input.inputMode = 'decimal';
+  input.setAttribute('aria-label', `${c.label}: type a value`);
+  input.value = String(+(get() * f).toFixed(4));
+  out.hidden = true;
+  out.after(input);
+  input.focus();
+  input.select();
+  let closed = false;
+  const close = (commit: boolean) => {
+    if (closed) return;
+    closed = true;
+    if (commit) {
+      const n = parseFloat(input.value.replace(',', '.').replace('−', '-'));
+      if (Number.isFinite(n)) put(Math.min(c.max, Math.max(c.min, n / f)));
+    }
+    input.remove();
+    out.hidden = false;
+    done();
+  };
+  for (const ev of ['pointerdown', 'click', 'dblclick'] as const) input.addEventListener(ev, (e) => e.stopPropagation());
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') close(true);
+    if (e.key === 'Escape') close(false);
+  });
+  input.addEventListener('blur', () => close(true));
+}
 function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-knob';
@@ -12115,8 +12156,10 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   // On a touch screen a tap opens a big slider instead, so the finger
   // doesn't hide what it's turning.
   let start: { x: number; y: number; v: number; t: number; turned: boolean } | null = null;
+  let onValue = false;
   el.addEventListener('pointerdown', (e) => {
-    if ((e.target as HTMLElement).closest('.rk-anim')) return;
+    if ((e.target as HTMLElement).closest('.rk-anim, .kn-type')) return;
+    onValue = e.target === out;
     start = { x: e.clientX, y: e.clientY, v: animKnob(c.key, src.get(c.key) as number), t: performance.now(), turned: false };
     el.setPointerCapture(e.pointerId);
     if (e.pointerType !== 'touch') el.classList.add('turning');
@@ -12145,6 +12188,13 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     enterSolo();
   });
   const end = (e: PointerEvent) => {
+    // A tap on the value: type it in.
+    if (start && e.type === 'pointerup' && onValue && !start.turned && performance.now() - start.t < 500) {
+      start = null;
+      el.classList.remove('turning');
+      typeValue(c, out, () => src.get(c.key) as number, put, update);
+      return;
+    }
     if (start && e.type === 'pointerup' && e.pointerType === 'touch' && !start.turned && performance.now() - start.t < 500) openTuner(c, home, src, update, el);
     start = null;
     el.classList.remove('turning');
@@ -12730,6 +12780,11 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
     sync();
   });
   el.querySelector('.tuner-close')!.addEventListener('click', closeTuner);
+  out.title = 'Tap to type a value';
+  out.addEventListener('click', () => typeValue(c, out, () => src.get(c.key) as number, (v) => {
+    src.put(c.key, +(Math.round((v - c.min) / c.step) * c.step + c.min).toFixed(6));
+    update();
+  }, sync));
   sync();
   const timer = window.setInterval(() => (el.isConnected ? (document.activeElement === input ? null : sync()) : clearInterval(timer)), 200);
   document.body.append(el);
@@ -14137,7 +14192,7 @@ function knobSpec(key: string): KnobSpec | null {
         S[c.key] = v;
         return true;
       },
-      text: (v) => `${Math.round(((v - c.min) / (c.max - c.min)) * 100)}%`,
+      text: (v) => (c.format ? c.format(v) : String(+v.toFixed(3))),
     };
   if (c.kind !== 'select' && c.kind !== 'choice') return null;
   const opts = c.options;

@@ -2395,3 +2395,7 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 /* The bar takes a "stage" class on the Stage; keep the field's .stage rule
    (overflow: hidden) from clipping its ⋯ menu. */
 .u-bar.stage { overflow: visible; }
+/* Tap a knob's value to type one. */
+.rack-knob span, .tuner-head output { cursor: text; }
+.kn-type { width: 64px; max-width: 100%; box-sizing: border-box; padding: 2px 4px; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--tile); color: var(--text); font: inherit; font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; outline: none; }
+.tuner-head .kn-type { width: 80px; margin-right: auto; font-size: 15px; }
