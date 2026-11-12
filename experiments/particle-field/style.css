@@ -2281,3 +2281,20 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .scene-sheet.mini > :not(.ss-head):not(.ss-grip) { display: none !important; }
 .scene-sheet.mini .ss-head { margin-bottom: -12px; padding-bottom: 12px; }
 @media (max-width: 720px) { .scene-sheet.mini { max-height: none; } }
+/* Arrange bar: words on desktop, one row of icons at the bottom on phones. */
+.ar-bar .ar-ic { display: none; flex: none; }
+.ar-bar .ar-s { display: none; }
+.ar-bar button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+@media (max-width: 720px) {
+  .ar-bar { top: auto; bottom: calc(14px + env(safe-area-inset-bottom)); flex-wrap: nowrap; padding: 5px; gap: 4px; border-radius: 24px; overflow-x: auto; scrollbar-width: none; justify-content: flex-start; }
+  .ar-bar::-webkit-scrollbar { display: none; }
+  .ar-hint, .ar-bar .ar-t { display: none; }
+  .ar-bar .ar-ic { display: block; }
+  .ar-bar > button, .ar-modes button, .ar-rec button { flex: none; height: 38px; min-width: 38px; padding: 0 10px; border-radius: 19px; }
+  .ar-modes button { height: 34px; min-width: 34px; padding: 0 8px; }
+  .ar-modes, .ar-rec { flex: none; }
+  .ar-bar .ar-s { display: inline; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ar-bar .ar-s:empty { display: none; }
+  .ar-recb i { width: 12px; height: 12px; }
+  .ar-bar .ar-len { padding: 0 10px; font-variant-numeric: tabular-nums; }
+}

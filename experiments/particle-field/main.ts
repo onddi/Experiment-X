@@ -14656,7 +14656,7 @@ function toggleArrange(on = !arranging) {
   if (sheetMode() && !panel.classList.contains('collapsed')) toggle.click();
   const el = document.createElement('div');
   el.className = 'arrange';
-  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on">Move</button><button type="button" data-m="orbit">Turn 3D</button></span><button type="button" class="ar-centre">Centre</button><button type="button" class="ar-lite" aria-pressed="false" title="Hide trails, lenses and glow while you arrange, so dragging stays smooth">Shape only</button><span class="ar-rec" role="group" aria-label="Record a move"><button type="button" class="ar-len" title="Loop length">4 bars</button><button type="button" class="ar-recb"><i></i><span>Record</span></button><button type="button" class="ar-clear" title="Stop the recorded moves">Clear moves</button></span><button type="button" class="ar-done">Done</button></div>`;
+  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on" aria-label="Move"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 7.8 4.7M10 2.5l2.2 2.2M10 17.5l-2.2-2.2M10 17.5l2.2-2.2M2.5 10l2.2-2.2M2.5 10l2.2 2.2M17.5 10l-2.2-2.2M17.5 10l-2.2 2.2"/></svg><span class="ar-t">Move</span></button><button type="button" data-m="orbit" aria-label="Turn 3D"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="10" cy="10" rx="7.5" ry="3.2"/><path d="M14.6 4.6 17 6.9l-2.6 1"/></svg><span class="ar-t">Turn 3D</span></button></span><button type="button" class="ar-centre" aria-label="Centre"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M10 1.8v3.4M10 14.8v3.4M1.8 10h3.4M14.8 10h3.4"/><circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/></svg><span class="ar-t">Centre</span></button><button type="button" class="ar-lite" aria-pressed="false" aria-label="Shape only" title="Hide trails, lenses and glow while you arrange, so dragging stays smooth"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 17 10 10 17 3 10Z"/></svg><span class="ar-t">Shape only</span></button><span class="ar-rec" role="group" aria-label="Record a move"><button type="button" class="ar-len" title="Loop length">4 bars</button><button type="button" class="ar-recb" aria-label="Record a move"><i></i><span class="ar-t"></span><b class="ar-s"></b></button><button type="button" class="ar-clear" aria-label="Clear moves" title="Stop the recorded moves"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg><span class="ar-t">Clear moves</span></button></span><button type="button" class="ar-done" aria-label="Done"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5 8.3 14 15.5 6"/></svg><span class="ar-t">Done</span></button></div>`;
   document.body.append(el);
   arrangeEl = el;
   let mode: 'move' | 'orbit' = 'move';
@@ -14699,10 +14699,14 @@ function toggleArrange(on = !arranging) {
     lenB.textContent = cycleLabel(bars);
     lenB.disabled = !!r;
     recB.classList.toggle('live', !!r);
-    const lbl = recB.querySelector('span')!;
-    if (!r) lbl.textContent = 'Record';
-    else if (animBeat < r.from) lbl.textContent = `Starts in ${Math.max(1, Math.ceil(r.from - animBeat))}…`;
-    else lbl.textContent = `Recording ${Math.min(bars, Math.floor((animBeat - r.from) / 4) + 1)} / ${bars}`;
+    const lbl = recB.querySelector<HTMLElement>('.ar-t')!;
+    const short = recB.querySelector<HTMLElement>('.ar-s')!;
+    const n = r ? Math.min(bars, Math.floor((animBeat - r.from) / 4) + 1) : 0;
+    const wait = r ? Math.max(1, Math.ceil(r.from - animBeat)) : 0;
+    if (!r) { lbl.textContent = 'Record'; short.textContent = ''; }
+    else if (animBeat < r.from) { lbl.textContent = `Starts in ${wait}…`; short.textContent = `${wait}…`; }
+    else { lbl.textContent = `Recording ${n} / ${bars}`; short.textContent = `${n}/${bars}`; }
+    recB.setAttribute('aria-label', r ? lbl.textContent : 'Record a move');
     recB.classList.toggle('waiting', !!r && animBeat < r.from);
     el.classList.toggle('recording', !!r);
     if (r) hint.textContent = animBeat < r.from ? 'Get ready: it records from the next bar' : 'Move it now, the loop is recording';
