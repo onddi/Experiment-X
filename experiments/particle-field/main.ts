@@ -3895,7 +3895,7 @@ function audioSizeBoost() {
 
 // --- sprites -----------------------------------------------------------------
 
-type SpriteStyle = 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles';
+type SpriteStyle = 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'neon' | 'flare' | 'ink' | 'bubbles' | 'stars';
 // scale: drawn size relative to the Size setting; alpha: overall opacity.
 const SPRITES: Record<SpriteStyle, { scale: number; alpha: number }> = {
   circles: { scale: 1.4, alpha: 1 },
@@ -3903,7 +3903,14 @@ const SPRITES: Record<SpriteStyle, { scale: number; alpha: number }> = {
   bokeh: { scale: 10, alpha: 0.35 },
   rings: { scale: 4, alpha: 0.9 },
   sparkles: { scale: 6, alpha: 1 },
+  neon: { scale: 7, alpha: 1 },
+  flare: { scale: 9, alpha: 1 },
+  ink: { scale: 13, alpha: 0.22 },
+  bubbles: { scale: 5, alpha: 1 },
+  stars: { scale: 3.2, alpha: 1 },
 };
+// Styles that twinkle or flicker per particle (sized one by one).
+const FLICKER = new Set(['stars', 'flare']);
 const SPRITE_PX = 48;
 const spriteCache = new Map<string, HTMLCanvasElement>();
 
@@ -3960,6 +3967,65 @@ function spriteFor(style: SpriteStyle, k: number) {
     g.beginPath();
     g.arc(m, m, m * 0.8, 0, Math.PI * 2);
     g.stroke();
+  } else if (style === 'neon') {
+    // A white-hot core in a tube of colour, then a wide soft halo.
+    const grad = g.createRadialGradient(m, m, 0, m, m, m);
+    grad.addColorStop(0, '#fff');
+    grad.addColorStop(0.07, '#fff');
+    grad.addColorStop(0.14, col);
+    grad.addColorStop(0.22, withAlpha(col, 0.55));
+    grad.addColorStop(0.5, withAlpha(col, 0.12));
+    grad.addColorStop(1, withAlpha(col, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+  } else if (style === 'flare') {
+    // A glow with a thin cross, like a lens catching a bright light.
+    const grad = g.createRadialGradient(m, m, 0, m, m, m * 0.45);
+    grad.addColorStop(0, '#fff');
+    grad.addColorStop(0.25, col);
+    grad.addColorStop(1, withAlpha(col, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+    for (const [w, h] of [[m * 2, 1.4], [1.4, m * 2]]) {
+      const lg = w > h ? g.createLinearGradient(0, m, SPRITE_PX, m) : g.createLinearGradient(m, 0, m, SPRITE_PX);
+      lg.addColorStop(0, withAlpha(col, 0));
+      lg.addColorStop(0.5, '#fff');
+      lg.addColorStop(1, withAlpha(col, 0));
+      g.fillStyle = lg;
+      g.fillRect(m - w / 2, m - h / 2, w, h);
+    }
+  } else if (style === 'ink') {
+    // A soft wash with no edge: overlapping ones blend like watercolour.
+    const grad = g.createRadialGradient(m, m, 0, m, m, m);
+    grad.addColorStop(0, withAlpha(col, 0.9));
+    grad.addColorStop(0.55, withAlpha(col, 0.45));
+    grad.addColorStop(1, withAlpha(col, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+  } else if (style === 'bubbles') {
+    // See-through: a faint fill, a rim and a small highlight.
+    g.fillStyle = withAlpha(col, 0.1);
+    g.beginPath();
+    g.arc(m, m, m * 0.9, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = withAlpha(col, 0.85);
+    g.lineWidth = SPRITE_PX * 0.04;
+    g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.beginPath();
+    g.ellipse(m - m * 0.35, m - m * 0.4, m * 0.16, m * 0.09, -0.7, 0, Math.PI * 2);
+    g.fill();
+  } else if (style === 'stars') {
+    // A five-point star.
+    g.fillStyle = col;
+    g.beginPath();
+    for (let p = 0; p < 10; p++) {
+      const a = (p * Math.PI) / 5 - Math.PI / 2;
+      const r = p % 2 ? m * 0.42 : m * 0.98;
+      g.lineTo(m + Math.cos(a) * r, m + Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fill();
   } else {
     // Sparkle: a four-point star with a soft halo.
     const grad = g.createRadialGradient(m, m, 0, m, m, m * 0.5);
@@ -4098,7 +4164,22 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     const img = spriteFor(style as SpriteStyle, k);
     const d0 = s * sprite.scale;
     ctx.globalAlpha = sprite.alpha;
-    if (uniformSize) {
+    if (FLICKER.has(style)) {
+      // Twinkle: each one swells and dims on its own rhythm.
+      for (const i of list) {
+        const tw = 0.55 + 0.45 * Math.sin(t * (2 + rnd[i] * 4) + gl[i] * 6.28);
+        const d = d0 * (uniformSize ? 1 : psz[i]) * (0.6 + 0.5 * tw);
+        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      }
+    } else if (style === 'bubbles' && settings.lifespan > 0) {
+      // Bubbles grow a little with age and pop (vanish) at the end.
+      for (const i of list) {
+        const lt = span[i] > 0 ? Math.min(1, age[i] / span[i]) : 0.5;
+        if (lt > 0.97) continue;
+        const d = d0 * (uniformSize ? 1 : psz[i]) * (0.7 + 0.5 * lt);
+        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      }
+    } else if (uniformSize) {
       // Same size for all: stamp a copy pre-scaled to the exact device size,
       // so the browser copies pixels 1:1 instead of resampling each stamp.
       const pre = scaledSprite(img, `${style}:${k}`, d0);
@@ -4150,6 +4231,44 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     drawGlyphs(list, k, s);
   } else if (style === 'ribbons') {
     drawRibbons(list, k, s);
+  } else if (style === 'squares' || style === 'crosses' || style === 'shards' || style === 'petals') {
+    drawShapes(style, list, k, s);
+  } else if (style === 'embers') {
+    // Hot white cores that cool to their colour, flickering.
+    const img = spriteFor('glow', k);
+    for (const i of list) {
+      const fl = 0.7 + 0.3 * Math.sin(t * 9 + gl[i] * 40) * Math.sin(t * 3.1 + rnd[i] * 20);
+      const d = s * 4.5 * (uniformSize ? 1 : psz[i]) * fl;
+      ctx.globalAlpha = 0.55 + 0.45 * fl;
+      ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(255,240,220,0.9)';
+    ctx.beginPath();
+    for (const i of list) {
+      const lt = span[i] > 0 ? Math.min(1, age[i] / span[i]) : 0.2;
+      if (lt > 0.5) continue;
+      const r = s * 0.45 * (1 - lt * 2);
+      ctx.rect(px[i] - r, py[i] - r, r * 2, r * 2);
+    }
+    ctx.fill();
+  } else if (style === 'hair') {
+    // Short fixed-length strands leaning the way each particle moves.
+    ctx.strokeStyle = shades[k];
+    ctx.lineWidth = Math.max(0.6, s * 0.35);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (const i of list) {
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      const L = s * 5 * (uniformSize ? 1 : psz[i]);
+      const ux = vx[i] / v;
+      const uy = vy[i] / v;
+      ctx.moveTo(px[i] - ux * L * 0.5, py[i] - uy * L * 0.5);
+      ctx.quadraticCurveTo(px[i] + uy * L * 0.15, py[i] - ux * L * 0.15, px[i] + ux * L * 0.5, py[i] + uy * L * 0.5);
+    }
+    ctx.stroke();
+  } else if (style === 'threads' || style === 'lightning') {
+    drawPairs(style, list, k, s);
   } else if (style === 'streaks') {
     ctx.strokeStyle = shades[k];
     ctx.lineWidth = s;
@@ -4174,9 +4293,178 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
   }
 }
 
+// Squares (tumbling confetti), crosses, shards (thin triangles pointing
+// where they head) and petals (turning slowly): one path per colour.
+function drawShapes(style: string, list: number[], k: number, s: number) {
+  ctx.fillStyle = shades[k];
+  ctx.beginPath();
+  for (const i of list) {
+    const z = s * (uniformSize ? 1 : psz[i]);
+    const x = px[i];
+    const y = py[i];
+    if (style === 'squares') {
+      const a = t * (1 + rnd[i] * 3) * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+      const h = z * 1.3;
+      // Tumbling: one side squashes as it turns in 3D.
+      const sq = Math.abs(Math.cos(t * (0.8 + rnd[i]) + gl[i] * 9));
+      const c = Math.cos(a) * h;
+      const sn = Math.sin(a) * h;
+      ctx.moveTo(x + c - sn * sq, y + sn + c * sq);
+      ctx.lineTo(x - c - sn * sq, y - sn + c * sq);
+      ctx.lineTo(x - c + sn * sq, y - sn - c * sq);
+      ctx.lineTo(x + c + sn * sq, y + sn - c * sq);
+      ctx.closePath();
+    } else if (style === 'crosses') {
+      const L = z * 1.6;
+      const w = Math.max(0.6, z * 0.4);
+      ctx.rect(x - L, y - w / 2, L * 2, w);
+      ctx.rect(x - w / 2, y - L, w, L * 2);
+    } else if (style === 'shards') {
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      const ux = vx[i] / v;
+      const uy = vy[i] / v;
+      const L = z * (2.4 + rnd[i] * 2);
+      const W = z * (0.25 + gl[i] * 0.4);
+      ctx.moveTo(x + ux * L, y + uy * L);
+      ctx.lineTo(x - ux * L * 0.5 - uy * W, y - uy * L * 0.5 + ux * W);
+      ctx.lineTo(x - ux * L * 0.8 + uy * W * 0.4, y - uy * L * 0.8 - ux * W * 0.4);
+      ctx.closePath();
+    } else {
+      const a = t * 0.6 * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+      const r = z * 1.6;
+      ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      ctx.ellipse(x, y, r, r * 0.45, a, 0, Math.PI * 2);
+    }
+  }
+  ctx.fill();
+}
+
+// Threads and lightning join near neighbours (a grid finds them): threads
+// sag softly and snap when stretched, lightning zig-zags and flickers.
+const pairCells = new Map<number, number[]>();
+// Neighbours come from every colour, so links cross colours. The grid is
+// built once per pass (buildPairs) and the reach follows the spacing.
+let pairMaxD = 40;
+function buildPairs(style: string, bks: number[][], s: number) {
+  let n = 0;
+  for (const l of bks) n += l.length;
+  const spacing = Math.sqrt((w * h) / Math.max(1, n));
+  pairMaxD = Math.max(style === 'threads' ? 24 + s * 8 : 36 + s * 10, Math.min(160, spacing * (style === 'threads' ? 1.5 : 1.3)));
+  pairCells.clear();
+  for (const list of bks)
+    for (const i of list) {
+      const key = ((px[i] / pairMaxD) | 0) * 4096 + ((py[i] / pairMaxD) | 0);
+      const c = pairCells.get(key);
+      if (c) c.push(i);
+      else pairCells.set(key, [i]);
+    }
+}
+function drawPairs(style: string, list: number[], k: number, s: number) {
+  const maxD = pairMaxD;
+  const cell = maxD;
+  ctx.strokeStyle = shades[k];
+  ctx.lineCap = 'round';
+  ctx.lineWidth = style === 'threads' ? Math.max(0.5, s * 0.3) : Math.max(0.7, s * 0.45);
+  ctx.beginPath();
+  const per = style === 'threads' ? 2 : 1;
+  for (const i of list) {
+    const cx = (px[i] / cell) | 0;
+    const cy = (py[i] / cell) | 0;
+    let made = 0;
+    for (let dx = 0; dx <= 1 && made < per; dx++)
+      for (let dy = dx ? -1 : 0; dy <= 1 && made < per; dy++) {
+        const c = pairCells.get((cx + dx) * 4096 + cy + dy);
+        if (!c) continue;
+        for (const j of c) {
+          if (j <= i && dx === 0 && dy === 0) continue;
+          const ex = px[j] - px[i];
+          const ey = py[j] - py[i];
+          const d = Math.hypot(ex, ey);
+          if (d > maxD || d < 2) continue;
+          if (style === 'threads') {
+            // Sags more the looser it is.
+            const sag = (1 - d / maxD) * d * 0.35;
+            ctx.moveTo(px[i], py[i]);
+            ctx.quadraticCurveTo(px[i] + ex / 2, py[i] + ey / 2 + sag, px[j], py[j]);
+          } else {
+            if (Math.random() < 0.45) continue;
+            const nx = -ey / d;
+            const ny = ex / d;
+            ctx.moveTo(px[i], py[i]);
+            for (let q = 1; q < 4; q++) {
+              const j0 = (Math.random() - 0.5) * d * 0.35;
+              ctx.lineTo(px[i] + (ex * q) / 4 + nx * j0, py[i] + (ey * q) / 4 + ny * j0);
+            }
+            ctx.lineTo(px[j], py[j]);
+          }
+          if (++made >= per) break;
+        }
+      }
+  }
+  if (style === 'lightning') {
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // A bright dot at each particle.
+    ctx.fillStyle = shades[k];
+    ctx.beginPath();
+    for (const i of list) ctx.rect(px[i] - s * 0.4, py[i] - s * 0.4, s * 0.8, s * 0.8);
+    ctx.fill();
+  } else ctx.stroke();
+}
+
+// Halftone (dots on a fixed grid, bigger where more particles are) and big
+// pixels (chunky grid-snapped squares, an 8-bit look).
+const gridCount = new Map<number, number>();
+const gridShade = new Map<number, number>();
+// One pass over every colour: each cell is drawn once, in the colour most of
+// its particles have (the last one counted wins ties), so dots don't stack.
+function drawGrid(style: string, bks: number[][], s: number) {
+  let n = 0;
+  for (const l of bks) n += l.length;
+  const spacing = Math.sqrt((w * h) / Math.max(1, n));
+  const cell = style === 'halftone' ? Math.max(6, s * 4, Math.min(28, spacing * 1.4)) : Math.max(4, s * 3.2);
+  gridCount.clear();
+  gridShade.clear();
+  const best = new Map<number, number>();
+  for (let k = 0; k < bks.length; k++) {
+    const seen = new Map<number, number>();
+    for (const i of bks[k]) {
+      const key = Math.floor(px[i] / cell) * 8192 + Math.floor(py[i] / cell);
+      gridCount.set(key, (gridCount.get(key) ?? 0) + 1);
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    for (const [key, c] of seen)
+      if (c >= (best.get(key) ?? 0)) {
+        best.set(key, c);
+        gridShade.set(key, k);
+      }
+  }
+  for (let k = 0; k < bks.length; k++) {
+    let any = false;
+    for (const [key, c] of gridCount) {
+      if (gridShade.get(key) !== k) continue;
+      if (!any) {
+        ctx.fillStyle = shades[k];
+        ctx.beginPath();
+        any = true;
+      }
+      const gx = Math.floor(key / 8192) * cell;
+      const gy = (key - Math.floor(key / 8192) * 8192) * cell;
+      if (style === 'halftone') {
+        const r = Math.min(cell * 0.6, cell * 0.2 * Math.sqrt(c) + cell * 0.08);
+        ctx.moveTo(gx + cell / 2 + r, gy + cell / 2);
+        ctx.arc(gx + cell / 2, gy + cell / 2, r, 0, Math.PI * 2);
+      } else ctx.rect(gx + 0.5, gy + 0.5, cell - 1, cell - 1);
+    }
+    if (any) ctx.fill();
+  }
+}
+
 const MIXABLE: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
+  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'], ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'], ['hair', 'Hair'], ['ink', 'Ink'], ['bubbles', 'Bubbles'],
 ];
 
 function mixStyles(): Render[] {
@@ -4243,6 +4531,8 @@ function drawBuckets(bks: number[][], s: number) {
       if (merged.length) drawRibbons(merged, k + 2, s);
     }
   } else {
+    if (settings.render === 'halftone' || settings.render === 'bigpixels') return drawGrid(settings.render, bks, s);
+    if (settings.render === 'threads' || settings.render === 'lightning') buildPairs(settings.render, bks, s);
     for (let k = 0; k < SHADES; k++) if (bks[k].length) drawStyle(settings.render, bks[k], k, s);
   }
 }
@@ -5642,7 +5932,12 @@ const CLICK_MODES: [string, string][] = [['implodeHold', 'Implode & burst (hold)
 const RENDERS: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
-  ['links', 'Constellation'], ['mixed', 'Mixed'],
+  ['links', 'Constellation'],
+  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'],
+  ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'],
+  ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
+  ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'],
+  ['mixed', 'Mixed'],
 ];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
 
