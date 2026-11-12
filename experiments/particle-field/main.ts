@@ -627,7 +627,8 @@ let holdRingAt = 0;
 const holdCharge = () => Math.min(1, (performance.now() - holdImplodeAt) / 3000);
 const release = (e: PointerEvent) => {
   if (pointer.down && holdImplodeAt && settings.click === 'implodeHold') {
-    explode(pointer.x, pointer.y, (0.45 + holdCharge() * 0.9) * settings.clickForce);
+    // A tap pops; a full 3 s hold bursts about nine times as hard.
+    explode(pointer.x, pointer.y, (0.15 + holdCharge() ** 1.3 * 1.2) * settings.clickForce);
     holdImplodeAt = 0;
   }
   pointer.down = false;
