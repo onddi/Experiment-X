@@ -2350,3 +2350,27 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
   .scene-sheet::after { content: ''; flex: none; height: calc(92px + env(safe-area-inset-bottom)); }
   .scene-sheet.mini::after { height: calc(84px + env(safe-area-inset-bottom)); }
 }
+/* Scene sheet with music on: Scenes / Vibes tabs naming their current pick. */
+.ss-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: rgb(0 0 0 / 0.3); border: 1px solid var(--line); flex: none; }
+.ss-tabs[hidden] { display: none; }
+.ss-tabs button { display: flex; align-items: center; gap: 10px; min-width: 0; height: 52px; padding: 0 12px; border: 0; border-radius: 12px; background: none; color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
+.ss-tabs button svg { flex: none; }
+.ss-tabs button span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ss-tabs button small { font-size: 12px; }
+.ss-tabs button b { font-size: 14px; font-weight: 600; color: var(--label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-tabs button.on { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-line); color: var(--accent-soft); }
+.ss-tabs button.on b { color: var(--text); }
+.ss-list.vibes { grid-template-columns: 1fr; }
+.ss-list.vibes button { height: auto; min-height: 44px; padding: 8px 12px; display: flex; flex-direction: column; justify-content: center; gap: 2px; white-space: normal; }
+.ss-list.vibes button b { font-size: 14px; font-weight: 600; }
+.ss-list.vibes button small { font-size: 12px; color: var(--muted); }
+.ss-vlook { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; padding: 6px 2px; border: 0; background: none; color: var(--label); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.ss-vlook[hidden] { display: none; }
+.ss-vlook i { flex: none; width: 40px; height: 24px; border-radius: 12px; background: var(--tile); position: relative; transition: background 0.15s; }
+.ss-vlook i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--label); transition: transform 0.15s; }
+.ss-vlook[aria-checked="true"] i { background: var(--accent); }
+.ss-vlook[aria-checked="true"] i::after { transform: translateX(16px); background: #fff; }
+/* Bar: a note badge on the scene name while a vibe plays. */
+.u-seg button .u-vibe { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; margin-left: 7px; border-radius: 50%; background: var(--accent); color: #0b0b10; font-style: normal; }
+/* Phones: the bar is full, so the badge sits on the button's corner and takes no width. */
+@media (max-width: 720px) { .u-seg button[data-v="stage"] { position: relative; } .u-seg button.named .u-vibe { position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; margin: 0; } .u-seg button.named .u-vibe svg { display: block !important; width: 8px; height: 8px; } }
