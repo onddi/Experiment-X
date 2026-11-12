@@ -5795,6 +5795,7 @@ function frame(now: number) {
   audio.vox = settings.audioVox;
   audio.sync = settings.audioSync;
   audio.update(now);
+  badgeTick();
   if (!frozen) {
     updateGlyphs();
     cameraTick(now);
@@ -14910,6 +14911,21 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 addEventListener('keydown', (e) => e.key === 'Escape' && sceneSheetEl && closeSceneSheet());
 // The name on the Stage button, kept current.
+let vibeBadge: HTMLElement | null = null;
+let badgeBounce = 0;
+const calmMotion = matchMedia('(prefers-reduced-motion: reduce)');
+// Each frame: the badge hops on hits and swells with the loudness.
+function badgeTick() {
+  const b = vibeBadge;
+  if (!b || !b.isConnected) return;
+  const L = audio.levels;
+  const hit = Math.max(L.pulse, L.snareEnv * 0.8);
+  badgeBounce = Math.max(badgeBounce * 0.85, hit);
+  const lift = calmMotion.matches ? 0 : Math.min(3, badgeBounce * 2.5 + L.level);
+  const grow = 1 + (calmMotion.matches ? 0 : badgeBounce * 0.3 + L.level * 0.12);
+  b.style.transform = `translateY(${(-lift).toFixed(1)}px) scale(${grow.toFixed(3)})`;
+  b.style.opacity = String(0.55 + Math.min(1, L.level * 1.4 + badgeBounce) * 0.45);
+}
 function stageName() {
   const b = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]');
   if (!b) return;
@@ -14923,8 +14939,9 @@ function stageName() {
     b.setAttribute('aria-label', onStage ? `Scene ${name}, open scenes` : 'Stage');
     uPaint(true);
   }
-  // A small note badge while a vibe plays with the music.
-  const vibeOn = onStage && musicOn() && !!settings.audioVibe && !vibeIsOff();
+  // A small note badge while a sound source is on: filled while a vibe
+  // plays, hollow with vibes off. It bounces with what it hears.
+  const vibeOn = onStage && musicOn();
   let badge = b.querySelector<HTMLElement>('.u-vibe');
   if (vibeOn && !badge) {
     badge = document.createElement('i');
@@ -14936,7 +14953,12 @@ function stageName() {
     badge.remove();
     uPaint(true);
   }
-  if (badge && vibeOn) badge.title = `Vibe: ${vibeLabel()}`;
+  if (badge && vibeOn) {
+    const off = vibeIsOff() || !settings.audioVibe;
+    badge.classList.toggle('off', off);
+    badge.title = off ? 'Listening (no vibe)' : `Vibe: ${vibeLabel()}`;
+  }
+  vibeBadge = vibeOn ? badge : null;
   if (!onStage && sceneSheetEl) closeSceneSheet();
 }
 setInterval(stageName, 300);

@@ -2374,3 +2374,4 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .u-seg button .u-vibe { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; margin-left: 7px; border-radius: 50%; background: var(--accent); color: #0b0b10; font-style: normal; }
 /* Phones: the bar is full, so the badge sits on the button's corner and takes no width. */
 @media (max-width: 720px) { .u-seg button[data-v="stage"] { position: relative; } .u-seg button.named .u-vibe { position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; margin: 0; } .u-seg button.named .u-vibe svg { display: block !important; width: 8px; height: 8px; } }
+.u-seg button .u-vibe.off { background: none; color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
