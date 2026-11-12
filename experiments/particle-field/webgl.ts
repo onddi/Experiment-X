@@ -22,17 +22,19 @@ const SLOT = CELL + PAD * 2;
 const ATLAS = 2048;
 const PER_ROW = (ATLAS / SLOT) | 0;
 const MAX_CELLS = PER_ROW * PER_ROW;
-// Per instance: x, y, width, height, angle, alpha, cell u, cell v.
-const STRIDE = 8;
+// Per instance: x, y, width, height, angle, alpha, cell u, cell v, tint (0xRRGGBB).
+const STRIDE = 9;
 
 const VS = `#version 300 es
 in vec2 corner;
 in vec4 inst; // x, y, width, height (CSS px)
 in vec2 turn; // angle, alpha
 in vec2 cell; // atlas cell origin, 0..1
+in float tint; // 0xRRGGBB, multiplied in (white sprites take any colour)
 uniform vec2 view; // canvas size in CSS px
 out vec2 uv;
 out float alpha;
+out vec3 tcol;
 void main() {
   vec2 l = (corner - 0.5) * inst.zw;
   float c = cos(turn.x);
@@ -41,15 +43,18 @@ void main() {
   gl_Position = vec4(p / view * vec2(2.0, -2.0) + vec2(-1.0, 1.0), 0.0, 1.0);
   uv = cell + corner * ${(CELL / ATLAS).toFixed(8)};
   alpha = turn.y;
+  tcol = vec3(floor(tint / 65536.0), mod(floor(tint / 256.0), 256.0), mod(tint, 256.0)) / 255.0;
 }`;
 const FS = `#version 300 es
 precision mediump float;
 in vec2 uv;
 in float alpha;
+in vec3 tcol;
 uniform sampler2D atlas;
 out vec4 col;
 void main() {
-  col = texture(atlas, uv) * alpha;
+  vec4 t = texture(atlas, uv);
+  col = vec4(t.rgb * tcol, t.a) * alpha;
 }`;
 
 // Full-screen quads: a flat colour (fades, flashes) or a texture (a layer).
@@ -160,6 +165,7 @@ export class GLSprites {
     attr('inst', 4, 0);
     attr('turn', 2, 4);
     attr('cell', 2, 6);
+    attr('tint', 1, 8);
     gl.bindVertexArray(null);
     this.tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -200,7 +206,7 @@ export class GLSprites {
   }
 
   /** Queue one sprite, centred on x, y, sw × sh px, turned by angle (radians). */
-  pushR(img: HTMLCanvasElement, x: number, y: number, sw: number, sh: number, angle: number, alpha: number) {
+  pushR(img: HTMLCanvasElement, x: number, y: number, sw: number, sh: number, angle: number, alpha: number, tint = 0xffffff) {
     if (this.count * STRIDE >= this.data.length) {
       const next = new Float32Array(this.data.length * 2);
       next.set(this.data);
@@ -217,6 +223,7 @@ export class GLSprites {
     D[o + 5] = alpha;
     D[o + 6] = ((c % PER_ROW) * SLOT + PAD) / ATLAS;
     D[o + 7] = (((c / PER_ROW) | 0) * SLOT + PAD) / ATLAS;
+    D[o + 8] = tint;
   }
 
   get pending() {

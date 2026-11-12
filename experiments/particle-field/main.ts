@@ -1686,6 +1686,7 @@ function recordHistory() {
 // Ribbons: a smooth curve through each particle's recent positions, drawn in
 // three passes that get thinner and fainter towards the tail.
 function drawRibbons(list: number[], k: number, s: number) {
+  const P = penFor();
   const L = histLen;
   if (!L) return;
   // The history is stored unrotated: rotate each point with the camera spin.
@@ -1702,22 +1703,22 @@ function drawRibbons(list: number[], k: number, s: number) {
     ry = h / 2 + dx * sn + dy * c;
     return w / 2 + dx * c - dy * sn;
   };
-  ctx.strokeStyle = shades[k];
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  P.strokeStyle = shades[k];
+  P.lineCap = 'round';
+  P.lineJoin = 'round';
   const PASSES = 2;
   // Stroking cost grows with segments, so long ribbons skip points: at most
   // about 8 segments each, whatever the length.
   const stride = Math.max(1, Math.round(L / 9));
   const per = Math.ceil((L - 1) / PASSES);
-  const a0 = ctx.globalAlpha;
+  const a0 = P.globalAlpha;
   for (let pass = 0; pass < PASSES; pass++) {
     const from = pass * per;
     const to = Math.min(L - 1, from + per);
     if (from >= to) break;
-    ctx.lineWidth = Math.max(0.5, s * (1 - pass * 0.45));
-    ctx.globalAlpha = a0 * (1 - pass * 0.45);
-    ctx.beginPath();
+    P.lineWidth = Math.max(0.5, s * (1 - pass * 0.45));
+    P.globalAlpha = a0 * (1 - pass * 0.45);
+    P.beginPath();
     for (const i of list) {
       const base = i * L;
       // Parallax offset (the history is stored unshifted).
@@ -1727,7 +1728,7 @@ function drawRibbons(list: number[], k: number, s: number) {
       let slot = (histHead - from + L) % L;
       let x0 = rx(hist[(base + slot) * 2] + offx, hist[(base + slot) * 2 + 1] + offy);
       let y0 = ry;
-      ctx.moveTo(x0, y0);
+      P.moveTo(x0, y0);
       for (let q = Math.min(to, from + stride); q <= to; q = q === to ? to + 1 : Math.min(to, q + stride)) {
         slot = (histHead - q + L) % L;
         const x1 = rx(hist[(base + slot) * 2] + offx, hist[(base + slot) * 2 + 1] + offy);
@@ -1736,14 +1737,14 @@ function drawRibbons(list: number[], k: number, s: number) {
         const dy = y1 - y0;
         // A big jump means a wrap or a respawn: break the ribbon there.
         if (dx * dx + dy * dy > 2500 * stride * stride) break;
-        ctx.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+        P.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
         x0 = x1;
         y0 = y1;
       }
     }
-    ctx.stroke();
+    P.stroke();
   }
-  ctx.globalAlpha = a0;
+  P.globalAlpha = a0;
 }
 
 // --- shape (home positions) ------------------------------------------------------
@@ -4503,6 +4504,39 @@ function drawGlyphs(list: number[], k: number, s: number) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
+// Glyphs on the GPU: each character drawn once in white (per font) and
+// tinted per colour, sized and turned per particle like the 2D version.
+const GLYPH_PX = 34;
+function glyphSprite(ch: string) {
+  const key = `glyph:${settings.glyphFont}:${ch}`;
+  let c = spriteCache.get(key);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = SPRITE_PX;
+  const g = c.getContext('2d')!;
+  const f = FONTS[settings.glyphFont];
+  g.font = f.includes('{px}') ? f.replace('{px}', `${GLYPH_PX}px`) : `${GLYPH_PX}px ${f}`;
+  g.fillStyle = '#fff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(ch, SPRITE_PX / 2, SPRITE_PX / 2);
+  spriteCache.set(key, c);
+  return c;
+}
+function drawGlyphsGL(list: number[], k: number, s: number) {
+  const G = glr!;
+  const size = Math.max(6, s * 5 * settings.glyphScale) * (SPRITE_PX / GLYPH_PX);
+  const [r, g, b] = shadeRgb[k];
+  const tint = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+  const A = ctx.globalAlpha;
+  const rot = settings.glyphRotate;
+  for (const i of list) {
+    const a = rot === 'none' ? 0 : rot === 'heading' ? Math.atan2(vy[i], vx[i]) : t * (1 + tone[i] * 2) * (tone[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+    const z = uniformSize ? 1 : Math.exp(glyphLevel(psz[i]) * GLYPH_STEP);
+    G.pushR(glyphSprite(glyphFor(i)), px[i], py[i], size * z, size * z, a, A, tint);
+  }
+}
+
 // Buckets let us draw every particle of one colour in a single path.
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
@@ -4617,7 +4651,7 @@ function stamp(img: HTMLCanvasElement, x: number, y: number, d: number) {
 }
 // GPU versions of the drawn (not stamped) styles: each particle is one
 // sprite, stretched and turned. A cell per shape and colour.
-type GlShape = 'square' | 'disc' | 'tri' | 'cross' | 'shard' | 'strand' | 'white';
+type GlShape = 'square' | 'disc' | 'tri' | 'cross' | 'shard' | 'strand' | 'white' | 'wdisc' | 'ember';
 function glSprite(kind: GlShape, k: number) {
   const key = `gl:${kind}:${k}`;
   let c = spriteCache.get(key);
@@ -4626,11 +4660,11 @@ function glSprite(kind: GlShape, k: number) {
   const P = SPRITE_PX;
   c.width = c.height = P;
   const g = c.getContext('2d')!;
-  g.fillStyle = kind === 'white' ? 'rgba(255,240,220,0.9)' : shades[k];
+  g.fillStyle = kind === 'white' || kind === 'wdisc' ? '#fff' : kind === 'ember' ? 'rgba(255,240,220,0.9)' : shades[k];
   g.strokeStyle = shades[k];
   g.beginPath();
-  if (kind === 'square' || kind === 'white') g.rect(0, 0, P, P);
-  else if (kind === 'disc') g.arc(P / 2, P / 2, P / 2 - 0.5, 0, Math.PI * 2);
+  if (kind === 'square' || kind === 'white' || kind === 'ember') g.rect(0, 0, P, P);
+  else if (kind === 'disc' || kind === 'wdisc') g.arc(P / 2, P / 2, P / 2 - 0.5, 0, Math.PI * 2);
   // Arrow: tip at the right edge, base along the left.
   else if (kind === 'tri') {
     g.moveTo(P, P / 2);
@@ -4665,6 +4699,151 @@ function glSprite(kind: GlShape, k: number) {
   spriteCache.set(key, c);
   return c;
 }
+// A stand-in for the 2D context's path drawing (lines, curves, arcs, rects)
+// that queues GPU sprites instead: strokes become thin stretched squares,
+// filled circles discs. Used for links, threads, lightning, ribbons, grids
+// and markers. Colours come from the style strings (white sprites, tinted).
+const colCache = new Map<string, [number, number]>();
+const colCtx = document.createElement('canvas').getContext('2d')!;
+function parseCol(c: string): [number, number] {
+  let v = colCache.get(c);
+  if (v) return v;
+  colCtx.fillStyle = '#000';
+  colCtx.fillStyle = c;
+  const n = colCtx.fillStyle;
+  let r = 0, g = 0, b = 0, a = 1;
+  if (n.startsWith('#')) {
+    const x = parseInt(n.slice(1), 16);
+    r = x >> 16;
+    g = (x >> 8) & 255;
+    b = x & 255;
+  } else {
+    const m = n.match(/[\d.]+/g)?.map(Number) ?? [];
+    [r, g, b] = m;
+    a = m[3] ?? 1;
+  }
+  v = [(r << 16) | (g << 8) | b, a];
+  if (colCache.size > 400) colCache.clear();
+  colCache.set(c, v);
+  return v;
+}
+type Pen = Pick<CanvasRenderingContext2D, 'beginPath' | 'moveTo' | 'lineTo' | 'quadraticCurveTo' | 'arc' | 'rect' | 'closePath' | 'stroke' | 'fill' | 'setLineDash'> & {
+  strokeStyle: string | CanvasGradient | CanvasPattern;
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  lineWidth: number;
+  globalAlpha: number;
+  lineCap: CanvasLineCap;
+  lineJoin: CanvasLineJoin;
+};
+class GlPen {
+  lineWidth = 1;
+  globalAlpha = 1;
+  lineCap: CanvasLineCap = 'butt';
+  lineJoin: CanvasLineJoin = 'miter';
+  private sc: [number, number] = [0xffffff, 1];
+  private fc: [number, number] = [0xffffff, 1];
+  private paths: number[][] = [];
+  private cur: number[] | null = null;
+  private circles: number[] = [];
+  private rects: number[] = [];
+  set strokeStyle(c: string | CanvasGradient | CanvasPattern) {
+    if (typeof c === 'string') this.sc = parseCol(c);
+  }
+  get strokeStyle() {
+    return '';
+  }
+  set fillStyle(c: string | CanvasGradient | CanvasPattern) {
+    if (typeof c === 'string') this.fc = parseCol(c);
+  }
+  get fillStyle() {
+    return '';
+  }
+  setLineDash() {}
+  beginPath() {
+    this.paths.length = 0;
+    this.cur = null;
+    this.circles.length = 0;
+    this.rects.length = 0;
+  }
+  moveTo(x: number, y: number) {
+    this.cur = [x, y];
+    this.paths.push(this.cur);
+  }
+  lineTo(x: number, y: number) {
+    if (!this.cur) return this.moveTo(x, y);
+    this.cur.push(x, y);
+  }
+  quadraticCurveTo(cx: number, cy: number, x: number, y: number) {
+    if (!this.cur) this.moveTo(cx, cy);
+    const c = this.cur!;
+    const x0 = c[c.length - 2];
+    const y0 = c[c.length - 1];
+    for (let q = 1; q <= 3; q++) {
+      const t = q / 3;
+      const u = 1 - t;
+      c.push(u * u * x0 + 2 * u * t * cx + t * t * x, u * u * y0 + 2 * u * t * cy + t * t * y);
+    }
+  }
+  arc(x: number, y: number, r: number, a0: number, a1: number) {
+    if (Math.abs(a1 - a0) >= Math.PI * 2 - 1e-3) this.circles.push(x, y, r);
+    const n = Math.max(6, Math.min(48, Math.ceil((Math.abs(a1 - a0) * Math.max(r, 1)) / 5)));
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + ((a1 - a0) * i) / n;
+      if (i === 0 && !this.cur) this.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      else this.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    }
+  }
+  rect(x: number, y: number, w0: number, h0: number) {
+    this.rects.push(x, y, w0, h0);
+    this.moveTo(x, y);
+    this.lineTo(x + w0, y);
+    this.lineTo(x + w0, y + h0);
+    this.lineTo(x, y + h0);
+    this.closePath();
+  }
+  closePath() {
+    if (this.cur && this.cur.length > 2) this.cur.push(this.cur[0], this.cur[1]);
+    this.cur = null;
+  }
+  stroke() {
+    const G = glr!;
+    const img = glSprite('white', 0);
+    const lw = this.lineWidth;
+    const a = this.sc[1] * this.globalAlpha;
+    if (a <= 0) return;
+    const ext = this.lineCap === 'round' ? lw * 0.5 : 0;
+    for (const p of this.paths)
+      for (let i = 2; i < p.length; i += 2) {
+        const dx = p[i] - p[i - 2];
+        const dy = p[i + 1] - p[i - 1];
+        const len = Math.hypot(dx, dy);
+        if (len < 0.01) continue;
+        G.pushR(img, (p[i] + p[i - 2]) / 2, (p[i + 1] + p[i - 1]) / 2, len + ext, lw, Math.atan2(dy, dx), a, this.sc[0]);
+      }
+  }
+  fill() {
+    const G = glr!;
+    const a = this.fc[1] * this.globalAlpha;
+    if (a <= 0) return;
+    const disc = glSprite('wdisc', 0);
+    const sq = glSprite('white', 0);
+    const C = this.circles;
+    for (let i = 0; i < C.length; i += 3) G.pushR(disc, C[i], C[i + 1], C[i + 2] * 2, C[i + 2] * 2, 0, a, this.fc[0]);
+    const R = this.rects;
+    for (let i = 0; i < R.length; i += 4) G.pushR(sq, R[i] + R[i + 2] / 2, R[i + 1] + R[i + 3] / 2, Math.abs(R[i + 2]), Math.abs(R[i + 3]), 0, a, this.fc[0]);
+  }
+}
+const glPen = new GlPen();
+// The pen for path drawing: the GPU one with WebGL (gpu: only when the GPU
+// picture is on, for things drawn after the particles are flushed).
+function penFor(late = false): Pen {
+  if (glr && (!late || glOnly)) {
+    glPen.globalAlpha = ctx.globalAlpha;
+    return glPen;
+  }
+  return ctx;
+}
+
 function glShape(style: Render, list: number[], k: number, s: number) {
   const G = glr!;
   const A = ctx.globalAlpha;
@@ -4701,7 +4880,7 @@ function glShape(style: Render, list: number[], k: number, s: number) {
     }
   } else if (style === 'embers') {
     const img = spriteFor('glow', k);
-    const core = glSprite('white', k);
+    const core = glSprite('ember', k);
     for (const i of list) {
       const fl = 0.7 + 0.3 * Math.sin(t * 9 + gl[i] * 40) * Math.sin(t * 3.1 + rnd[i] * 20);
       const d = s * 4.5 * (uniformSize ? 1 : psz[i]) * fl;
@@ -4749,7 +4928,10 @@ function glShape(style: Render, list: number[], k: number, s: number) {
       const r = sz(i) * 1.6;
       G.pushR(img, px[i], py[i], r * 2, r * 0.9, a, A);
     }
-  } else return false;
+  } else if (style === 'threads' || style === 'lightning') drawPairs(style, list, k, s);
+  else if (style === 'ribbons') drawRibbons(list, k, s);
+  else if (style === 'glyphs') drawGlyphsGL(list, k, s);
+  else return false;
   return true;
 }
 function drawStyle(style: Render, list: number[], k: number, s: number) {
@@ -4960,12 +5142,13 @@ function buildPairs(style: string, bks: number[][], s: number) {
     }
 }
 function drawPairs(style: string, list: number[], k: number, s: number) {
+  const P = penFor();
   const maxD = pairMaxD;
   const cell = maxD;
-  ctx.strokeStyle = shades[k];
-  ctx.lineCap = 'round';
-  ctx.lineWidth = style === 'threads' ? Math.max(0.5, s * 0.3) : Math.max(0.7, s * 0.45);
-  ctx.beginPath();
+  P.strokeStyle = shades[k];
+  P.lineCap = 'round';
+  P.lineWidth = style === 'threads' ? Math.max(0.5, s * 0.3) : Math.max(0.7, s * 0.45);
+  P.beginPath();
   const per = style === 'threads' ? 2 : 1;
   for (const i of list) {
     const cx = (px[i] / cell) | 0;
@@ -4984,33 +5167,33 @@ function drawPairs(style: string, list: number[], k: number, s: number) {
           if (style === 'threads') {
             // Sags more the looser it is.
             const sag = (1 - d / maxD) * d * 0.35;
-            ctx.moveTo(px[i], py[i]);
-            ctx.quadraticCurveTo(px[i] + ex / 2, py[i] + ey / 2 + sag, px[j], py[j]);
+            P.moveTo(px[i], py[i]);
+            P.quadraticCurveTo(px[i] + ex / 2, py[i] + ey / 2 + sag, px[j], py[j]);
           } else {
             if (Math.random() < 0.45) continue;
             const nx = -ey / d;
             const ny = ex / d;
-            ctx.moveTo(px[i], py[i]);
+            P.moveTo(px[i], py[i]);
             for (let q = 1; q < 4; q++) {
               const j0 = (Math.random() - 0.5) * d * 0.35;
-              ctx.lineTo(px[i] + (ex * q) / 4 + nx * j0, py[i] + (ey * q) / 4 + ny * j0);
+              P.lineTo(px[i] + (ex * q) / 4 + nx * j0, py[i] + (ey * q) / 4 + ny * j0);
             }
-            ctx.lineTo(px[j], py[j]);
+            P.lineTo(px[j], py[j]);
           }
           if (++made >= per) break;
         }
       }
   }
   if (style === 'lightning') {
-    ctx.globalAlpha = 0.9;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    P.globalAlpha = 0.9;
+    P.stroke();
+    P.globalAlpha = 1;
     // A bright dot at each particle.
-    ctx.fillStyle = shades[k];
-    ctx.beginPath();
-    for (const i of list) ctx.rect(px[i] - s * 0.4, py[i] - s * 0.4, s * 0.8, s * 0.8);
-    ctx.fill();
-  } else ctx.stroke();
+    P.fillStyle = shades[k];
+    P.beginPath();
+    for (const i of list) P.rect(px[i] - s * 0.4, py[i] - s * 0.4, s * 0.8, s * 0.8);
+    P.fill();
+  } else P.stroke();
 }
 
 // Halftone (dots on a fixed grid, bigger where more particles are) and big
@@ -5040,24 +5223,25 @@ function drawGrid(style: string, bks: number[][], s: number) {
         gridShade.set(key, k);
       }
   }
+  const P = penFor();
   for (let k = 0; k < bks.length; k++) {
     let any = false;
     for (const [key, c] of gridCount) {
       if (gridShade.get(key) !== k) continue;
       if (!any) {
-        ctx.fillStyle = shades[k];
-        ctx.beginPath();
+        P.fillStyle = shades[k];
+        P.beginPath();
         any = true;
       }
       const gx = Math.floor(key / 8192) * cell;
       const gy = (key - Math.floor(key / 8192) * 8192) * cell;
       if (style === 'halftone') {
         const r = Math.min(cell * 0.6, cell * 0.2 * Math.sqrt(c) + cell * 0.08);
-        ctx.moveTo(gx + cell / 2 + r, gy + cell / 2);
-        ctx.arc(gx + cell / 2, gy + cell / 2, r, 0, Math.PI * 2);
-      } else ctx.rect(gx + 0.5, gy + 0.5, cell - 1, cell - 1);
+        P.moveTo(gx + cell / 2 + r, gy + cell / 2);
+        P.arc(gx + cell / 2, gy + cell / 2, r, 0, Math.PI * 2);
+      } else P.rect(gx + 0.5, gy + 0.5, cell - 1, cell - 1);
     }
-    if (any) ctx.fill();
+    if (any) P.fill();
   }
 }
 
@@ -5122,7 +5306,6 @@ function drawBuckets(bks: number[][], s: number) {
       mix.forEach((st, m) => parts[m].length && drawStyle(st, parts[m], k, s));
     }
   } else if (settings.render === 'ribbons') {
-    if (glOnly) glDirty2d = true;
     // Each ribbon pass is a separate stroke, so merge colour buckets into
     // groups of four to keep the number of strokes down.
     for (let k = 0; k < SHADES; k += 4) {
@@ -5132,38 +5315,36 @@ function drawBuckets(bks: number[][], s: number) {
       if (merged.length) drawRibbons(merged, k + 2, s);
     }
   } else {
-    if (settings.render === 'halftone' || settings.render === 'bigpixels') {
-      if (glOnly) glDirty2d = true;
-      return drawGrid(settings.render, bks, s);
-    }
+    if (settings.render === 'halftone' || settings.render === 'bigpixels') return drawGrid(settings.render, bks, s);
     if (settings.render === 'threads' || settings.render === 'lightning') buildPairs(settings.render, bks, s);
     for (let k = 0; k < SHADES; k++) if (bks[k].length) drawStyle(settings.render, bks[k], k, s);
   }
 }
 
 function drawWellMarkers(light: boolean) {
+  const P = penFor(true);
   const list = wellList();
   if (!list.length) return;
-  ctx.strokeStyle = light ? 'rgb(0 0 0 / 0.35)' : 'rgb(255 255 255 / 0.35)';
-  ctx.lineWidth = 1.2;
+  P.strokeStyle = light ? 'rgb(0 0 0 / 0.35)' : 'rgb(255 255 255 / 0.35)';
+  P.lineWidth = 1.2;
   for (const p of list) {
     const x = p.x * w;
     const y = p.y * h;
-    ctx.beginPath();
-    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    P.beginPath();
+    P.arc(x, y, 9, 0, Math.PI * 2);
     // Attractor: arrows in. Repeller: arrows out. Vortex: a curl.
     if (p.kind === 'vortex') {
-      ctx.moveTo(x + 4, y);
-      ctx.arc(x, y, 4, 0, Math.PI * 1.5);
+      P.moveTo(x + 4, y);
+      P.arc(x, y, 4, 0, Math.PI * 1.5);
     } else {
       const [a, b2] = p.kind === 'attract' ? [3, 7] : [7, 3];
       for (let k = 0; k < 4; k++) {
         const an = (k * Math.PI) / 2 + Math.PI / 4;
-        ctx.moveTo(x + Math.cos(an) * b2 * 1.4, y + Math.sin(an) * b2 * 1.4);
-        ctx.lineTo(x + Math.cos(an) * a * 1.4, y + Math.sin(an) * a * 1.4);
+        P.moveTo(x + Math.cos(an) * b2 * 1.4, y + Math.sin(an) * b2 * 1.4);
+        P.lineTo(x + Math.cos(an) * a * 1.4, y + Math.sin(an) * a * 1.4);
       }
     }
-    ctx.stroke();
+    P.stroke();
   }
 }
 
@@ -6114,11 +6295,7 @@ function draw() {
       py[i] = cy + dx * sn + dy * c;
     }
   }
-  if (settings.render === 'links') {
-    glDirty2d = true;
-    drawLinks();
-    glTake2d(glBlend());
-  }
+  if (settings.render === 'links') drawLinks();
   drawBuckets(buckets, s);
   // Fading particles, drawn in a few alpha steps to keep draw calls batched.
   for (let L = 0; L < FADE_LEVELS; L++) {
@@ -6144,61 +6321,67 @@ function draw() {
 
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
-  if (glOnly && (settings.showWells || markPts.length || waves.length)) glDirty2d = true;
+  // Markers: on the GPU picture with WebGL only (flushed below), else 2D.
+  const P = penFor(true);
+  P.globalAlpha = 1;
   if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
   // Fingertips and pinches, faintly, so you can see where your hands are.
   if (markPts.length) {
-    ctx.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
-    ctx.beginPath();
+    P.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
+    P.beginPath();
     for (const hp of markPts) {
-      ctx.moveTo(hp.x + 3, hp.y);
-      ctx.arc(hp.x, hp.y, 3, 0, Math.PI * 2);
+      P.moveTo(hp.x + 3, hp.y);
+      P.arc(hp.x, hp.y, 3, 0, Math.PI * 2);
     }
-    ctx.fill();
-    ctx.strokeStyle = ctx.fillStyle;
+    P.fill();
+    P.strokeStyle = P.fillStyle;
     for (const pp of [...pinchPts, ...penPts]) {
-      ctx.beginPath();
-      ctx.arc(pp.x, pp.y, penPts.includes(pp) ? 6 : 14, 0, Math.PI * 2);
-      ctx.stroke();
+      P.beginPath();
+      P.arc(pp.x, pp.y, penPts.includes(pp) ? 6 : 14, 0, Math.PI * 2);
+      P.stroke();
     }
     for (const e of erasePts) {
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
-      ctx.stroke();
+      P.beginPath();
+      P.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+      P.stroke();
     }
     if (twoLine) {
-      ctx.setLineDash([4, 6]);
-      ctx.beginPath();
-      ctx.moveTo(twoLine[0].x, twoLine[0].y);
-      ctx.lineTo(twoLine[1].x, twoLine[1].y);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      P.setLineDash([4, 6]);
+      P.beginPath();
+      P.moveTo(twoLine[0].x, twoLine[0].y);
+      P.lineTo(twoLine[1].x, twoLine[1].y);
+      P.stroke();
+      P.setLineDash([]);
     }
   }
   for (const wv of waves) {
     if (wv.life <= 0 || !wv.ring) continue;
     const a = Math.min(1, wv.life) * (wv.kind === 'ripple' || wv.kind === 'twist' ? 0.12 : 0.22);
-    ctx.strokeStyle = `rgb(255 255 255 / ${a.toFixed(3)})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
+    P.strokeStyle = `rgb(255 255 255 / ${a.toFixed(3)})`;
+    P.lineWidth = 1;
+    P.beginPath();
     if (wv.kind === 'sweep') {
       if (wv.angle === 0) {
-        ctx.moveTo(wv.r, 0);
-        ctx.lineTo(wv.r, h);
+        P.moveTo(wv.r, 0);
+        P.lineTo(wv.r, h);
       } else {
-        ctx.moveTo(0, wv.r);
-        ctx.lineTo(w, wv.r);
+        P.moveTo(0, wv.r);
+        P.lineTo(w, wv.r);
       }
     } else if (wv.kind === 'star') {
       for (let k = 0; k < 6; k++) {
         const an = wv.angle + (k * Math.PI) / 3;
-        ctx.moveTo(wv.x + Math.cos(an) * Math.max(0, wv.r - 30), wv.y + Math.sin(an) * Math.max(0, wv.r - 30));
-        ctx.lineTo(wv.x + Math.cos(an) * wv.r, wv.y + Math.sin(an) * wv.r);
+        P.moveTo(wv.x + Math.cos(an) * Math.max(0, wv.r - 30), wv.y + Math.sin(an) * Math.max(0, wv.r - 30));
+        P.lineTo(wv.x + Math.cos(an) * wv.r, wv.y + Math.sin(an) * wv.r);
       }
     } else {
-      ctx.arc(wv.x, wv.y, Math.max(0, wv.r), 0, Math.PI * 2);
+      P.arc(wv.x, wv.y, Math.max(0, wv.r), 0, Math.PI * 2);
     }
-    ctx.stroke();
+    P.stroke();
+  }
+  if (glOnly && glr!.pending) {
+    glr!.blend = 'over';
+    glr!.flush(ctx, w, h);
   }
 }
 
@@ -6279,18 +6462,19 @@ function drawLinks() {
 
   const stops = pal().stops;
   const [hh, ss, ll] = stops[Math.floor(stops.length / 2)];
-  ctx.lineWidth = 0.8;
+  const P = penFor();
+  P.lineWidth = 0.8;
   for (let l = 0; l < LINK_LEVELS; l++) {
     const m = segN[l];
     if (!m) continue;
     const sg = segs[l];
-    ctx.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / ${(((l + 1) / LINK_LEVELS) * 0.4).toFixed(3)})`;
-    ctx.beginPath();
+    P.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / ${(((l + 1) / LINK_LEVELS) * 0.4).toFixed(3)})`;
+    P.beginPath();
     for (let k = 0; k < m * 4; k += 4) {
-      ctx.moveTo(sg[k], sg[k + 1]);
-      ctx.lineTo(sg[k + 2], sg[k + 3]);
+      P.moveTo(sg[k], sg[k + 1]);
+      P.lineTo(sg[k + 2], sg[k + 3]);
     }
-    ctx.stroke();
+    P.stroke();
   }
 }
 
