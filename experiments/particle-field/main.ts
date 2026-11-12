@@ -5779,9 +5779,11 @@ function frame(now: number) {
     // Stutter: a split-second freeze frame on each snare.
     const held = now < stutterUntil;
     const t0 = performance.now();
-    if (!held && !linkRun.out.freeze) step(dt);
+    const bare = arranging && outlineOnly && settings.shape !== 'none';
+    if (!held && !bare && !linkRun.out.freeze) step(dt);
     const t1 = performance.now();
-    if (!held) {
+    if (bare) drawOutline();
+    else if (!held) {
       draw();
       lensMusicTick(now);
       if (kaleidoNow >= 2) kaleidoscope(kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0));
@@ -14612,6 +14614,32 @@ const LITE_KEY = 'pf-arrange-lite';
 const LITE: Partial<Settings> = { trail: 0, glow: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioTunnel: 0, audioKaleido: 0 };
 const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets']);
 let liteScene = '';
+// Outline: while arranging, skip the simulation and draw only the shape's
+// spots (a light dotted outline), so dragging stays snappy on phones.
+let outlineOnly = false;
+function drawOutline() {
+  if (!lensCanvas.hidden) {
+    lensCanvas.hidden = true;
+    canvas.style.opacity = '';
+  }
+  const [r, g, b] = bgNow();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgb(${r} ${g} ${b})`;
+  ctx.fillRect(0, 0, w, h);
+  placeFrame();
+  const m = Math.min(n, hx.length);
+  const step = Math.max(1, Math.floor(m / 2500));
+  const light = r * 0.3 + g * 0.59 + b * 0.11 > 140;
+  ctx.fillStyle = light ? 'rgb(30 30 40 / 0.75)' : 'rgb(200 206 255 / 0.8)';
+  const sz = 1.6;
+  for (let i = 0; i < m; i += step) {
+    if (free[i]) continue;
+    let x = hx[i];
+    let y = hy[i];
+    if (place.on) [x, y] = placed(x, y);
+    ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
+  }
+}
 function setLite(on: boolean) {
   const S = settings as unknown as Record<string, unknown>;
   if (on && !liteHold) {
@@ -14643,6 +14671,7 @@ function toggleArrange(on = !arranging) {
   document.body.classList.toggle('arranging', on);
   if (!on) {
     setLite(false);
+    outlineOnly = false;
     arrangeEl?.remove();
     arrangeEl = null;
     refresh();
@@ -14656,7 +14685,7 @@ function toggleArrange(on = !arranging) {
   if (sheetMode() && !panel.classList.contains('collapsed')) toggle.click();
   const el = document.createElement('div');
   el.className = 'arrange';
-  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on" aria-label="Move"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 7.8 4.7M10 2.5l2.2 2.2M10 17.5l-2.2-2.2M10 17.5l2.2-2.2M2.5 10l2.2-2.2M2.5 10l2.2 2.2M17.5 10l-2.2-2.2M17.5 10l-2.2 2.2"/></svg><span class="ar-t">Move</span></button><button type="button" data-m="orbit" aria-label="Turn 3D"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="10" cy="10" rx="7.5" ry="3.2"/><path d="M14.6 4.6 17 6.9l-2.6 1"/></svg><span class="ar-t">Turn 3D</span></button></span><button type="button" class="ar-centre" aria-label="Centre"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M10 1.8v3.4M10 14.8v3.4M1.8 10h3.4M14.8 10h3.4"/><circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/></svg><span class="ar-t">Centre</span></button><button type="button" class="ar-lite" aria-pressed="false" aria-label="Shape only" title="Hide trails, lenses and glow while you arrange, so dragging stays smooth"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 17 10 10 17 3 10Z"/></svg><span class="ar-t">Shape only</span></button><span class="ar-rec" role="group" aria-label="Record a move"><button type="button" class="ar-len" title="Loop length">4 bars</button><button type="button" class="ar-recb" aria-label="Record a move"><i></i><span class="ar-t"></span><b class="ar-s"></b></button><button type="button" class="ar-clear" aria-label="Clear moves" title="Stop the recorded moves"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg><span class="ar-t">Clear moves</span></button></span><button type="button" class="ar-done" aria-label="Done"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5 8.3 14 15.5 6"/></svg><span class="ar-t">Done</span></button></div>`;
+  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on" aria-label="Move"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v15M2.5 10h15M10 2.5 7.8 4.7M10 2.5l2.2 2.2M10 17.5l-2.2-2.2M10 17.5l2.2-2.2M2.5 10l2.2-2.2M2.5 10l2.2 2.2M17.5 10l-2.2-2.2M17.5 10l-2.2 2.2"/></svg><span class="ar-t">Move</span></button><button type="button" data-m="orbit" aria-label="Turn 3D"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="10" cy="10" rx="7.5" ry="3.2"/><path d="M14.6 4.6 17 6.9l-2.6 1"/></svg><span class="ar-t">Turn 3D</span></button></span><button type="button" class="ar-centre" aria-label="Centre"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M10 1.8v3.4M10 14.8v3.4M1.8 10h3.4M14.8 10h3.4"/><circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/></svg><span class="ar-t">Centre</span></button><button type="button" class="ar-lite" aria-pressed="false" aria-label="Shape only" title="Hide trails, lenses and glow while you arrange, so dragging stays smooth"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 17 10 10 17 3 10Z"/><path class="ar-fillic" d="M10 6.5 13.5 10 10 13.5 6.5 10Z" fill="currentColor" stroke="none"/></svg><span class="ar-t">Shape only</span></button><span class="ar-rec" role="group" aria-label="Record a move"><button type="button" class="ar-len" title="Loop length">4 bars</button><button type="button" class="ar-recb" aria-label="Record a move"><i></i><span class="ar-t"></span><b class="ar-s"></b></button><button type="button" class="ar-clear" aria-label="Clear moves" title="Stop the recorded moves"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg><span class="ar-t">Clear moves</span></button></span><button type="button" class="ar-done" aria-label="Done"><svg class="ar-ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5 8.3 14 15.5 6"/></svg><span class="ar-t">Done</span></button></div>`;
   document.body.append(el);
   arrangeEl = el;
   let mode: 'move' | 'orbit' = 'move';
@@ -14676,16 +14705,25 @@ function toggleArrange(on = !arranging) {
   el.querySelector('.ar-centre')!.addEventListener('click', resetPlacement);
   el.querySelector('.ar-done')!.addEventListener('click', () => toggleArrange(false));
   const liteB = el.querySelector<HTMLButtonElement>('.ar-lite')!;
+  // Three steps: everything → Shape only (heavy effects off) → Outline (just the shape's spots).
+  const LITE_LBL = ['Shape only', 'Shape only', 'Outline'];
   const litePaint = () => {
-    liteB.classList.toggle('on', !!liteHold);
-    liteB.setAttribute('aria-pressed', String(!!liteHold));
+    const lvl = outlineOnly ? 2 : liteHold ? 1 : 0;
+    liteB.classList.toggle('on', lvl > 0);
+    liteB.classList.toggle('outline', lvl === 2);
+    liteB.setAttribute('aria-pressed', String(lvl > 0));
+    liteB.setAttribute('aria-label', lvl === 2 ? 'Outline only' : 'Shape only');
+    liteB.title = lvl === 0 ? 'Hide trails, lenses and glow while you arrange, so dragging stays smooth' : lvl === 1 ? 'Tap again for the outline only (snappiest)' : 'Tap to show everything again';
+    liteB.querySelector('.ar-t')!.textContent = LITE_LBL[lvl];
   };
-  liteB.addEventListener('click', () => {
-    setLite(!liteHold);
-    try { localStorage.setItem(LITE_KEY, liteHold ? '1' : ''); } catch {}
+  const setLevel = (lvl: number) => {
+    setLite(lvl > 0);
+    outlineOnly = lvl === 2;
+    try { localStorage.setItem(LITE_KEY, lvl ? String(lvl) : ''); } catch {}
     litePaint();
-  });
-  try { if (localStorage.getItem(LITE_KEY)) setLite(true); } catch {}
+  };
+  liteB.addEventListener('click', () => setLevel(((outlineOnly ? 2 : liteHold ? 1 : 0) + 1) % 3));
+  try { const v = localStorage.getItem(LITE_KEY); if (v) setLevel(v === '2' ? 2 : 1); } catch {}
   litePaint();
   // Record: move the shape by hand over a loop (it starts on the next bar);
   // what you moved becomes keyframes and plays back in time.
