@@ -6868,6 +6868,16 @@ let fastMs = 0;
 const SCALE_STEPS = [1, 5 / 6, 2 / 3, 1 / 2];
 let upWait = 6000;
 let lastUpAt = -1e9;
+// A new scene may be lighter: if the resolution was lowered, try going back
+// up after two smooth seconds, and forget the longer waits.
+function qualityRetry() {
+  if (renderScale >= 1) return;
+  upWait = 2000;
+  lastUpAt = -1e9;
+  fastMs = 0;
+  slowMs = 0;
+  setTimeout(() => (upWait = Math.max(upWait, 6000)), 4000);
+}
 
 function adaptQuality(dt: number, ms: number) {
   if (!autoQuality) return;
@@ -6889,7 +6899,7 @@ function adaptQuality(dt: number, ms: number) {
   const now = performance.now();
   if (slowMs > 1500 && renderScale > SCALE_STEPS[SCALE_STEPS.length - 1]) {
     renderScale = SCALE_STEPS[Math.min(SCALE_STEPS.length - 1, SCALE_STEPS.findIndex((v) => v < renderScale - 1e-3))];
-    if (now - lastUpAt < 10000) upWait = Math.min(60000, upWait * 2);
+    if (now - lastUpAt < 10000) upWait = Math.min(30000, upWait * 2);
     slowMs = 0;
     fastMs = 0;
     resize();
@@ -8351,6 +8361,7 @@ const playSettings = (): Partial<Settings> => ({
 function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
   const blank = p === BLANK_SCENE;
   p = upgradeShape(p);
+  qualityRetry();
   // The scene playing until now: what it switched on goes when it does.
   const prev = currentMine?.settings ?? PRESETS.find(([n]) => n === lastSceneName)?.[1] ?? null;
   lastSceneName = '';
