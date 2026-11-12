@@ -159,7 +159,7 @@ let pz = new Float32Array(0); // depth: 0 far, 1 near
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 let free = new Float32Array(0); // 1 for face-effect particles: no home, short life
 let gone = new Float32Array(0); // seconds when it started fading out (count going down), 0 = staying
-let kid = new Float32Array(0); // Spawning: 0 an ordinary particle, 1 a slot for children (a child while alive), 2 a grandchild
+let kid = new Float32Array(0); // Spawning: 0 an ordinary particle, 1 a slot for children (a child while alive), 2 a grandchild, 3 a slot's old particle fading out
 let rest = new Float32Array(0); // Collisions: 1 while stuck or resting on a pile
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
@@ -1192,8 +1192,9 @@ function step(dt: number) {
     if (left <= 0 || settings.shape === 'none') entrance = null;
     else entK = Math.min(1, left / 1200);
   }
-  runEmitter(dt, on && A.beat);
+  // Children's slots first, so the emitter only launches parents.
   syncKids();
+  runEmitter(dt, on && A.beat);
   spawnTick(dt, on && A.beat);
   const deathKids = S.spawnOn === 'death' ? S.spawnCount : 0;
   const hitKids = S.spawnOn === 'hit';
@@ -4251,7 +4252,8 @@ function syncKids() {
   // New slots: whoever was there fades out, then waits to be a child.
   for (let i = from; i < end; i++) {
     if (kid[i]) continue;
-    kid[i] = 1;
+    // 3: an old particle on its way out (no smoke, no special size).
+    kid[i] = dead[i] ? 1 : 3;
     if (!dead[i]) span[i] = Math.min(span[i] > 0 ? span[i] : Infinity, Math.max(age[i], FADE_IN) + FADE_OUT * 0.5);
   }
   kidFrom = from;
@@ -5862,7 +5864,7 @@ function updateSizes() {
     // Children shrink away over their short life; grandchildren (smoke) swell.
     if (kids && kid[i] && span[i] > 0 && i >= kidFrom && i < kidTo) {
       const lt = Math.min(1, age[i] / span[i]);
-      z *= kid[i] > 1 ? ks * (1 + lt * 1.5) : ks * (1 - lt * 0.6);
+      if (kid[i] < 3) z *= kid[i] === 2 ? ks * (1 + lt * 1.5) : ks * (1 - lt * 0.6);
     }
     psz[i] = z;
   }
@@ -8863,9 +8865,9 @@ function playPreset(name: string, p: Partial<Settings>) {
   apply(p);
   lastSceneName = name;
   // The image pattern needs a picture: ask for one (this runs in the click).
-  if (p.shape === 'image' && !shapeImage) {
+  if (p.shape === 'image' && !shapeImage && !shapeMedia) {
     imageInput.click();
-    showToast('Pick an image for the particles to draw');
+    showToast('Pick an image, video or GIF for the particles to draw');
   } else if (p.shape === 'drawing' && !drawStrokes.length && !drawMode) toggleDraw();
   else showToast(name);
 }
@@ -16004,7 +16006,7 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set(['placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
+const REMIX_SKIP = new Set(['spriteCols', 'spriteRows', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
 // How often a switchable card is on in a remix.
 const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85 };
 const REMIX_KEY = 'particle-field:remix';
