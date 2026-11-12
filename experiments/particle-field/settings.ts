@@ -355,6 +355,8 @@ export interface Settings {
   edges: Edges;
   spriteCols: number;
   spriteRows: number;
+  // Which row of a sheet plays: 0 = each particle plays its own row.
+  spriteRow: number;
   spriteFps: number;
   spriteTint: boolean;
   spriteTurn: 'none' | 'heading' | 'spin';
@@ -885,6 +887,7 @@ export const DEFAULTS: Settings = {
   edges: 'wrap',
   spriteCols: 0,
   spriteRows: 0,
+  spriteRow: 0,
   spriteFps: 10,
   spriteTint: true,
   spriteTurn: 'heading',

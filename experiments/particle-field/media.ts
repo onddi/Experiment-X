@@ -243,14 +243,69 @@ export async function decodeFrames(f: File): Promise<{ frames: HTMLCanvasElement
 }
 
 /** A sprite sheet cut into square frames (cols × rows; 0 = guess from the shape). */
+/**
+ * Find a sheet's grid. With transparency: the most columns (and rows) whose
+ * boundaries all fall on clear lines. Without: a strip of square frames, else
+ * one frame.
+ */
+export function detectGrid(img: CanvasImageSource & { width: number; height: number }): [number, number] {
+  const W = img.width;
+  const H = img.height;
+  const strip = (): [number, number] => {
+    if (W >= H * 1.5 && Math.abs(W / H - Math.round(W / H)) < 0.05) return [Math.round(W / H), 1];
+    if (H >= W * 1.5 && Math.abs(H / W - Math.round(H / W)) < 0.05) return [1, Math.round(H / W)];
+    return [1, 1];
+  };
+  if (W * H > 4096 * 4096 || W < 2 || H < 2) return strip();
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, W, H).data;
+  const col = new Float64Array(W);
+  const row = new Float64Array(H);
+  let clear = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const a = d[(y * W + x) * 4 + 3];
+      col[x] += a;
+      row[y] += a;
+      if (a < 8) clear++;
+    }
+  // Hardly any transparency (a JPG, a solid background): no gaps to go by.
+  if (clear < W * H * 0.05) return strip();
+  const pick = (sum: Float64Array, len: number) => {
+    let max = 0;
+    for (let q = 0; q < len; q++) max = Math.max(max, sum[q]);
+    const thr = max * 0.02;
+    const empty = (q: number) => q < 0 || q >= len || sum[q] <= thr;
+    for (let n = Math.min(64, Math.floor(len / 8)); n >= 2; n--) {
+      if (len % n) continue;
+      const step = len / n;
+      let ok = true;
+      for (let k = 1; k < n && ok; k++) {
+        const q = k * step;
+        // A clear line on either side of the cut.
+        if (!(empty(q) || empty(q - 1))) ok = false;
+      }
+      if (ok) return n;
+    }
+    return 1;
+  };
+  const cols = pick(col, W);
+  const rows = pick(row, H);
+  if (cols === 1 && rows === 1) return strip();
+  return [cols, rows];
+}
+
 export function sliceSheet(img: CanvasImageSource & { width: number; height: number }, cols: number, rows: number, px = 96): HTMLCanvasElement[] {
   const W = img.width;
   const H = img.height;
   if (!cols || !rows) {
-    // A strip of square frames, side by side or stacked; else one frame.
-    if (W >= H * 1.5 && Math.abs(W / H - Math.round(W / H)) < 0.05) (cols = Math.round(W / H)), (rows = 1);
-    else if (H >= W * 1.5 && Math.abs(H / W - Math.round(H / W)) < 0.05) (cols = 1), (rows = Math.round(H / W));
-    else cols = rows = 1;
+    const [c, r] = detectGrid(img);
+    cols ||= c;
+    rows ||= r;
   }
   const fw = W / cols;
   const fh = H / rows;
@@ -260,7 +315,10 @@ export function sliceSheet(img: CanvasImageSource & { width: number; height: num
       const cv = document.createElement('canvas');
       cv.width = cv.height = px;
       const k = px / Math.max(fw, fh);
-      cv.getContext('2d')!.drawImage(img, c * fw, r * fh, fw, fh, (px - fw * k) / 2, (px - fh * k) / 2, fw * k, fh * k);
+      const g = cv.getContext('2d')!;
+      // Small frames are likely pixel art: keep the pixels sharp.
+      g.imageSmoothingEnabled = Math.max(fw, fh) >= 48;
+      g.drawImage(img, c * fw, r * fh, fw, fh, (px - fw * k) / 2, (px - fh * k) / 2, fw * k, fh * k);
       out.push(cv);
     }
   return out;
