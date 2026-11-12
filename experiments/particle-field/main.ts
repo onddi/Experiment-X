@@ -9169,7 +9169,34 @@ function renderQuality(): HTMLElement {
   const note = document.createElement('p');
   note.className = 'q-note';
   note.textContent = `This screen is ${native}× natively. Turn "lower by itself" off while you compare, so the numbers stay put.`;
-  box.append(chips, auto, out, note);
+  // Renderer: WebGL sprites or the plain 2D canvas (a reload with ?renderer=2d).
+  const rend = document.createElement('div');
+  rend.className = 'anim-chips q-rend';
+  const want2d = new URLSearchParams(location.search).get('renderer') === '2d';
+  for (const [v, lbl] of [['webgl', 'WebGL'], ['2d', '2D canvas']] as const) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = lbl;
+    const on = v === '2d' ? want2d || !glr : !want2d && !!glr;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    if (v === 'webgl' && !glr && !want2d) b.disabled = true;
+    b.addEventListener('click', () => {
+      if (on) return;
+      const u = new URL(location.href);
+      // Keep the current look (it is saved) rather than the scene the link opened with.
+      u.searchParams.delete('preset');
+      if (u.hash.startsWith('#preset=')) u.hash = '';
+      if (v === '2d') u.searchParams.set('renderer', '2d');
+      else u.searchParams.delete('renderer');
+      location.href = u.toString();
+    });
+    rend.append(b);
+  }
+  const rendLbl = document.createElement('p');
+  rendLbl.className = 'q-note';
+  rendLbl.textContent = glr ? 'Renderer: soft particles are drawn by the GPU (WebGL). Switching reloads the page.' : want2d ? 'Renderer: everything on the 2D canvas. Switching reloads the page.' : 'Renderer: this browser has no WebGL2, so the 2D canvas is used.';
+  box.append(rend, rendLbl, chips, auto, out, note);
   // Real frames counted over each second (the old meter averaged per-frame
   // rates and could not show less than 20). CPU is the script's own time per
   // frame; the rest of a frame is the browser and GPU painting, or waiting
