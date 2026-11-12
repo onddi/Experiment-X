@@ -9,6 +9,7 @@ import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
 import { GLSprites, type Blend } from './webgl.ts';
+import { GLFx, affine, hueMatrix, type Target } from './glfx.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
@@ -4531,17 +4532,6 @@ function glWhy() {
   if (!glr) return 'no WebGL';
   if (RENDERER !== 'only') return 'chosen';
   if (seeThrough) return 'see-through';
-  if (lensOn()) {
-    const S = settings as unknown as Record<string, unknown>;
-    const k = LENS_KEYS.find((k) => k !== 'lensMusic' && (k === 'lensMirror' ? S[k] !== 'off' : k === 'lensTiles' ? (S[k] as number) >= 2 : !k.startsWith('audio') && typeof S[k] === 'number' && (S[k] as number) > 0));
-    return `lens: ${k ? k.replace(/^lens/, '').toLowerCase() : 'on'}${k && animMap()[k] ? ', moving' : ''}`;
-  }
-  if (settings.audioTunnel > 0) return 'tunnel';
-  if (kaleidoNow >= 2) return 'kaleidoscope';
-  if (settings.mirrorWorld) return 'mirror world';
-  if (echoA > 0.01 || echoSnap) return 'echo';
-  if (recorder.on) return 'recording';
-  if (projector.on) return 'projector';
   return '';
 }
 function glSetOnly(on: boolean) {
@@ -4559,6 +4549,10 @@ function glSetOnly(on: boolean) {
     }
     // Carry the picture over, then the 2D canvas starts empty.
     glr.layer(canvas, 'copy');
+    if (!lensCanvas.hidden) {
+      lensCanvas.hidden = true;
+      canvas.style.opacity = '';
+    }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     glDirty2d = false;
   } else {
@@ -4567,6 +4561,8 @@ function glSetOnly(on: boolean) {
     ctx.globalCompositeOperation = 'copy';
     ctx.drawImage(glr.canvas, 0, 0);
     glr.drop();
+    glfx?.drop();
+    glShown = null;
   }
   ctx.restore();
 }
@@ -4586,12 +4582,32 @@ function glBlend(): Blend {
 }
 // The finished picture as a canvas to copy from (snapshots, checks).
 function picture(): HTMLCanvasElement {
-  if (!lensCanvas.hidden) return lensCanvas;
   if (glOnly && glr) {
-    glr.present();
+    glShow();
     return glr.canvas;
   }
+  if (!lensCanvas.hidden) return lensCanvas;
   return canvas;
+}
+// Effects on the GPU picture (lenses, feedback), and what is on screen.
+const glfx = glr ? new GLFx(glr.gl) : null;
+let glShown: Target | null = null;
+function glPic() {
+  return glr!.picture(canvas.width, canvas.height);
+}
+function glShow() {
+  if (!glfx) return;
+  const pic = glPic();
+  glfx.sw = pic.w;
+  glfx.sh = pic.h;
+  glfx.draw(glShown && glShown.w === pic.w && glShown.h === pic.h ? glShown : pic, null, affine(0, 0), { blend: 'copy' });
+}
+// Redraw the GPU picture into itself through an effect (kaleidoscope, mirror world).
+function glFeedback(name: string, u: Record<string, number | number[]>) {
+  const pic = glPic();
+  const tmp = glfx!.target('fb', pic.w, pic.h);
+  glfx!.draw(pic, tmp, affine(0, 0), { blend: 'copy' });
+  glfx!.pass(name, tmp, pic, u);
 }
 
 // Draws one bucket of particles (all the same colour) in one style.
@@ -5232,7 +5248,7 @@ const lensCtx = lensCanvas.getContext('2d')!;
 // A clip of what's on the field (V, the Actions bar or the Record card).
 const recUi: (() => void)[] = [];
 const recorder = new Recorder({
-  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  source: () => (glOnly && glr ? glr.canvas : lensCanvas.hidden ? canvas : lensCanvas),
   size: () => [w, h],
   screen: () => { const r = Math.min(window.devicePixelRatio || 1, 2); return [w * r, h * r]; },
   filter: () => canvas.style.filter,
@@ -5248,7 +5264,7 @@ const recorder = new Recorder({
 // The field on a second window (projector), with no menus.
 const projectUi: (() => void)[] = [];
 const projector = new Projector({
-  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  source: () => (glOnly && glr ? glr.canvas : lensCanvas.hidden ? canvas : lensCanvas),
   size: () => [w, h],
   filter: () => canvas.style.filter,
   transform: () => canvas.style.transform,
@@ -5413,6 +5429,163 @@ let shards: { dx: number; dy: number; r: number }[] = [];
 let crtPat: { dpr: number; pat: CanvasPattern } | null = null;
 const glowBuf = document.createElement('canvas');
 const glowCtx = glowBuf.getContext('2d')!;
+// Glitch bands: new ones on a beat (or now and then), old ones expire.
+function glitchTick(now: number, ch: number) {
+  const S = settings;
+  const L = audio.levels;
+  const music = reacting();
+  const fire = music && S.lensMusic > 0 ? L.beat && Math.random() < (0.35 + S.lensGlitch * 0.5) * Math.min(1, S.lensMusic * 1.5) : now > glitchNext;
+  if (fire || (music && S.lensMusic > 0 && L.drop)) {
+    glitchNext = now + 300 + Math.random() * (1800 - S.lensGlitch * 1400);
+    const k = 1 + Math.round(Math.random() * S.lensGlitch * 7);
+    for (let j = 0; j < k; j++)
+      glitchBands.push({ y: Math.random() * ch, h: (4 + Math.random() * 60) * dpr, dx: (Math.random() - 0.5) * 160 * S.lensGlitch * dpr, until: now + 60 + Math.random() * 180 });
+  }
+  glitchBands = glitchBands.filter((b) => b.until > now);
+}
+
+// The lenses on the GPU (WebGL renderer): the same steps as lensFrame, each
+// reading the picture so far and writing the next one; the last is shown.
+let sliceGl = 0;
+function lensFrameGL(now: number, pic: Target): Target {
+  if (!lensOn()) return pic;
+  const S = settings;
+  const F = glfx!;
+  const cw = pic.w;
+  const ch = pic.h;
+  const [br, bgG, bb] = bgNow();
+  const BG = [br, bgG, bb, 1];
+  const L = audio.levels;
+  const mus = reacting() ? S.lensMusic : 0;
+  const R = Math.hypot(cw, ch) / 2;
+  let cur = pic;
+  const next = () => F.target(cur === glA ? 'lensB' : 'lensA', cw, ch);
+  let glA: Target | null = null;
+  const step = (fn: (src: Target, dst: Target) => void) => {
+    const dst = next();
+    if (!glA) glA = F.target('lensA', cw, ch);
+    fn(cur, dst);
+    cur = dst;
+  };
+  const mirror = mirrorNow();
+  if (mirror !== 'off') step((a, b) => F.pass('mirror', a, b, { hx: mirror !== 'tb' ? 1 : 0, hy: mirror !== 'lr' ? 1 : 0 }));
+  if (S.lensTiles >= 2) step((a, b) => F.pass('tiles', a, b, { k: tilesNow() }));
+  if (S.lensTwirl > 0) step((a, b) => F.pass('twirl', a, b, { R, N: 14, tw: S.lensTwirl * (2.4 + lm.kick * mus * 1.2), spin: lm.twirl * S.lensTwirl }, BG));
+  if (S.lensFan > 0) step((a, b) => F.pass('fan', a, b, { N: 12, swing: S.lensFan * 0.35 * Math.sin(lm.fan) + lm.kick * mus * S.lensFan * 0.15 }, BG));
+  if (S.lensWave > 0)
+    step((a, b) =>
+      F.pass('wave', a, b, { rowH: Math.max(2, Math.round(3 * dpr)), amp: S.lensWave * (40 + mus * (L.bass * 50 + lm.kick * 30)) * dpr, freq: (Math.PI * 2) / (180 * dpr), ph: lm.wave }, BG),
+    );
+  if (S.lensRipple > 0 && lm.ripples.length) {
+    const speed = R / 1800;
+    const rip: number[] = [];
+    for (const t0 of lm.ripples.slice(-8)) rip.push((now - t0) * speed, 1 - (now - t0) / 2600);
+    while (rip.length < 16) rip.push(0, 0);
+    step((a, b) => F.pass('ripple', a, b, { R, N: 26, n: Math.min(8, lm.ripples.length), str: S.lensRipple * 70 * dpr, rip }, BG));
+  }
+  if (S.lensShatter > 0)
+    step((a, b) => {
+      const cols = 8;
+      const rows = 5;
+      if (shards.length !== cols * rows) shards = Array.from({ length: cols * rows }, () => ({ dx: Math.random() - 0.5, dy: Math.random() - 0.5, r: Math.random() - 0.5 }));
+      const sw = cw / cols;
+      const sh = ch / rows;
+      const spread = S.lensShatter * (0.12 + 0.05 * Math.sin(now / 900) + lm.burst * 0.9);
+      F.fill(b, br, bgG, bb, 1, 'copy');
+      for (let yy = 0; yy < rows; yy++)
+        for (let xx = 0; xx < cols; xx++) {
+          const s = shards[yy * cols + xx];
+          const cx = (xx + 0.5) * sw;
+          const cy = (yy + 0.5) * sh;
+          const ox = (cx - cw / 2) * spread * 0.6 + s.dx * sw * spread * 2;
+          const oy = (cy - ch / 2) * spread * 0.6 + s.dy * sh * spread * 2;
+          F.draw(a, b, affine(cx + ox, cy + oy, s.r * spread * 1.5, 1 - spread * 0.15, 1 - spread * 0.15, cx, cy), { rect: [xx * sw, yy * sh, sw, sh] });
+        }
+    });
+  if (S.lensZoom > 0) {
+    const zs: number[] = [];
+    const rs: number[] = [];
+    for (let k = 0; k < 9; k++) {
+      const z = Math.pow(0.6, k - lm.zoom);
+      if (z * cw < 4) break;
+      zs.push(z);
+      rs.push((k - lm.zoom) * 0.08 * S.lensZoom);
+    }
+    const n = zs.length;
+    while (zs.length < 9) zs.push(1), rs.push(0);
+    step((a, b) => F.pass('zoom', a, b, { n, zs, rs }, BG));
+  }
+  if (S.lensSlices > 0)
+    step((a, b) => {
+      const sc = 3;
+      const hw = Math.ceil(cw / sc);
+      const hh = Math.ceil(ch / sc);
+      const every = 1 + Math.round(S.lensSlices * 5);
+      if (sliceTick++ % every === 0) {
+        F.draw(a, F.target(`slice${sliceAt % SLICE_FRAMES}`, hw, hh), affine(0, 0, 0, 1 / sc), { blend: 'copy' });
+        sliceAt++;
+        sliceGl = Math.min(SLICE_FRAMES, sliceGl + 1);
+      }
+      const N = 20;
+      const stripW = cw / N;
+      const maxLag = Math.min(sliceGl - 1, Math.round(S.lensSlices * (SLICE_FRAMES - 1)));
+      F.fill(b, br, bgG, bb, 1, 'copy');
+      for (let i = 0; i < N; i++) {
+        const v = Math.abs(i + 0.5 - N / 2) / (N / 2);
+        const lag = Math.min(maxLag, Math.round(maxLag * (0.15 + 0.85 * v) * (i % 2 ? 1 : 0.6)));
+        const x = i * stripW;
+        if (lag <= 0) F.draw(a, b, affine(0, 0), { rect: [x, 0, stripW + 1, ch] });
+        else F.draw(F.target(`slice${(sliceAt - 1 - lag + SLICE_FRAMES * 8) % SLICE_FRAMES}`, hw, hh), b, affine(0, 0, 0, sc), { rect: [x / sc, 0, stripW / sc + 0.5, hh] });
+      }
+      for (let i = 1; i < N; i++) F.fill(b, 0, 0, 0, 0.25 + S.lensSlices * 0.35, 'over', [Math.round(i * stripW) - dpr, 0, dpr * 2, ch]);
+    });
+  if (S.lensDots > 0) {
+    const cell = Math.max(3, Math.round(S.lensDots * dpr));
+    const swell = Math.round(lm.kick * S.lensMusic * 4);
+    step((a, b) => F.pass('dots', a, b, { cell, rad: cell * (0.38 + swell * 0.035), clear: seeThrough ? 1 : 0 }, BG));
+  }
+  if (S.lensEcho > 0)
+    step((a, b) => {
+      F.draw(a, b, affine(0, 0), { blend: 'copy' });
+      for (let k = 1; k <= 4; k++) {
+        const sc = 1 + k * (0.05 + S.lensEcho * 0.06 + lm.kick * mus * 0.05);
+        F.draw(a, b, affine(cw / 2, ch / 2, 0, sc, sc, cw / 2, ch / 2), { alpha: (S.lensEcho * 0.45) / k, blend: 'add' });
+      }
+    });
+  if (S.lensGlow > 0)
+    step((a, b) => {
+      const gw = Math.ceil(cw / 4);
+      const gh = Math.ceil(ch / 4);
+      const q1 = F.target('glow1', gw, gh);
+      const q2 = F.target('glow2', gw, gh);
+      F.draw(a, q1, affine(0, 0, 0, gw / cw, gh / ch), { blend: 'copy' });
+      const sigma = 3 + S.lensGlow * 5;
+      F.pass('blur', q1, q2, { dir: [1, 0], sigma });
+      F.pass('blur', q2, q1, { dir: [0, 1], sigma });
+      F.draw(a, b, affine(0, 0), { blend: 'copy' });
+      F.draw(q1, b, affine(0, 0, 0, cw / gw, ch / gh), { alpha: Math.min(1, S.lensGlow * (0.7 + lm.glow * 1.5)), blend: 'add' });
+    });
+  if (S.lensSplit > 0) step((a, b) => F.pass('split', a, b, { d: S.lensSplit * (6 + 24 * S.lensMusic * lensJolt) * dpr }, seeThrough ? [0, 0, 0, 0] : [0, 0, 0, 1]));
+  if (S.lensGlitch > 0) {
+    glitchTick(now, ch);
+    if (glitchBands.length)
+      step((a, b) => {
+        F.draw(a, b, affine(0, 0), { blend: 'copy' });
+        for (const g of glitchBands) {
+          const clip = [0, g.y, cw, g.h];
+          F.draw(a, b, affine(g.dx, 0), { blend: 'copy', clip });
+          F.draw(a, b, affine(g.dx - Math.sign(g.dx) * cw, 0), { blend: 'copy', clip });
+        }
+      });
+  }
+  if (S.lensCrt > 0) {
+    const stp = Math.max(2, Math.round(3 * dpr));
+    const flick = 0.04 + (mus && L.snare ? 0.12 : 0) + Math.random() * 0.03;
+    step((a, b) => F.pass('crt', a, b, { stp, lineH: Math.max(1, Math.round(stp / 2.5)), lineA: 0.55 * S.lensCrt, R, vig: S.lensCrt, flick: S.lensCrt * flick }));
+  }
+  return cur;
+}
+
 function lensFrame(now: number) {
   const on = lensOn();
   if (lensCanvas.hidden === on) {
@@ -5754,14 +5927,7 @@ function lensFrame(now: number) {
 
   // Glitch: bands of the picture jump sideways for a moment.
   if (S.lensGlitch > 0) {
-    const fire = music && S.lensMusic > 0 ? L.beat && Math.random() < (0.35 + S.lensGlitch * 0.5) * Math.min(1, S.lensMusic * 1.5) : now > glitchNext;
-    if (fire || (music && S.lensMusic > 0 && L.drop)) {
-      glitchNext = now + 300 + Math.random() * (1800 - S.lensGlitch * 1400);
-      const k = 1 + Math.round(Math.random() * S.lensGlitch * 7);
-      for (let j = 0; j < k; j++)
-        glitchBands.push({ y: Math.random() * ch, h: (4 + Math.random() * 60) * dpr, dx: (Math.random() - 0.5) * 160 * S.lensGlitch * dpr, until: now + 60 + Math.random() * 180 });
-    }
-    glitchBands = glitchBands.filter((b) => b.until > now);
+    glitchTick(now, ch);
     if (glitchBands.length) {
       const src = input();
       if (src === canvas) {
@@ -5831,12 +5997,18 @@ function draw() {
   let fadeA = 1 - trailNow * 0.97;
   // Feedback tunnel: last frame drawn back slightly bigger (and turned), so
   // everything streams out of the centre. Needs some trail to show.
-  if (settings.audioTunnel > 0) {
-    viewWarp(tunnelZ, tunnelR, 1);
-    fadeA = Math.min(fadeA, 0.3 - 0.2 * settings.audioTunnel);
-  }
   const only = glOnlyWanted();
   if (only !== glOnly) glSetOnly(only);
+  if (settings.audioTunnel > 0) {
+    if (only) {
+      const pic = glPic();
+      const tmp = glfx!.target('fb', pic.w, pic.h);
+      glfx!.draw(pic, tmp, affine(0, 0), { blend: 'copy' });
+      glfx!.clear(pic);
+      glfx!.draw(tmp, pic, affine(pic.w / 2, pic.h / 2, tunnelR, tunnelZ, tunnelZ, pic.w / 2, pic.h / 2), { blend: 'copy' });
+    } else viewWarp(tunnelZ, tunnelR, 1);
+    fadeA = Math.min(fadeA, 0.3 - 0.2 * settings.audioTunnel);
+  }
   if (only) {
     // The GPU keeps the picture and fades it for the trails.
     glr!.fill(canvas.width, canvas.height, r, g, b, fadeA);
@@ -5847,6 +6019,18 @@ function draw() {
   }
   ctx.globalCompositeOperation = 'source-over';
   // View echo: a copy of the frame from the last kick, growing and fading.
+  if (glOnly) {
+    const pic = glPic();
+    if (echoSnap) {
+      echoSnap = false;
+      glfx!.draw(pic, glfx!.target('echo', pic.w, pic.h), affine(0, 0), { blend: 'copy' });
+    }
+    if (echoA > 0.01) {
+      const cw = pic.w;
+      const ch = pic.h;
+      glfx!.draw(glfx!.target('echo', cw, ch), pic, affine(cw / 2, ch / 2, 0, echoZ, echoZ, cw / 2, ch / 2), { alpha: echoA, blend: light ? 'over' : 'add' });
+    }
+  }
   if (echoSnap) {
     echoSnap = false;
     if (echoBuf.width !== canvas.width || echoBuf.height !== canvas.height) {
@@ -5856,7 +6040,7 @@ function draw() {
     echoCtx.globalCompositeOperation = 'copy';
     echoCtx.drawImage(canvas, 0, 0);
   }
-  if (echoA > 0.01 && echoBuf.width === canvas.width) {
+  if (echoA > 0.01 && echoBuf.width === canvas.width && !glOnly) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = echoA;
@@ -6390,20 +6574,31 @@ function frame(now: number) {
     const bare = arranging && outlineOnly && settings.shape !== 'none';
     if (!held && !bare && !linkRun.out.freeze) step(dt);
     const t1 = performance.now();
-    if (bare) drawOutline();
+    if (bare) {
+      glSetOnly(false);
+      drawOutline();
+    }
     else if (!held) {
       draw();
       lensMusicTick(now);
-      if (kaleidoNow >= 2) kaleidoscope(kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0));
-      if (settings.mirrorWorld) mirrorHalf();
-      lensFrame(now);
+      const seg = kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0);
       glTake2d('over');
       if (glOnly && glWhy()) glSetOnly(false);
       if (glOnly && glr) {
-        glr.present();
+        if (kaleidoNow >= 2) {
+          const sl = (Math.PI * 2) / seg;
+          glFeedback('kaleido', { seg, base: (canvas.height > canvas.width ? Math.PI / 2 : 0) - sl / 2 + lm.turn });
+        }
+        if (settings.mirrorWorld) glFeedback('mirrorWorld', { half_: Math.floor(canvas.width / 2), hue: hueMatrix(150) });
+        glShown = lensFrameGL(now, glPic());
+        glShow();
         const st = glr.canvas.style;
         if (st.filter !== canvas.style.filter) st.filter = canvas.style.filter;
         if (st.transform !== canvas.style.transform) st.transform = canvas.style.transform;
+      } else {
+        if (kaleidoNow >= 2) kaleidoscope(seg);
+        if (settings.mirrorWorld) mirrorHalf();
+        lensFrame(now);
       }
     }
     const t2 = performance.now();
