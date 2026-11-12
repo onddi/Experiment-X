@@ -624,7 +624,7 @@ canvas.addEventListener('pointerdown', (e) => {
 // rings closing in), letting go bursts them out; longer holds burst harder.
 let holdImplodeAt = 0;
 let holdRingAt = 0;
-const holdCharge = () => Math.min(1, (performance.now() - holdImplodeAt) / 2000);
+const holdCharge = () => Math.min(1, (performance.now() - holdImplodeAt) / 3000);
 const release = (e: PointerEvent) => {
   if (pointer.down && holdImplodeAt && settings.click === 'implodeHold') {
     explode(pointer.x, pointer.y, (0.45 + holdCharge() * 0.9) * settings.clickForce);
@@ -906,9 +906,10 @@ function step(dt: number) {
   const gy = holdGather ? pointer.y : h / 2;
   // Implode & burst reaches further the longer it's held.
   const gatherR = holdImplode ? Math.max(220, radius * 3) * (1 + holdCharge() * 1.2) : holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
-  if (holdImplode && performance.now() - holdRingAt > 650) {
+  // A slow breath in while held: a ring every 1.3 s, a gentle pull.
+  if (holdImplode && performance.now() - holdRingAt > 1300) {
     holdRingAt = performance.now();
-    addWave('implode', pointer.x, pointer.y, { force: 0.8 * settings.clickForce });
+    addWave('implode', pointer.x, pointer.y, { force: 0.5 * settings.clickForce });
   }
   const gatherMin = holdGather ? 0 : 0.35;
   const gatherCore = holdGather ? 30 : Math.min(w, h) * 0.18;
@@ -1324,7 +1325,7 @@ function step(dt: number) {
       const dy = py[i] - gy;
       const d = Math.sqrt(dx * dx + dy * dy) + 0.001;
       if (d < gatherR || gatherMin > 0) {
-        const f = Math.max(gatherMin, 1 - d / gatherR) * cf;
+        const f = Math.max(gatherMin, 1 - d / gatherR) * cf * (holdImplode ? 0.55 : 1);
         const nx = dx / d;
         const ny = dy / d;
         // Hold: ease off at the core. Full-field: each particle settles at its
