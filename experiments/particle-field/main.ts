@@ -8424,6 +8424,32 @@ function tlAddCurrent() {
   tlSave();
 }
 
+// Measured once a second: real frames per second and where the time goes.
+const perfNow = { real: 60, frameMs: 16.7, cpu: 0 };
+let perfHudOn = false;
+const perfHud = document.createElement('div');
+perfHud.className = 'perf-hud';
+perfHud.setAttribute('aria-hidden', 'true');
+{
+  let f0 = 0;
+  let t0 = performance.now();
+  window.setInterval(() => {
+    const now = performance.now();
+    perfNow.real = ((frameCount - f0) * 1000) / (now - t0);
+    f0 = frameCount;
+    t0 = now;
+    perfNow.frameMs = 1000 / Math.max(perfNow.real, 0.1);
+    perfNow.cpu = stepMs + drawMs;
+    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}`;
+  }, 1000);
+}
+function setPerfHud(on: boolean) {
+  perfHudOn = on;
+  if (on) document.body.append(perfHud);
+  else perfHud.remove();
+  try { localStorage.setItem('pf-fps-hud', on ? '1' : ''); } catch {}
+}
+try { if (localStorage.getItem('pf-fps-hud')) setPerfHud(true); if (localStorage.getItem('pf-noglass')) document.body.classList.add('no-glass'); } catch {}
 // Quality: pixel density chips, auto lowering, and a live readout.
 function renderQuality(): HTMLElement {
   const box = document.createElement('div');
@@ -8476,17 +8502,26 @@ function renderQuality(): HTMLElement {
   // rates and could not show less than 20). CPU is the script's own time per
   // frame; the rest of a frame is the browser and GPU painting, or waiting
   // for the screen (vsync).
-  let f0 = frameCount;
-  let t0 = performance.now();
+  const hud = document.createElement('label');
+  hud.className = 'q-auto';
+  hud.innerHTML = '<input type="checkbox"> <span>Show fps on the Stage (top left)</span>';
+  const hcb = hud.querySelector('input')!;
+  hcb.checked = perfHudOn;
+  hcb.addEventListener('change', () => setPerfHud(hcb.checked));
+  const glass = document.createElement('label');
+  glass.className = 'q-auto';
+  glass.innerHTML = '<input type="checkbox"> <span>Blurred glass behind bars and panels</span>';
+  const gcb = glass.querySelector('input')!;
+  gcb.checked = !document.body.classList.contains('no-glass');
+  gcb.addEventListener('change', () => {
+    document.body.classList.toggle('no-glass', !gcb.checked);
+    try { localStorage.setItem('pf-noglass', gcb.checked ? '' : '1'); } catch {}
+  });
+  box.append(hud, glass);
   const timer = window.setInterval(() => {
     if (!box.isConnected) return clearInterval(timer);
     if (!box.offsetParent) return;
-    const now = performance.now();
-    const real = ((frameCount - f0) * 1000) / (now - t0);
-    f0 = frameCount;
-    t0 = now;
-    const frameMs = 1000 / Math.max(real, 0.1);
-    const cpu = stepMs + drawMs;
+    const { real, frameMs, cpu } = perfNow;
     out.innerHTML = `<b>${real.toFixed(0)} fps</b> · ${frameMs.toFixed(1)} ms a frame · ${canvas.width}×${canvas.height} px${renderScale < 1 ? ` · lowered to ${Math.round(renderScale * 100)}%` : ''}<br>script ${cpu.toFixed(1)} ms (sim ${stepMs.toFixed(1)}, draw ${drawMs.toFixed(1)}) · painting and waiting ${Math.max(0, frameMs - cpu).toFixed(1)} ms`;
   }, 1000);
   return box;
