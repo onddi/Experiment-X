@@ -14523,6 +14523,9 @@ function uPlace() {
   let left = innerWidth / 2 - (stageBarW || ubar.offsetWidth) / 2;
   left = Math.min(left, right - ubar.offsetWidth - 12);
   ubar.style.left = `${Math.max(12, Math.round(left))}px`;
+  // A narrow window: the bar spills over the Studio or Deck, so their lists
+  // leave room at the bottom to scroll clear of it.
+  document.body.classList.toggle('ubar-over', left < 12);
 }
 {
   let rest = 0;

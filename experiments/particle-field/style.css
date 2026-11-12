@@ -2045,6 +2045,7 @@ body.arranging .u-bar, body.arranging .m-bar, body.arranging .play-row, body.arr
   .u-tray button.primary { background: var(--accent); color: var(--on-accent); }
   .u-tray button.on { background: rgb(255 255 255 / 0.92); color: #111; }
   .u-bar .dock-more { right: 0; left: auto; }
+  body.ubar-over .fidx, body.ubar-over .panel .panel-body, body.ubar-over .overview .ov-body { padding-bottom: 76px; }
   /* The bar takes over from the corner handle, the floating shuffle and the Deck's footer. */
   .panel.collapsed #toggle, .desk-shuffle, .ov-foot { display: none !important; }
   .play-row { bottom: 70px; }
