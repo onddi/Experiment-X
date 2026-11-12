@@ -2420,8 +2420,9 @@ body.num-turning .kr-badge { bottom: calc(150px + env(safe-area-inset-bottom)); 
 body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 /* WebGL direct mode: the GPU canvas shows the field; the 2D canvas sits clear on top for markers and input. */
 canvas.gl-layer { position: absolute; inset: 0; pointer-events: none; display: none; }
-body.gl-direct canvas.gl-layer { display: block; }
-body.gl-direct canvas#c { position: relative; z-index: 1; }
+/* WebGL only: the GPU picture is shown; the 2D canvas goes invisible but still takes the pointer. */
+body.gl-only canvas.gl-layer { display: block; cursor: auto; }
+body.gl-only canvas#c { opacity: 0; }
 /* Phones: room under the last scene to scroll it clear of the bottom bar.
    A spacer, not padding: Safari leaves a scrolling flex box's bottom
    padding out of the scroll range. */

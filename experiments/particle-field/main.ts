@@ -8,7 +8,7 @@ import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
-import { GLSprites } from './webgl.ts';
+import { GLSprites, type Blend } from './webgl.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
@@ -331,9 +331,15 @@ function clear() {
     document.body.style.background = 'transparent';
     return;
   }
+  document.body.style.background = `rgb(${r} ${g} ${b})`;
+  if (glOnly && glr) {
+    ctx.clearRect(0, 0, w, h);
+    glDirty2d = false;
+    glr.reset(canvas.width, canvas.height, r, g, b);
+    return;
+  }
   ctx.fillStyle = `rgb(${r} ${g} ${b})`;
   ctx.fillRect(0, 0, w, h);
-  document.body.style.background = `rgb(${r} ${g} ${b})`;
 }
 
 // --- pointer -----------------------------------------------------------------
@@ -596,6 +602,7 @@ function toggleObstacle(x: number, y: number) {
 function drawObstacles(fade: number, light: boolean) {
   drawThumb(fade, light);
   if (settings.obstacles === 'none' || !settings.obsShow) return;
+  if (glOnly) glDirty2d = true;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.07 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.06 * fade).toFixed(4)})`;
@@ -4498,70 +4505,242 @@ function drawGlyphs(list: number[], k: number, s: number) {
 // Buckets let us draw every particle of one colour in a single path.
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
-// Draws one bucket of particles (all the same colour) in one style.
-// WebGL sprites (?renderer=2d turns them off to compare): soft particles are
-// queued and drawn by the GPU in one call, then laid onto the canvas.
-// Direct mode (?gl=direct) measured slower on iPhone than the copy, so it is opt-in.
-const GL_DIRECT = new URLSearchParams(location.search).get('gl') === 'direct';
-const glr = new URLSearchParams(location.search).get('renderer') === '2d' ? null : GLSprites.create(GL_DIRECT);
-// Direct mode: when every particle is a GPU sprite and nothing needs the 2D
-// picture (lenses, tunnel, kaleidoscope, mirror, echo, obstacles, links,
-// recording, the projector), the WebGL canvas is shown itself, under a clear
-// 2D canvas for markers. It keeps its frame and fades it for the trails, so
-// no full-screen 2D fade or copy happens.
-let glDirect = false;
-// Why direct mode is off right now (shown in the Stage fps readout).
+// Renderers (?renderer=2d | copy; the default is WebGL only):
+//   2D     everything on the 2D canvas.
+//   copy   particles are drawn by the GPU, then laid onto the 2D canvas,
+//          which keeps the picture (trails, lenses…).
+//   only   the picture lives on the GPU and is shown as it is; the 2D canvas
+//          only carries what is still drawn in 2D, laid on top when used.
+//          Effects that need the 2D picture (lenses, tunnel, kaleidoscope,
+//          mirror, echo, recording, projector) switch to copy while on.
+const RENDERER = (() => {
+  const r = new URLSearchParams(location.search).get('renderer');
+  return r === '2d' || r === 'copy' ? r : 'only';
+})();
+const glr = RENDERER === '2d' ? null : GLSprites.create();
+let glOnly = false;
+// Something was drawn on the 2D canvas that the GPU picture hasn't taken yet.
+let glDirty2d = false;
+// Why only mode is off right now (shown in the Stage fps readout).
 let glWhyNot = '';
-function glDirectWanted() {
+function glOnlyWanted() {
   glWhyNot = glWhy();
   return !glWhyNot;
 }
 function glWhy() {
   if (!glr) return 'no WebGL';
-  if (!GL_DIRECT) return 'default';
+  if (RENDERER !== 'only') return 'chosen';
   if (seeThrough) return 'see-through';
   if (lensOn()) {
     const S = settings as unknown as Record<string, unknown>;
-    const k = LENS_KEYS.find((k) => (k === 'lensMirror' ? S[k] !== 'off' : k === 'lensTiles' ? (S[k] as number) >= 2 : !k.startsWith('audio') && typeof S[k] === 'number' && (S[k] as number) > 0));
+    const k = LENS_KEYS.find((k) => k !== 'lensMusic' && (k === 'lensMirror' ? S[k] !== 'off' : k === 'lensTiles' ? (S[k] as number) >= 2 : !k.startsWith('audio') && typeof S[k] === 'number' && (S[k] as number) > 0));
     return `lens: ${k ? k.replace(/^lens/, '').toLowerCase() : 'on'}${k && animMap()[k] ? ', moving' : ''}`;
   }
   if (settings.audioTunnel > 0) return 'tunnel';
   if (kaleidoNow >= 2) return 'kaleidoscope';
   if (settings.mirrorWorld) return 'mirror world';
-  if (echoA > 0.01) return 'echo';
-  if (settings.obstacles !== 'none' && settings.obsShow) return 'obstacles';
+  if (echoA > 0.01 || echoSnap) return 'echo';
   if (recorder.on) return 'recording';
   if (projector.on) return 'projector';
-  const styles = settings.render === 'mixed' ? mixStyles() : [settings.render];
-  const not = styles.find((st) => !(st in SPRITES));
-  return not ? `${not} style` : '';
+  return '';
 }
-function glSetDirect(on: boolean, r: number, g: number, b: number) {
-  if (!glr) return;
-  glDirect = on;
-  document.body.classList.toggle('gl-direct', on);
+function glSetOnly(on: boolean) {
+  if (!glr || on === glOnly) return;
+  glOnly = glr.only = on;
+  document.body.classList.toggle('gl-only', on);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
   if (on) {
     if (!glr.canvas.isConnected) {
       glr.canvas.className = 'gl-layer';
       glr.canvas.setAttribute('aria-hidden', 'true');
-      canvas.before(glr.canvas);
+      canvas.after(glr.canvas);
     }
-    glr.reset(canvas.width, canvas.height, r, g, b);
+    // Carry the picture over, then the 2D canvas starts empty.
+    glr.layer(canvas, 'copy');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    glDirty2d = false;
   } else {
-    // Back to the 2D canvas: start it from a solid background.
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = `rgb(${r} ${g} ${b})`;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
+    // Back to the 2D canvas: carry the GPU picture over.
+    glr.present();
+    ctx.globalCompositeOperation = 'copy';
+    ctx.drawImage(glr.canvas, 0, 0);
+    glr.drop();
   }
+  ctx.restore();
 }
+// Lay what was drawn in 2D onto the GPU picture and empty the 2D canvas.
+function glTake2d(blend: Blend) {
+  if (!glOnly || !glDirty2d) return;
+  glDirty2d = false;
+  glr!.layer(canvas, blend);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+function glBlend(): Blend {
+  const op = ctx.globalCompositeOperation;
+  return op === 'lighter' ? 'add' : op === 'multiply' ? 'multiply' : 'over';
+}
+// The finished picture as a canvas to copy from (snapshots, checks).
+function picture(): HTMLCanvasElement {
+  if (!lensCanvas.hidden) return lensCanvas;
+  if (glOnly && glr) {
+    glr.present();
+    return glr.canvas;
+  }
+  return canvas;
+}
+
+// Draws one bucket of particles (all the same colour) in one style.
 function stamp(img: HTMLCanvasElement, x: number, y: number, d: number) {
   if (glr) glr.push(img, x, y, d, ctx.globalAlpha);
   else ctx.drawImage(img, x - d / 2, y - d / 2, d, d);
 }
+// GPU versions of the drawn (not stamped) styles: each particle is one
+// sprite, stretched and turned. A cell per shape and colour.
+type GlShape = 'square' | 'disc' | 'tri' | 'cross' | 'shard' | 'strand' | 'white';
+function glSprite(kind: GlShape, k: number) {
+  const key = `gl:${kind}:${k}`;
+  let c = spriteCache.get(key);
+  if (c) return c;
+  c = document.createElement('canvas');
+  const P = SPRITE_PX;
+  c.width = c.height = P;
+  const g = c.getContext('2d')!;
+  g.fillStyle = kind === 'white' ? 'rgba(255,240,220,0.9)' : shades[k];
+  g.strokeStyle = shades[k];
+  g.beginPath();
+  if (kind === 'square' || kind === 'white') g.rect(0, 0, P, P);
+  else if (kind === 'disc') g.arc(P / 2, P / 2, P / 2 - 0.5, 0, Math.PI * 2);
+  // Arrow: tip at the right edge, base along the left.
+  else if (kind === 'tri') {
+    g.moveTo(P, P / 2);
+    g.lineTo(0, 0);
+    g.lineTo(0, P);
+  } else if (kind === 'cross') {
+    const a = P * 0.4375;
+    const b = P * 0.5625;
+    g.rect(0, a, P, b - a);
+    g.rect(a, 0, b - a, P);
+  } else if (kind === 'shard') {
+    // Tip at the right; see the shard geometry in drawShapes.
+    g.moveTo(P, (0.4 / 1.4) * P);
+    g.lineTo((0.3 / 1.8) * P, P);
+    g.lineTo(0, 0);
+  } else {
+    // A strand: a gentle curve along the cell, drawn flat and stretched tall.
+    const t = document.createElement('canvas');
+    t.width = P;
+    t.height = 13;
+    const tg = t.getContext('2d')!;
+    tg.strokeStyle = shades[k];
+    tg.lineWidth = 3.2;
+    tg.lineCap = 'round';
+    tg.beginPath();
+    tg.moveTo(2, 9);
+    tg.quadraticCurveTo(P / 2, -1, P - 2, 9);
+    tg.stroke();
+    g.drawImage(t, 0, 0, P, P);
+  }
+  if (kind !== 'strand') g.fill();
+  spriteCache.set(key, c);
+  return c;
+}
+function glShape(style: Render, list: number[], k: number, s: number) {
+  const G = glr!;
+  const A = ctx.globalAlpha;
+  const sz = (i: number) => s * (uniformSize ? 1 : psz[i]);
+  if (style === 'dots') {
+    const img = glSprite('square', k);
+    for (const i of list) {
+      const d = sz(i);
+      G.pushR(img, px[i], py[i], d, d, 0, A);
+    }
+  } else if (style === 'arrows') {
+    const img = glSprite('tri', k);
+    for (const i of list) {
+      const L = s * 2.2 * (uniformSize ? 1 : psz[i]);
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      G.pushR(img, px[i] + (vx[i] / v) * L * 0.2, py[i] + (vy[i] / v) * L * 0.2, L * 1.6, L * 1.1, Math.atan2(vy[i], vx[i]), A);
+    }
+  } else if (style === 'streaks' || style === 'comets') {
+    // A stretched disc along the velocity (comets: a thin tail and a glow head).
+    const img = glSprite('disc', k);
+    const back = style === 'streaks' ? 3 : 9;
+    const lw = style === 'streaks' ? s : Math.max(0.5, s * 0.5);
+    const a = style === 'streaks' ? A : A * 0.55;
+    for (const i of list) {
+      const v = Math.hypot(vx[i], vy[i]);
+      G.pushR(img, px[i] - vx[i] * back * 0.5, py[i] - vy[i] * back * 0.5, v * back + lw, lw, Math.atan2(vy[i], vx[i]), a);
+    }
+    if (style === 'comets') {
+      const head = spriteFor('glow', k);
+      for (const i of list) {
+        const d = s * 3 * (uniformSize ? 1 : psz[i]);
+        G.pushR(head, px[i], py[i], d, d, 0, A);
+      }
+    }
+  } else if (style === 'embers') {
+    const img = spriteFor('glow', k);
+    const core = glSprite('white', k);
+    for (const i of list) {
+      const fl = 0.7 + 0.3 * Math.sin(t * 9 + gl[i] * 40) * Math.sin(t * 3.1 + rnd[i] * 20);
+      const d = s * 4.5 * (uniformSize ? 1 : psz[i]) * fl;
+      G.pushR(img, px[i], py[i], d, d, 0, A * (0.55 + 0.45 * fl));
+      const lt = span[i] > 0 ? Math.min(1, age[i] / span[i]) : 0.2;
+      if (lt > 0.5) continue;
+      const r = s * 0.9 * (1 - lt * 2);
+      G.pushR(core, px[i], py[i], r, r, 0, A);
+    }
+  } else if (style === 'hair') {
+    const img = glSprite('strand', k);
+    for (const i of list) {
+      const L = s * 5 * (uniformSize ? 1 : psz[i]);
+      G.pushR(img, px[i], py[i], L * 1.1, L * 0.3, Math.atan2(vy[i], vx[i]), A);
+    }
+  } else if (style === 'squares') {
+    const img = glSprite('square', k);
+    for (const i of list) {
+      const a = t * (1 + rnd[i] * 3) * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+      const h2 = sz(i) * 2.6;
+      const sq = Math.abs(Math.cos(t * (0.8 + rnd[i]) + gl[i] * 9));
+      G.pushR(img, px[i], py[i], h2, h2 * sq, a, A);
+    }
+  } else if (style === 'crosses') {
+    const img = glSprite('cross', k);
+    for (const i of list) {
+      const d = sz(i) * 3.2;
+      G.pushR(img, px[i], py[i], d, d, 0, A);
+    }
+  } else if (style === 'shards') {
+    const img = glSprite('shard', k);
+    for (const i of list) {
+      const z = sz(i);
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      const ux = vx[i] / v;
+      const uy = vy[i] / v;
+      const L = z * (2.4 + rnd[i] * 2);
+      const W = z * (0.25 + gl[i] * 0.4);
+      G.pushR(img, px[i] + ux * L * 0.1 - uy * W * 0.3, py[i] + uy * L * 0.1 + ux * W * 0.3, L * 1.8, W * 1.4, Math.atan2(uy, ux), A);
+    }
+  } else if (style === 'petals') {
+    const img = glSprite('disc', k);
+    for (const i of list) {
+      const a = t * 0.6 * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+      const r = sz(i) * 1.6;
+      G.pushR(img, px[i], py[i], r * 2, r * 0.9, a, A);
+    }
+  } else return false;
+  return true;
+}
 function drawStyle(style: Render, list: number[], k: number, s: number) {
+  if (!(style in SPRITES)) {
+    if (glr && glShape(style, list, k, s)) return;
+    if (glOnly) glDirty2d = true;
+  }
   const sprite = SPRITES[style as SpriteStyle];
   if (sprite) {
     // Pre-rendered shapes, stamped with drawImage: much faster than a path
@@ -4927,6 +5106,7 @@ function drawBuckets(bks: number[][], s: number) {
       mix.forEach((st, m) => parts[m].length && drawStyle(st, parts[m], k, s));
     }
   } else if (settings.render === 'ribbons') {
+    if (glOnly) glDirty2d = true;
     // Each ribbon pass is a separate stroke, so merge colour buckets into
     // groups of four to keep the number of strokes down.
     for (let k = 0; k < SHADES; k += 4) {
@@ -4936,7 +5116,10 @@ function drawBuckets(bks: number[][], s: number) {
       if (merged.length) drawRibbons(merged, k + 2, s);
     }
   } else {
-    if (settings.render === 'halftone' || settings.render === 'bigpixels') return drawGrid(settings.render, bks, s);
+    if (settings.render === 'halftone' || settings.render === 'bigpixels') {
+      if (glOnly) glDirty2d = true;
+      return drawGrid(settings.render, bks, s);
+    }
     if (settings.render === 'threads' || settings.render === 'lightning') buildPairs(settings.render, bks, s);
     for (let k = 0; k < SHADES; k++) if (bks[k].length) drawStyle(settings.render, bks[k], k, s);
   }
@@ -5652,12 +5835,11 @@ function draw() {
     viewWarp(tunnelZ, tunnelR, 1);
     fadeA = Math.min(fadeA, 0.3 - 0.2 * settings.audioTunnel);
   }
-  const direct = glDirectWanted();
-  if (direct !== glDirect) glSetDirect(direct, r, g, b);
-  if (direct) {
-    // The GPU keeps the picture and fades it; this canvas only carries markers.
-    ctx.clearRect(0, 0, w, h);
-    glr!.fade(canvas.width, canvas.height, r, g, b, fadeA);
+  const only = glOnlyWanted();
+  if (only !== glOnly) glSetOnly(only);
+  if (only) {
+    // The GPU keeps the picture and fades it for the trails.
+    glr!.fill(canvas.width, canvas.height, r, g, b, fadeA);
   } else {
     ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
     ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${fadeA.toFixed(3)})` : `rgb(${r} ${g} ${b} / ${fadeA.toFixed(3)})`;
@@ -5686,11 +5868,13 @@ function draw() {
   }
   // Background flash on the kick.
   const flashNow = Math.max(flashA, linkFlash);
-  if (flashNow > 0.004 && !seeThrough && !light) {
+  if (flashNow > 0.004 && !seeThrough && !light && glOnly) glr!.fill(canvas.width, canvas.height, 255, 255, 255, flashNow);
+  else if (flashNow > 0.004 && !seeThrough && !light) {
     ctx.fillStyle = `rgb(255 255 255 / ${flashNow.toFixed(3)})`;
     ctx.fillRect(0, 0, w, h);
   }
   drawObstacles(fadeA, light);
+  glTake2d('over');
   ctx.globalCompositeOperation = settings.glow ? (light ? 'multiply' : 'lighter') : 'source-over';
 
   if (settings.colorBy === 'speed' || (settings.render === 'glyphs' && settings.glyphPick === 'speed')) {
@@ -5746,7 +5930,11 @@ function draw() {
       py[i] = cy + dx * sn + dy * c;
     }
   }
-  if (settings.render === 'links') drawLinks();
+  if (settings.render === 'links') {
+    glDirty2d = true;
+    drawLinks();
+    glTake2d(glBlend());
+  }
   drawBuckets(buckets, s);
   // Fading particles, drawn in a few alpha steps to keep draw calls batched.
   for (let L = 0; L < FADE_LEVELS; L++) {
@@ -5755,9 +5943,10 @@ function draw() {
   }
   ctx.globalAlpha = 1;
   if (glr?.pending) {
-    glr.additive = ctx.globalCompositeOperation === 'lighter';
-    glr.flush(ctx, w, h, glDirect);
+    glr.blend = glBlend();
+    glr.flush(ctx, w, h);
   }
+  glTake2d(glBlend());
   if (spin) {
     px.set(spinX.subarray(0, n));
     py.set(spinY.subarray(0, n));
@@ -5771,6 +5960,7 @@ function draw() {
 
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
+  if (glOnly && (settings.showWells || markPts.length || waves.length)) glDirty2d = true;
   if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
   // Fingertips and pinches, faintly, so you can see where your hands are.
   if (markPts.length) {
@@ -6207,7 +6397,10 @@ function frame(now: number) {
       if (kaleidoNow >= 2) kaleidoscope(kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0));
       if (settings.mirrorWorld) mirrorHalf();
       lensFrame(now);
-      if (glDirect && glr) {
+      glTake2d('over');
+      if (glOnly && glWhy()) glSetOnly(false);
+      if (glOnly && glr) {
+        glr.present();
         const st = glr.canvas.style;
         if (st.filter !== canvas.style.filter) st.filter = canvas.style.filter;
         if (st.transform !== canvas.style.transform) st.transform = canvas.style.transform;
@@ -8625,7 +8818,7 @@ type Shard = { pts: number[]; cx: number; cy: number; vx: number; vy: number; va
 let tlFx: { how: TlHow; start: number; dur: number; switchAt: number; go: (() => void) | null; shards?: Shard[] } | null = null;
 
 function tlSnapshot() {
-  const src = lensCanvas.hidden ? canvas : lensCanvas;
+  const src = picture();
   fxSnap.width = src.width;
   fxSnap.height = src.height;
   const g = fxSnap.getContext('2d')!;
@@ -9180,7 +9373,7 @@ perfHud.setAttribute('aria-hidden', 'true');
     t0 = now;
     perfNow.frameMs = 1000 / Math.max(perfNow.real, 0.1);
     perfNow.cpu = stepMs + drawMs;
-    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? (glDirect ? ' · WebGL direct' : (GL_DIRECT ? ` · WebGL copy (${glWhyNot})` : ' · WebGL')) : ' · 2D'}`;
+    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? (glOnly ? ' · WebGL only' : RENDERER === 'only' ? ` · WebGL copy (${glWhyNot})` : ' · WebGL copy') : ' · 2D'}`;
   }, 1000);
 }
 function setPerfHud(on: boolean) {
@@ -9237,33 +9430,39 @@ function renderQuality(): HTMLElement {
   const note = document.createElement('p');
   note.className = 'q-note';
   note.textContent = `This screen is ${native}× natively. Turn "lower by itself" off while you compare, so the numbers stay put.`;
-  // Renderer: WebGL sprites or the plain 2D canvas (a reload with ?renderer=2d).
+  // Renderer: WebGL only, WebGL copy or the plain 2D canvas (a reload with ?renderer=…).
   const rend = document.createElement('div');
   rend.className = 'anim-chips q-rend';
-  const want2d = new URLSearchParams(location.search).get('renderer') === '2d';
-  for (const [v, lbl] of [['webgl', 'WebGL'], ['2d', '2D canvas']] as const) {
+  const active = glr ? RENDERER : '2d';
+  for (const [v, lbl] of [['only', 'WebGL only'], ['copy', 'WebGL copy'], ['2d', '2D']] as const) {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = lbl;
-    const on = v === '2d' ? want2d || !glr : !want2d && !!glr;
+    const on = v === active;
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', String(on));
-    if (v === 'webgl' && !glr && !want2d) b.disabled = true;
+    if (v !== '2d' && !glr && RENDERER !== '2d') b.disabled = true;
     b.addEventListener('click', () => {
       if (on) return;
       const u = new URL(location.href);
       // Keep the current look (it is saved) rather than the scene the link opened with.
       u.searchParams.delete('preset');
       if (u.hash.startsWith('#preset=')) u.hash = '';
-      if (v === '2d') u.searchParams.set('renderer', '2d');
-      else u.searchParams.delete('renderer');
+      if (v === 'only') u.searchParams.delete('renderer');
+      else u.searchParams.set('renderer', v);
       location.href = u.toString();
     });
     rend.append(b);
   }
   const rendLbl = document.createElement('p');
   rendLbl.className = 'q-note';
-  rendLbl.textContent = glr ? 'Renderer: soft particles are drawn by the GPU (WebGL). Switching reloads the page.' : want2d ? 'Renderer: everything on the 2D canvas. Switching reloads the page.' : 'Renderer: this browser has no WebGL2, so the 2D canvas is used.';
+  rendLbl.textContent = !glr
+    ? RENDERER === '2d'
+      ? 'Renderer: everything on the 2D canvas. Switching reloads the page.'
+      : 'Renderer: this browser has no WebGL2, so the 2D canvas is used.'
+    : RENDERER === 'only'
+      ? 'Renderer: the picture stays on the GPU. Lenses, tunnel, kaleidoscope, mirror, echo, recording and the projector still use the copy while on. Switching reloads the page.'
+      : 'Renderer: particles are drawn by the GPU and copied onto the 2D canvas, which keeps the picture. Switching reloads the page.';
   box.append(rend, rendLbl, chips, auto, out, note);
   // Real frames counted over each second (the old meter averaged per-frame
   // rates and could not show less than 20). CPU is the script's own time per
@@ -14937,7 +15136,7 @@ function remixCheck() {
     const g = c.getContext('2d', { willReadFrequently: true });
     if (!g) return;
     try {
-      g.drawImage(canvas, 0, 0, W, H);
+      g.drawImage(picture(), 0, 0, W, H);
     } catch {
       return;
     }
