@@ -14431,11 +14431,21 @@ function toggleSceneSheet() {
   el.className = 'scene-sheet';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Scenes');
-  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div>`;
+  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-fold" aria-label="Show only this row" aria-expanded="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg></button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div>`;
   const [prevB, nextB] = el.querySelectorAll<HTMLButtonElement>('.ss-step');
   prevB.addEventListener('click', () => sheetStep(-1));
   nextB.addEventListener('click', () => sheetStep(1));
   el.querySelector('.ss-close')!.addEventListener('click', closeSceneSheet);
+  // Fold to just the ‹ name › row (remembered), for stepping without the list.
+  const foldB = el.querySelector<HTMLButtonElement>('.ss-fold')!;
+  const fold = (on: boolean) => {
+    el.classList.toggle('mini', on);
+    foldB.setAttribute('aria-expanded', String(!on));
+    foldB.setAttribute('aria-label', on ? 'Show all scenes' : 'Show only this row');
+    try { localStorage.setItem('pf-scene-sheet-mini', on ? '1' : ''); } catch {}
+  };
+  foldB.addEventListener('click', () => fold(!el.classList.contains('mini')));
+  try { if (localStorage.getItem('pf-scene-sheet-mini')) fold(true); } catch {}
   sheetDrag(el);
   const input = el.querySelector('input')!;
   const recentEl = el.querySelector<HTMLElement>('.ss-recent')!;
