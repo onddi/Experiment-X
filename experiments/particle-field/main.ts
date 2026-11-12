@@ -907,8 +907,8 @@ function step(dt: number) {
   const gy = holdGather ? pointer.y : h / 2;
   // Implode & burst reaches further the longer it's held.
   const gatherR = holdImplode ? Math.max(220, radius * 3) * (1 + holdCharge() * 1.2) : holdGather ? Math.max(150, radius * 2.5) : Math.hypot(w, h) * 0.6;
-  // A slow breath in while held: a ring every 1.3 s, a gentle pull.
-  if (holdImplode && performance.now() - holdRingAt > 1300) {
+  // A slow breath in while held: a ring every 2.4 s, a gentle pull.
+  if (holdImplode && performance.now() - holdRingAt > 2400) {
     holdRingAt = performance.now();
     addWave('implode', pointer.x, pointer.y, { force: 0.5 * settings.clickForce });
   }
