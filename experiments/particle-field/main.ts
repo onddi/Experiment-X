@@ -129,16 +129,19 @@ let hx = new Float32Array(0); // home position (Shape section)
 // Shape placement: homes are built about the screen centre; the spring
 // aims at them moved and turned by the shape's position and angle.
 const place = { on: false, cx: 0, cy: 0, ox: 0, oy: 0, c: 1, s: 0 };
+// The size the homes were built at: an animated size scales them about the centre.
+let shapeBuiltSize = 1;
 function placeFrame() {
   const S = settings;
-  place.on = S.shapeX !== 0 || S.shapeY !== 0 || S.shapeAngle !== 0;
+  const k = paramShape || S.shape === 'camera' || S.shape === 'none' || !shapeBuiltSize ? 1 : S.shapeSize / shapeBuiltSize;
+  place.on = S.shapeX !== 0 || S.shapeY !== 0 || S.shapeAngle !== 0 || Math.abs(k - 1) > 1e-4;
   place.cx = w / 2;
   place.cy = h / 2;
   place.ox = S.shapeX * w;
   place.oy = S.shapeY * h;
   const a = (S.shapeAngle * Math.PI) / 180;
-  place.c = Math.cos(a);
-  place.s = Math.sin(a);
+  place.c = Math.cos(a) * k;
+  place.s = Math.sin(a) * k;
 }
 function placed(x: number, y: number): [number, number] {
   const dx = x - place.cx;
@@ -3295,7 +3298,10 @@ function inkSync() {
 
 function buildShape() {
   const S = settings;
-  const key = [S.shape, S.shapeText, S.imageMode, S.shapeSize, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
+  // An animated size plays as a scale on the built shape (see placeFrame), so
+  // the shape is built once at the knob's own size, not every frame.
+  const sz = animBase.shapeSize ?? S.shapeSize;
+  const key = [S.shape, S.shapeText, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   if (S.shape === 'camera' && trackMode()) {
     // Face, hand and body modes: the homes follow the tracking every frame.
@@ -3307,24 +3313,25 @@ function buildShape() {
     return;
   }
   shapeKey = key;
+  shapeBuiltSize = sz;
   if (!glideHomes) homeGlide = null;
   const cx = w / 2;
   const cy = h / 2;
-  const R = (Math.min(w, h) / 2) * S.shapeSize;
+  const R = (Math.min(w, h) / 2) * sz;
   paramShape = null;
   if (S.shape === 'geo' || S.shape === 'solid' || (S.shape === 'live' && (S.shapeLive === 'bars' || S.shapeLive === 'ring'))) {
     buildParamShape();
     return;
   }
   const pat = S.shape === 'pattern' ? S.shapePattern : S.shape;
-  if (S.shape === 'pattern' && fillPattern(pat, n, w, h, S.shapeSize, hx, hy, { scale: S.patScale, form: S.patForm, vary: S.patVary, seed: S.patSeed })) return;
+  if (S.shape === 'pattern' && fillPattern(pat, n, w, h, sz, hx, hy, { scale: S.patScale, form: S.patForm, vary: S.patVary, seed: S.patSeed })) return;
   if (pat === 'grid' || pat === 'sunflower' || pat === 'ring') {
     const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
     const rows = Math.max(1, Math.ceil(n / cols));
     for (let i = 0; i < n; i++) {
       if (pat === 'grid') {
-        const gw = w * S.shapeSize;
-        const gh = h * S.shapeSize;
+        const gw = w * sz;
+        const gh = h * sz;
         hx[i] = cx - gw / 2 + ((i % cols) + 0.5) * (gw / cols);
         hy[i] = cy - gh / 2 + (Math.floor(i / cols) + 0.5) * (gh / rows);
       } else if (pat === 'sunflower') {
@@ -3352,13 +3359,13 @@ function buildShape() {
       let size = H * 0.5;
       g.font = `800 ${size}px system-ui, sans-serif`;
       const tw = g.measureText(text).width;
-      size *= Math.min(1, (W * S.shapeSize) / Math.max(1, tw));
-      size = Math.min(size, H * 0.7 * S.shapeSize + 4);
+      size *= Math.min(1, (W * sz) / Math.max(1, tw));
+      size = Math.min(size, H * 0.7 * sz + 4);
       g.font = `800 ${size}px system-ui, sans-serif`;
       g.fillText(text, W / 2, H / 2);
       return true;
     };
-    const icon = (id: string) => drawIcon(g, id, W / 2, H / 2, (Math.min(W, H) / 2) * S.shapeSize * 0.92);
+    const icon = (id: string) => drawIcon(g, id, W / 2, H / 2, (Math.min(W, H) / 2) * sz * 0.92);
     if (S.shape === 'text') return word(S.shapeText);
     if (S.shape === 'icon') return icon(S.shapeIcon);
     if (S.shape === 'sequence') {
@@ -11956,10 +11963,12 @@ setInterval(() => {
 // new bar it hears) or the timeline's set tempo, and stops with Pause.
 let animBeat = 0;
 let animFrozen = false;
-type AnimRec = { key: string; base: number; from: number; beats: number; pts: [number, number][] };
+// A recording: the keys it may take, the ones you have touched so far (live),
+// each one's value under the move (base) and its points.
+type AnimRec = { keys: string[]; live: Set<string>; base: Record<string, number>; from: number; beats: number; pts: Record<string, [number, number][]>; done?: (n: number) => void };
 let animRec: AnimRec | null = null;
 // Settings that rebuild things when they change, or would fight other parts.
-const ANIM_NO = new Set(['count', 'shapeSize', 'patScale', 'xfPos', 'morph', 'entranceTime', 'shapeSeqSec', 'camRate', 'audioSync', 'audioVj', 'burstSize']);
+const ANIM_NO = new Set(['count', 'patScale', 'xfPos', 'morph', 'entranceTime', 'shapeSeqSec', 'camRate', 'audioSync', 'audioVj', 'burstSize']);
 // Angles wrap round instead of stopping at the ends.
 const ANIM_WRAP = new Set(['hueShift', 'windDir', 'launchDir', 'shapeAngle', 'shapeFacing', 'viewRot']);
 let rangeMap: Map<string, Extract<Control, { kind: 'range' }>> | null = null;
@@ -11989,32 +11998,42 @@ function animTick(rawMs: number) {
   }
   const map = animMap();
   const S = settings as unknown as Record<string, number>;
-  // Recording a move: the knob is yours; each frame is kept.
+  // Recording a move: the knobs you touch are yours; each frame is kept.
   if (animRec) {
     const r = animRec;
-    const c = rangeCtl(r.key)!;
-    const cur = S[r.key];
     const t = (animBeat - r.from) / r.beats;
-    animBase[r.key] = r.base;
-    animWrote[r.key] = cur;
-    if (t < 1) r.pts.push([t, (cur - r.base) / (c.max - c.min)]);
-    else {
+    for (const k of r.live) {
+      const c = rangeCtl(k)!;
+      const cur = S[k];
+      animBase[k] = r.base[k];
+      animWrote[k] = cur;
+      if (t >= 0 && t < 1) r.pts[k].push([t, (cur - r.base[k]) / (c.max - c.min)]);
+    }
+    if (t >= 1) {
       animRec = null;
       // Line the recording up with the loop: t 0 is where the bar clock's cycle starts.
-      const shift = (r.from / r.beats) % 1;
-      const pts = thin(r.pts).map(([x, v]) => [(x + shift) % 1, v] as [number, number]);
-      animPut(r.key, { m: 'keys', b: r.beats / 4, e: 'line', k: pts });
-      showToast('Move recorded · it loops now');
+      const shift = (((r.from / r.beats) % 1) + 1) % 1;
+      let made = 0;
+      const next = { ...animMap() };
+      for (const k of r.live) {
+        const pts = thin(r.pts[k]).map(([x, v]) => [(x + shift) % 1, v] as [number, number]);
+        if (pts.length < 2 || !pts.some(([, v]) => Math.abs(v) > 0.002)) continue;
+        next[k] = { m: 'keys', b: r.beats / 4, e: 'line', k: pts };
+        made++;
+      }
+      set('anim', formatAnim(next) as never);
+      if (r.done) r.done(made);
+      else showToast('Move recorded · it loops now');
     }
   }
   for (const k of Object.keys(animBase)) {
-    if (map[k] || animRec?.key === k) continue;
+    if (map[k] || animRec?.live.has(k)) continue;
     if (Math.abs(S[k] - animWrote[k]) < 1e-9) S[k] = animBase[k];
     delete animBase[k];
     delete animWrote[k];
   }
   for (const k in map) {
-    if (animRec?.key === k) continue;
+    if (animRec?.live.has(k)) continue;
     const c = rangeCtl(k);
     const cur = S[k];
     if (!c || typeof cur !== 'number' || bypass.has('knobs')) continue;
@@ -12037,7 +12056,27 @@ function animRecord(k: string, bars: number) {
   const base = animKnob(k, cur);
   animPut(k, null);
   (settings as unknown as Record<string, number>)[k] = base;
-  animRec = { key: k, base, from: animBeat, beats: bars * 4, pts: [] };
+  animRec = { keys: [k], live: new Set([k]), base: { [k]: base }, from: animBeat, beats: bars * 4, pts: { [k]: [] } };
+}
+// Record several settings over a loop that starts on the next bar. Only the
+// ones you move (animRecTouch) get new keyframes; the rest keep what they had.
+function animRecordMany(keys: string[], bars: number, done: (n: number) => void) {
+  const beats = bars * 4;
+  animRec = { keys, live: new Set(), base: {}, from: Math.ceil(animBeat / 4 - 0.02) * 4, beats, pts: {}, done };
+}
+// Call before writing a setting that a recording may take over.
+function animRecTouch(k: string) {
+  const r = animRec;
+  if (!r || r.live.has(k) || !r.keys.includes(k) || animBeat < r.from) return;
+  const c = rangeCtl(k);
+  if (!c) return;
+  const cur = (settings as unknown as Record<string, number>)[k];
+  if (animMap()[k]) animPut(k, null);
+  r.base[k] = cur;
+  r.live.add(k);
+  // Before the first touch it sat still at this value.
+  const t = (animBeat - r.from) / r.beats;
+  r.pts[k] = t > 0.01 ? [[0, 0], [t, 0]] : [];
 }
 
 const WAVE_PATH: Record<AWave, string> = {
@@ -12081,7 +12120,7 @@ function animPanel(c: Extract<Control, { kind: 'range' }>): HTMLElement {
   const draw = () => {
     box.innerHTML = '';
     const a = animMap()[k];
-    const recording = animRec?.key === k;
+    const recording = !!animRec?.live.has(k);
     const mode = recording ? 'rec' : a?.m ?? 'off';
     box.append(chipRow<string>([['off', 'Still'], ['wave', 'Swing'], ['keys', 'Keyframes']], (v) => v === mode || (v === 'keys' && mode === 'rec'), (v) => {
       if (v === 'off') animPut(k, null);
@@ -12152,10 +12191,10 @@ function animPanel(c: Extract<Control, { kind: 'range' }>): HTMLElement {
   };
   draw();
   // Redraw once a recording finishes.
-  let was = animRec?.key === k;
+  let was = !!animRec?.live.has(k);
   const timer = window.setInterval(() => {
     if (!box.isConnected) return clearInterval(timer);
-    const now = animRec?.key === k;
+    const now = !!animRec?.live.has(k);
     if (was && !now) draw();
     was = now;
   }, 200);
@@ -12253,7 +12292,7 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, H);
     const a = keys();
-    const rec = animRec?.key === k ? animRec : null;
+    const rec = animRec?.live.has(k) ? animRec : null;
     const bars = a?.b ?? (rec ? rec.beats / 4 : 4);
     // Bars (or quarter bars) as faint lines.
     const lines = bars >= 1 ? bars : 4;
@@ -12300,7 +12339,7 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
       g.strokeStyle = '#ff4d5a';
       g.lineWidth = 2;
       g.beginPath();
-      rec.pts.forEach(([t, v], i) => (i ? g.lineTo(t * w, yOf(v)) : g.moveTo(t * w, yOf(v))));
+      (rec.pts[k] ?? []).forEach(([t, v], i) => (i ? g.lineTo(t * w, yOf(v)) : g.moveTo(t * w, yOf(v))));
       g.stroke();
     }
     // Where the loop is now.
@@ -12322,7 +12361,7 @@ function renderAnimList(): HTMLElement {
   const draw = () => {
     const map = animMap();
     const keys = Object.keys(map).filter((k) => rangeCtl(k));
-    const next = `${settings.anim}|${animFrozen}|${animRec?.key ?? ''}`;
+    const next = `${settings.anim}|${animFrozen}|${animRec ? [...animRec.live].join() : ''}`;
     if (next === sig && box.childElementCount) return;
     sig = next;
     box.innerHTML = '';
@@ -14534,6 +14573,7 @@ setInterval(stageName, 300);
 // a 3D shape, Turn 3D makes one finger orbit it instead. The wheel resizes
 // (Shift + wheel turns). Double-tap centres it. Done (or Esc) leaves.
 let arrangeEl: HTMLElement | null = null;
+const ARRANGE_KEYS = ['shapeX', 'shapeY', 'shapeAngle', 'shapeSize', 'shapeTilt', 'shapeFacing'];
 function toggleArrange(on = !arranging) {
   if (on === arranging) return;
   arranging = on;
@@ -14552,7 +14592,7 @@ function toggleArrange(on = !arranging) {
   if (sheetMode() && !panel.classList.contains('collapsed')) toggle.click();
   const el = document.createElement('div');
   el.className = 'arrange';
-  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on">Move</button><button type="button" data-m="orbit">Turn 3D</button></span><button type="button" class="ar-centre">Centre</button><button type="button" class="ar-done">Done</button></div>`;
+  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on">Move</button><button type="button" data-m="orbit">Turn 3D</button></span><button type="button" class="ar-centre">Centre</button><span class="ar-rec" role="group" aria-label="Record a move"><button type="button" class="ar-len" title="Loop length">4 bars</button><button type="button" class="ar-recb"><i></i><span>Record</span></button><button type="button" class="ar-clear" title="Stop the recorded moves">Clear moves</button></span><button type="button" class="ar-done">Done</button></div>`;
   document.body.append(el);
   arrangeEl = el;
   let mode: 'move' | 'orbit' = 'move';
@@ -14571,10 +14611,57 @@ function toggleArrange(on = !arranging) {
   });
   el.querySelector('.ar-centre')!.addEventListener('click', resetPlacement);
   el.querySelector('.ar-done')!.addEventListener('click', () => toggleArrange(false));
+  // Record: move the shape by hand over a loop (it starts on the next bar);
+  // what you moved becomes keyframes and plays back in time.
+  const lenB = el.querySelector<HTMLButtonElement>('.ar-len')!;
+  const recB = el.querySelector<HTMLButtonElement>('.ar-recb')!;
+  const clearB = el.querySelector<HTMLButtonElement>('.ar-clear')!;
+  let bars = 4;
+  const recPaint = () => {
+    if (!el.isConnected) return clearInterval(recTimer);
+    const r = animRec && animRec.keys === ARRANGE_KEYS ? animRec : null;
+    lenB.textContent = cycleLabel(bars);
+    lenB.disabled = !!r;
+    recB.classList.toggle('live', !!r);
+    const lbl = recB.querySelector('span')!;
+    if (!r) lbl.textContent = 'Record';
+    else if (animBeat < r.from) lbl.textContent = `Starts in ${Math.max(1, Math.ceil(r.from - animBeat))}…`;
+    else lbl.textContent = `Recording ${Math.min(bars, Math.floor((animBeat - r.from) / 4) + 1)} / ${bars}`;
+    recB.classList.toggle('waiting', !!r && animBeat < r.from);
+    el.classList.toggle('recording', !!r);
+    if (r) hint.textContent = animBeat < r.from ? 'Get ready: it records from the next bar' : 'Move it now, the loop is recording';
+    else if (hint.dataset.rec) paint();
+    hint.dataset.rec = r ? '1' : '';
+    const moving = ARRANGE_KEYS.some((k) => animMap()[k]);
+    clearB.hidden = !moving || !!r;
+  };
+  const recTimer = window.setInterval(recPaint, 100);
+  lenB.addEventListener('click', () => {
+    const L = [1, 2, 4, 8, 16];
+    bars = L[(L.indexOf(bars) + 1) % L.length];
+    recPaint();
+  });
+  recB.addEventListener('click', () => {
+    if (animRec && animRec.keys === ARRANGE_KEYS) {
+      animRec = null;
+      showToast('Recording stopped');
+    } else
+      animRecordMany(ARRANGE_KEYS, bars, (made) => showToast(made ? `Recorded ${made} move${made > 1 ? 's' : ''} · ${cycleLabel(bars)} loop` : 'Nothing moved, nothing recorded'));
+    recPaint();
+  });
+  clearB.addEventListener('click', () => {
+    const m = { ...animMap() };
+    for (const k of ARRANGE_KEYS) delete m[k];
+    set('anim', formatAnim(m) as never);
+    showToast('Recorded moves cleared');
+    recPaint();
+  });
+  recPaint();
   // Changes go out once a frame (a new size rebuilds the shape).
   const pend = new Set<keyof Settings>();
   let raf = 0;
   const put = (k: keyof Settings, v: number) => {
+    animRecTouch(k);
     (settings as unknown as Record<string, number>)[k] = v;
     pend.add(k);
     raf ||= requestAnimationFrame(() => {
