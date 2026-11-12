@@ -6364,7 +6364,7 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: 'Two fingers' },
   { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
-  { kind: 'note', text: 'A quick sideways swipe plays the previous or next scene. Tap near the bottom edge for the bar.' },
+  { kind: 'note', text: 'A quick sideways swipe plays the previous or next scene, a quick swipe up shuffles. Tap near the bottom edge for the bar.' },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -11654,7 +11654,7 @@ function closeOverview() {
 }
 // Watching (phones): no menus at all, just the field. A faint scene pill
 // brings the overview back, a faint shuffle rolls a new look, and a swipe
-// sideways plays the previous / next scene. Both fade while you watch.
+// sideways plays the previous / next scene, a swipe up shuffles. Both fade while you watch.
 const watchBar = document.createElement('div');
 watchBar.className = 'watch-bar';
 watchBar.innerHTML = `<button type="button" class="watch-scene" aria-label="Back to the Deck">${ICONS.sliders}<b></b></button><button type="button" class="watch-shuffle" aria-label="Shuffle">${ICONS.shuffle}</button>`;
@@ -11686,8 +11686,16 @@ function stopWatching() {
     const dx = e.clientX - sw.x;
     const dy = e.clientY - sw.y;
     const quick = performance.now() - sw.t < 600;
+    const sw0y = sw.y;
     sw = null;
-    if (!quick || Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    if (!quick) return;
+    // A quick swipe up: shuffle. Not from the very bottom, where the
+    // phone's own home swipe and the bar's tap zone are.
+    if (-dy > 80 && Math.abs(dx) < -dy * 0.6 && sw0y < window.innerHeight - 60) {
+      shuffle();
+      return;
+    }
+    if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
     const r = watchSceneAfter(dx < 0 ? 1 : -1);
     const p = PRESETS.find(([nm]) => nm === r.name);
     if (p) playPreset(p[0], p[1]);
