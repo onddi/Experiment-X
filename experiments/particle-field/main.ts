@@ -4,7 +4,7 @@ import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel } from './shapes.ts';
-import { modelFromFile, decodeFrames, sliceSheet, butterflySheet } from './media.ts';
+import { modelFromFile, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
@@ -4699,6 +4699,10 @@ let spriteAnim: HTMLCanvasElement[] | null = null;
 let spriteRaw: HTMLCanvasElement[] = [];
 let spriteGrey: HTMLCanvasElement[] = [];
 let spriteRawKey = '';
+// The sheet's grid as used (auto resolved), and its frames grouped by row
+// (one animation per row is the usual layout); empty cells are left out.
+let spriteGrid: [number, number] = [1, 1];
+let spriteRowsIdx: number[][] = [];
 const spriteTints = new Map<string, HTMLCanvasElement>();
 const spriteInput = document.createElement('input');
 spriteInput.type = 'file';
@@ -4717,6 +4721,7 @@ function spriteUse(img: HTMLImageElement | null, frames: HTMLCanvasElement[] | n
   spriteSheet = img;
   spriteAnim = frames;
   spriteRawKey = '';
+  spriteFramesNow();
   if (settings.render !== 'sprite' && settings.render !== 'mixed') {
     settings.render = 'sprite';
     changed(new Set(['render']));
@@ -4728,7 +4733,31 @@ function spriteFramesNow() {
   const key = `${spriteSheet?.src ?? (spriteAnim ? `anim${spriteAnim.length}` : 'fly')}|${S.spriteCols}|${S.spriteRows}`;
   if (key !== spriteRawKey) {
     spriteRawKey = key;
-    spriteRaw = spriteAnim ?? (spriteSheet ? sliceSheet(spriteSheet, S.spriteCols, S.spriteRows) : butterflySheet());
+    if (spriteSheet) {
+      const auto = !S.spriteCols || !S.spriteRows ? detectGrid(spriteSheet) : [1, 1];
+      spriteGrid = [S.spriteCols || auto[0], S.spriteRows || auto[1]];
+      const all = sliceSheet(spriteSheet, spriteGrid[0], spriteGrid[1]);
+      spriteRaw = [];
+      spriteRowsIdx = [];
+      for (let r = 0; r < spriteGrid[1]; r++) {
+        const idx: number[] = [];
+        for (let c = 0; c < spriteGrid[0]; c++) {
+          const cv = all[r * spriteGrid[0] + c];
+          if (!cv || cellEmpty(cv)) continue;
+          idx.push(spriteRaw.length);
+          spriteRaw.push(cv);
+        }
+        if (idx.length) spriteRowsIdx.push(idx);
+      }
+      if (!spriteRaw.length) {
+        spriteRaw = all.slice(0, 1);
+        spriteRowsIdx = [[0]];
+      }
+    } else {
+      spriteRaw = spriteAnim ?? butterflySheet();
+      spriteGrid = [spriteRaw.length, 1];
+      spriteRowsIdx = [spriteRaw.map((_, q) => q)];
+    }
     // Light grey copies keep the shading; the palette colour multiplies in.
     spriteGrey = spriteRaw.map((c) => {
       const o = document.createElement('canvas');
@@ -4748,6 +4777,12 @@ function spriteFramesNow() {
     spriteTints.clear();
   }
   return spriteRaw;
+}
+function cellEmpty(cv: HTMLCanvasElement) {
+  const d = cv.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, cv.width, cv.height).data;
+  let n = 0;
+  for (let q = 3; q < d.length; q += 4) if (d[q] > 16 && ++n > 6) return false;
+  return true;
 }
 function spriteTinted(f: number, k: number) {
   const key = `${f}:${k}`;
@@ -4771,17 +4806,21 @@ function spriteTinted(f: number, k: number) {
 function drawUserSprites(list: number[], k: number, s: number) {
   const S = settings;
   const frames = spriteFramesNow();
-  const F = frames.length;
+  const R = spriteRowsIdx.length;
+  const one = S.spriteRow > 0 ? spriteRowsIdx[Math.min(R, S.spriteRow) - 1] : null;
   const A = ctx.globalAlpha;
   const d0 = s * S.spriteScale;
   const rgb = shadeRgb[k] ?? [255, 255, 255];
   const tint = S.spriteTint ? (Math.round(rgb[0]) << 16) | (Math.round(rgb[1]) << 8) | Math.round(rgb[2]) : 0xffffff;
   const turn = S.spriteTurn;
   for (const i of list) {
-    let f = 0;
+    // Each particle plays one row: the chosen one, or its own.
+    const row = one ?? spriteRowsIdx[R > 1 ? (Math.imul(i, 2654435761) >>> 0) % R : 0];
+    const F = row.length;
+    let f = row[0];
     if (F > 1) {
-      if (S.spriteFps > 0) f = Math.floor(t * S.spriteFps + rnd[i] * F) % F;
-      else f = span[i] > 0 ? Math.min(F - 1, Math.floor((age[i] / span[i]) * F)) : Math.floor(t * 8 + rnd[i] * F) % F;
+      if (S.spriteFps > 0) f = row[Math.floor(t * S.spriteFps + rnd[i] * F) % F];
+      else f = row[span[i] > 0 ? Math.min(F - 1, Math.floor((age[i] / span[i]) * F)) : Math.floor(t * 8 + rnd[i] * F) % F];
     }
     const d = uniformSize ? d0 : d0 * psz[i];
     const a = turn === 'heading' ? Math.atan2(vy[i], vx[i]) : turn === 'spin' ? t * 1.5 * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28 : 0;
@@ -8378,7 +8417,7 @@ const CONTROLS: Control[] = [
   { kind: 'record' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
-    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows'],
+    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
     summary: () => label(RENDERS, settings.render) },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
@@ -8387,9 +8426,10 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'spriteTurn', label: 'Turning', options: [['none', 'Upright'], ['heading', 'Face where it goes'], ['spin', 'Spin']], show: isSprite },
   { kind: 'toggle', key: 'spriteTint', label: 'Take the palette’s colours', show: isSprite },
   { kind: 'range', key: 'spriteFps', label: 'Frames per second', min: 0, max: 30, step: 1, format: (v) => (v === 0 ? 'by age' : `${v}`), show: () => isSprite() && spriteFramesNow().length > 1 },
-  { kind: 'range', key: 'spriteCols', label: 'Sheet columns', min: 0, max: 16, step: 1, format: (v) => (v === 0 ? 'auto' : `${v}`), show: () => isSprite() && !!spriteSheet },
-  { kind: 'range', key: 'spriteRows', label: 'Sheet rows', min: 0, max: 16, step: 1, format: (v) => (v === 0 ? 'auto' : `${v}`), show: () => isSprite() && !!spriteSheet },
-  { kind: 'note', text: 'A single image, a sprite sheet (frames in a grid; a strip of square frames is found by itself) or an animated GIF. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
+  { kind: 'range', key: 'spriteCols', label: 'Sheet columns', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[0]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'range', key: 'spriteRows', label: 'Sheet rows', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[1]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'range', key: 'spriteRow', label: 'Animation (row)', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? 'each its own' : `row ${Math.min(v, spriteRowsIdx.length)}`), show: () => isSprite() && !!spriteSheet && spriteRowsIdx.length > 1 },
+  { kind: 'note', text: 'A single image, a sprite sheet or an animated GIF. A sheet’s grid is found by the clear gaps between frames (set columns and rows if not); with one animation per row, play one row or let each particle play its own. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
@@ -11212,7 +11252,7 @@ const afterShow: (() => void)[] = [];
 // Fine-tune. Cards with 4 or fewer settings show everything.
 const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['homeStrength', 'morph'],
-  look: ['render', 'mixStyles', 'size', 'trail', 'glow'],
+  look: ['render', 'mixStyles', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
   colour: ['palette', 'colorBy', 'customColors'],
   shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
@@ -16045,7 +16085,7 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set(['spriteCols', 'spriteRows', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
+const REMIX_SKIP = new Set(['spriteCols', 'spriteRows', 'spriteRow', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
 // How often a switchable card is on in a remix.
 const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85 };
 const REMIX_KEY = 'particle-field:remix';
