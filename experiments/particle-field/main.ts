@@ -9298,6 +9298,8 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       if (dockMoreEl?.classList.contains('open') && !dockMoreEl.contains(t) && !dockMoreBtn?.contains(t)) toggleDockMore(false);
     });
   }
+  // The scene sheet sits over the bar's menu: one at a time.
+  if (open && sceneSheetEl) closeSceneSheet();
   dockMoreEl.classList.toggle('open', open);
   dockMoreBtn?.classList.toggle('on', open);
 }
@@ -14692,6 +14694,7 @@ function sheetDrag(el: HTMLElement) {
 }
 function toggleSceneSheet() {
   if (sceneSheetEl) return closeSceneSheet();
+  if (dockMoreEl?.classList.contains('open')) toggleDockMore(false);
   const el = document.createElement('div');
   el.className = 'scene-sheet';
   el.setAttribute('role', 'dialog');

@@ -2392,3 +2392,6 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .scene-sheet .ss-head { cursor: grab; }
 .scene-sheet.dragging .ss-head { cursor: grabbing; }
 @media (max-width: 720px) { .scene-sheet .ss-head { cursor: default; } }
+/* The bar takes a "stage" class on the Stage; keep the field's .stage rule
+   (overflow: hidden) from clipping its ⋯ menu. */
+.u-bar.stage { overflow: visible; }
