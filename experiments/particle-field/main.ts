@@ -13557,11 +13557,12 @@ function explode(cx = w / 2, cy = h / 2, power = 1) {
       d = 1;
     }
     const near = Math.max(0.15, 1 - d / reach);
-    const sp = (2.5 + Math.random() ** 0.6 * 9) * k * near;
+    // A firm push, not a blast: most land within a quarter of the screen.
+    const sp = (1.5 + Math.random() ** 0.6 * 5) * k * near;
     vx[i] += (dx / d) * sp;
     vy[i] += (dy / d) * sp;
   }
-  blastUntil = performance.now() + 1800;
+  blastUntil = performance.now() + 1300;
   addWave('shockwave', cx, cy);
 }
 
