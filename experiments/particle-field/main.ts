@@ -6537,6 +6537,7 @@ const familyLabel = (f: Family) => FAMILIES.find(([k]) => k === f)![1];
 let lastPresetFamily: Family | null = null;
 
 function playPreset(name: string, p: Partial<Settings>) {
+  noteRecent(name);
   lastPresetFamily = FAMILY_OF[name] ?? null;
   apply(p);
   lastSceneName = name;
@@ -13361,6 +13362,7 @@ const KEY_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 let redrawMine = () => {};
 
 function playMine(p: MyPreset) {
+  noteRecent(p.name);
   lastPresetFamily = null;
   apply(p.settings, false);
   currentMine = p;
@@ -14001,6 +14003,186 @@ ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-v]');
   if (b) uGo(b.dataset.v as UView);
 });
+// Scene sheet: on the Stage, the bar's first button is the scene's name.
+// Tap it for this sheet (step ‹ ›, families, the family's scenes, search);
+// picking plays at once and the sheet stays open to try a few. A sideways
+// swipe on the name steps through the family without opening anything.
+let sceneSheetEl: HTMLElement | null = null;
+function recentScenes(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem('pf-recent-scenes') ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+}
+function noteRecent(name: string) {
+  try {
+    localStorage.setItem('pf-recent-scenes', JSON.stringify([name, ...recentScenes().filter((n) => n !== name)].slice(0, 8)));
+  } catch {
+    /* fine */
+  }
+}
+function sheetStep(d: number) {
+  const r = sceneAfter(currentMine ? { name: currentMine.name, mine: true } : lastSceneName ? { name: lastSceneName } : null, lastSceneName || currentMine ? d : 0);
+  if (r.mine) {
+    const m = myPresets.find((p) => p.name === r.name);
+    if (m) playMine(m);
+  } else {
+    const p = PRESETS.find(([n]) => n === r.name);
+    if (p) playPreset(p[0], p[1]);
+  }
+  showToast(r.name);
+}
+function closeSceneSheet() {
+  sceneSheetEl?.remove();
+  sceneSheetEl = null;
+  ubar.classList.remove('sheet-open');
+}
+function toggleSceneSheet() {
+  if (sceneSheetEl) return closeSceneSheet();
+  const el = document.createElement('div');
+  el.className = 'scene-sheet';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Scenes');
+  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div>`;
+  const [prevB, nextB] = el.querySelectorAll<HTMLButtonElement>('.ss-step');
+  prevB.addEventListener('click', () => sheetStep(-1));
+  nextB.addEventListener('click', () => sheetStep(1));
+  el.querySelector('.ss-close')!.addEventListener('click', closeSceneSheet);
+  const input = el.querySelector('input')!;
+  const recentEl = el.querySelector<HTMLElement>('.ss-recent')!;
+  const chipsEl = el.querySelector<HTMLElement>('.families')!;
+  const list = el.querySelector<HTMLElement>('.ss-list')!;
+  let fam: string = currentMine ? 'mine' : (lastSceneName && FAMILY_OF[lastSceneName]) || presetFamily;
+  const fams: [string, string][] = [...(myPresets.length ? [['mine', 'My scenes'] as [string, string]] : []), ...FAMILIES];
+  for (const [f, label] of fams) {
+    const c = document.createElement('button');
+    c.type = 'button';
+    c.dataset.fam = f;
+    c.textContent = label;
+    c.addEventListener('click', () => {
+      fam = f;
+      input.value = '';
+      draw();
+    });
+    chipsEl.append(c);
+  }
+  const play = (name: string, mine: boolean) => {
+    if (mine) {
+      const m = myPresets.find((p) => p.name === name);
+      if (m) playMine(m);
+    } else {
+      const p = PRESETS.find(([n]) => n === name);
+      if (p) playPreset(p[0], p[1]);
+    }
+    draw();
+  };
+  const item = (into: HTMLElement, name: string, mine: boolean) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = name;
+    b.classList.toggle('on', mine ? currentMine?.name === name : !currentMine && lastSceneName === name);
+    b.addEventListener('click', () => play(name, mine));
+    into.append(b);
+  };
+  let sig = '';
+  const draw = () => {
+    sig = `${lastSceneName}|${currentMine?.name ?? ''}|${fam}|${input.value}`;
+    el.querySelector('.ss-now b')!.textContent = currentMine?.name || lastSceneName || 'Your mix';
+    el.querySelector('.ss-now small')!.textContent = currentMine ? 'My scenes' : lastSceneName ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Scene';
+    const q = input.value.trim().toLowerCase();
+    for (const c of chipsEl.children) c.classList.toggle('on', !q && (c as HTMLElement).dataset.fam === fam);
+    recentEl.innerHTML = '';
+    const rec = recentScenes().filter((n) => n !== (currentMine?.name ?? lastSceneName) && (PRESETS.some(([p]) => p === n) || myPresets.some((m) => m.name === n))).slice(0, 4);
+    recentEl.hidden = !!q || !rec.length;
+    if (rec.length) {
+      const h = document.createElement('span');
+      h.textContent = 'Recent';
+      recentEl.append(h);
+      for (const n of rec) item(recentEl, n, !PRESETS.some(([p]) => p === n));
+    }
+    list.innerHTML = '';
+    if (q) {
+      for (const m of myPresets.filter((m) => m.name.toLowerCase().includes(q))) item(list, m.name, true);
+      for (const [n] of PRESETS.filter(([n]) => n.toLowerCase().includes(q)).sort(([a], [b]) => a.localeCompare(b))) item(list, n, false);
+      if (!list.childElementCount) list.innerHTML = '<p class="ss-none">No scene by that name.</p>';
+      return;
+    }
+    if (fam === 'mine') {
+      for (const m of myPresets) item(list, m.name, true);
+      return;
+    }
+    for (const [n] of PRESETS.filter(([n]) => fam === 'all' || FAMILY_OF[n] === fam).sort(([a], [b]) => a.localeCompare(b))) item(list, n, false);
+  };
+  input.addEventListener('input', draw);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSceneSheet();
+    if (e.key === 'Enter') list.querySelector<HTMLButtonElement>('button')?.click();
+  });
+  draw();
+  // Follows scene changes made elsewhere (swipes, keys, shuffle).
+  const timer = window.setInterval(() => {
+    if (!el.isConnected) return clearInterval(timer);
+    if (sig !== `${lastSceneName}|${currentMine?.name ?? ''}|${fam}|${input.value}`) draw();
+  }, 250);
+  document.body.append(el);
+  sceneSheetEl = el;
+  ubar.classList.add('sheet-open');
+  list.querySelector<HTMLElement>('.on')?.scrollIntoView({ block: 'nearest' });
+}
+// Tapping the field, or leaving the Stage, closes it.
+document.addEventListener('pointerdown', (e) => {
+  if (!sceneSheetEl) return;
+  const t = e.target as HTMLElement;
+  if (sceneSheetEl.contains(t) || ubar.contains(t) || t.closest('.toast')) return;
+  closeSceneSheet();
+}, true);
+addEventListener('keydown', (e) => e.key === 'Escape' && sceneSheetEl && closeSceneSheet());
+// The name on the Stage button, kept current.
+function stageName() {
+  const b = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]');
+  if (!b) return;
+  const onStage = uView() === 'stage';
+  const name = onStage ? currentMine?.name || lastSceneName || 'Your mix' : 'Stage';
+  const span = b.querySelector('span')!;
+  if (span.textContent !== name) {
+    span.textContent = name;
+    b.classList.toggle('named', onStage);
+    b.title = onStage ? `${name}: tap for scenes, swipe for the next one` : 'Stage';
+    b.setAttribute('aria-label', onStage ? `Scene ${name}, open scenes` : 'Stage');
+    uPaint(true);
+  }
+  if (!onStage && sceneSheetEl) closeSceneSheet();
+}
+setInterval(stageName, 300);
+{
+  const b = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]')!;
+  let x0 = 0;
+  let swiped = false;
+  b.addEventListener('pointerdown', (e) => {
+    x0 = e.clientX;
+    swiped = false;
+  });
+  b.addEventListener('pointermove', (e) => {
+    if (!e.buttons && e.pointerType === 'mouse') return;
+    if (!swiped && uView() === 'stage' && Math.abs(e.clientX - x0) > 36) {
+      swiped = true;
+      sheetStep(e.clientX > x0 ? 1 : -1);
+    }
+  });
+  b.addEventListener('click', (e) => {
+    if (swiped) {
+      e.stopPropagation();
+      swiped = false;
+      return;
+    }
+    if (uView() === 'stage') {
+      e.stopPropagation();
+      toggleSceneSheet();
+    }
+  }, true);
+}
+
 // Arrange: move, turn and resize the shape by hand on the field. One finger
 // (or the mouse) moves it; two fingers twist to turn and pinch to resize; on
 // a 3D shape, Turn 3D makes one finger orbit it instead. The wheel resizes

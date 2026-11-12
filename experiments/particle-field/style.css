@@ -2154,3 +2154,50 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .anim-open small { font-size: 12px; color: var(--muted); }
 .anim-x { width: 36px; height: 36px; border: 0; border-radius: 10px; background: none; color: var(--muted); cursor: pointer; }
 .anim-x:hover { color: var(--text); background: var(--tile); }
+
+/* Scene name on the Stage button + scene sheet */
+.u-seg button.named span { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-seg button.named::after { content: ''; width: 6px; height: 6px; margin-left: 6px; border-right: 1.6px solid currentColor; border-top: 1.6px solid currentColor; transform: translateY(2px) rotate(-45deg); opacity: 0.6; flex: none; }
+.u-bar.sheet-open .u-seg button.named::after { transform: translateY(-1px) rotate(135deg); }
+.scene-sheet { position: fixed; z-index: 58; left: 50%; bottom: 92px; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); max-height: min(560px, calc(100dvh - 120px)); display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 14px; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 18px 48px rgb(0 0 0 / 0.55); color: var(--text); animation: ss-in 0.16s ease-out; }
+@keyframes ss-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+.ss-head { display: flex; align-items: center; gap: 8px; }
+.ss-head button { width: 40px; height: 40px; flex: none; border: 0; border-radius: 10px; background: var(--tile); color: var(--text); font: inherit; font-size: 18px; cursor: pointer; }
+.ss-head .ss-close { font-size: 14px; color: var(--label); }
+.ss-now { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 0 4px; }
+.ss-now small { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.ss-now b { font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-find { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 10px; background: var(--tile); color: var(--muted); }
+.ss-find svg { width: 15px; height: 15px; flex: none; }
+.ss-find input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 14px; outline: none; }
+.ss-recent { display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.ss-recent span { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-right: 4px; flex: none; }
+.ss-recent button { flex: none; height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--tile); color: var(--label); font: inherit; font-size: 12.5px; cursor: pointer; }
+.scene-sheet .families { display: flex; flex-wrap: wrap; gap: 5px; }
+.scene-sheet .families button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.scene-sheet .families button.on { background: var(--text); color: #111; border-color: transparent; }
+.ss-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 5px; overflow-y: auto; min-height: 0; }
+.ss-list button { height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--tile); color: var(--label); font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-list button:hover, .ss-recent button:hover { color: var(--text); background: rgb(255 255 255 / 0.08); }
+.ss-list button.on { background: var(--accent-bg); color: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.ss-none { grid-column: 1 / -1; margin: 6px 2px; font-size: 13px; color: var(--muted); }
+@media (max-width: 720px) {
+  .scene-sheet { left: 0; right: 0; bottom: 0; width: auto; transform: none; border-radius: 18px 18px 0 0; border-width: 1px 0 0; max-height: 72dvh; padding-bottom: calc(96px + env(safe-area-inset-bottom)); animation-name: ss-up; }
+  @keyframes ss-up { from { transform: translateY(24px); opacity: 0; } }
+  .ss-find { display: none; }
+  .ss-list button { height: 44px; }
+}
+@media (max-width: 720px) { .scene-sheet { z-index: 44; } }
+.u-bar.sheet-open.rest { opacity: 1 !important; pointer-events: auto !important; }
+.ss-recent[hidden] { display: none; }
+.ss-now b, .ss-now small { text-transform: none; }
+.ss-now small { text-transform: uppercase; }
+.ss-now b { color: var(--text); letter-spacing: 0; }
+@media (max-width: 720px) {
+  .u-seg button.named { width: auto !important; padding: 0 12px !important; gap: 0; }
+  .u-seg button.named svg { display: none; }
+  .u-seg button.named span { display: inline !important; max-width: 104px; font-size: 13px; font-weight: 600; }
+  .u-bar.stage .u-tray button.primary span { display: none; }
+}
+@media (max-width: 720px) { .u-seg button.named { flex-direction: row !important; align-items: center; } }
+@media (max-width: 720px) { .u-seg button.named::after { display: none; } }
