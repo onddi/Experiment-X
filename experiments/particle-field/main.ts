@@ -291,8 +291,12 @@ function fadeLife(i: number) {
   return a;
 }
 
+// Phones draw at most 1.5× pixel density (2× while recording a clip): about
+// 45% fewer pixels and hard to tell apart on a moving field. Desktop keeps 2×.
+const PHONE = matchMedia('(pointer: coarse)').matches && Math.max(screen.width, screen.height) < 1100;
+let recHi = false;
 function resize() {
-  dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2) * renderScale);
+  dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, PHONE && !recHi ? 1.5 : 2) * renderScale);
   w = canvas.clientWidth;
   h = canvas.clientHeight;
   canvas.width = Math.round(w * dpr);
@@ -1978,6 +1982,22 @@ function nextMine() {
 }
 
 // Connections card: one row per link, with a live meter of its input.
+// A live meter loop: runs fn each frame only while el is on screen, and
+// ends for good once el has left the page (cards are rebuilt often).
+function meterLoop(el: HTMLElement, fn: (now: number) => void) {
+  let seen = false;
+  let shown = false;
+  const io = new IntersectionObserver((es) => (shown = es[es.length - 1].isIntersecting));
+  io.observe(el);
+  const born = performance.now();
+  const tick = (now: number) => {
+    if (el.isConnected) seen = true;
+    else if (seen || now - born > 10000) return io.disconnect();
+    if (shown) fn(now);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
 function renderLinks() {
   const box = document.createElement('div');
   box.className = 'links';
@@ -2079,11 +2099,9 @@ function renderLinks() {
   refreshers.push(() => {
     if (settings.links !== drawn) draw();
   });
-  const tick = () => {
-    if (box.offsetParent) for (const [src, el] of meters) el.style.height = `${Math.round((linkRun.levels[src] ?? 0) * 100)}%`;
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+  meterLoop(box, () => {
+    for (const [src, el] of meters) el.style.height = `${Math.round((linkRun.levels[src] ?? 0) * 100)}%`;
+  });
   return box;
 }
 
@@ -2099,14 +2117,12 @@ function renderExMeters() {
     bars.push([k, row.querySelector('b')!]);
     box.append(row);
   }
-  const tick = () => {
-    if (box.isConnected && box.offsetParent) for (const [k, el] of bars) {
+  meterLoop(box, () => {
+    for (const [k, el] of bars) {
       el.style.width = `${(exLevel[k] * 100).toFixed(0)}%`;
       el.classList.toggle('hot', exOn[k]);
     }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+  });
   return box;
 }
 
@@ -2134,8 +2150,8 @@ function renderRapMeters() {
     return { b: row.querySelector('b')!, n: row.querySelector('small')!, seen: -1e9 };
   });
   let sylCount: number[] = [];
-  const tick = (now: number) => {
-    if (box.isConnected && box.offsetParent) {
+  meterLoop(box, (now) => {
+    {
       const L = audio.levels;
       if (L.syllable) sylCount.push(now);
       sylCount = sylCount.filter((t) => now - t < 10000);
@@ -2151,9 +2167,7 @@ function renderRapMeters() {
         e.n.textContent = txt ? txt() : i === 1 ? `${sylCount.length} in 10 s` : '';
       });
     }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+  });
   return box;
 }
 
@@ -5795,6 +5809,10 @@ function frame(now: number) {
     drawMs = drawMs * 0.9 + (t2 - t1) * 0.1;
   }
   tlFxFrame(now);
+  if (PHONE && recorder.on !== recHi) {
+    recHi = recorder.on;
+    resize();
+  }
   if (recorder.on) {
     recorder.tick();
     recTime();
@@ -13178,7 +13196,7 @@ function renderAudio() {
     fileInput.value = '';
   });
 
-  const tick = () => {
+  meterLoop(wrap, () => {
     const L = audio.levels;
     [L.sub, L.bass, L.mid, L.treble].forEach((v, k) => (bars[k].style.transform = `scaleX(${v.toFixed(3)})`));
     wrap.classList.toggle('beat', L.beat);
@@ -13186,9 +13204,7 @@ function renderAudio() {
     [L.pulse, L.snareEnv, L.hat ? 1 : hatGlow * 0.8].forEach((v, k) => (hits[k].style.opacity = String(0.25 + 0.75 * Math.min(1, v))));
     hatGlow = L.hat ? 1 : hatGlow * 0.8;
     bpmEl.textContent = audio.source !== 'off' && L.bpm ? `${L.bpm} BPM` : '';
-    requestAnimationFrame(tick);
-  };
-  tick();
+  });
   sync();
   return wrap;
 }
