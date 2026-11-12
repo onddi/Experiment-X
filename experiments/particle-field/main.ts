@@ -10296,9 +10296,10 @@ function tipShow(anchor: HTMLElement) {
   tipEl = el;
 }
 document.addEventListener('pointerover', (e) => {
-  if (e.pointerType !== 'mouse') return;
+  if (e.pointerType !== 'mouse' || e.buttons) return;
   const t = (e.target as HTMLElement).closest?.<HTMLElement>('[data-tip]');
-  if (!t) return;
+  // Not while that setting's own slider (which shows the text) is open.
+  if (!t || tunerEl || document.body.classList.contains('solo')) return;
   clearTimeout(tipTimer);
   tipTimer = window.setTimeout(() => tipShow(t), 450);
 });
@@ -11601,6 +11602,7 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   const again = tunerKnob === knob;
   closeTuner();
   if (again) return;
+  tipHide();
   const el = document.createElement('div');
   el.className = 'tuner';
   el.innerHTML = `<div class="tuner-head"><b></b><output></output><button type="button" class="tuner-home">Scene value</button><button type="button" class="tuner-close" aria-label="Done">✕</button></div><div class="tuner-track"><input type="range"><i aria-hidden="true"></i></div>`;
