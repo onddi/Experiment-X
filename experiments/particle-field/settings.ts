@@ -148,6 +148,8 @@ export interface Settings {
   knobsScene: string;
   /** The knobs follow the scene (its own knobs) instead of your set. */
   knobsFollow: boolean;
+  /** Number keys 1–8: hold to turn that field knob, or play My scenes. */
+  numberKeys: 'knobs' | 'mine';
   shapeSize: number;
   /** Where the shape sits: offset from the centre as a share of the screen. */
   shapeX: number;
@@ -480,6 +482,7 @@ export const DEFAULTS: Settings = {
   knobsPick: '',
   knobsScene: '',
   knobsFollow: true,
+  numberKeys: 'knobs',
   shapeSize: 0.8,
   shapeX: 0,
   shapeY: 0,

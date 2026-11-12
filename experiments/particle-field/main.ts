@@ -6293,6 +6293,8 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'You picked these knobs yourself (the knob button on a Deck setting), so they stay put through every scene and shuffle. Clear them to let each scene and shuffle bring its own again.', show: () => knobPicks().length > 0 },
   { kind: 'buttons', buttons: [['Clear my picked knobs', () => clearKnobPicks()]], show: () => knobPicks().length > 0 },
   { kind: 'toggle', key: 'knobsFollow', label: 'Knobs follow the scene (each scene and shuffle brings its own)' },
+  { kind: 'choice', key: 'numberKeys', label: 'Number keys do', options: [['knobs', 'Knobs'], ['mine', 'My scenes']] },
+  { kind: 'note', text: 'Hold 1–8 and scroll, swipe or move the mouse to turn knob A–H. Tap the key alone to open its slider.', show: () => settings.numberKeys === 'knobs' },
   { kind: 'note', text: 'Each scene and each shuffle sets knobs for what it is about (its shape, motion, lens…). Your set below plays when this is off.', show: () => settings.knobsFollow && !knobPicks().length },
   { kind: 'sub', label: 'Knob set' },
   { kind: 'buttons', buttons: KNOB_SETS.map(([name, keys]): [string, () => void] => [name, () => useKnobSet(keys)]), active: (t) => knobSetName() === t },
@@ -6994,7 +6996,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 // you play, your on-screen knobs and locked cards.
 function blankTarget(): Settings {
   const S0 = settings as unknown as Record<string, unknown>;
-  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'playTwo', 'playPinch'];
+  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch'];
   const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
   for (const k of lockedKeys()) target[k] = S0[k];
   return target as unknown as Settings;
@@ -7015,7 +7017,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -11417,7 +11419,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: 1–0 play your scenes (Shift saves) · Space pause · A gather · E explode · S scatter · D shuffle · F shuffle the music vibe · Enter type a word · V record a clip · H hide panel · ⌘K or / find a setting · I debug info. Hold a number key to play it only while held.';
+  keys.textContent = 'Click or hold on the field. Keys: hold 1–8 and scroll to turn a field knob (or play your scenes, see Field knobs) · Space pause · A gather · E explode · S scatter · D shuffle · F shuffle the music vibe · Enter type a word · V record a clip · H hide panel · ⌘K or / find a setting · I debug info.';
   controls.append(keys);
 }
 
@@ -13493,7 +13495,7 @@ function updateMine(p: MyPreset) {
   writeJson(MY_PRESETS_KEY, myPresets);
   currentMine = p;
   redrawMine();
-  showToast(`Updated ${p.key ? p.key + '  ' : ''}${p.name}`);
+  showToast(`Updated ${keyTag(p)}${p.name}`);
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -13541,6 +13543,8 @@ function renderMyPresets() {
         key.title = 'Number key that plays this scene';
         key.innerHTML = ['<option value="">⌨</option>', ...KEY_ORDER.map((d) => `<option value="${d}">${d}</option>`)].join('');
         key.value = p.key ?? '';
+        // Number keys turn knobs instead: the binding is kept, just not shown.
+        key.hidden = settings.numberKeys === 'knobs';
         key.addEventListener('change', () => {
           for (const o of myPresets) if (o !== p && o.key === key.value) delete o.key;
           if (key.value) p.key = key.value;
@@ -13581,7 +13585,7 @@ function renderMyPresets() {
       up.type = 'button';
       up.className = 'update-mine';
       up.textContent = `Save changes to ${cur.key ? cur.key + ' · ' : ''}${cur.name}`;
-      up.title = cur.key ? `Saves the current scene over this one (Shift+${cur.key} does the same)` : 'Saves the current scene over this one';
+      up.title = cur.key && settings.numberKeys === 'mine' ? `Saves the current scene over this one (Shift+${cur.key} does the same)` : 'Saves the current scene over this one';
       up.addEventListener('click', () => updateMine(cur));
       wrap.append(up);
     }
@@ -13663,9 +13667,10 @@ function playMine(p: MyPreset) {
   currentMine = p;
   redrawMine();
   const nk = knobPicks().length;
-  showToast(`${p.key ? p.key + '  ' : ''}${p.name}${nk && typeof p.settings.knobsPick === 'string' ? ` · ${nk} knob${nk > 1 ? 's' : ''}` : ''}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
+  showToast(`${keyTag(p)}${p.name}${nk && typeof p.settings.knobsPick === 'string' ? ` · ${nk} knob${nk > 1 ? 's' : ''}` : ''}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
 }
 
+const keyTag = (p: MyPreset) => (p.key && settings.numberKeys === 'mine' ? p.key + '  ' : '');
 // Number keys play own presets; Shift + number saves the current look there.
 function numberKey(d: string, save: boolean) {
   if (save) {
@@ -14990,6 +14995,10 @@ window.addEventListener('keydown', (e) => {
   if (digit) {
     e.preventDefault();
     if (e.repeat) return;
+    if (settings.numberKeys === 'knobs') {
+      numKnobDown(e.code, +digit[1]);
+      return;
+    }
     // Remember the look before, so holding the key can come back to it.
     if (!e.shiftKey && myPresets.some((o) => o.key === digit[1])) held = { code: e.code, prev: snapshot(), at: performance.now() };
     numberKey(digit[1], e.shiftKey);
@@ -15017,6 +15026,68 @@ window.addEventListener('keydown', (e) => {
   }
   else if (k === 'i') toggleDebug();
 });
+
+// Number keys as knob keys: hold 1–8 and scroll, swipe (trackpad), move the
+// mouse or press ↑ ↓ to turn field knob A–H. A tap alone opens its slider.
+let numKnob: { code: string; i: number; key: string; at: number; moved: boolean; v: number; share: number; mx: number | null; my: number } | null = null;
+function numKnobDown(code: string, d: number) {
+  const i = d - 1;
+  const keys = fieldKnobKeys();
+  const key = d >= 1 && d <= 8 ? keys[i] : undefined;
+  if (!key || !knobSpec(key)) {
+    numKnob = null;
+    showToast(d < 1 || d > 8 ? 'Keys 1–8 turn knobs A–H' : !keys.length ? 'No knobs in this scene yet. Pick some in the Deck.' : `No knob ${'ABCDEFGH'[i]} in this scene (it has ${keys.length})`);
+    return;
+  }
+  numKnob = { code, i, key, at: performance.now(), moved: false, v: playBase(key), share: 0, mx: null, my: 0 };
+  playShow(key);
+}
+function numKnobTurn(by: number) {
+  if (!numKnob) return;
+  numKnob.moved = true;
+  numKnob.share += by;
+  playNudge(numKnob.key, numKnob.v, numKnob.share);
+}
+addEventListener('wheel', (e) => {
+  if (!numKnob) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+  numKnobTurn(((e.deltaX - e.deltaY) * px) / 900);
+}, { capture: true, passive: false });
+addEventListener('pointermove', (e) => {
+  if (!numKnob || e.pointerType === 'touch') return;
+  if (numKnob.mx === null) {
+    numKnob.mx = e.clientX;
+    numKnob.my = e.clientY;
+    return;
+  }
+  const dx = e.clientX - numKnob.mx;
+  const dy = e.clientY - numKnob.my;
+  numKnob.mx = e.clientX;
+  numKnob.my = e.clientY;
+  numKnobTurn((dx - dy) / 500);
+}, true);
+addEventListener('keydown', (e) => {
+  if (!numKnob || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  numKnobTurn(e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 0.05 : -0.05);
+}, true);
+addEventListener('keyup', (e) => {
+  if (!numKnob || e.code !== numKnob.code) return;
+  const n = numKnob;
+  numKnob = null;
+  if (n.moved || performance.now() - n.at > 600) return;
+  // A tap: the big slider for a number, the list for a choice.
+  const spec = knobSpec(n.key);
+  const anchor = playRow.querySelector<HTMLElement>(`.fader.k${n.i}`) ?? knobs.get('centre')!.el;
+  if (!spec) return;
+  if (spec.options) return knobMenu(anchor, spec);
+  const c = CONTROLS.find((x) => x.kind === 'range' && x.key === spec.key) as Extract<Control, { kind: 'range' }> | undefined;
+  if (c) openTuner(c, () => (sceneBase ?? DEFAULTS)[c.key] as number, RACK_LIVE, () => {}, anchor);
+});
+addEventListener('blur', () => (numKnob = null));
 
 // Holding a number key plays its preset only while held: let go after
 // more than half a second and the previous look comes back.
