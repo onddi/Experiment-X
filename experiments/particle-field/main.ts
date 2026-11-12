@@ -12405,7 +12405,7 @@ function renderAnimList(): HTMLElement {
   return box;
 }
 
-function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc, update: () => void, knob: HTMLElement, animOpen = false) {
+function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc, update: () => void, knob: HTMLElement, animOpen: boolean | 'closed' = false) {
   const again = tunerKnob === knob;
   closeTuner();
   if (again) return;
@@ -12431,7 +12431,7 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
     };
     ab.addEventListener('click', () => show(!panel));
     el.querySelector('.tuner-fk, .tuner-close')!.before(ab);
-    queueMicrotask(() => show(animOpen || !!animMap()[c.key]));
+    queueMicrotask(() => show(animOpen === true || (animOpen !== 'closed' && !!animMap()[c.key])));
   }
   if (ABOUT[c.key]) {
     const about = document.createElement('p');
@@ -15111,7 +15111,7 @@ addEventListener('keyup', (e) => {
   if (!spec) return;
   if (spec.options) return knobMenu(anchor, spec);
   const c = CONTROLS.find((x) => x.kind === 'range' && x.key === spec.key) as Extract<Control, { kind: 'range' }> | undefined;
-  if (c) openTuner(c, () => (sceneBase ?? DEFAULTS)[c.key] as number, RACK_LIVE, () => {}, anchor);
+  if (c) openTuner(c, () => (sceneBase ?? DEFAULTS)[c.key] as number, RACK_LIVE, () => {}, anchor, 'closed');
 });
 addEventListener('blur', () => {
   numKnob = null;
