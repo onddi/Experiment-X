@@ -15029,6 +15029,29 @@ window.addEventListener('keydown', (e) => {
 
 // Number keys as knob keys: hold 1–8 and scroll, swipe (trackpad), move the
 // mouse or press ↑ ↓ to turn field knob A–H. A tap alone opens its slider.
+// A big readout while a number key turns a knob: the field knobs are small.
+const numBig = document.createElement('div');
+numBig.className = 'num-big';
+numBig.setAttribute('aria-live', 'polite');
+numBig.innerHTML = '<span class="nb-name"><i></i><b></b></span><output></output><span class="nb-bar"><u></u></span>';
+document.body.append(numBig);
+let numBigTimer = 0;
+function numBigShow(i: number, key: string, linger = 0) {
+  const r = knobSpec(key);
+  if (!r) return;
+  const v = playBase(key);
+  numBig.querySelector('i')!.textContent = 'ABCDEFGH'[i] ?? '';
+  numBig.querySelector('b')!.textContent = r.label.replace(/ \(.*\)$/, '');
+  numBig.querySelector('output')!.textContent = r.text(v);
+  numBig.querySelector<HTMLElement>('.nb-bar u')!.style.width = `${((v - r.min) / (r.max - r.min || 1)) * 100}%`;
+  numBig.classList.add('show');
+  document.body.classList.add('num-turning');
+  clearTimeout(numBigTimer);
+  if (linger) numBigTimer = window.setTimeout(() => {
+    numBig.classList.remove('show');
+    document.body.classList.remove('num-turning');
+  }, linger);
+}
 let numKnob: { code: string; i: number; key: string; at: number; moved: boolean; v: number; share: number; mx: number | null; my: number } | null = null;
 function numKnobDown(code: string, d: number) {
   const i = d - 1;
@@ -15041,12 +15064,14 @@ function numKnobDown(code: string, d: number) {
   }
   numKnob = { code, i, key, at: performance.now(), moved: false, v: playBase(key), share: 0, mx: null, my: 0 };
   playShow(key);
+  numBigShow(i, key);
 }
 function numKnobTurn(by: number) {
   if (!numKnob) return;
   numKnob.moved = true;
   numKnob.share += by;
   playNudge(numKnob.key, numKnob.v, numKnob.share);
+  numBigShow(numKnob.i, numKnob.key);
 }
 addEventListener('wheel', (e) => {
   if (!numKnob) return;
@@ -15078,6 +15103,7 @@ addEventListener('keyup', (e) => {
   if (!numKnob || e.code !== numKnob.code) return;
   const n = numKnob;
   numKnob = null;
+  numBigShow(n.i, n.key, n.moved ? 900 : 1);
   if (n.moved || performance.now() - n.at > 600) return;
   // A tap: the big slider for a number, the list for a choice.
   const spec = knobSpec(n.key);
@@ -15087,7 +15113,11 @@ addEventListener('keyup', (e) => {
   const c = CONTROLS.find((x) => x.kind === 'range' && x.key === spec.key) as Extract<Control, { kind: 'range' }> | undefined;
   if (c) openTuner(c, () => (sceneBase ?? DEFAULTS)[c.key] as number, RACK_LIVE, () => {}, anchor);
 });
-addEventListener('blur', () => (numKnob = null));
+addEventListener('blur', () => {
+  numKnob = null;
+  numBig.classList.remove('show');
+  document.body.classList.remove('num-turning');
+});
 
 // Holding a number key plays its preset only while held: let go after
 // more than half a second and the previous look comes back.
