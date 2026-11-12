@@ -2196,7 +2196,7 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 @media (max-width: 720px) {
   .u-seg button.named { width: auto !important; padding: 0 12px !important; gap: 0; }
   .u-seg button.named svg { display: none; }
-  .u-seg button.named span { display: inline !important; max-width: 104px; font-size: 13px; font-weight: 600; }
+  .u-seg button.named span { display: block !important; max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
   .u-bar.stage .u-tray button.primary span { display: none; }
 }
 @media (max-width: 720px) { .u-seg button.named { flex-direction: row !important; align-items: center; } }
@@ -2257,3 +2257,20 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .scene-sheet .ss-head { position: sticky; top: -12px; z-index: 2; margin: -12px -14px 0; padding: 12px 14px 8px; background: var(--panel); }
 .ss-list .ss-blank { color: var(--muted); border: 1px dashed var(--line); background: none; }
 .ar-bar .ar-lite.on { background: rgb(255 255 255 / 0.92); color: #111; }
+/* Phones: the tray keeps its buttons whole; a long scene name gives way (…). */
+@media (max-width: 720px) {
+  .u-bar.stage .u-tray { flex: none; }
+  .u-bar.stage .u-seg { flex: 0 1 auto; min-width: 0; }
+  .u-bar.stage .u-seg button.named { min-width: 0; flex-shrink: 1; }
+  .u-bar.stage .u-seg button:not(.named) { flex: none; }
+}
+@media (max-width: 720px) {
+  .u-bar.stage .u-seg button.named { overflow: hidden; display: flex !important; }
+  .u-bar.stage .u-seg button.named span { min-width: 0; flex: 0 1 auto; max-width: 100%; }
+}
+@media (max-width: 359px) { .u-bar.stage .u-tray button[aria-label='Arrange the shape'] { display: none; } }
+@media (max-width: 720px) {
+  .u-bar.stage .u-seg button:not(.named) { width: 36px !important; min-width: 36px; }
+  .u-bar.stage .u-seg button.named { padding: 0 10px !important; }
+  .u-bar.stage .u-tray { gap: 4px; }
+}
