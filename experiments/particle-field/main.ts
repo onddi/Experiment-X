@@ -9358,14 +9358,31 @@ function syncLiveDots() {
 }
 setInterval(syncLiveDots, 400);
 
+// Moves (animations) a card had when it was switched off, put back when it's on again.
+const powerAnims: Record<string, Record<string, Anim>> = {};
 function setPower(ctl: Extract<Control, { kind: 'section' }>, on: boolean) {
   const pw = ctl.power!;
   if (on === pw.on()) return;
   let patch: Partial<Settings>;
-  if (on) patch = powerMemory[ctl.id] ?? pw.start;
-  else {
+  if (on) {
+    patch = powerMemory[ctl.id] ?? pw.start;
+    const back = powerAnims[ctl.id];
+    if (back) {
+      patch = { ...patch, anim: formatAnim({ ...animMap(), ...back }) as never };
+      delete powerAnims[ctl.id];
+    }
+  } else {
     powerMemory[ctl.id] = Object.fromEntries((ctl.lock ?? []).map((k) => [k, settings[k]]));
     patch = pw.off;
+    // Off means off: a moving setting would otherwise keep switching it back on.
+    const m = animMap();
+    const moving = (ctl.lock ?? []).filter((k) => m[k as string]);
+    if (moving.length) {
+      powerAnims[ctl.id] = Object.fromEntries(moving.map((k) => [k, m[k as string]]));
+      const next = { ...m };
+      for (const k of moving) delete next[k as string];
+      patch = { ...patch, anim: formatAnim(next) as never };
+    }
   }
   Object.assign(settings, patch);
   // A remembered "on" that was really off (e.g. after a preset) falls back to the start values.
