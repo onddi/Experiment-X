@@ -2820,7 +2820,12 @@ function syncPreview() {
   if (show !== previewShown) {
     previewShown = show;
     if (show) document.querySelector('.stage')?.append(cam.video);
-    else cam.video.remove();
+    else {
+      // Taking a playing video out of the page pauses it, which froze face
+      // tracking on the last frame: start it again.
+      cam.video.remove();
+      void cam.video.play().catch(() => {});
+    }
   }
   cam.video.classList.toggle('mirror', settings.camMirror);
 }
