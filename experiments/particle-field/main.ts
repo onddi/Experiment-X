@@ -12969,16 +12969,8 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
   next.setAttribute('aria-label', `Next ${c.label}`);
   next.addEventListener('click', () => step(1));
   out.addEventListener('dblclick', () => src.put(c.key, home()));
-  // Long lists: tap the value to pick from all of them (the phone's own picker).
-  let pick: HTMLSelectElement | null = null;
-  if (c.options.length > 4) {
-    pick = document.createElement('select');
-    pick.className = 'rack-pick';
-    pick.setAttribute('aria-label', c.label);
-    for (const [value, text] of c.options) pick.add(new Option(text, value));
-    pick.addEventListener('change', () => src.put(c.key, pick!.value));
-    out.append(pick);
-  }
+  // Tap the value for a list of every option.
+  out.addEventListener('click', () => choiceMenu(out, c.label, c.options, String(src.get(c.key)), (v) => src.put(c.key, v)));
   const txt = document.createElement('i');
   out.prepend(txt);
   el.append(name, prev, out, next);
@@ -12986,7 +12978,6 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
     el,
     update: () => {
       txt.textContent = c.options.find(([k]) => k === src.get(c.key))?.[1] ?? String(src.get(c.key));
-      if (pick) pick.value = String(src.get(c.key));
       el.classList.toggle('moved', src.get(c.key) !== home());
     },
   };
@@ -14511,6 +14502,42 @@ function knobMenu(f: HTMLElement, spec: KnobSpec) {
 document.addEventListener('pointerdown', (e) => {
   if (knobMenuEl && !knobMenuEl.contains(e.target as Node)) closeKnobMenu();
 }, true);
+// A list under a value stays with it: scrolling the page closes it.
+addEventListener('scroll', (e) => {
+  if (knobMenuEl?.classList.contains('choice-menu') && !knobMenuEl.contains(e.target as Node)) closeKnobMenu();
+}, true);
+// A setting's options as a list under its value (Studio and Deck rows).
+function choiceMenu(anchor: HTMLElement, label: string, options: [string, string][], cur: string, pick: (v: string) => void) {
+  closeKnobMenu();
+  const m = document.createElement('div');
+  m.className = 'knob-menu choice-menu';
+  m.setAttribute('role', 'listbox');
+  m.setAttribute('aria-label', label);
+  const head = document.createElement('b');
+  head.textContent = label;
+  m.append(head);
+  for (const [v, text] of options) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.setAttribute('role', 'option');
+    if (v === cur) b.classList.add('on');
+    b.addEventListener('click', () => {
+      pick(v);
+      closeKnobMenu();
+    });
+    m.append(b);
+  }
+  document.body.append(m);
+  knobMenuEl = m;
+  const r = anchor.getBoundingClientRect();
+  const mw = m.offsetWidth;
+  const mh = m.offsetHeight;
+  const below = r.bottom + 6 + mh <= innerHeight - 8;
+  m.style.left = `${Math.max(8, Math.min(innerWidth - mw - 8, r.right - mw))}px`;
+  m.style.top = `${Math.max(8, below ? r.bottom + 6 : r.top - 6 - mh)}px`;
+  m.querySelector<HTMLElement>('.on')?.scrollIntoView({ block: 'nearest' });
+}
 // Keep the knobs drawn with their current values, so hovering the row can
 // reveal all of them at once.
 function syncFieldKnobs() {
