@@ -62,16 +62,17 @@ export class GLSprites {
   private fadeVao: WebGLVertexArrayObject | null = null;
   additive = false;
 
-  static create(): GLSprites | null {
+  static create(keep = false): GLSprites | null {
     try {
-      return new GLSprites();
+      return new GLSprites(keep);
     } catch {
       return null;
     }
   }
 
-  private constructor() {
-    const gl = this.canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: true });
+  // keep: hold the frame between draws (direct mode); costs the compositor a copy.
+  private constructor(keep: boolean) {
+    const gl = this.canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: keep });
     if (!gl) throw new Error('no webgl2');
     this.gl = gl;
     const sh = (type: number, src: string) => {

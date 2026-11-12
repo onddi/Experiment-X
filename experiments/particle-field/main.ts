@@ -4501,7 +4501,9 @@ const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 // Draws one bucket of particles (all the same colour) in one style.
 // WebGL sprites (?renderer=2d turns them off to compare): soft particles are
 // queued and drawn by the GPU in one call, then laid onto the canvas.
-const glr = new URLSearchParams(location.search).get('renderer') === '2d' ? null : GLSprites.create();
+// Direct mode (?gl=direct) measured slower on iPhone than the copy, so it is opt-in.
+const GL_DIRECT = new URLSearchParams(location.search).get('gl') === 'direct';
+const glr = new URLSearchParams(location.search).get('renderer') === '2d' ? null : GLSprites.create(GL_DIRECT);
 // Direct mode: when every particle is a GPU sprite and nothing needs the 2D
 // picture (lenses, tunnel, kaleidoscope, mirror, echo, obstacles, links,
 // recording, the projector), the WebGL canvas is shown itself, under a clear
@@ -4516,7 +4518,7 @@ function glDirectWanted() {
 }
 function glWhy() {
   if (!glr) return 'no WebGL';
-  if (new URLSearchParams(location.search).get('gl') === 'copy') return 'gl=copy';
+  if (!GL_DIRECT) return 'default';
   if (seeThrough) return 'see-through';
   if (lensOn()) {
     const S = settings as unknown as Record<string, unknown>;
@@ -9178,7 +9180,7 @@ perfHud.setAttribute('aria-hidden', 'true');
     t0 = now;
     perfNow.frameMs = 1000 / Math.max(perfNow.real, 0.1);
     perfNow.cpu = stepMs + drawMs;
-    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? (glDirect ? ' · WebGL direct' : ` · WebGL copy (${glWhyNot})`) : ' · 2D'}`;
+    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? (glDirect ? ' · WebGL direct' : (GL_DIRECT ? ` · WebGL copy (${glWhyNot})` : ' · WebGL')) : ' · 2D'}`;
   }, 1000);
 }
 function setPerfHud(on: boolean) {
