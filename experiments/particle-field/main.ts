@@ -14338,6 +14338,58 @@ function closeSceneSheet() {
   sceneSheetEl = null;
   ubar.classList.remove('sheet-open');
 }
+// Desktop: drag the sheet by its grip or its title to anywhere on the screen
+// (remembered); double-click the grip to put it back over the bar.
+const SHEET_POS_KEY = 'pf-scene-sheet-pos';
+function sheetDrag(el: HTMLElement) {
+  if (matchMedia('(max-width: 720px)').matches) return;
+  const grip = document.createElement('div');
+  grip.className = 'ss-grip';
+  grip.title = 'Drag to move · double-click to put it back';
+  el.prepend(grip);
+  const place = (x: number, y: number) => {
+    const r = el.getBoundingClientRect();
+    x = Math.max(8, Math.min(innerWidth - r.width - 8, x));
+    y = Math.max(8, Math.min(innerHeight - r.height - 8, y));
+    Object.assign(el.style, { left: `${x}px`, top: `${y}px`, bottom: 'auto', transform: 'none' });
+    el.classList.add('moved');
+    return { x, y };
+  };
+  try {
+    const p = JSON.parse(localStorage.getItem(SHEET_POS_KEY) ?? 'null');
+    if (p) requestAnimationFrame(() => place(p.x, p.y));
+  } catch {}
+  let st: { dx: number; dy: number } | null = null;
+  const down = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    const r = el.getBoundingClientRect();
+    st = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    el.classList.add('dragging');
+    e.preventDefault();
+  };
+  const move = (e: PointerEvent) => {
+    if (!st) return;
+    const p = place(e.clientX - st.dx, e.clientY - st.dy);
+    try { localStorage.setItem(SHEET_POS_KEY, JSON.stringify(p)); } catch {}
+  };
+  const up = () => {
+    st = null;
+    el.classList.remove('dragging');
+  };
+  for (const h of [grip, el.querySelector<HTMLElement>('.ss-now')!]) {
+    h.addEventListener('pointerdown', down);
+    h.addEventListener('pointermove', move);
+    h.addEventListener('pointerup', up);
+    h.addEventListener('pointercancel', up);
+  }
+  grip.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    try { localStorage.removeItem(SHEET_POS_KEY); } catch {}
+    Object.assign(el.style, { left: '', top: '', bottom: '', transform: '' });
+    el.classList.remove('moved');
+  });
+}
 function toggleSceneSheet() {
   if (sceneSheetEl) return closeSceneSheet();
   const el = document.createElement('div');
@@ -14349,6 +14401,7 @@ function toggleSceneSheet() {
   prevB.addEventListener('click', () => sheetStep(-1));
   nextB.addEventListener('click', () => sheetStep(1));
   el.querySelector('.ss-close')!.addEventListener('click', closeSceneSheet);
+  sheetDrag(el);
   const input = el.querySelector('input')!;
   const recentEl = el.querySelector<HTMLElement>('.ss-recent')!;
   const chipsEl = el.querySelector<HTMLElement>('.families')!;
@@ -14853,7 +14906,7 @@ window.addEventListener(
   'wheel',
   (e) => {
     const t = e.target as Element | null;
-    if (t?.closest?.('#panel, #toggle, .overview, .knob-menu')) return;
+    if (t?.closest?.('#panel, #toggle, .overview, .knob-menu, .scene-sheet, .tuner')) return;
     if (!playing()) return;
     e.preventDefault();
     // The knobs only play on the Stage (Studio and Deck closed).
