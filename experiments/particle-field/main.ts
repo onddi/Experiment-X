@@ -4,7 +4,7 @@ import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
-import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
+import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
@@ -6067,9 +6067,38 @@ function vibeIntact(v: VibeDef) {
   return Object.entries({ ...v.drums, ...v.cards }).every(([k, x]) => k === 'audioWords' || !cardAllows(k as keyof Settings) || settings[k as keyof Settings] === x);
 }
 const currentVibe = () => VIBES.find((v) => v.name === settings.audioVibe);
+// Vibe off: the music leaves the field alone (no hits, no cards), remembered
+// as audioVibe 'off'. On brings back what was there, else the last vibe.
+const VIBE_LAST_KEY = 'particle-field:vibe-last';
+const vibeIsOff = () => settings.audioVibe === 'off';
+let vibeSnap: Partial<Settings> | null = null;
+function vibesOff() {
+  const all: Partial<Settings> = { audioKick: 'none', audioSnare: 'none', audioHats: 'none', audioSub: 'none', audioSpeed: 0, audioFlow: 0, ...CARDS_OFF };
+  const patch: Partial<Settings> = {};
+  for (const [k, x] of Object.entries(all) as [keyof Settings, never][]) if (cardAllows(k)) (patch as Record<string, unknown>)[k] = x;
+  patch.audioVibe = 'off';
+  if (settings.audioVibe && settings.audioVibe !== 'off') writeJson(VIBE_LAST_KEY, settings.audioVibe);
+  vibeSnap = Object.fromEntries(Object.keys(patch).map((k) => [k, settings[k as keyof Settings]])) as Partial<Settings>;
+  Object.assign(settings, patch);
+  changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+  refresh();
+}
+function vibesOn() {
+  if (vibeSnap) {
+    const snap = vibeSnap;
+    vibeSnap = null;
+    Object.assign(settings, snap);
+    changed(new Set(Object.keys(snap) as (keyof Settings)[]));
+    refresh();
+    return;
+  }
+  const name = readJson<string>(VIBE_LAST_KEY, '');
+  const v = VIBES.find((x) => x.name === name) ?? vibeList()[0] ?? VIBES[0];
+  if (v) applyVibe(v);
+}
 function vibeLabel() {
   const v = currentVibe();
-  if (!v) return settings.audioVibe ? 'custom' : '';
+  if (!v) return settings.audioVibe && settings.audioVibe !== 'off' ? 'custom' : '';
   return vibeIntact(v) ? v.name : `${v.name} (edited)`;
 }
 
@@ -14651,7 +14680,7 @@ function toggleSceneSheet() {
   el.className = 'scene-sheet';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Scenes');
-  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-fold" aria-label="Show only this row" aria-expanded="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg></button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div><button type="button" class="ss-vlook" role="switch"><span>Vibes also change the look</span><i></i></button>`;
+  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-fold" aria-label="Show only this row" aria-expanded="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg></button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div><button type="button" class="ss-vlook ss-von" role="switch"><span>Vibe</span><i></i></button><button type="button" class="ss-vlook ss-look" role="switch"><span>Vibes also change the look</span><i></i></button>`;
   const tabsEl = document.createElement('div');
   tabsEl.className = 'ss-tabs';
   tabsEl.setAttribute('role', 'tablist');
@@ -14673,9 +14702,15 @@ function toggleSceneSheet() {
     tabsEl.append(b);
   }
   el.querySelector('.ss-head')!.after(tabsEl);
-  const lookB = el.querySelector<HTMLButtonElement>('.ss-vlook')!;
-  // The switch sits right under the tabs, before the vibe families.
-  tabsEl.after(lookB);
+  const lookB = el.querySelector<HTMLButtonElement>('.ss-look')!;
+  const onB = el.querySelector<HTMLButtonElement>('.ss-von')!;
+  // The switches sit right under the tabs, before the vibe families.
+  tabsEl.after(onB, lookB);
+  onB.addEventListener('click', () => {
+    if (vibeIsOff()) vibesOn();
+    else vibesOff();
+    draw();
+  });
   lookB.addEventListener('click', () => {
     set('audioVibeLook', !settings.audioVibeLook);
     draw();
@@ -14749,14 +14784,16 @@ function toggleSceneSheet() {
     const vib = music && sheetTab === 'vibes';
     const sceneName = currentMine?.name || lastSceneName || 'Your mix';
     tabsEl.hidden = !music;
-    lookB.hidden = !vib;
+    lookB.hidden = !vib || vibeIsOff();
+    onB.hidden = !vib;
+    onB.setAttribute('aria-checked', String(!vibeIsOff()));
     el.classList.toggle('vibing', vib);
     for (const t of ['scenes', 'vibes'] as const) {
       tabB[t].setAttribute('aria-selected', String(vib === (t === 'vibes')));
       tabB[t].classList.toggle('on', vib === (t === 'vibes'));
     }
     tabB.scenes.querySelector('b')!.textContent = sceneName;
-    tabB.vibes.querySelector('b')!.textContent = vibeLabel() || 'None';
+    tabB.vibes.querySelector('b')!.textContent = vibeIsOff() ? 'Off' : vibeLabel() || 'None';
     lookB.setAttribute('aria-checked', String(settings.audioVibeLook));
     drawChips(vib);
     if (vib) return drawVibes();
@@ -14813,7 +14850,7 @@ function toggleSceneSheet() {
   // Vibes tab: ‹ name › steps vibes, chips are vibe families, each vibe says what it does.
   const drawVibes = () => {
     const v = currentVibe();
-    el.querySelector('.ss-now b')!.textContent = vibeLabel() || 'No vibe';
+    el.querySelector('.ss-now b')!.textContent = vibeIsOff() ? 'Vibe off' : vibeLabel() || 'No vibe';
     el.querySelector('.ss-now small')!.textContent = v ? vibeFamilyLabel(v.family) : 'Vibe';
     const q = input.value.trim().toLowerCase();
     for (const c of chipsEl.children) c.classList.toggle('on', !q && (c as HTMLElement).dataset.fam === vibeFamily);
@@ -14887,7 +14924,7 @@ function stageName() {
     uPaint(true);
   }
   // A small note badge while a vibe plays with the music.
-  const vibeOn = onStage && musicOn() && !!settings.audioVibe;
+  const vibeOn = onStage && musicOn() && !!settings.audioVibe && !vibeIsOff();
   let badge = b.querySelector<HTMLElement>('.u-vibe');
   if (vibeOn && !badge) {
     badge = document.createElement('i');
