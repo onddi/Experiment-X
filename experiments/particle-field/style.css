@@ -2329,3 +2329,9 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .kr-badge.show { display: flex; }
 body.num-turning .kr-badge { bottom: calc(150px + env(safe-area-inset-bottom)); }
 @media (max-width: 720px) { .m-bar.knobbing ~ .kr-badge, body:has(.m-bar.knobbing) .kr-badge { display: none; } }
+/* Quality card. */
+.quality { display: flex; flex-direction: column; gap: 10px; }
+.quality .anim-chips button.on { background: var(--text); color: var(--bg, #000); border-color: transparent; font-weight: 600; }
+.q-auto { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--label); cursor: pointer; }
+.q-read { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text); }
+.q-note { margin: 0; font-size: 12px; color: var(--muted); }

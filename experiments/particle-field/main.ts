@@ -295,8 +295,16 @@ function fadeLife(i: number) {
 // 45% fewer pixels and hard to tell apart on a moving field. Desktop keeps 2×.
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.max(screen.width, screen.height) < 1100;
 let recHi = false;
+// Pixel density picked on the Quality card (this device only); 0 = automatic.
+let densityPref = 0;
+let autoQuality = true;
+try {
+  densityPref = +(localStorage.getItem('pf-density') ?? '') || 0;
+  autoQuality = localStorage.getItem('pf-autoq') !== '0';
+} catch {}
 function resize() {
-  dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, PHONE && !recHi ? 1.5 : 2) * renderScale);
+  const cap = densityPref || (PHONE && !recHi ? 1.5 : 2);
+  dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, cap) * renderScale);
   w = canvas.clientWidth;
   h = canvas.clientHeight;
   canvas.width = Math.round(w * dpr);
@@ -5831,6 +5839,7 @@ let slowMs = 0;
 let fastMs = 0;
 
 function adaptQuality(dt: number, ms: number) {
+  if (!autoQuality) return;
   if (settings.render === 'links') {
     if (dt > 1.3) linkBudget = Math.max(400, linkBudget * 0.92);
     else if (dt < 1.1) linkBudget = Math.min(6000, linkBudget * 1.02);
@@ -5913,7 +5922,7 @@ const FOLDERS: Folder[] = [
   { id: 'output', label: 'Output', tabs: ['record'], icon: TAB_ICONS.record },
 ];
 const folderOf = (t: Tab) => FOLDERS.find((f) => f.tabs.includes(t)) ?? FOLDERS[0];
-const PAGE_OF: Record<string, Tab> = { anim: 'knobs', timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', links: 'links' };
+const PAGE_OF: Record<string, Tab> = { anim: 'knobs', timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', quality: 'record', links: 'links' };
 const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
 // A card that can be switched off: `off` is what switching off sets, `start`
 // what switching on sets the first time (later it restores what you had).
@@ -5926,6 +5935,7 @@ type ControlBody =
   | { kind: 'mypresets' }
   | { kind: 'timeline' }
   | { kind: 'record' }
+  | { kind: 'quality' }
   | { kind: 'xfader' }
   | { kind: 'knobsmore' }
   | { kind: 'animlist' }
@@ -6384,6 +6394,10 @@ const CONTROLS: Control[] = [
     about: 'A video of the field to save or share: the picture and, if you like, the sound.',
     summary: () => (recorder.on ? 'recording' : recorder.clip ? 'clip ready' : RECORD_LENGTHS.find(([v]) => Number(v) === recorder.prefs.secs)![1]) },
   { kind: 'record' },
+  { kind: 'section', id: 'quality', label: 'Quality', tab: 'presets',
+    about: 'How many pixels the field draws on this device. Fewer pixels run faster; the readout shows the effect live. Saved on this device only, not in scenes.',
+    summary: () => (densityPref ? `${densityPref}×` : 'auto') },
+  { kind: 'quality' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
     lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
@@ -8408,6 +8422,61 @@ function tlAddCurrent() {
   tlSave();
 }
 
+// Quality: pixel density chips, auto lowering, and a live readout.
+function renderQuality(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'quality';
+  const native = window.devicePixelRatio || 1;
+  const opts = [0, 0.75, 1, 1.25, 1.5, 2, 3].filter((v) => v <= Math.max(2, native));
+  const chips = document.createElement('div');
+  chips.className = 'anim-chips';
+  const autoLbl = `Auto (${PHONE ? 1.5 : 2}×)`;
+  const paint = () => chips.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    const on = +b.dataset.v! === densityPref;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+  for (const v of opts) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.v = String(v);
+    b.textContent = v ? `${v}×` : autoLbl;
+    b.addEventListener('click', () => {
+      densityPref = v;
+      try { localStorage.setItem('pf-density', v ? String(v) : ''); } catch {}
+      renderScale = 1;
+      resize();
+      paint();
+    });
+    chips.append(b);
+  }
+  paint();
+  const auto = document.createElement('label');
+  auto.className = 'q-auto';
+  auto.innerHTML = '<input type="checkbox"> <span>Lower it by itself when frames drop</span>';
+  const cb = auto.querySelector('input')!;
+  cb.checked = autoQuality;
+  cb.addEventListener('change', () => {
+    autoQuality = cb.checked;
+    try { localStorage.setItem('pf-autoq', autoQuality ? '' : '0'); } catch {}
+    if (!autoQuality && renderScale !== 1) {
+      renderScale = 1;
+      resize();
+    }
+  });
+  const out = document.createElement('p');
+  out.className = 'q-read';
+  const note = document.createElement('p');
+  note.className = 'q-note';
+  note.textContent = `This screen is ${native}× natively. Turn "lower by itself" off while you compare, so the numbers stay put.`;
+  box.append(chips, auto, out, note);
+  const timer = window.setInterval(() => {
+    if (!box.isConnected) return clearInterval(timer);
+    if (!box.offsetParent) return;
+    out.textContent = `${Math.round(fps)} fps · ${canvas.width}×${canvas.height} px · sim ${stepMs.toFixed(1)} ms · draw ${drawMs.toFixed(1)} ms${renderScale < 1 ? ` · lowered to ${Math.round(renderScale * 100)}%` : ''}`;
+  }, 500);
+  return box;
+}
 function renderRecord() {
   const box = document.createElement('div');
   box.className = 'record';
@@ -11105,6 +11174,10 @@ function renderControls() {
 
     if (ctl.kind === 'record') {
       searchItem(body, renderRecord());
+      continue;
+    }
+    if (ctl.kind === 'quality') {
+      searchItem(body, renderQuality(), 'quality pixel density resolution performance fps speed');
       continue;
     }
 
