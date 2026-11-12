@@ -14674,6 +14674,8 @@ function toggleSceneSheet() {
   }
   el.querySelector('.ss-head')!.after(tabsEl);
   const lookB = el.querySelector<HTMLButtonElement>('.ss-vlook')!;
+  // The switch sits right under the tabs, before the vibe families.
+  tabsEl.after(lookB);
   lookB.addEventListener('click', () => {
     set('audioVibeLook', !settings.audioVibeLook);
     draw();
