@@ -25,7 +25,7 @@ export type SpawnOn = 'none' | 'death' | 'hit' | 'trail' | 'beat';
 export type HitWalls = 'none' | 'floor' | 'box' | 'bowl';
 export type HitDo = 'bounce' | 'slide' | 'stick' | 'pile';
 export type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none' | 'implodeHold' | 'thumb';
-export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links' | 'squares' | 'shards' | 'stars' | 'petals' | 'crosses' | 'neon' | 'flare' | 'embers' | 'hair' | 'threads' | 'ink' | 'lightning' | 'halftone' | 'bigpixels' | 'bubbles';
+export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links' | 'squares' | 'shards' | 'stars' | 'petals' | 'crosses' | 'neon' | 'flare' | 'embers' | 'hair' | 'threads' | 'ink' | 'lightning' | 'halftone' | 'bigpixels' | 'bubbles' | 'sprite';
 export type KickAction = 'pulse' | 'wave' | 'both' | 'pump' | 'tick' | 'spawn' | 'none';
 export type SnareAction = 'swirl' | 'wave' | 'flash' | 'none';
 export type HatAction = 'sparkle' | 'none';
@@ -117,6 +117,7 @@ export interface Settings {
   drawOutline: boolean;
   shapeSpin: number;
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
+  imageRate: number;
   camMode: CamMode;
   camMirror: boolean;
   camCentre: boolean;
@@ -350,6 +351,12 @@ export interface Settings {
   launchDir: number;
   launchSpread: number;
   edges: Edges;
+  spriteCols: number;
+  spriteRows: number;
+  spriteFps: number;
+  spriteTint: boolean;
+  spriteTurn: 'none' | 'heading' | 'spin';
+  spriteScale: number;
   glyphSet: GlyphSet;
   glyphText: string;
   glyphPick: GlyphPick;
@@ -662,6 +669,7 @@ export const DEFAULTS: Settings = {
   drawOutline: false,
   shapeSpin: 0.3,
   imageMode: 'auto',
+  imageRate: 10,
   camMode: 'face',
   camMirror: true,
   camCentre: true,
@@ -872,6 +880,12 @@ export const DEFAULTS: Settings = {
   launchDir: 270,
   launchSpread: 360,
   edges: 'wrap',
+  spriteCols: 0,
+  spriteRows: 0,
+  spriteFps: 10,
+  spriteTint: true,
+  spriteTurn: 'heading',
+  spriteScale: 4,
   glyphSet: 'katakana',
   glyphText: 'HELLO WORLD',
   glyphPick: 'random',
