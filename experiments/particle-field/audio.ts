@@ -260,6 +260,22 @@ export class AudioInput {
   private beatsAtAnchor = 0;
   private lastBeatIdx = 0;
   private kicksInBar = 0;
+  // Tap tempo: a tapped tempo and the time of a tapped beat 1. While set it
+  // wins over the estimate, and kicks no longer move the bar grid.
+  private pin = { bpm: 0, at: 0 };
+  get pinnedBpm() {
+    return this.pin.bpm;
+  }
+  pinTempo(bpm: number, at: number) {
+    this.pin = { bpm, at };
+    if (!bpm) return;
+    this.cur.bpm = this.levels.bpm = bpm;
+    // Taps follow what you hear, which the analysis is delayed to match.
+    this.beatAnchor = at - Math.max(0, this.sync);
+    this.beatsAtAnchor = 0;
+    // One short of the beat we're on, so a tap on beat 1 counts as a bar.
+    this.lastBeatIdx = Math.floor((performance.now() - this.beatAnchor) / (60000 / bpm) + 0.02) - 1;
+  }
 
   /** Listen to spectrum frames from elsewhere (no AudioContext, nothing plays here). */
   startFeed(subscribe: (onFrame: (f: SpectrumFrame) => void) => () => void) {
@@ -502,7 +518,7 @@ export class AudioInput {
     if (kick > 0 || snare > 0) {
       this.kickTimes.push(t);
       while (this.kickTimes.length && t - this.kickTimes[0] > 8000) this.kickTimes.shift();
-      L.bpm = estimateBpm(this.kickTimes, tu.bpm);
+      L.bpm = this.pin.bpm || estimateBpm(this.kickTimes, tu.bpm);
     }
     // A build-up is when the kick drops out; a rolling bass line still fires
     // weak onsets in the kick band, so only full-strength kicks count here.
@@ -815,9 +831,14 @@ export class AudioInput {
 
     // Bars: count beats on a grid anchored to kicks, re-anchoring when a
     // kick lands off the grid. Without a tempo, every 4th kick.
+    const pinned = this.pin.bpm > 0;
+    if (pinned) {
+      L.bpm = this.pin.bpm;
+      if (!this.beatAnchor) this.pinTempo(this.pin.bpm, this.pin.at);
+    }
     if (L.bpm > 0) {
       const period = 60000 / L.bpm;
-      if (kick) {
+      if (kick && !pinned) {
         const beats = this.beatsAtAnchor + (now - this.beatAnchor) / period;
         const off = Math.abs(beats - Math.round(beats));
         if (!this.beatAnchor || off > 0.25) {

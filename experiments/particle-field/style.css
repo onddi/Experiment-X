@@ -298,6 +298,9 @@ button:hover, select:hover { border-color: #3c3f46; }
   opacity: 0.25;
 }
 .hits em { margin-left: auto; font: 11px ui-monospace, Menlo, monospace; font-style: normal; color: var(--muted); }
+.hits button { font: inherit; font-size: 11px; font-weight: 600; color: #e6e6ea; background: #1d1e24; border: 1px solid #2c2d35; border-radius: 6px; padding: 3px 10px; cursor: pointer; touch-action: manipulation; }
+.hits button:active { background: #2c2d35; }
+.hits .tap-auto { color: var(--muted); }
 .audio-status { margin: 0; font-size: 12px; color: #c9cad0; }
 .audio-status.error { color: oklch(75% 0.15 25); }
 .audio-help { margin: 4px 0 0; font-size: 11px; color: var(--muted); }

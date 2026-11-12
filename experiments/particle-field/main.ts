@@ -8389,18 +8389,49 @@ tlRingEl.addEventListener(
 );
 tlRingBuild();
 
-// Tap tempo: the average gap of the last few taps.
-let tlTaps: number[] = [];
-function tlTap() {
+// Tap tempo (T, the Music card, the Timeline): tap along with the beat,
+// starting on beat 1. Two or more taps set the tempo; a single tap after a
+// pause says "this is beat 1" and keeps the tempo. With music on, the tapped
+// tempo and bar grid win over what the music analysis hears, until Auto
+// (Shift+T) hands the tempo back to it. Without music it is the set tempo
+// for the timeline and moving settings.
+let tapRun: number[] = [];
+function tapTempo() {
   const t = performance.now();
-  tlTaps = tlTaps.filter((x) => t - x < 2500).concat(t);
-  if (tlTaps.length >= 2) {
-    const gaps = tlTaps.slice(1).map((x, k) => x - tlTaps[k]);
-    tl.bpm = Math.max(50, Math.min(200, Math.round(60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length))));
-    tlLastBarAt = t;
-    tlSave();
-  }
+  if (tapRun.length && t - tapRun[tapRun.length - 1] > 2000) tapRun = [];
+  if (tapRun.length < 64) tapRun.push(t);
+  const n = tapRun.length;
+  const L = audio.levels;
+  let bpm = audio.pinnedBpm || (reacting() && L.bpm > 0 ? L.bpm : tl.bpm || 120);
+  if (n >= 2) bpm = Math.max(50, Math.min(200, Math.round((60000 * (n - 1)) / (t - tapRun[0]))));
+  const at = tapRun[0];
+  const beatMs = 60000 / bpm;
+  const barMs = beatMs * 4;
+  tl.bpm = Math.round(bpm);
+  if (audio.source !== 'off') audio.pinTempo(bpm, at);
+  // The timeline's own clock and the moving settings' beat follow the taps.
+  tlLastBarAt = at + Math.floor((t - at) / barMs + 0.02) * barMs;
+  const into = ((t - at) / beatMs) % 4;
+  animBeat = Math.round((animBeat - into) / 4) * 4 + into;
+  tlSave(false);
+  tapSync();
+  numBig.querySelector('i')!.textContent = 'T';
+  numBig.querySelector('b')!.textContent = n < 2 ? 'Beat 1' : 'Tap tempo';
+  numBig.querySelector('output')!.textContent = `${Math.round(bpm)} BPM`;
+  numBig.querySelector<HTMLElement>('.nb-bar u')!.style.width = `${(((n - 1) % 4) + 1) * 25}%`;
+  numBig.classList.add('show');
+  clearTimeout(numBigTimer);
+  numBigTimer = window.setTimeout(() => numBig.classList.remove('show'), 1500);
 }
+function tapAuto() {
+  tapRun = [];
+  audio.pinTempo(0, 0);
+  tapSync();
+  showToast('Tempo follows the music again');
+}
+// Cards showing the tempo refresh through this.
+const tapSyncs: (() => void)[] = [];
+const tapSync = () => tapSyncs.forEach((f) => f());
 
 // "Add this scene": the scene playing; a tweaked or unnamed one is saved to
 // My scenes first so the timeline can come back to it.
@@ -8900,12 +8931,12 @@ function renderTimeline() {
     tlSave(false);
     tempoF.sync();
   });
-  const tap = btn('Tap', '', () => {
-    tlTap();
+  const tap = btn('Tap', '', tapTempo);
+  tap.title = 'Tap along with the beat, starting on beat 1 (T)';
+  tapSyncs.push(() => {
     bpmIn.value = String(tl.bpm);
     tempoF.sync();
   });
-  tap.title = 'Tap a few times in time with the beat';
   tempo.append(mk('span', 'name', 'Tempo'), bpmIn, mk('span', '', 'BPM'), tap);
   tempoF.d.append(tempo);
 
@@ -11564,7 +11595,7 @@ function renderControls() {
   controls.append(stats);
   const keys = document.createElement('p');
   keys.className = 'stats';
-  keys.textContent = 'Click or hold on the field. Keys: hold 1–8 and scroll to turn a field knob (or play your scenes, see Field knobs) · Space pause · A gather · E explode · S scatter · D shuffle · F shuffle the music vibe · Enter type a word · V record a clip · H hide panel · ⌘K or / find a setting · I debug info.';
+  keys.textContent = 'Click or hold on the field. Keys: hold 1–8 and scroll to turn a field knob (or play your scenes, see Field knobs) · Space pause · A gather · E explode · S scatter · D shuffle · F shuffle the music vibe · Enter type a word · T tap tempo (Shift+T back to the music) · V record a clip · H hide panel · ⌘K or / find a setting · I debug info.';
   controls.append(keys);
 }
 
@@ -13285,7 +13316,7 @@ function renderAudio() {
     <div class="meter" aria-hidden="true">
       <span>Sub</span><i></i><span>Bass</span><i></i><span>Mid</span><i></i><span>High</span><i></i>
     </div>
-    <div class="hits" aria-hidden="true"><b>Kick</b><b>Snare</b><b>Hat</b><em></em></div>
+    <div class="hits"><b aria-hidden="true">Kick</b><b aria-hidden="true">Snare</b><b aria-hidden="true">Hat</b><em></em><button type="button" class="tap-auto" title="Hand the tempo back to the music (Shift+T)">Auto</button><button type="button" class="tap-btn" title="Tap along with the beat, starting on beat 1 (T)">Tap</button></div>
     <p class="audio-status">Off</p>
     <p class="audio-help"></p>`;
   const fileInput = wrap.querySelector<HTMLInputElement>('input[type=file]')!;
@@ -13294,6 +13325,9 @@ function renderAudio() {
   const bars = [...wrap.querySelectorAll<HTMLElement>('.meter i')];
   const hits = [...wrap.querySelectorAll<HTMLElement>('.hits b')];
   const bpmEl = wrap.querySelector<HTMLElement>('.hits em')!;
+  const tapAutoBtn = wrap.querySelector<HTMLButtonElement>('.tap-auto')!;
+  wrap.querySelector('.tap-btn')!.addEventListener('click', tapTempo);
+  tapAutoBtn.addEventListener('click', tapAuto);
   let hatGlow = 0;
   const buttons = [...wrap.querySelectorAll<HTMLButtonElement>('[data-src]')];
 
@@ -13346,7 +13380,9 @@ function renderAudio() {
     // Hit lights stay lit briefly so single-frame hits are visible.
     [L.pulse, L.snareEnv, L.hat ? 1 : hatGlow * 0.8].forEach((v, k) => (hits[k].style.opacity = String(0.25 + 0.75 * Math.min(1, v))));
     hatGlow = L.hat ? 1 : hatGlow * 0.8;
-    bpmEl.textContent = audio.source !== 'off' && L.bpm ? `${L.bpm} BPM` : '';
+    const pin = audio.pinnedBpm;
+    bpmEl.textContent = audio.source !== 'off' && L.bpm ? `${Math.round(L.bpm)} BPM${pin ? ' · tapped' : ''}` : '';
+    tapAutoBtn.hidden = !pin;
   });
   sync();
   return wrap;
@@ -15586,7 +15622,10 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'f') surpriseVibe(vibeLead === 'any' ? undefined : vibeLead);
   else if (k === 'h') toggle.click();
   else if (k === 'v') toggleRecord();
-  else if (k === 'p') toggleProject();
+  else if (k === 't') {
+    if (e.shiftKey) tapAuto();
+    else if (!e.repeat) tapTempo();
+  } else if (k === 'p') toggleProject();
   else if (xfLive() && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
     const right = e.key === 'ArrowRight';
