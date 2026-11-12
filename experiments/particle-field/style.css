@@ -2399,3 +2399,7 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .rack-knob span, .tuner-head output { cursor: text; }
 .kn-type { width: 64px; max-width: 100%; box-sizing: border-box; padding: 2px 4px; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--tile); color: var(--text); font: inherit; font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; outline: none; }
 .tuner-head .kn-type { width: 80px; margin-right: auto; font-size: 15px; }
+/* Music card: which audio input the Mic source opens. */
+.audio-input { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; font-size: 13px; color: var(--muted); }
+.audio-input[hidden] { display: none; }
+.audio-input select { flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--tile); color: var(--text); font: inherit; font-size: 13px; }

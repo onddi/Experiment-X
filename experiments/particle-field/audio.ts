@@ -191,6 +191,8 @@ class Onset {
 
 export class AudioInput {
   source: AudioSource = 'off';
+  /** Which audio input the mic source opens ('' = the system default). */
+  inputId = '';
   genre: Genre = 'general';
   vox: VoxMode = 'auto';
   // Hold reactions back by this many ms. Bluetooth headphones play the sound
@@ -315,7 +317,15 @@ export class AudioInput {
       const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
       if (source === 'mic') {
-        this.stream = await navigator.mediaDevices.getUserMedia({ audio: raw });
+        // A chosen input (an audio interface, a loopback device), else the default.
+        const want = this.inputId ? { ...raw, deviceId: { exact: this.inputId } } : raw;
+        try {
+          this.stream = await navigator.mediaDevices.getUserMedia({ audio: want });
+        } catch (e) {
+          if (!this.inputId || (e as Error).name !== 'OverconstrainedError' && (e as Error).name !== 'NotFoundError') throw e;
+          // The chosen input is gone (unplugged): fall back to the default.
+          this.stream = await navigator.mediaDevices.getUserMedia({ audio: raw });
+        }
       } else if (source === 'tab') {
         // Browsers only offer audio alongside video; we drop the video.
         this.stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: raw });
@@ -344,7 +354,7 @@ export class AudioInput {
 
       this.source = source;
       this.onChange(
-        source === 'mic' ? 'Listening to the microphone' : source === 'tab' ? 'Listening to the shared audio' : `Playing ${file?.name ?? 'file'}`,
+        source === 'mic' ? `Listening to ${this.stream?.getAudioTracks()[0]?.label || 'the microphone'}` : source === 'tab' ? 'Listening to the shared audio' : `Playing ${file?.name ?? 'file'}`,
       );
     } catch (err) {
       this.stop();

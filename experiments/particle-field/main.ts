@@ -647,6 +647,10 @@ function implodeStart() {
 // --- audio -------------------------------------------------------------------
 
 const audio = new AudioInput();
+// The audio input the Mic source opens (an interface such as an Apollo, a
+// loopback device), remembered on this device.
+const AUDIO_INPUT_KEY = 'particle-field:audio-input';
+audio.inputId = readJson<string>(AUDIO_INPUT_KEY, '');
 if (import.meta.env.DEV) (window as unknown as { particleAudio: AudioInput }).particleAudio = audio;
 if (import.meta.env.DEV) setTimeout(() => ((window as unknown as { particleCam: Camera }).particleCam = cam));
 // Dev only: run the simulation fast without drawing, and measure how spread
@@ -13405,6 +13409,7 @@ function renderAudio() {
       <button type="button" data-src="off">Stop</button>
     </div>
     <input type="file" accept="audio/*" hidden />
+    <label class="audio-input" hidden><span>Input</span><select aria-label="Audio input"></select></label>
     <div class="meter" aria-hidden="true">
       <span>Sub</span><i></i><span>Bass</span><i></i><span>Mid</span><i></i><span>High</span><i></i>
     </div>
@@ -13425,7 +13430,7 @@ function renderAudio() {
 
   const HELP: Record<string, string> = {
     off: 'Microphone hears whatever plays in the room. Share a tab gets clean sound from e.g. the Spotify web player (Chrome/Edge: tick “Share tab audio”).',
-    mic: 'Turn the music up a bit. Headphones won’t reach the mic.',
+    mic: 'Turn the music up a bit. Headphones won’t reach the mic. An audio interface or a loopback device (e.g. BlackHole, Loopback) can be picked as the Input for a clean feed; browsers use its first two channels.',
     tab: 'Keep the shared tab playing. Stop sharing from the browser bar or press Stop.',
     file: 'The file loops until you press Stop.',
     feed: 'Follows the audio player shown alongside in X-Frame. Play and pause there.',
@@ -13438,11 +13443,52 @@ function renderAudio() {
   };
   audio.onChange = (msg) => {
     status.textContent = msg;
+    // Names of the inputs only show once the mic is allowed.
+    if (audio.source === 'mic') void listInputs();
     status.classList.toggle('error', audio.source === 'off' && msg !== 'Off');
     sync();
     refresh();
   };
 
+  // Input picker: every audio input the browser offers (names show once the
+  // mic has been allowed). Changing it while listening switches straight over.
+  const inputRow = wrap.querySelector<HTMLElement>('.audio-input')!;
+  const inputSel = inputRow.querySelector('select')!;
+  const listInputs = async () => {
+    let devs: MediaDeviceInfo[] = [];
+    try {
+      devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+    } catch {}
+    inputSel.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = 'System default';
+    inputSel.append(def);
+    devs.forEach((d, n) => {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || `Input ${n + 1}`;
+      inputSel.append(o);
+    });
+    if (audio.inputId && !devs.some((d) => d.deviceId === audio.inputId)) {
+      const o = document.createElement('option');
+      o.value = audio.inputId;
+      o.textContent = 'Saved input (not connected)';
+      inputSel.append(o);
+    }
+    inputSel.value = audio.inputId;
+    inputRow.hidden = devs.length < 2 && !audio.inputId;
+  };
+  inputSel.addEventListener('change', () => {
+    audio.inputId = inputSel.value;
+    writeJson(AUDIO_INPUT_KEY, audio.inputId);
+    if (audio.source === 'mic') {
+      status.textContent = 'Switching input…';
+      void audio.start('mic');
+    }
+  });
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => void listInputs());
+  void listInputs();
   if (!tabAudioSupported()) wrap.querySelector<HTMLButtonElement>('[data-src=tab]')!.hidden = true;
   wrap.querySelector<HTMLButtonElement>('[data-src=feed]')!.hidden = !xframe.inFrame;
   for (const b of buttons) {
