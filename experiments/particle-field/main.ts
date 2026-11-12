@@ -9822,7 +9822,7 @@ perfHud.setAttribute('aria-hidden', 'true');
     t0 = now;
     perfNow.frameMs = 1000 / Math.max(perfNow.real, 0.1);
     perfNow.cpu = stepMs + drawMs;
-    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height} · ${+dpr.toFixed(2)}×${renderScale < 1 ? ' (lowered)' : ''}${halfHalos && glOnly ? ' · halos ½' : ''}${glr ? (glOnly ? ' · WebGL only' : RENDERER === 'only' ? ` · WebGL copy (${glWhyNot})` : ' · WebGL copy') : ' · 2D'}`;
+    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · ${n.toLocaleString()} particles · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height} · ${+dpr.toFixed(2)}×${renderScale < 1 ? ' (lowered)' : ''}${halfHalos && glOnly ? ' · halos ½' : ''}${glr ? (glOnly ? ' · WebGL only' : RENDERER === 'only' ? ` · WebGL copy (${glWhyNot})` : ' · WebGL copy') : ' · 2D'}`;
   }, 1000);
 }
 function setPerfHud(on: boolean) {
