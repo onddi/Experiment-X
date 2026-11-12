@@ -1,0 +1,20 @@
+name: Preview pull requests
+
+# A pull request can't deploy to GitHub Pages itself (Pages deploys from main),
+# so this asks the main deploy to run again; it builds every open pull request
+# into /preview/pr-<number>/ and drops the ones that were closed.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  actions: write
+
+jobs:
+  redeploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}

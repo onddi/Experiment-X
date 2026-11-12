@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
   pages: write
   id-token: write
 
@@ -25,6 +26,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Each open pull request (from this repo) is built too and published at
+      # /preview/pr-<number>/, next to the live site. preview.yml re-runs this
+      # workflow when a pull request is opened, updated or closed.
+      - name: Build previews of open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for pr in $(gh pr list --repo "$GITHUB_REPOSITORY" --state open --json number,isCrossRepository --jq '.[] | select(.isCrossRepository | not) | .number'); do
+            git fetch -q origin "pull/$pr/head:pr-$pr"
+            git worktree add -q "$RUNNER_TEMP/pr-$pr" "pr-$pr"
+            ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/pr-$pr/node_modules"
+            (cd "$RUNNER_TEMP/pr-$pr" && npx vite build --outDir "$GITHUB_WORKSPACE/dist/preview/pr-$pr" --emptyOutDir) \
+              || echo "::warning::The preview for pull request #$pr did not build"
+          done
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
