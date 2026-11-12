@@ -259,3 +259,4 @@ export const LENSES: [id: string, label: string, keys: string[]][] = [
   ['view', 'View', ['audioKaleido', 'lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'depth', 'depthParallax', 'audioCam', 'audioBassZoom', 'audioSpin', 'audioPan', 'audioRoll', 'audioDolly', 'audioCuts', 'audioFlip', 'viewZoom', 'viewRot']],
   ['music', 'Music', ['audioIntensity', 'audioKick', 'audioPulse', 'audioBeat', 'audioSnare', 'audioHats', 'audioHits', 'audioSub', 'audioDrop', 'audioDropBuild', 'audioBands', 'audioHue', 'audioBright', 'audioCam', 'audioSpin', 'audioTunnel', 'audioSway', 'audioWordsOn', 'audioSpeed', 'audioFlow', 'audioBassThrob', 'audioTrailEnergy']],
 ];
+TIPS.hueShift = 'Turns every colour round the colour wheel. Animate it for colour cycles.';

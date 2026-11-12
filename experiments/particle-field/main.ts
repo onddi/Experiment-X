@@ -9,6 +9,7 @@ import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
+import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
@@ -60,9 +61,22 @@ const xf: Xfader = (() => {
   }
 })();
 
+// Animate values: the knob value under each animated setting (the engine
+// writes the moving value into settings), and the last value it wrote, so a
+// change from anywhere else (a knob, a scene) becomes the new knob value.
+const animBase: Record<string, number> = {};
+const animWrote: Record<string, number> = {};
+// A copy with the knob values in place of the moving ones (to save or compare).
+function withBases<T extends object>(o: T): T {
+  const keys = Object.keys(animBase);
+  if (!keys.length) return o;
+  const c = { ...o } as Record<string, unknown>;
+  for (const k of keys) if (typeof c[k] === 'number' && Math.abs((c[k] as number) - animWrote[k]) < 1e-9) c[k] = animBase[k];
+  return c as T;
+}
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(withBases(settings)));
   } catch {
     /* storage unavailable: settings just won't persist */
   }
@@ -5455,6 +5469,7 @@ function frame(now: number) {
   if (!frozen) {
     updateGlyphs();
     cameraTick(now);
+    animTick(rawMs);
     runLinks(now);
     animateShape(now);
     tickMorph(now, reacting() && audio.levels.beat);
@@ -5578,7 +5593,7 @@ const FOLDERS: Folder[] = [
   { id: 'output', label: 'Output', tabs: ['record'], icon: TAB_ICONS.record },
 ];
 const folderOf = (t: Tab) => FOLDERS.find((f) => f.tabs.includes(t)) ?? FOLDERS[0];
-const PAGE_OF: Record<string, Tab> = { timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', links: 'links' };
+const PAGE_OF: Record<string, Tab> = { anim: 'knobs', timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', links: 'links' };
 const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
 // A card that can be switched off: `off` is what switching off sets, `start`
 // what switching on sets the first time (later it restores what you had).
@@ -5593,6 +5608,7 @@ type ControlBody =
   | { kind: 'record' }
   | { kind: 'xfader' }
   | { kind: 'knobsmore' }
+  | { kind: 'animlist' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'rapmeters' }
@@ -5994,6 +6010,13 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'playWheel5', label: 'Knob E', options: PLAYABLE },
   { kind: 'knobsmore' },
   { kind: 'note', text: 'Knobs A–E (and any you add) sit along the bottom of the field, left to right: slide a thumb up or right over one to turn it up (down or left turns it down), or hover the bottom edge to see them all. With a mouse: wheel = A, ⇧⌘ + wheel = B, ⇧⌥ + wheel = C, ⇧ + wheel = D, ⌥ + wheel = E (Ctrl or Alt on Windows).' },
+  { kind: 'section', id: 'anim', label: 'Moving settings', tab: 'presets',
+    about: 'Settings that move by themselves in time with the music: a swing around the knob, or keyframes you place or record.',
+    summary: () => {
+      const n = Object.keys(parseAnim(settings.anim)).length;
+      return n ? `${n} moving` : 'none';
+    } },
+  { kind: 'animlist' },
   { kind: 'section', about: 'What your finger, two fingers and the mouse do on the field.', id: 'pointer', label: 'Touch & gestures', tab: 'presets', lock: ['pointerMode', 'radius', 'force', 'click', 'clickForce'],
     power: { on: () => hasPointer() || hasClick(), off: { pointerMode: 'none', click: 'none' }, start: { pointerMode: 'repel', click: 'ripple' } },
     summary: () => [hasPointer() ? label(POINTER_MODES, settings.pointerMode) : '', hasClick() ? label(CLICK_MODES, settings.click).replace(' (hold)', '') : ''].filter(Boolean).join(' · ') || 'off' },
@@ -6063,6 +6086,7 @@ const CONTROLS: Control[] = [
   { kind: 'colors', key: 'customColors', label: 'Colours (calm → hot)', show: () => settings.palette === 'custom' },
   { kind: 'color', key: 'customBg', label: 'Background', show: () => settings.palette === 'custom' },
   { kind: 'swatch' },
+  { kind: 'range', key: 'hueShift', label: 'Hue shift', min: -180, max: 180, step: 1, format: (v) => (v ? `${v > 0 ? '+' : ''}${Math.round(v)}°` : 'off') },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
   { kind: 'section', id: 'lens', label: 'Lens', tab: 'look', about: 'Reshape the whole picture: kaleidoscope, mirror, tiles, zoom, twirl, waves, ripples, shatter, glow and more.',
@@ -6927,7 +6951,7 @@ function musicVisuals(now: number) {
     if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
     if (S.audioInvert && L.dropEnv > 0.55) parts.push('invert(1)');
   }
-  const hueCam = handDial.hue + linkRun.out.amounts.hue;
+  const hueCam = handDial.hue + linkRun.out.amounts.hue + (lightBg ? 0 : settings.hueShift);
   if (Math.abs(hueCam) > 0.5) parts.push(`hue-rotate(${hueCam.toFixed(1)}deg)`);
   if (macro.filter) parts.push(macro.filter);
   const filter = parts.join(' ');
@@ -10780,6 +10804,10 @@ function renderControls() {
       searchItem(body, renderXfader());
       continue;
     }
+    if (ctl.kind === 'animlist') {
+      searchItem(body, renderAnimList(), 'animate moving settings keyframes swing lfo automation record');
+      continue;
+    }
     if (ctl.kind === 'knobsmore') {
       searchItem(body, renderKnobsMore(), 'field knobs more add knob');
       continue;
@@ -11105,7 +11133,7 @@ let sceneBase: Settings | null = null;
 const SCENE_IGNORE = new Set<string>(['xfPos']);
 function sceneEdited() {
   if (!sceneBase) return false;
-  const S = settings as unknown as Record<string, unknown>;
+  const S = withBases(settings) as unknown as Record<string, unknown>;
   const B = sceneBase as unknown as Record<string, unknown>;
   const palAuto = settings.audioPalEvery > 0 && reacting();
   for (const k of Object.keys(DEFAULTS)) {
@@ -11497,7 +11525,11 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
     if (!wrap.isConnected) return clearInterval(rackTimer);
     for (const u of updaters) u();
     // Settings that are field knobs wear a small dot.
-    for (const e of wrap.querySelectorAll<HTMLElement>('[data-key]')) e.classList.toggle('fk', isFieldKnob(e.dataset.key!));
+    const moving = animMap();
+    for (const e of wrap.querySelectorAll<HTMLElement>('[data-key]')) {
+      e.classList.toggle('fk', isFieldKnob(e.dataset.key!));
+      e.classList.toggle('anim', !!moving[e.dataset.key!]);
+    }
   }, 150);
   return wrap;
 }
@@ -11515,6 +11547,19 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   const [barFill, barHome] = [el.querySelector<HTMLElement>('.rack-bar i')!, el.querySelector<HTMLElement>('.rack-bar u')!];
   el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
   tipOn(el.querySelector('b')!, c.key);
+  if (canAnimate(c.key) && src.get === RACK_LIVE.get) {
+    const ab = document.createElement('button');
+    ab.type = 'button';
+    ab.className = 'rk-anim';
+    ab.setAttribute('aria-label', `Animate ${c.label}`);
+    ab.innerHTML = waveIcon('sine');
+    ab.addEventListener('pointerdown', (e) => e.stopPropagation());
+    ab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openTuner(c, home, src, () => update(), el, true);
+    });
+    el.append(ab);
+  }
   const out = el.querySelector('span')!;
   const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
   const put = (v: number) => {
@@ -11534,12 +11579,14 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     out.classList.toggle('long', out.textContent.length > 5);
     el.classList.toggle('moved', Math.abs(v - home()) > c.step / 2);
   };
+  if (src.get === RACK_LIVE.get) ANIM_KNOBS.add({ el, key: c.key, update });
   // Drag right (or up, with a mouse) to turn it up; the whole travel is ~180 px.
   // On a touch screen a tap opens a big slider instead, so the finger
   // doesn't hide what it's turning.
   let start: { x: number; y: number; v: number; t: number; turned: boolean } | null = null;
   el.addEventListener('pointerdown', (e) => {
-    start = { x: e.clientX, y: e.clientY, v: src.get(c.key) as number, t: performance.now(), turned: false };
+    if ((e.target as HTMLElement).closest('.rk-anim')) return;
+    start = { x: e.clientX, y: e.clientY, v: animKnob(c.key, src.get(c.key) as number), t: performance.now(), turned: false };
     el.setPointerCapture(e.pointerId);
     if (e.pointerType !== 'touch') el.classList.add('turning');
   });
@@ -11598,7 +11645,469 @@ function closeTuner() {
   tunerKnob?.classList.remove('tuning');
   tunerKnob = null;
 }
-function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc, update: () => void, knob: HTMLElement) {
+// --- Animate values ----------------------------------------------------------
+// Knobs on screen, kept moving with their settings (the Deck refreshes its
+// own; the Studio's would otherwise wait for the next change).
+const ANIM_KNOBS = new Set<{ el: HTMLElement; key: string; update: () => void }>();
+setInterval(() => {
+  const moving = animMap();
+  const any = Object.keys(moving).length > 0;
+  for (const kb of ANIM_KNOBS) {
+    if (!kb.el.isConnected) {
+      if (!document.body.contains(kb.el)) ANIM_KNOBS.delete(kb);
+      continue;
+    }
+    const on = !!moving[kb.key];
+    kb.el.classList.toggle('anim', on);
+    if (on || (any && kb.el.classList.contains('anim'))) kb.update();
+  }
+}, 120);
+// The song position in beats: runs at the music's tempo (snapping onto each
+// new bar it hears) or the timeline's set tempo, and stops with Pause.
+let animBeat = 0;
+let animFrozen = false;
+type AnimRec = { key: string; base: number; from: number; beats: number; pts: [number, number][] };
+let animRec: AnimRec | null = null;
+// Settings that rebuild things when they change, or would fight other parts.
+const ANIM_NO = new Set(['count', 'shapeSize', 'patScale', 'xfPos', 'morph', 'entranceTime', 'shapeSeqSec', 'camRate', 'audioSync', 'audioVj', 'burstSize']);
+// Angles wrap round instead of stopping at the ends.
+const ANIM_WRAP = new Set(['hueShift', 'windDir', 'launchDir', 'shapeAngle', 'shapeFacing', 'viewRot']);
+let rangeMap: Map<string, Extract<Control, { kind: 'range' }>> | null = null;
+function rangeCtl(k: string) {
+  rangeMap ??= new Map(CONTROLS.flatMap((c) => (c.kind === 'range' ? [[c.key as string, c] as const] : [])));
+  return rangeMap.get(k);
+}
+const canAnimate = (k: string) => !!rangeCtl(k) && !ANIM_NO.has(k);
+const animMap = () => parseAnim(settings.anim);
+const animBpm = () => (reacting() && audio.levels.bpm > 0 ? audio.levels.bpm : tl.bpm || 120);
+const animClock = () => `${Math.round(animBpm())} BPM · ${reacting() && audio.levels.bpm > 0 ? 'from the music' : 'set tempo'}`;
+// The knob value under a moving setting (what a knob turn starts from).
+function animKnob(k: string, v: number) {
+  return k in animBase && Math.abs(v - animWrote[k]) < 1e-9 ? animBase[k] : v;
+}
+function animPut(k: string, a: Anim | null) {
+  const m = { ...animMap() };
+  if (a) m[k] = a;
+  else delete m[k];
+  set('anim', formatAnim(m) as never);
+}
+function animTick(rawMs: number) {
+  animBeat += (rawMs / 1000) * (animBpm() / 60);
+  if (reacting() && audio.levels.bar) {
+    const near = Math.round(animBeat / 4) * 4;
+    if (Math.abs(near - animBeat) < 0.75) animBeat = near;
+  }
+  const map = animMap();
+  const S = settings as unknown as Record<string, number>;
+  // Recording a move: the knob is yours; each frame is kept.
+  if (animRec) {
+    const r = animRec;
+    const c = rangeCtl(r.key)!;
+    const cur = S[r.key];
+    const t = (animBeat - r.from) / r.beats;
+    animBase[r.key] = r.base;
+    animWrote[r.key] = cur;
+    if (t < 1) r.pts.push([t, (cur - r.base) / (c.max - c.min)]);
+    else {
+      animRec = null;
+      // Line the recording up with the loop: t 0 is where the bar clock's cycle starts.
+      const shift = (r.from / r.beats) % 1;
+      const pts = thin(r.pts).map(([x, v]) => [(x + shift) % 1, v] as [number, number]);
+      animPut(r.key, { m: 'keys', b: r.beats / 4, e: 'line', k: pts });
+      showToast('Move recorded · it loops now');
+    }
+  }
+  for (const k of Object.keys(animBase)) {
+    if (map[k] || animRec?.key === k) continue;
+    if (Math.abs(S[k] - animWrote[k]) < 1e-9) S[k] = animBase[k];
+    delete animBase[k];
+    delete animWrote[k];
+  }
+  for (const k in map) {
+    if (animRec?.key === k) continue;
+    const c = rangeCtl(k);
+    const cur = S[k];
+    if (!c || typeof cur !== 'number' || bypass.has('knobs')) continue;
+    if (!(k in animWrote) || Math.abs(cur - animWrote[k]) > 1e-9) animBase[k] = cur;
+    const base = animBase[k];
+    const span = c.max - c.min;
+    let v = animFrozen ? base : base + animOffset(map[k], animBeat) * span;
+    if (ANIM_WRAP.has(k)) v = c.min + ((((v - c.min) % span) + span) % span);
+    else v = Math.min(c.max, Math.max(c.min, v));
+    if (c.step >= 1) v = Math.round(v);
+    S[k] = v;
+    animWrote[k] = v;
+  }
+}
+function animRecord(k: string, bars: number) {
+  const c = rangeCtl(k);
+  if (!c) return;
+  const cur = settings[k as keyof Settings] as number;
+  // Start from the knob value, as a flat line to play over.
+  const base = animKnob(k, cur);
+  animPut(k, null);
+  (settings as unknown as Record<string, number>)[k] = base;
+  animRec = { key: k, base, from: animBeat, beats: bars * 4, pts: [] };
+}
+
+const WAVE_PATH: Record<AWave, string> = {
+  sine: 'M1 8 C5 -2 9 -2 14 8 S23 18 27 8',
+  tri: 'M1 14 L8 2 L15 14 L22 2 L27 10',
+  ramp: 'M1 14 L13 2 L13 14 L25 2 L25 14',
+  square: 'M1 14 L1 2 L10 2 L10 14 L19 14 L19 2 L27 2',
+  steps: 'M1 10 L6 10 L6 3 L12 3 L12 13 L18 13 L18 6 L27 6',
+  drift: 'M1 9 C4 4 7 12 11 7 S17 3 20 10 S25 9 27 5',
+};
+const waveIcon = (s: AWave) => `<svg width="28" height="16" viewBox="0 0 28 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="${WAVE_PATH[s]}"/></svg>`;
+
+// The Animate part of a setting's slider sheet: Off / Swing / Keyframes.
+function animPanel(c: Extract<Control, { kind: 'range' }>): HTMLElement {
+  const k = c.key as string;
+  const box = document.createElement('div');
+  box.className = 'anim-panel';
+  const span = c.max - c.min;
+  const chipRow = <T,>(items: [T, string][], on: (v: T) => boolean, pick: (v: T) => void, cls = '') => {
+    const row = document.createElement('div');
+    row.className = `anim-chips ${cls}`;
+    for (const [v, label] of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = label;
+      b.classList.toggle('on', on(v));
+      b.setAttribute('aria-pressed', String(on(v)));
+      b.addEventListener('click', () => pick(v));
+      row.append(b);
+    }
+    return row;
+  };
+  const labelled = (text: string, el: HTMLElement) => {
+    const w = document.createElement('div');
+    w.className = 'anim-field';
+    const s = document.createElement('span');
+    s.textContent = text;
+    w.append(s, el);
+    return w;
+  };
+  const draw = () => {
+    box.innerHTML = '';
+    const a = animMap()[k];
+    const recording = animRec?.key === k;
+    const mode = recording ? 'rec' : a?.m ?? 'off';
+    box.append(chipRow<string>([['off', 'Still'], ['wave', 'Swing'], ['keys', 'Keyframes']], (v) => v === mode || (v === 'keys' && mode === 'rec'), (v) => {
+      if (v === 'off') animPut(k, null);
+      else if (v === 'wave' && a?.m !== 'wave') animPut(k, { m: 'wave', s: 'sine', b: a?.b ?? 4, d: 0.2 });
+      else if (v === 'keys' && a?.m !== 'keys') animPut(k, { m: 'keys', b: a?.b ?? 4, e: 'smooth', k: [[0, 0], [0.25, 0.25], [0.5, 0], [0.75, -0.25]] });
+      draw();
+    }, 'anim-mode'));
+    if (a?.m === 'wave') {
+      box.append(labelled('Shape', chipRow<AWave>(WAVES.map(([w, l]) => [w, `${waveIcon(w)}<i>${l}</i>`]), (v) => v === a.s, (v) => {
+        animPut(k, { ...a, s: v });
+        draw();
+      }, 'anim-shapes')));
+      const depth = document.createElement('input');
+      depth.type = 'range';
+      Object.assign(depth, { min: 0.02, max: 0.5, step: 0.01, value: String(a.d) });
+      depth.setAttribute('aria-label', 'How far it swings');
+      const out = document.createElement('output');
+      const say = () => (out.textContent = `± ${c.format ? c.format(+(a.d * span).toFixed(3)).replace(/^[+−-]/, '') : +(a.d * span).toFixed(2)}`);
+      say();
+      depth.addEventListener('input', () => {
+        a.d = Number(depth.value);
+        animPut(k, { ...a });
+        say();
+      });
+      const dw = document.createElement('div');
+      dw.className = 'anim-depth';
+      dw.append(depth, out);
+      box.append(labelled('How far', dw));
+    }
+    if (a || recording) {
+      const b = a?.b ?? 4;
+      box.append(labelled('One loop', chipRow<number>(CYCLES.map((x) => [x, cycleLabel(x)]), (v) => v === b, (v) => {
+        if (a) animPut(k, { ...a, b: v });
+        draw();
+      })));
+    }
+    if (a?.m === 'keys' || recording) {
+      if (a?.m === 'keys') box.append(labelled('Between points', chipRow<Ease>(EASES, (v) => v === a.e, (v) => {
+        animPut(k, { ...a, e: v });
+        draw();
+      })));
+      box.append(animLane(c, span));
+      const acts = document.createElement('div');
+      acts.className = 'anim-acts';
+      const rec = document.createElement('button');
+      rec.type = 'button';
+      rec.className = 'anim-rec';
+      const bars = a?.b ?? 4;
+      rec.innerHTML = recording ? '<i></i>Recording…' : `<i></i>Record ${cycleLabel(Math.max(1, bars))}`;
+      rec.classList.toggle('live', recording);
+      rec.title = 'Move the slider while it records; the move then loops';
+      rec.addEventListener('click', () => {
+        if (animRec) {
+          animRec = null;
+          draw();
+          return;
+        }
+        animRecord(k, Math.max(1, bars));
+        draw();
+      });
+      acts.append(rec);
+      box.append(acts);
+    }
+    const foot = document.createElement('small');
+    foot.className = 'anim-foot';
+    foot.textContent = a || recording ? `${animClock()}${animFrozen ? ' · frozen' : ''}` : 'Swing moves it around the knob in time with the music. Keyframes follow points you place or record.';
+    box.append(foot);
+  };
+  draw();
+  // Redraw once a recording finishes.
+  let was = animRec?.key === k;
+  const timer = window.setInterval(() => {
+    if (!box.isConnected) return clearInterval(timer);
+    const now = animRec?.key === k;
+    if (was && !now) draw();
+    was = now;
+  }, 200);
+  return box;
+}
+
+// The keyframe lane: the loop left to right, the setting's range bottom to
+// top. Tap empty space to add a point, drag one to move it, double-tap (or
+// Delete) to remove it. The white line is where the loop is now.
+function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLElement {
+  const k = c.key as string;
+  const wrap = document.createElement('div');
+  wrap.className = 'anim-lane';
+  const cv = document.createElement('canvas');
+  cv.setAttribute('aria-label', 'Keyframes: tap to add a point, drag to move, double-tap to remove');
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'anim-del';
+  del.textContent = 'Delete point';
+  del.hidden = true;
+  wrap.append(cv, del);
+  let sel = -1;
+  let drag = -1;
+  const keys = () => {
+    const a = animMap()[k];
+    return a?.m === 'keys' ? a : null;
+  };
+  const base = () => animKnob(k, settings[k as keyof Settings] as number);
+  const H = 120;
+  const yOf = (off: number) => (1 - (base() + off * span - c.min) / span) * H;
+  const at = (e: PointerEvent) => {
+    const r = cv.getBoundingClientRect();
+    const t = Math.min(0.999, Math.max(0, (e.clientX - r.left) / r.width));
+    const abs = c.min + (1 - Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))) * span;
+    return { t, off: Math.max(-1, Math.min(1, (abs - base()) / span)), x: e.clientX - r.left, y: e.clientY - r.top, w: r.width };
+  };
+  const write = (pts: [number, number][]) => {
+    const a = keys();
+    if (a) animPut(k, { ...a, k: pts.map(([t, v]) => [+t.toFixed(4), +v.toFixed(4)] as [number, number]) });
+  };
+  cv.addEventListener('pointerdown', (e) => {
+    const a = keys();
+    if (!a) return;
+    e.preventDefault();
+    const p = at(e);
+    const pts = a.k.map((q) => [...q] as [number, number]);
+    let near = -1;
+    let best = 16;
+    pts.forEach(([t, v], i) => {
+      const d = Math.hypot(t * p.w - p.x, yOf(v) - p.y);
+      if (d < best) {
+        best = d;
+        near = i;
+      }
+    });
+    if (near < 0) {
+      pts.push([p.t, p.off]);
+      near = pts.length - 1;
+      write(pts);
+    }
+    sel = drag = near;
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', (e) => {
+    const a = keys();
+    if (drag < 0 || !a) return;
+    const p = at(e);
+    const pts = a.k.map((q) => [...q] as [number, number]);
+    if (!pts[drag]) return;
+    pts[drag] = [p.t, p.off];
+    write(pts);
+  });
+  const up = () => (drag = -1);
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', up);
+  const remove = () => {
+    const a = keys();
+    if (!a || sel < 0 || a.k.length <= 1) return;
+    write(a.k.filter((_, i) => i !== sel));
+    sel = -1;
+  };
+  cv.addEventListener('dblclick', remove);
+  del.addEventListener('click', remove);
+  const paint = () => {
+    if (!wrap.isConnected) return;
+    requestAnimationFrame(paint);
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const w = cv.clientWidth;
+    if (!w) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== H * dpr) {
+      cv.width = Math.round(w * dpr);
+      cv.height = H * dpr;
+    }
+    const g = cv.getContext('2d')!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, H);
+    const a = keys();
+    const rec = animRec?.key === k ? animRec : null;
+    const bars = a?.b ?? (rec ? rec.beats / 4 : 4);
+    // Bars (or quarter bars) as faint lines.
+    const lines = bars >= 1 ? bars : 4;
+    g.strokeStyle = 'rgba(255,255,255,0.07)';
+    g.lineWidth = 1;
+    for (let i = 1; i < lines; i++) {
+      const x = Math.round((i / lines) * w) + 0.5;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.lineTo(x, H);
+      g.stroke();
+    }
+    // The knob value, dashed.
+    g.setLineDash([4, 4]);
+    g.strokeStyle = 'rgba(255,255,255,0.25)';
+    g.beginPath();
+    g.moveTo(0, yOf(0));
+    g.lineTo(w, yOf(0));
+    g.stroke();
+    g.setLineDash([]);
+    const accent = '#ffcf6a';
+    if (a) {
+      g.strokeStyle = accent;
+      g.lineWidth = 2;
+      g.beginPath();
+      for (let x = 0; x <= w; x += 2) {
+        const off = animOffset({ ...a }, (x / w) * a.b * 4);
+        const y = Math.min(H - 1, Math.max(1, yOf(off)));
+        if (x === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+      a.k.forEach(([t, v], i) => {
+        g.beginPath();
+        g.arc(t * w, Math.min(H - 6, Math.max(6, yOf(v))), i === sel ? 7 : 5, 0, Math.PI * 2);
+        g.fillStyle = i === sel ? accent : '#111114';
+        g.fill();
+        g.lineWidth = 2;
+        g.strokeStyle = accent;
+        g.stroke();
+      });
+    }
+    if (rec) {
+      g.strokeStyle = '#ff4d5a';
+      g.lineWidth = 2;
+      g.beginPath();
+      rec.pts.forEach(([t, v], i) => (i ? g.lineTo(t * w, yOf(v)) : g.moveTo(t * w, yOf(v))));
+      g.stroke();
+    }
+    // Where the loop is now.
+    const ph = rec ? (animBeat - rec.from) / rec.beats : a ? animPhase(a, animBeat) : 0;
+    g.fillStyle = rec ? '#ff4d5a' : 'rgba(255,255,255,0.8)';
+    g.fillRect(Math.round(ph * w) - 1, 0, 2, H);
+    del.hidden = !(a && sel >= 0 && sel < a.k.length && a.k.length > 1);
+  };
+  requestAnimationFrame(paint);
+  return wrap;
+}
+
+// What's moving: the Play folder's card. The clock, each moving setting
+// (tap to open its slider), Freeze and Stop all.
+function renderAnimList(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'anim-list';
+  let sig = '';
+  const draw = () => {
+    const map = animMap();
+    const keys = Object.keys(map).filter((k) => rangeCtl(k));
+    const next = `${settings.anim}|${animFrozen}|${animRec?.key ?? ''}`;
+    if (next === sig && box.childElementCount) return;
+    sig = next;
+    box.innerHTML = '';
+    const clock = document.createElement('div');
+    clock.className = 'anim-clock';
+    const ring = document.createElement('b');
+    const txt = document.createElement('span');
+    clock.append(ring, txt);
+    box.append(clock);
+    const tickClock = () => {
+      if (!clock.isConnected) return;
+      const beat = animBeat % 4;
+      ring.textContent = `${Math.floor(animBeat / 4) % 4 + 1}.${Math.floor(beat) + 1}`;
+      ring.style.setProperty('--p', String(beat / 4));
+      txt.textContent = animClock();
+      requestAnimationFrame(tickClock);
+    };
+    requestAnimationFrame(tickClock);
+    if (!keys.length) {
+      const p = document.createElement('p');
+      p.className = 'anim-empty';
+      p.textContent = matchMedia('(pointer: coarse)').matches ? 'Nothing is moving. Tap a knob, then Swing or Keyframes.' : 'Nothing is moving. Click ∿ on any knob (hover it), then Swing or Keyframes.';
+      box.append(p);
+      return;
+    }
+    for (const k of keys) {
+      const c = rangeCtl(k)!;
+      const a = map[k];
+      const row = document.createElement('div');
+      row.className = 'anim-item';
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'anim-open';
+      open.innerHTML = a.m === 'wave' ? waveIcon(a.s) : '<svg width="28" height="16" viewBox="0 0 28 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M1 12 L7 12 L11 3 L17 5 L21 13 L27 8"/><circle cx="11" cy="3" r="1.6" fill="currentColor"/><circle cx="21" cy="13" r="1.6" fill="currentColor"/></svg>';
+      const t = document.createElement('span');
+      const name = document.createElement('b');
+      name.textContent = c.label.replace(/ \(.*\)$/, '');
+      const sub = document.createElement('small');
+      sub.textContent = a.m === 'wave' ? `${WAVES.find(([w]) => w === a.s)?.[1]} · ${cycleLabel(a.b)}` : `${a.k.length} points · ${cycleLabel(a.b)}`;
+      t.append(name, sub);
+      open.append(t);
+      open.addEventListener('click', () => openTuner(c, () => ((sceneBase ?? DEFAULTS)[c.key] as number), RACK_LIVE, () => {}, open, true));
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'anim-x';
+      x.setAttribute('aria-label', `Stop animating ${c.label}`);
+      x.textContent = '✕';
+      x.addEventListener('click', () => animPut(k, null));
+      row.append(open, x);
+      box.append(row);
+    }
+    const acts = document.createElement('div');
+    acts.className = 'anim-acts';
+    const fr = document.createElement('button');
+    fr.type = 'button';
+    fr.textContent = animFrozen ? 'Unfreeze' : 'Freeze all';
+    fr.classList.toggle('on', animFrozen);
+    fr.addEventListener('click', () => {
+      animFrozen = !animFrozen;
+      showToast(animFrozen ? 'Animations frozen at the knob values' : 'Animations moving again');
+      draw();
+    });
+    const stop = document.createElement('button');
+    stop.type = 'button';
+    stop.textContent = 'Stop all';
+    stop.addEventListener('click', () => set('anim', '' as never));
+    acts.append(fr, stop);
+    box.append(acts);
+  };
+  draw();
+  const timer = window.setInterval(() => (box.isConnected ? draw() : clearInterval(timer)), 300);
+  return box;
+}
+
+function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc, update: () => void, knob: HTMLElement, animOpen = false) {
   const again = tunerKnob === knob;
   closeTuner();
   if (again) return;
@@ -11608,6 +12117,24 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   el.innerHTML = `<div class="tuner-head"><b></b><output></output><button type="button" class="tuner-home">Scene value</button><button type="button" class="tuner-close" aria-label="Done">✕</button></div><div class="tuner-track"><input type="range"><i aria-hidden="true"></i></div>`;
   el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
   el.querySelector('.tuner-close')!.before(fieldKnobButton(c.key));
+  if (canAnimate(c.key)) {
+    const ab = document.createElement('button');
+    ab.type = 'button';
+    ab.className = 'tuner-animate';
+    ab.innerHTML = `${waveIcon('sine')}<span>Animate</span>`;
+    ab.title = 'Move this setting by itself, in time with the music';
+    let panel: HTMLElement | null = null;
+    const show = (on: boolean) => {
+      panel?.remove();
+      panel = on ? animPanel(c) : null;
+      if (panel) el.append(panel);
+      ab.classList.toggle('on', on);
+      ab.setAttribute('aria-expanded', String(on));
+    };
+    ab.addEventListener('click', () => show(!panel));
+    el.querySelector('.tuner-fk, .tuner-close')!.before(ab);
+    queueMicrotask(() => show(animOpen || !!animMap()[c.key]));
+  }
   if (ABOUT[c.key]) {
     const about = document.createElement('p');
     about.className = 'tuner-about';
@@ -12691,7 +13218,7 @@ function writeJson(key: string, v: unknown) {
 // Saved presets store the whole look and motion plus the audio reaction.
 function snapshot(): Partial<Settings> {
   // Mid-morph, save where the look is heading, not the halfway values.
-  const { audioFineTune: _skip, ...rest } = { ...settings, ...(morphState?.to ?? {}) } as Settings;
+  const { audioFineTune: _skip, ...rest } = { ...withBases(settings), ...(morphState?.to ?? {}) } as Settings;
   return { ...rest };
 }
 

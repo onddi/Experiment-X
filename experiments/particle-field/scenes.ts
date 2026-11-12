@@ -1,6 +1,7 @@
 // Scenes and vibes: the ready-made recipes. Pure data.
 import { DEFAULTS, type Settings } from './settings.ts';
 
+const anim = (m: Record<string, unknown>) => JSON.stringify(m);
 export const PRESETS: [string, Partial<Settings>][] = [
   ['Drift', { ...DEFAULTS }],
   ['Silk', { count: 3000, size: 1, render: 'streaks', flow: 1, flowScale: 0.003, flowSpeed: 0.15, trail: 0.95, friction: 0.06, jitter: 0.01, palette: 'ocean', colorBy: 'direction', glow: true, pointerMode: 'vortex', radius: 180, force: 0.5 }],
@@ -18,6 +19,21 @@ export const PRESETS: [string, Partial<Settings>][] = [
   ['Ink', { count: 2500, size: 1, render: 'streaks', flow: 1, flowScale: 0.003, flowSpeed: 0.12, trail: 0.96, friction: 0.06, jitter: 0.01, palette: 'paper', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 180, force: 0.5, click: 'gather' }],
   ['Snowfall', { count: 1400, size: 3.4, render: 'circles', gravity: 0.25, flow: 0.25, flowScale: 0.002, flowSpeed: 0.1, trail: 0, friction: 0.05, jitter: 0.05, speed: 0.8, palette: 'ice', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 140, force: 0.5, click: 'ripple' }],
   ['Comet shower', { count: 600, size: 2, render: 'comets', flow: 0.9, flowScale: 0.003, flowSpeed: 0.3, speed: 1.8, trail: 0.5, friction: 0.02, jitter: 0.02, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 200, force: 0.8, click: 'shockwave' }],
+  // Animated: settings that move by themselves on the bar clock (see animate.ts).
+  ['Tidal breath', { lifespan: 6, lifeFade: 'swell', count: 700, size: 2.2, render: 'glow', flow: 0.35, flowType: 'tide', flowScale: 0.003, flowSpeed: 0.12, trail: 0.6, friction: 0.05, jitter: 0.05, palette: 'ocean', colorBy: 'radial', glow: true, pointerMode: 'attract', radius: 220, force: 0.3, click: 'gather',
+    anim: anim({ size: { m: 'wave', s: 'sine', b: 2, d: 0.18 }, flow: { m: 'wave', s: 'sine', b: 4, d: 0.15, p: 0.25 }, hueShift: { m: 'wave', s: 'sine', b: 16, d: 0.12 } }) }],
+  ['Colour wheel', { count: 2600, size: 1.5, render: 'sparkles', flow: 0.5, flowType: 'vortex', flowScale: 0.003, flowSpeed: 0.1, trail: 0.85, friction: 0.03, jitter: 0.02, palette: 'neon', colorBy: 'radial', glow: true, pointerMode: 'vortex', radius: 320, force: 0.9, click: 'gather',
+    anim: anim({ hueShift: { m: 'wave', s: 'ramp', b: 8, d: 0.5 }, flow: { m: 'wave', s: 'tri', b: 4, d: 0.2 } }) }],
+  ['Heartbeat lights', { count: 1600, size: 1.5, render: 'sparkles', shape: 'icon', shapeIcon: 'heart', shapeSize: 0.6, flow: 0.1, flowScale: 0.004, flowSpeed: 0.2, trail: 0.5, friction: 0.08, jitter: 0.03, palette: 'sunset', colorBy: 'radial', glow: true, pointerMode: 'repel', radius: 140, force: 0.6, click: 'shockwave',
+    anim: anim({ size: { m: 'keys', b: 1, e: 'line', k: [[0, 0], [0.06, 0.32], [0.16, 0], [0.26, 0.22], [0.38, 0]] }, jitter: { m: 'keys', b: 1, e: 'line', k: [[0, 0], [0.06, 0.12], [0.2, 0]] }, hueShift: { m: 'wave', s: 'drift', b: 8, d: 0.08 } }) }],
+  ['Weather front', { count: 2200, size: 1.3, render: 'streaks', flow: 0.4, flowType: 'wind', flowScale: 0.003, flowSpeed: 0.2, wind: 0.3, windDir: 0, gravity: 0.05, trail: 0.85, friction: 0.03, jitter: 0.02, palette: 'aurora', colorBy: 'horizontal', glow: true, pointerMode: 'repel', radius: 160, force: 0.6, click: 'ripple',
+    anim: anim({ wind: { m: 'keys', b: 8, e: 'smooth', k: [[0, -0.2], [0.3, 0.5], [0.45, 0.1], [0.62, 0.6], [0.85, -0.2]] }, windDir: { m: 'wave', s: 'drift', b: 16, d: 0.15 }, gravity: { m: 'wave', s: 'sine', b: 8, d: 0.12 } }) }],
+  ['Tumbling globe', { count: 3500, size: 1.3, render: 'dots', shape: 'solid', shapeSolid: 'sphere', shapeSize: 0.75, shapeSpin: 0.2, entrance: 'centre', entranceTime: 2.5, flow: 0, trail: 0.4, friction: 0.05, jitter: 0, depth: 1, depthParallax: 0.4, palette: 'blueprint', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 0.7, click: 'shockwave',
+    anim: anim({ shapeTilt: { m: 'wave', s: 'sine', b: 8, d: 0.4 }, shapeSpin: { m: 'keys', b: 4, e: 'smooth', k: [[0, -0.1], [0.5, 0.4]] }, depth: { m: 'wave', s: 'tri', b: 4, d: 0.25 } }) }],
+  ['Shifting flock', { count: 900, size: 2, render: 'arrows', flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45, flow: 0.15, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.2, trail: 0.6, friction: 0.01, jitter: 0.06, palette: 'sunset', colorBy: 'direction', glow: false, pointerMode: 'repel', radius: 160, force: 1, click: 'shockwave',
+    anim: anim({ flockCohesion: { m: 'keys', b: 4, e: 'smooth', k: [[0, -0.4], [0.35, 0.4], [0.6, 0.45], [0.8, -0.3]] }, speed: { m: 'wave', s: 'sine', b: 2, d: 0.08 }, trail: { m: 'wave', s: 'tri', b: 8, d: 0.2 } }) }],
+  ['Glitch pulse', { count: 2600, size: 2.4, render: 'circles', flow: 0.6, flowType: 'cells', flowScale: 0.004, flowSpeed: 0.3, trail: 0.7, friction: 0.04, jitter: 0.03, palette: 'cyber', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 160, force: 0.7, click: 'shockwave',
+    anim: anim({ lensSplit: { m: 'keys', b: 1, e: 'step', k: [[0, 0], [0.5, 0.35], [0.56, 0], [0.75, 0.2], [0.8, 0]] }, lensTiles: { m: 'keys', b: 4, e: 'step', k: [[0, 0], [0.75, 0.34]] }, hueShift: { m: 'wave', s: 'steps', b: 2, d: 0.25 } }) }],
   ['Galaxy', { count: 3000, size: 1.4, render: 'sparkles', flow: 0.2, flowScale: 0.003, flowSpeed: 0.1, trail: 0.8, friction: 0.03, jitter: 0.02, palette: 'cosmic', colorBy: 'pointer', glow: true, pointerMode: 'vortex', radius: 320, force: 0.9, click: 'gather' }],
   ['Bubbles', { count: 260, size: 5.5, render: 'rings', gravity: -0.15, flow: 0.3, flowScale: 0.003, flowSpeed: 0.1, trail: 0, friction: 0.05, jitter: 0.04, palette: 'pastel', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 0.5, click: 'emit' }],
   ['Campfire', { count: 1300, size: 1.8, sizeVar: 0.5, render: 'glow', emitter: 'point', emitMode: 'steady', emitRate: 0.3, emitX: 0.5, emitY: 0.85, emitOut: false, launchSpeed: 3.5, launchDir: 270, launchSpread: 35, lifespan: 4, lifeFade: 'out', lifeSize: 'shrink', flow: 0.3, flowType: 'waves', flowScale: 0.006, flowSpeed: 0.5, trail: 0.7, friction: 0.03, jitter: 0.1, gravity: -0.2, palette: 'ember', colorBy: 'age', glow: true, pointerMode: 'repel', radius: 120, force: 0.6 }],
@@ -239,13 +255,14 @@ story(
 
 
 // Preset families: each built around one engine feature (see the proposal doc).
-export type Family = 'all' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+export type Family = 'all' | 'animated' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 export const FAMILIES: [Family, string][] = [
-  ['all', 'All'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
+  ['all', 'All'], ['animated', 'Animated'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
   ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['shapes', 'Shapes'], ['growth', 'Growth'], ['stories', 'Stories'],
 ];
 export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
+  ['animated', 'Tidal breath, Colour wheel, Heartbeat lights, Weather front, Tumbling globe, Shifting flock, Glitch pulse'],
   ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
   ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait'],
   ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl, Light painting, Smoke drawing, Neon graffiti, Finger sparks, Hand magnets, Force field, Gesture DJ, Stretch, Hand skeleton, Throw, Finger paint, Flame head, Crying rainbow, Laser eyes, Wizard beard, Angel halo, Crown, Singer, Eye contact, Dancer, Arm sweep, Rain on me, Twins'],

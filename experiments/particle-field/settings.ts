@@ -119,6 +119,10 @@ export interface Settings {
   mirrorWorld: boolean;
   // Connections card: input → action links (see links.ts).
   links: string;
+  // Animated settings (see animate.ts), as JSON text.
+  anim: string;
+  // Turns every colour round the colour wheel (degrees).
+  hueShift: number;
   // Macros: each moves a group of settings at once, relative to the scene. 0.5 = as the scene is.
   mEnergy: number;
   mOrder: number;
@@ -456,6 +460,8 @@ export const DEFAULTS: Settings = {
   poseSweep: 1,
   mirrorWorld: false,
   links: '',
+  anim: '',
+  hueShift: 0,
   mEnergy: 0.5,
   mOrder: 0.5,
   mDream: 0.5,
