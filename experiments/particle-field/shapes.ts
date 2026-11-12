@@ -1,4 +1,4 @@
-import { rocketPoints } from './media.ts';
+import { rocketPoints, type ModelAnim } from './media.ts';
 // Ready-made shapes for the particles: icons drawn on a canvas (then traced
 // like text), and curves and 3D solids worked out as points, so they can
 // turn and breathe while the particles hold them.
@@ -497,9 +497,21 @@ export const SOLID_SHAPES: [string, string][] = [
 // The 3D model: surface points (x, y, z), a rocket until you load one.
 let modelPts: Float32Array | null = null;
 let modelName = '';
-export function setModel(pts: Float32Array, name: string) {
+let modelRest: Float32Array | null = null;
+let modelAnim: ModelAnim | null = null;
+export function setModel(pts: Float32Array, name: string, anim: ModelAnim | null = null) {
   modelPts = pts.length >= 3 ? pts : null;
   modelName = modelPts ? name : '';
+  modelRest = modelPts ? modelPts.slice() : null;
+  modelAnim = modelPts ? anim : null;
+}
+/** The loaded model's animation clips (none for a still model). */
+export const modelClips = () => modelAnim?.clips ?? [];
+/** Pose the model's points: a clip (0-based) at t seconds, or its still pose for clip -1. */
+export function poseModel(clip: number, t: number) {
+  if (!modelPts || !modelRest) return;
+  if (clip < 0 || !modelAnim?.clips[clip]) modelPts.set(modelRest);
+  else modelAnim.pose(clip, t, modelPts);
 }
 export const modelLabel = () => modelName || 'the example rocket';
 type V3 = [number, number, number];
