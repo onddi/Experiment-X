@@ -6382,6 +6382,10 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Music inputs need a sound source (Music tab).', show: () => linkNeed.audio && audio.source === 'off' },
   { kind: 'note', text: 'Face, hands and body inputs start the camera by themselves.', show: () => linkNeed.face || linkNeed.hands || linkNeed.pose },
 
+  { kind: 'section', id: 'quality', label: 'Quality', tab: 'presets',
+    about: 'How many pixels the field draws on this device. Fewer pixels run faster; the readout shows the effect live. Saved on this device only, not in scenes.',
+    summary: () => (densityPref ? `${densityPref}×` : 'auto') },
+  { kind: 'quality' },
   { kind: 'section', id: 'view', label: 'Screen fit', tab: 'presets',
     about: 'Fit the whole picture to a projector or another surface: move, zoom, turn or mirror it. It stays as you set it through every scene.',
     summary: () => (viewIsPlain() ? 'as is' : [settings.viewZoom !== 1 ? `${Math.round(settings.viewZoom * 100)}%` : '', settings.viewRot ? `${settings.viewRot}°` : '', settings.viewFlipH || settings.viewFlipV ? 'mirrored' : '', settings.viewX || settings.viewY ? 'moved' : ''].filter(Boolean).join(' · ')) },
@@ -6397,10 +6401,6 @@ const CONTROLS: Control[] = [
     about: 'A video of the field to save or share: the picture and, if you like, the sound.',
     summary: () => (recorder.on ? 'recording' : recorder.clip ? 'clip ready' : RECORD_LENGTHS.find(([v]) => Number(v) === recorder.prefs.secs)![1]) },
   { kind: 'record' },
-  { kind: 'section', id: 'quality', label: 'Quality', tab: 'presets',
-    about: 'How many pixels the field draws on this device. Fewer pixels run faster; the readout shows the effect live. Saved on this device only, not in scenes.',
-    summary: () => (densityPref ? `${densityPref}×` : 'auto') },
-  { kind: 'quality' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
     lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
