@@ -207,6 +207,7 @@ export const PRESETS: [string, Partial<Settings>][] = [
   // Media emitters: sprites, 3D models, video.
   ['Butterflies', { count: 260, size: 3, render: 'sprite', spriteScale: 5, spriteTurn: 'heading', spriteTint: true, spriteFps: 12, flock: 0.6, flockAlign: 0.8, flockCohesion: 0.6, flockSep: 1.2, flockRange: 60, flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, speed: 0.9, trail: 0, friction: 0.03, jitter: 0.1, sizeVar: 0.4, palette: 'candy', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 0.8, click: 'gather' }],
   ['Rocket launch', { count: 9000, size: 1.3, render: 'dots', shape: 'solid', shapeSolid: 'model', shapeSize: 0.62, shapeSpin: 0.4, shapeTilt: 0, entrance: 'centre', homeStrength: 1.4, spawnOn: 'trail', spawnFrom: 'bottom', spawnCount: 10, spawnSpeed: 7, spawnLife: 1.1, spawnSize: 1.1, spawnTone: 0.12, spawnShare: 0.55, spawnChain: true, gravity: 0.3, flow: 0, trail: 0.7, friction: 0.02, jitter: 0, depth: 0.8, palette: 'ember', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 0.8, click: 'shockwave' }],
+  ['Running fox', { count: 9000, size: 1.2, render: 'dots', shape: 'solid', shapeSolid: 'fox', modelClip: 3, modelSpeed: 1, modelBeat: true, shapeSize: 0.85, shapeSpin: 0, shapeFacing: 60, shapeTilt: -10, entrance: 'centre', homeStrength: 1.8, flow: 0, trail: 0.55, friction: 0.05, jitter: 0, depth: 0.6, palette: 'ember', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
   ['Your video', { count: 5000, size: 1.4, render: 'dots', shape: 'image', imageMode: 'bright', imageRate: 12, shapeSize: 0.95, homeStrength: 1.5, colorBy: 'camera', flow: 0, trail: 0.4, friction: 0.06, jitter: 0, palette: 'mono', glow: false, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
 ];
 
@@ -327,7 +328,7 @@ export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
   ['animated', 'Tidal breath, Colour wheel, Heartbeat lights, Weather front, Tumbling globe, Shifting flock, Glitch pulse, Orbiting ring, Kaleido bloom, Stop motion, Warp drive, Ribbon dance, Monsoon, Spinning top'],
   ['physics', 'Chain fireworks, Rain splash, Sand heap, Snow on words, Pinball, Comet trails, Marble bowl'],
-  ['media', 'Butterflies, Rocket launch, Your video'],
+  ['media', 'Butterflies, Rocket launch, Running fox, Your video'],
   ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
   ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait, Honeycomb, Spiral arms, Maze runner, Ripple tank, Checkerboard, Sunburst'],
   ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl, Light painting, Smoke drawing, Neon graffiti, Finger sparks, Hand magnets, Force field, Gesture DJ, Stretch, Hand skeleton, Throw, Finger paint, Flame head, Crying rainbow, Laser eyes, Wizard beard, Angel halo, Crown, Singer, Eye contact, Dancer, Arm sweep, Rain on me, Twins'],

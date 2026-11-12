@@ -3,8 +3,8 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
-import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel } from './shapes.ts';
-import { modelFromFile, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
+import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel, hasModel, MODEL_SOLIDS } from './shapes.ts';
+import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
@@ -1972,15 +1972,40 @@ function modelTick(now: number) {
   const S = settings;
   const dt = modelAt ? Math.min(0.1, (now - modelAt) / 1000) : 0;
   modelAt = now;
-  if (S.shape !== 'solid' || S.shapeSolid !== 'model' || !modelClips().length) return;
+  if (!modelSolid()) return;
+  const slot = S.shapeSolid;
+  if (slot === 'fox' && !hasModel('fox')) {
+    loadFox();
+    return;
+  }
+  const clips = modelClips(slot);
+  if (!clips.length) return;
   const clip = S.modelClip - 1;
   if (clip < 0 || paused) {
-    poseModel(clip, modelT);
+    poseModel(clip, modelT, slot);
     return;
   }
   const beat = S.modelBeat && reacting() ? 0.3 + audio.levels.level * 2.2 : 1;
   modelT += dt * S.modelSpeed * beat;
-  poseModel(Math.min(clip, modelClips().length - 1), modelT);
+  poseModel(Math.min(clip, clips.length - 1), modelT, slot);
+}
+const modelSolid = () => settings.shape === 'solid' && MODEL_SOLIDS.includes(settings.shapeSolid);
+const shownClips = () => (modelSolid() ? modelClips(settings.shapeSolid) : []);
+// The bundled fox (CC0 model by PixelMannen; CC BY 4.0 rigging and animation by
+// tomkranis, glTF by AsoboStudio and scurest; from Khronos's glTF samples).
+let foxLoading = false;
+function loadFox() {
+  if (foxLoading) return;
+  foxLoading = true;
+  fetch(new URL('./models/fox.glb', import.meta.url))
+    .then((r) => r.arrayBuffer())
+    .then((b) => {
+      const m = gltfModel(b);
+      setModel(m.pts, 'Fox', m.anim, 'fox');
+      reshape(900);
+      refresh();
+    })
+    .catch(() => (foxLoading = false));
 }
 // 3D model files for the "Your 3D model" solid.
 const modelInput = document.createElement('input');
@@ -8523,10 +8548,11 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['New seed', () => set('patSeed', settings.patSeed + 1)]], show: () => settings.shape === 'pattern' && isFillPattern(settings.shapePattern) },
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
   { kind: 'buttons', buttons: [['Load a 3D model…', () => modelInput.click()]], show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
-  { kind: 'range', key: 'modelClip', label: 'Animation', min: 0, max: 32, step: 1, format: (v) => { const c = modelClips(); return v === 0 ? 'still' : c[Math.min(v, c.length) - 1]?.name ?? '—'; }, show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' && modelClips().length > 0 },
-  { kind: 'range', key: 'modelSpeed', label: 'Animation speed', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' && modelClips().length > 0 && settings.modelClip > 0 },
-  { kind: 'toggle', key: 'modelBeat', label: 'Speed follows the music', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' && modelClips().length > 0 && settings.modelClip > 0 },
+  { kind: 'range', key: 'modelClip', label: 'Animation', min: 0, max: 32, step: 1, format: (v) => { const c = shownClips(); return v === 0 ? 'still' : c[Math.min(v, c.length) - 1]?.name ?? '—'; }, show: () => shownClips().length > 0 },
+  { kind: 'range', key: 'modelSpeed', label: 'Animation speed', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => shownClips().length > 0 && settings.modelClip > 0 },
+  { kind: 'toggle', key: 'modelBeat', label: 'Speed follows the music', show: () => shownClips().length > 0 && settings.modelClip > 0 },
   { kind: 'note', text: 'OBJ, STL or GLB files. A GLB with animations (bones or blend shapes) plays them; FBX can be turned into GLB in Blender. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
+  { kind: 'note', text: 'Fox model by PixelMannen (CC0), rigging and animation by tomkranis (CC BY 4.0), glTF by AsoboStudio and scurest (CC BY 4.0), from Khronos’s glTF sample models.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'fox' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
   { kind: 'note', text: '3D shapes look best with 3D depth on (Look tab); it turns on with them.', show: () => settings.shape === 'solid' },
