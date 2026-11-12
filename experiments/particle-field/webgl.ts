@@ -37,6 +37,15 @@ void main() {
   col = texture(atlas, uv) * alpha;
 }`;
 
+const FADE_VS = `#version 300 es
+in vec2 corner;
+void main() { gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0); }`;
+const FADE_FS = `#version 300 es
+precision mediump float;
+uniform vec4 col;
+out vec4 o;
+void main() { o = col; }`;
+
 export class GLSprites {
   readonly canvas = document.createElement('canvas');
   private gl: WebGL2RenderingContext;
@@ -48,6 +57,9 @@ export class GLSprites {
   private count = 0;
   private cells = new Map<HTMLCanvasElement, number>();
   private uView: WebGLUniformLocation;
+  private fadeProg: WebGLProgram;
+  private uCol: WebGLUniformLocation;
+  private fadeVao: WebGLVertexArrayObject | null = null;
   additive = false;
 
   static create(): GLSprites | null {
@@ -59,7 +71,7 @@ export class GLSprites {
   }
 
   private constructor() {
-    const gl = this.canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: false });
+    const gl = this.canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: true });
     if (!gl) throw new Error('no webgl2');
     this.gl = gl;
     const sh = (type: number, src: string) => {
@@ -75,6 +87,13 @@ export class GLSprites {
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) ?? 'link');
     this.prog = prog;
+    const fp = gl.createProgram()!;
+    gl.attachShader(fp, sh(gl.VERTEX_SHADER, FADE_VS));
+    gl.attachShader(fp, sh(gl.FRAGMENT_SHADER, FADE_FS));
+    gl.linkProgram(fp);
+    if (!gl.getProgramParameter(fp, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(fp) ?? 'link');
+    this.fadeProg = fp;
+    this.uCol = gl.getUniformLocation(fp, 'col')!;
     this.uView = gl.getUniformLocation(prog, 'view')!;
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -143,23 +162,60 @@ export class GLSprites {
     D[o + 5] = (((c / PER_ROW) | 0) * CELL) / ATLAS;
   }
 
+  private fit(cw: number, ch: number) {
+    if (this.canvas.width !== cw || this.canvas.height !== ch) {
+      this.canvas.width = cw;
+      this.canvas.height = ch;
+    }
+    this.gl.viewport(0, 0, cw, ch);
+  }
+
+  /** Direct mode: fill the kept frame with the background at this opacity (the trail fade). */
+  fade(cw: number, ch: number, r: number, g: number, b: number, a: number) {
+    const gl = this.gl;
+    this.fit(cw, ch);
+    if (!this.fadeVao) {
+      this.fadeVao = gl.createVertexArray()!;
+      gl.bindVertexArray(this.fadeVao);
+      const q = gl.createBuffer()!;
+      gl.bindBuffer(gl.ARRAY_BUFFER, q);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+      const at = gl.getAttribLocation(this.fadeProg, 'corner');
+      gl.enableVertexAttribArray(at);
+      gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+    }
+    gl.useProgram(this.fadeProg);
+    gl.bindVertexArray(this.fadeVao);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform4f(this.uCol, (r / 255) * a, (g / 255) * a, (b / 255) * a, a);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  /** Direct mode: start from a solid background. */
+  reset(cw: number, ch: number, r: number, g: number, b: number) {
+    const gl = this.gl;
+    this.fit(cw, ch);
+    gl.clearColor(r / 255, g / 255, b / 255, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
   get pending() {
     return this.count;
   }
 
   /** Draw what was queued and lay it onto ctx (in its current composite mode). */
-  flush(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number) {
+  // direct: draw onto the kept frame shown on screen (no clear, no copy).
+  flush(ctx: CanvasRenderingContext2D, w: number, h: number, direct = false) {
     if (!this.count) return;
     const gl = this.gl;
     const cw = ctx.canvas.width;
     const ch = ctx.canvas.height;
-    if (this.canvas.width !== cw || this.canvas.height !== ch) {
-      this.canvas.width = cw;
-      this.canvas.height = ch;
+    this.fit(cw, ch);
+    if (!direct) {
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
     }
-    gl.viewport(0, 0, cw, ch);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.prog);
     gl.bindVertexArray(this.vao);
     gl.uniform2f(this.uView, w, h);
@@ -177,11 +233,11 @@ export class GLSprites {
     else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.count);
     this.count = 0;
+    if (direct) return;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.drawImage(this.canvas, 0, 0, cw, ch);
     ctx.restore();
-    void dpr;
   }
 }

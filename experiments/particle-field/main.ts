@@ -4502,6 +4502,40 @@ const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 // WebGL sprites (?renderer=2d turns them off to compare): soft particles are
 // queued and drawn by the GPU in one call, then laid onto the canvas.
 const glr = new URLSearchParams(location.search).get('renderer') === '2d' ? null : GLSprites.create();
+// Direct mode: when every particle is a GPU sprite and nothing needs the 2D
+// picture (lenses, tunnel, kaleidoscope, mirror, echo, obstacles, links,
+// recording, the projector), the WebGL canvas is shown itself, under a clear
+// 2D canvas for markers. It keeps its frame and fades it for the trails, so
+// no full-screen 2D fade or copy happens.
+let glDirect = false;
+function glDirectWanted() {
+  if (!glr || seeThrough || lensOn() || settings.audioTunnel > 0 || kaleidoNow >= 2 || settings.mirrorWorld || echoA > 0.01) return false;
+  if (settings.obstacles !== 'none' && settings.obsShow) return false;
+  if (recorder.on || projector.on || new URLSearchParams(location.search).get('gl') === 'copy') return false;
+  const styles = settings.render === 'mixed' ? mixStyles() : [settings.render];
+  return styles.every((st) => st in SPRITES);
+}
+function glSetDirect(on: boolean, r: number, g: number, b: number) {
+  if (!glr) return;
+  glDirect = on;
+  document.body.classList.toggle('gl-direct', on);
+  if (on) {
+    if (!glr.canvas.isConnected) {
+      glr.canvas.className = 'gl-layer';
+      glr.canvas.setAttribute('aria-hidden', 'true');
+      canvas.before(glr.canvas);
+    }
+    glr.reset(canvas.width, canvas.height, r, g, b);
+  } else {
+    // Back to the 2D canvas: start it from a solid background.
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = `rgb(${r} ${g} ${b})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+}
 function stamp(img: HTMLCanvasElement, x: number, y: number, d: number) {
   if (glr) glr.push(img, x, y, d, ctx.globalAlpha);
   else ctx.drawImage(img, x - d / 2, y - d / 2, d, d);
@@ -5597,9 +5631,17 @@ function draw() {
     viewWarp(tunnelZ, tunnelR, 1);
     fadeA = Math.min(fadeA, 0.3 - 0.2 * settings.audioTunnel);
   }
-  ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
-  ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${fadeA.toFixed(3)})` : `rgb(${r} ${g} ${b} / ${fadeA.toFixed(3)})`;
-  ctx.fillRect(0, 0, w, h);
+  const direct = glDirectWanted();
+  if (direct !== glDirect) glSetDirect(direct, r, g, b);
+  if (direct) {
+    // The GPU keeps the picture and fades it; this canvas only carries markers.
+    ctx.clearRect(0, 0, w, h);
+    glr!.fade(canvas.width, canvas.height, r, g, b, fadeA);
+  } else {
+    ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
+    ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${fadeA.toFixed(3)})` : `rgb(${r} ${g} ${b} / ${fadeA.toFixed(3)})`;
+    ctx.fillRect(0, 0, w, h);
+  }
   ctx.globalCompositeOperation = 'source-over';
   // View echo: a copy of the frame from the last kick, growing and fading.
   if (echoSnap) {
@@ -5693,7 +5735,7 @@ function draw() {
   ctx.globalAlpha = 1;
   if (glr?.pending) {
     glr.additive = ctx.globalCompositeOperation === 'lighter';
-    glr.flush(ctx, w, h, dpr);
+    glr.flush(ctx, w, h, glDirect);
   }
   if (spin) {
     px.set(spinX.subarray(0, n));
@@ -6144,6 +6186,11 @@ function frame(now: number) {
       if (kaleidoNow >= 2) kaleidoscope(kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0));
       if (settings.mirrorWorld) mirrorHalf();
       lensFrame(now);
+      if (glDirect && glr) {
+        const st = glr.canvas.style;
+        if (st.filter !== canvas.style.filter) st.filter = canvas.style.filter;
+        if (st.transform !== canvas.style.transform) st.transform = canvas.style.transform;
+      }
     }
     const t2 = performance.now();
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
@@ -9112,7 +9159,7 @@ perfHud.setAttribute('aria-hidden', 'true');
     t0 = now;
     perfNow.frameMs = 1000 / Math.max(perfNow.real, 0.1);
     perfNow.cpu = stepMs + drawMs;
-    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? ' · WebGL' : ' · 2D'}`;
+    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}${glr ? (glDirect ? ' · WebGL direct' : ' · WebGL') : ' · 2D'}`;
   }, 1000);
 }
 function setPerfHud(on: boolean) {
