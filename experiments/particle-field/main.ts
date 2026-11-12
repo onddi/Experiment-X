@@ -9430,11 +9430,12 @@ function renderQuality(): HTMLElement {
   const note = document.createElement('p');
   note.className = 'q-note';
   note.textContent = `This screen is ${native}× natively. Turn "lower by itself" off while you compare, so the numbers stay put.`;
-  // Renderer: WebGL only, WebGL copy or the plain 2D canvas (a reload with ?renderer=…).
+  // Renderer: WebGL or the plain 2D canvas (a reload with ?renderer=2d;
+  // ?renderer=copy keeps the 2D picture with GPU particles, for testing).
   const rend = document.createElement('div');
   rend.className = 'anim-chips q-rend';
-  const active = glr ? RENDERER : '2d';
-  for (const [v, lbl] of [['only', 'WebGL only'], ['copy', 'WebGL copy'], ['2d', '2D']] as const) {
+  const active = glr ? 'only' : '2d';
+  for (const [v, lbl] of [['only', 'WebGL'], ['2d', '2D']] as const) {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = lbl;
@@ -9461,8 +9462,8 @@ function renderQuality(): HTMLElement {
       ? 'Renderer: everything on the 2D canvas. Switching reloads the page.'
       : 'Renderer: this browser has no WebGL2, so the 2D canvas is used.'
     : RENDERER === 'only'
-      ? 'Renderer: the picture stays on the GPU. Lenses, tunnel, kaleidoscope, mirror, echo, recording and the projector still use the copy while on. Switching reloads the page.'
-      : 'Renderer: particles are drawn by the GPU and copied onto the 2D canvas, which keeps the picture. Switching reloads the page.';
+      ? 'Renderer: the picture stays on the GPU. While a lens, tunnel, kaleidoscope, mirror, echo, recording or the projector is on, particles are drawn by the GPU and copied onto the 2D canvas (the Stage readout says WebGL copy). Switching reloads the page.'
+      : 'Renderer: WebGL copy (from the link): particles are drawn by the GPU and copied onto the 2D canvas. Switching reloads the page.';
   box.append(rend, rendLbl, chips, auto, out, note);
   // Real frames counted over each second (the old meter averaged per-frame
   // rates and could not show less than 20). CPU is the script's own time per
