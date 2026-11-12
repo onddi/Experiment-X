@@ -14662,18 +14662,33 @@ function sheetDrag(el: HTMLElement) {
     st = null;
     el.classList.remove('dragging');
   };
-  for (const h of [grip, el.querySelector<HTMLElement>('.ss-now')!]) {
-    h.addEventListener('pointerdown', down);
+  // The grip, or anywhere on the top row that isn't a button.
+  const head = el.querySelector<HTMLElement>('.ss-head')!;
+  for (const h of [grip, head]) {
+    h.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      down(e);
+    });
     h.addEventListener('pointermove', move);
     h.addEventListener('pointerup', up);
     h.addEventListener('pointercancel', up);
   }
-  grip.addEventListener('dblclick', (e) => {
+  const reset = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
     e.stopPropagation();
     try { localStorage.removeItem(SHEET_POS_KEY); } catch {}
     Object.assign(el.style, { left: '', top: '', bottom: '', transform: '' });
     el.classList.remove('moved');
+  };
+  grip.addEventListener('dblclick', reset);
+  // The sheet's own top edge (its padding above the row) drags too.
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target === el && e.clientY - el.getBoundingClientRect().top < 22) down(e);
   });
+  el.addEventListener('pointermove', move);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  head.addEventListener('dblclick', reset);
 }
 function toggleSceneSheet() {
   if (sceneSheetEl) return closeSceneSheet();
@@ -14681,7 +14696,7 @@ function toggleSceneSheet() {
   el.className = 'scene-sheet';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Scenes');
-  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-fold" aria-label="Show only this row" aria-expanded="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg></button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div><button type="button" class="ss-vlook ss-von" role="switch"><span>Vibe</span><i></i></button><button type="button" class="ss-vlook ss-look" role="switch"><span>Vibes also change the look</span><i></i></button>`;
+  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-fold" aria-label="Show only this row" aria-expanded="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg></button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div><button type="button" class="ss-mic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span><b>Turn on the microphone</b><small>Vibes move the field with what it hears</small></span></button><button type="button" class="ss-vlook ss-von" role="switch"><span>Vibe</span><i></i></button><button type="button" class="ss-vlook ss-look" role="switch"><span>Vibes also change the look</span><i></i></button>`;
   const tabsEl = document.createElement('div');
   tabsEl.className = 'ss-tabs';
   tabsEl.setAttribute('role', 'tablist');
@@ -14706,7 +14721,17 @@ function toggleSceneSheet() {
   const lookB = el.querySelector<HTMLButtonElement>('.ss-look')!;
   const onB = el.querySelector<HTMLButtonElement>('.ss-von')!;
   // The switches sit right under the tabs, before the vibe families.
-  tabsEl.after(onB, lookB);
+  const micB = el.querySelector<HTMLButtonElement>('.ss-mic')!;
+  tabsEl.after(micB, onB, lookB);
+  micB.addEventListener('click', () => {
+    micB.disabled = true;
+    micB.querySelector('b')!.textContent = 'Asking for the microphone…';
+    audio.start('mic').catch(() => showToast('The microphone is blocked: allow it in the browser’s site settings')).finally(() => {
+      micB.disabled = false;
+      micB.querySelector('b')!.textContent = 'Turn on the microphone';
+      draw();
+    });
+  });
   onB.addEventListener('click', () => {
     if (vibeIsOff()) vibesOn();
     else vibesOff();
@@ -14717,7 +14742,7 @@ function toggleSceneSheet() {
     draw();
   });
   const [prevB, nextB] = el.querySelectorAll<HTMLButtonElement>('.ss-step');
-  const step = (d: number) => (sheetTab === 'vibes' && musicOn() ? vibeStep(d) : sheetStep(d));
+  const step = (d: number) => (sheetTab === 'vibes' ? vibeStep(d) : sheetStep(d));
   prevB.addEventListener('click', () => step(-1));
   nextB.addEventListener('click', () => step(1));
   el.querySelector('.ss-close')!.addEventListener('click', closeSceneSheet);
@@ -14782,11 +14807,14 @@ function toggleSceneSheet() {
   const draw = () => {
     sig = sigNow();
     const music = musicOn();
-    const vib = music && sheetTab === 'vibes';
+    const vib = sheetTab === 'vibes';
     const sceneName = currentMine?.name || lastSceneName || 'Your mix';
-    tabsEl.hidden = !music;
-    lookB.hidden = !vib || vibeIsOff();
-    onB.hidden = !vib;
+    tabsEl.hidden = false;
+    input.placeholder = vib ? 'Find a vibe' : 'Find a scene';
+    input.setAttribute('aria-label', input.placeholder);
+    micB.hidden = !vib || music;
+    lookB.hidden = !vib || !music || vibeIsOff();
+    onB.hidden = !vib || !music;
     onB.setAttribute('aria-checked', String(!vibeIsOff()));
     el.classList.toggle('vibing', vib);
     for (const t of ['scenes', 'vibes'] as const) {

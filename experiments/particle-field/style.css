@@ -2381,3 +2381,14 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .scene-sheet.mini .ss-tabs button { height: 38px; gap: 8px; }
 .scene-sheet.mini .ss-tabs button small { display: none; }
 .scene-sheet.mini .ss-tabs button b { font-size: 13px; }
+/* Vibes tab with no sound source: one tap to listen. */
+.ss-mic { display: flex; align-items: center; gap: 12px; flex: none; padding: 10px 12px; border: 1px solid var(--accent-line); border-radius: 12px; background: var(--accent-bg); color: var(--accent-soft); font: inherit; text-align: left; cursor: pointer; }
+.ss-mic[hidden] { display: none; }
+.ss-mic span { display: flex; flex-direction: column; gap: 2px; }
+.ss-mic b { font-size: 14px; font-weight: 600; color: var(--text); }
+.ss-mic small { font-size: 12px; color: var(--muted); }
+.ss-mic:disabled { opacity: 0.7; cursor: wait; }
+.scene-sheet.mini > .ss-mic:not([hidden]) { display: flex !important; }
+.scene-sheet .ss-head { cursor: grab; }
+.scene-sheet.dragging .ss-head { cursor: grabbing; }
+@media (max-width: 720px) { .scene-sheet .ss-head { cursor: default; } }
