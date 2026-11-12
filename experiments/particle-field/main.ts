@@ -14567,15 +14567,11 @@ function uCrossfade() {
   } else ovEl?.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
   uPaint(true);
 }
-const PAGES_ICON = svg('<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/>');
 const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], uRec(), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : [])],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''], ['Shuffle', ICONS.shuffle, () => shuffle(), 'primary']],
-  studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], ['Pages', PAGES_ICON, () => {
-    document.body.classList.toggle('u-pages');
-    uPaint(true);
-  }, document.body.classList.contains('u-pages') ? 'on' : '']],
+  studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], uMore()],
 };
 // Desktop: icons for Shuffle and Pause, More for the rest of the actions.
 const MORE_ICON = svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>');
