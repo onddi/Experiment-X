@@ -1974,8 +1974,9 @@ function modelTick(now: number) {
   modelAt = now;
   if (!modelSolid()) return;
   const slot = S.shapeSolid;
-  if (slot === 'fox' && !hasModel('fox')) {
-    loadFox();
+  if (slot in EXAMPLE_MODELS && !hasModel(slot)) {
+    // Fetch the other examples too, so switching between them morphs straight across.
+    for (const k of [slot, ...Object.keys(EXAMPLE_MODELS)]) loadExample(k);
     return;
   }
   const clips = modelClips(slot);
@@ -1991,21 +1992,27 @@ function modelTick(now: number) {
 }
 const modelSolid = () => settings.shape === 'solid' && MODEL_SOLIDS.includes(settings.shapeSolid);
 const shownClips = () => (modelSolid() ? modelClips(settings.shapeSolid) : []);
-// The bundled fox (CC0 model by PixelMannen; CC BY 4.0 rigging and animation by
-// tomkranis, glTF by AsoboStudio and scurest; from Khronos's glTF samples).
-let foxLoading = false;
-function loadFox() {
-  if (foxLoading) return;
-  foxLoading = true;
-  fetch(new URL('./models/fox.glb', import.meta.url))
+// The bundled animated examples, from Khronos's glTF sample models (textures
+// stripped): the fox (CC0 model by PixelMannen; CC BY 4.0 rigging and animation
+// by tomkranis, glTF by AsoboStudio and scurest) and Cesium Man (CC BY 4.0, Cesium).
+const EXAMPLE_MODELS: Record<string, [string, URL]> = {
+  fox: ['Fox', new URL('./models/fox.glb', import.meta.url)],
+  walker: ['Walking figure', new URL('./models/walker.glb', import.meta.url)],
+};
+const exampleLoading = new Set<string>();
+function loadExample(slot: string) {
+  if (exampleLoading.has(slot)) return;
+  exampleLoading.add(slot);
+  const [name, url] = EXAMPLE_MODELS[slot];
+  fetch(url)
     .then((r) => r.arrayBuffer())
     .then((b) => {
       const m = gltfModel(b);
-      setModel(m.pts, 'Fox', m.anim, 'fox');
-      reshape(900);
+      setModel(m.pts, name, m.anim, slot);
+      if (settings.shapeSolid === slot) reshape(900);
       refresh();
     })
-    .catch(() => (foxLoading = false));
+    .catch(() => exampleLoading.delete(slot));
 }
 // 3D model files for the "Your 3D model" solid.
 const modelInput = document.createElement('input');
@@ -8553,6 +8560,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'modelBeat', label: 'Speed follows the music', show: () => shownClips().length > 0 && settings.modelClip > 0 },
   { kind: 'note', text: 'OBJ, STL or GLB files. A GLB with animations (bones or blend shapes) plays them; FBX can be turned into GLB in Blender. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
   { kind: 'note', text: 'Fox model by PixelMannen (CC0), rigging and animation by tomkranis (CC BY 4.0), glTF by AsoboStudio and scurest (CC BY 4.0), from Khronos’s glTF sample models.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'fox' },
+  { kind: 'note', text: 'Cesium Man by Cesium (CC BY 4.0), from Khronos’s glTF sample models.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'walker' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
   { kind: 'note', text: '3D shapes look best with 3D depth on (Look tab); it turns on with them.', show: () => settings.shape === 'solid' },
