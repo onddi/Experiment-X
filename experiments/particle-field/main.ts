@@ -8,6 +8,7 @@ import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
+import { GLSprites } from './webgl.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
@@ -4498,6 +4499,13 @@ function drawGlyphs(list: number[], k: number, s: number) {
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
 // Draws one bucket of particles (all the same colour) in one style.
+// WebGL sprites (?renderer=2d turns them off to compare): soft particles are
+// queued and drawn by the GPU in one call, then laid onto the canvas.
+const glr = new URLSearchParams(location.search).get('renderer') === '2d' ? null : GLSprites.create();
+function stamp(img: HTMLCanvasElement, x: number, y: number, d: number) {
+  if (glr) glr.push(img, x, y, d, ctx.globalAlpha);
+  else ctx.drawImage(img, x - d / 2, y - d / 2, d, d);
+}
 function drawStyle(style: Render, list: number[], k: number, s: number) {
   const sprite = SPRITES[style as SpriteStyle];
   if (sprite) {
@@ -4511,7 +4519,7 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
       for (const i of list) {
         const tw = 0.55 + 0.45 * Math.sin(t * (2 + rnd[i] * 4) + gl[i] * 6.28);
         const d = d0 * (uniformSize ? 1 : psz[i]) * (0.6 + 0.5 * tw);
-        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+        stamp(img, px[i], py[i], d);
       }
     } else if (style === 'bubbles' && settings.lifespan > 0) {
       // Bubbles grow a little with age and pop (vanish) at the end.
@@ -4519,9 +4527,9 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
         const lt = span[i] > 0 ? Math.min(1, age[i] / span[i]) : 0.5;
         if (lt > 0.97) continue;
         const d = d0 * (uniformSize ? 1 : psz[i]) * (0.7 + 0.5 * lt);
-        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+        stamp(img, px[i], py[i], d);
       }
-    } else if (uniformSize) {
+    } else if (uniformSize && !glr) {
       // Same size for all: stamp a copy pre-scaled to the exact device size,
       // so the browser copies pixels 1:1 instead of resampling each stamp.
       const pre = scaledSprite(img, `${style}:${k}`, d0);
@@ -4532,8 +4540,8 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     }
     else
       for (const i of list) {
-        const d = d0 * psz[i];
-        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+        const d = uniformSize ? d0 : d0 * psz[i];
+        stamp(img, px[i], py[i], d);
       }
     ctx.globalAlpha = 1;
   } else if (style === 'arrows') {
@@ -4567,7 +4575,7 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     const img = spriteFor('glow', k);
     for (const i of list) {
       const d = s * 3 * (uniformSize ? 1 : psz[i]);
-      ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      stamp(img, px[i], py[i], d);
     }
   } else if (style === 'glyphs') {
     drawGlyphs(list, k, s);
@@ -4582,7 +4590,7 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
       const fl = 0.7 + 0.3 * Math.sin(t * 9 + gl[i] * 40) * Math.sin(t * 3.1 + rnd[i] * 20);
       const d = s * 4.5 * (uniformSize ? 1 : psz[i]) * fl;
       ctx.globalAlpha = 0.55 + 0.45 * fl;
-      ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      stamp(img, px[i], py[i], d);
     }
     ctx.globalAlpha = 1;
     ctx.fillStyle = 'rgba(255,240,220,0.9)';
@@ -5683,6 +5691,10 @@ function draw() {
     drawBuckets(fadeBuckets[L], s);
   }
   ctx.globalAlpha = 1;
+  if (glr?.pending) {
+    glr.additive = ctx.globalCompositeOperation === 'lighter';
+    glr.flush(ctx, w, h, dpr);
+  }
   if (spin) {
     px.set(spinX.subarray(0, n));
     py.set(spinY.subarray(0, n));
