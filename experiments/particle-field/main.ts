@@ -67,10 +67,13 @@ const xf: Xfader = (() => {
 const animBase: Record<string, number> = {};
 const animWrote: Record<string, number> = {};
 // A copy with the knob values in place of the moving ones (to save or compare).
+// Arrange's "Shape only" swaps heavy settings for light ones while it is on;
+// what they were is kept here, and saving or snapshots see those values.
+let liteHold: Record<string, unknown> | null = null;
 function withBases<T extends object>(o: T): T {
   const keys = Object.keys(animBase);
-  if (!keys.length) return o;
-  const c = { ...o } as Record<string, unknown>;
+  if (!keys.length && !liteHold) return o;
+  const c = { ...o, ...(liteHold && lastSceneName === liteScene ? liteHold : {}) } as Record<string, unknown>;
   for (const k of keys) if (typeof c[k] === 'number' && Math.abs((c[k] as number) - animWrote[k]) < 1e-9) c[k] = animBase[k];
   return c as T;
 }
@@ -14490,9 +14493,31 @@ function toggleSceneSheet() {
     if (q) {
       for (const m of myPresets.filter((m) => m.name.toLowerCase().includes(q))) item(list, m.name, true);
       for (const [n] of PRESETS.filter(([n]) => n.toLowerCase().includes(q)).sort(([a], [b]) => a.localeCompare(b))) item(list, n, false);
+      if ('blank'.includes(q)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = 'Blank';
+        b.addEventListener('click', () => {
+          playPreset('Blank', BLANK_SCENE);
+          draw();
+        });
+        list.append(b);
+      }
       if (!list.childElementCount) list.innerHTML = '<p class="ss-none">No scene by that name.</p>';
       return;
     }
+    // Blank, a clean start, leads every list.
+    const blankB = document.createElement('button');
+    blankB.type = 'button';
+    blankB.className = 'ss-blank';
+    blankB.textContent = 'Blank';
+    blankB.title = 'A clean, minimal start';
+    blankB.classList.toggle('on', !currentMine && lastSceneName === 'Blank');
+    blankB.addEventListener('click', () => {
+      playPreset('Blank', BLANK_SCENE);
+      draw();
+    });
+    list.append(blankB);
     if (fam === 'mine') {
       for (const m of myPresets) item(list, m.name, true);
       return;
@@ -14573,12 +14598,41 @@ setInterval(stageName, 300);
 // a 3D shape, Turn 3D makes one finger orbit it instead. The wheel resizes
 // (Shift + wheel turns). Double-tap centres it. Done (or Esc) leaves.
 let arrangeEl: HTMLElement | null = null;
+const LITE_KEY = 'pf-arrange-lite';
+const LITE: Partial<Settings> = { trail: 0, glow: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioTunnel: 0, audioKaleido: 0 };
+const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets']);
+let liteScene = '';
+function setLite(on: boolean) {
+  const S = settings as unknown as Record<string, unknown>;
+  if (on && !liteHold) {
+    const light: Record<string, unknown> = { ...LITE };
+    if (HEAVY_STYLES.has(settings.render)) light.render = 'dots';
+    if (settings.count > 2000) light.count = 2000;
+    liteHold = {};
+    for (const [k, v] of Object.entries(light)) {
+      if (S[k] === v) continue;
+      liteHold[k] = S[k];
+      S[k] = v;
+    }
+    liteScene = lastSceneName;
+    changed(new Set(Object.keys(liteHold) as (keyof Settings)[]));
+  } else if (!on && liteHold) {
+    const hold = liteHold;
+    liteHold = null;
+    // Put back only what nothing else changed meanwhile (same scene, still the light value).
+    const light: Record<string, unknown> = { ...LITE, render: 'dots', count: 2000 };
+    const back = Object.keys(hold).filter((k) => lastSceneName === liteScene && S[k] === light[k]);
+    for (const k of back) S[k] = hold[k];
+    changed(new Set(back as (keyof Settings)[]));
+  }
+}
 const ARRANGE_KEYS = ['shapeX', 'shapeY', 'shapeAngle', 'shapeSize', 'shapeTilt', 'shapeFacing'];
 function toggleArrange(on = !arranging) {
   if (on === arranging) return;
   arranging = on;
   document.body.classList.toggle('arranging', on);
   if (!on) {
+    setLite(false);
     arrangeEl?.remove();
     arrangeEl = null;
     refresh();
@@ -14592,7 +14646,7 @@ function toggleArrange(on = !arranging) {
   if (sheetMode() && !panel.classList.contains('collapsed')) toggle.click();
   const el = document.createElement('div');
   el.className = 'arrange';
-  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on">Move</button><button type="button" data-m="orbit">Turn 3D</button></span><button type="button" class="ar-centre">Centre</button><span class="ar-rec" role="group" aria-label="Record a move"><button type="button" class="ar-len" title="Loop length">4 bars</button><button type="button" class="ar-recb"><i></i><span>Record</span></button><button type="button" class="ar-clear" title="Stop the recorded moves">Clear moves</button></span><button type="button" class="ar-done">Done</button></div>`;
+  el.innerHTML = `<div class="ar-bar"><span class="ar-hint"></span><span class="ar-modes" role="group" aria-label="Drag does"><button type="button" data-m="move" class="on">Move</button><button type="button" data-m="orbit">Turn 3D</button></span><button type="button" class="ar-centre">Centre</button><button type="button" class="ar-lite" aria-pressed="false" title="Hide trails, lenses and glow while you arrange, so dragging stays smooth">Shape only</button><span class="ar-rec" role="group" aria-label="Record a move"><button type="button" class="ar-len" title="Loop length">4 bars</button><button type="button" class="ar-recb"><i></i><span>Record</span></button><button type="button" class="ar-clear" title="Stop the recorded moves">Clear moves</button></span><button type="button" class="ar-done">Done</button></div>`;
   document.body.append(el);
   arrangeEl = el;
   let mode: 'move' | 'orbit' = 'move';
@@ -14611,6 +14665,18 @@ function toggleArrange(on = !arranging) {
   });
   el.querySelector('.ar-centre')!.addEventListener('click', resetPlacement);
   el.querySelector('.ar-done')!.addEventListener('click', () => toggleArrange(false));
+  const liteB = el.querySelector<HTMLButtonElement>('.ar-lite')!;
+  const litePaint = () => {
+    liteB.classList.toggle('on', !!liteHold);
+    liteB.setAttribute('aria-pressed', String(!!liteHold));
+  };
+  liteB.addEventListener('click', () => {
+    setLite(!liteHold);
+    try { localStorage.setItem(LITE_KEY, liteHold ? '1' : ''); } catch {}
+    litePaint();
+  });
+  try { if (localStorage.getItem(LITE_KEY)) setLite(true); } catch {}
+  litePaint();
   // Record: move the shape by hand over a loop (it starts on the next bar);
   // what you moved becomes keyframes and plays back in time.
   const lenB = el.querySelector<HTMLButtonElement>('.ar-len')!;
@@ -14762,6 +14828,8 @@ function showBar(ms = 3500) {
   ubar.classList.add('shown');
   clearTimeout(mbarTimer);
   mbarTimer = window.setTimeout(() => {
+    // The scene sheet sits on the bar: it stays while the sheet is open.
+    if (sceneSheetEl) return showBar(ms);
     mbar.classList.remove('shown');
     ubar.classList.remove('shown');
   }, ms);
