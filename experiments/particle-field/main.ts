@@ -4405,6 +4405,7 @@ function spriteFor(style: SpriteStyle, k: number) {
     g.fill();
   }
   spriteCache.set(key, c);
+  spriteKind.set(c, style);
   return c;
 }
 
@@ -4648,9 +4649,64 @@ function glFeedback(name: string, u: Record<string, number | number[]>) {
 }
 
 // Draws one bucket of particles (all the same colour) in one style.
+// Soft sprites split in two (WebGL only): the sharp middle drawn at full
+// resolution, the soft halo round it at half (it looks the same blurred, and
+// costs a quarter). cut: where the halo starts, as a part of the radius.
+const HALO_CUT: Partial<Record<SpriteStyle, number>> = { glow: 0.35, neon: 0.3, sparkles: 0.5, ink: 0 };
+let halfHalos = true;
+try {
+  halfHalos = localStorage.getItem('pf-halfhalo') !== '0';
+} catch {}
+const spriteKind = new WeakMap<HTMLCanvasElement, SpriteStyle>();
+const haloSplit = new WeakMap<HTMLCanvasElement, { core: HTMLCanvasElement | null; halo: HTMLCanvasElement; f: number } | null>();
+function splitFor(img: HTMLCanvasElement) {
+  let e = haloSplit.get(img);
+  if (e !== undefined) return e;
+  const st = spriteKind.get(img);
+  const cut = st && HALO_CUT[st];
+  if (cut === undefined) {
+    haloSplit.set(img, null);
+    return null;
+  }
+  const P = SPRITE_PX;
+  const m = P / 2;
+  const rIn = cut * m;
+  const rOut = Math.min(m, (cut + 0.2) * m);
+  const halo = document.createElement('canvas');
+  halo.width = halo.height = P;
+  const hg = halo.getContext('2d')!;
+  hg.drawImage(img, 0, 0);
+  let core: HTMLCanvasElement | null = null;
+  if (cut > 0) {
+    const mask = (g: CanvasRenderingContext2D, c: number, r0: number, r1: number) => {
+      const gr = g.createRadialGradient(c, c, r0, c, c, r1);
+      gr.addColorStop(0, '#000');
+      gr.addColorStop(1, 'rgb(0 0 0 / 0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, P, P);
+    };
+    hg.globalCompositeOperation = 'destination-out';
+    mask(hg, m, rIn, rOut);
+    // The middle, cropped and enlarged to the whole cell (sharper too).
+    core = document.createElement('canvas');
+    core.width = core.height = P;
+    const cg = core.getContext('2d')!;
+    cg.drawImage(img, m - rOut, m - rOut, rOut * 2, rOut * 2, 0, 0, P, P);
+    cg.globalCompositeOperation = 'destination-in';
+    mask(cg, m, (rIn / rOut) * m, m);
+  }
+  e = { core, halo, f: rOut / m };
+  haloSplit.set(img, e);
+  return e;
+}
 function stamp(img: HTMLCanvasElement, x: number, y: number, d: number) {
-  if (glr) glr.push(img, x, y, d, ctx.globalAlpha);
-  else ctx.drawImage(img, x - d / 2, y - d / 2, d, d);
+  if (glr) {
+    // Small ones aren't worth splitting.
+    const sp = glOnly && halfHalos && d * dpr > 14 ? splitFor(img) : null;
+    if (!sp) return glr.push(img, x, y, d, ctx.globalAlpha);
+    glr.pushR(sp.halo, x, y, d, d, 0, ctx.globalAlpha, 0xffffff, true);
+    if (sp.core) glr.pushR(sp.core, x, y, d * sp.f, d * sp.f, 0, ctx.globalAlpha);
+  } else ctx.drawImage(img, x - d / 2, y - d / 2, d, d);
 }
 // GPU versions of the drawn (not stamped) styles: each particle is one
 // sprite, stretched and turned. A cell per shape and colour.
@@ -6809,6 +6865,9 @@ let renderScale = 1;
 // second and a half, not the 8 seconds sixty slow frames would take.
 let slowMs = 0;
 let fastMs = 0;
+const SCALE_STEPS = [1, 5 / 6, 2 / 3, 1 / 2];
+let upWait = 6000;
+let lastUpAt = -1e9;
 
 function adaptQuality(dt: number, ms: number) {
   if (!autoQuality) return;
@@ -6823,13 +6882,21 @@ function adaptQuality(dt: number, ms: number) {
     fastMs += ms;
     slowMs = Math.max(0, slowMs - ms);
   }
-  // ~1.5 s mostly slow → drop resolution a step; ~6 s smooth → raise it.
-  if (slowMs > 1500 && renderScale > 0.5) {
-    renderScale = Math.max(0.5, renderScale - 0.25);
+  // ~1.5 s mostly slow → drop resolution a step; smooth for a while → raise
+  // it. Small steps (3× → 2.5× → 2× → 1.5× on a phone), and if a step up
+  // soon drops again, the next try waits longer, so it settles instead of
+  // flipping back and forth.
+  const now = performance.now();
+  if (slowMs > 1500 && renderScale > SCALE_STEPS[SCALE_STEPS.length - 1]) {
+    renderScale = SCALE_STEPS[Math.min(SCALE_STEPS.length - 1, SCALE_STEPS.findIndex((v) => v < renderScale - 1e-3))];
+    if (now - lastUpAt < 10000) upWait = Math.min(60000, upWait * 2);
     slowMs = 0;
+    fastMs = 0;
     resize();
-  } else if (fastMs > 6000 && renderScale < 1) {
-    renderScale = Math.min(1, renderScale + 0.25);
+  } else if (fastMs > upWait && renderScale < 1) {
+    const i = SCALE_STEPS.findIndex((v) => v <= renderScale + 1e-3);
+    renderScale = SCALE_STEPS[Math.max(0, i - 1)];
+    lastUpAt = now;
     fastMs = 0;
     resize();
   }
@@ -9866,12 +9933,22 @@ function renderQuality(): HTMLElement {
     document.body.classList.toggle('no-glass', !gcb.checked);
     try { localStorage.setItem('pf-noglass', gcb.checked ? '' : '1'); } catch {}
   });
+  const halos = document.createElement('label');
+  halos.className = 'q-auto';
+  halos.innerHTML = '<input type="checkbox"> <span>Soft halos at half resolution (WebGL: faster, looks the same)</span>';
+  const hacb = halos.querySelector('input')!;
+  hacb.checked = halfHalos;
+  hacb.addEventListener('change', () => {
+    halfHalos = hacb.checked;
+    try { localStorage.setItem('pf-halfhalo', halfHalos ? '' : '0'); } catch {}
+  });
   box.append(hud, glass);
+  if (glr) box.append(halos);
   const timer = window.setInterval(() => {
     if (!box.isConnected) return clearInterval(timer);
     if (!box.offsetParent) return;
     const { real, frameMs, cpu } = perfNow;
-    out.innerHTML = `<b>${real.toFixed(0)} fps</b> · ${frameMs.toFixed(1)} ms a frame · ${canvas.width}×${canvas.height} px${renderScale < 1 ? ` · lowered to ${Math.round(renderScale * 100)}%` : ''}<br>script ${cpu.toFixed(1)} ms (sim ${stepMs.toFixed(1)}, draw ${drawMs.toFixed(1)}) · painting and waiting ${Math.max(0, frameMs - cpu).toFixed(1)} ms`;
+    out.innerHTML = `<b>${real.toFixed(0)} fps</b> · ${frameMs.toFixed(1)} ms a frame · ${canvas.width}×${canvas.height} px${renderScale < 1 ? ` · lowered to ${+dpr.toFixed(2)}×` : ''}<br>script ${cpu.toFixed(1)} ms (sim ${stepMs.toFixed(1)}, draw ${drawMs.toFixed(1)}) · painting and waiting ${Math.max(0, frameMs - cpu).toFixed(1)} ms`;
   }, 1000);
   return box;
 }
