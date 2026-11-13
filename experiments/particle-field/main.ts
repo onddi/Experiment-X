@@ -1998,6 +1998,53 @@ function nextMine() {
 // Connections card: one row per link, with a live meter of its input.
 // A live meter loop: runs fn each frame only while el is on screen, and
 // ends for good once el has left the page (cards are rebuilt often).
+// Three small lights on the Listening header (kick, snare, voice), so you
+// can see it hears the music with the card folded. The summary follows the tempo.
+// The Listening card folds to its header strip once it's listening (its own
+// fold, since Studio cards don't fold); "Settings" opens it again.
+let listenOpen: boolean | null = null;
+function listenLights(_head: HTMLElement, summary: HTMLElement, section: HTMLElement, top: HTMLElement) {
+  const tog = document.createElement('button');
+  tog.type = 'button';
+  tog.className = 'listen-toggle';
+  top.append(tog);
+  const fold = () => {
+    const open = listenOpen ?? audio.source === 'off';
+    section.classList.toggle('listen-closed', !open);
+    tog.textContent = open ? 'Hide' : 'Settings';
+    tog.setAttribute('aria-expanded', String(open));
+    tog.hidden = audio.source === 'off' && listenOpen === null;
+  };
+  tog.addEventListener('click', () => {
+    listenOpen = section.classList.contains('listen-closed');
+    fold();
+  });
+  fold();
+  const box = document.createElement('span');
+  box.className = 'listen-lights';
+  box.setAttribute('aria-hidden', 'true');
+  box.innerHTML = '<i title="Kick"></i><i title="Snare"></i><i title="Voice"></i>';
+  summary.before(box);
+  const [k, sn, v] = [...box.children] as HTMLElement[];
+  let at = 0;
+  let was = audio.source !== 'off';
+  meterLoop(box, (now) => {
+    const L = audio.levels;
+    const on = audio.source !== 'off';
+    // Once it's listening, the card folds to this strip (unless you've opened or hidden it yourself).
+    if (on !== was) setTimeout(fold, on ? 2500 : 0);
+    was = on;
+    box.classList.toggle('on', on);
+    k.style.opacity = String(on ? 0.25 + 0.75 * clamp01(L.pulse) : 0.15);
+    sn.style.opacity = String(on ? 0.25 + 0.75 * clamp01(L.snareEnv) : 0.15);
+    v.style.opacity = String(on ? 0.25 + 0.75 * clamp01(L.voice) : 0.15);
+    if (now - at > 1000) {
+      at = now;
+      summary.textContent = listenSummary();
+    }
+  });
+}
+
 function meterLoop(el: HTMLElement, fn: (now: number) => void) {
   let seen = false;
   let shown = false;
@@ -5941,6 +5988,7 @@ type Power = { on: () => boolean; off: Partial<Settings>; start: Partial<Setting
 type ControlBody =
   | { kind: 'section'; id: string; label: string; tab?: Tab; fixed?: boolean; summary?: () => string; lock?: (keyof Settings)[]; power?: Power; about?: string; folded?: boolean }
   | { kind: 'vibes' }
+  | { kind: 'vibestep' }
   | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
   | { kind: 'timeline' }
@@ -6103,6 +6151,53 @@ function vibesOn() {
   const v = VIBES.find((x) => x.name === name) ?? vibeList()[0] ?? VIBES[0];
   if (v) applyVibe(v);
 }
+// No vibe: the music does what the scene itself came with. Every setting a
+// vibe can touch goes back to the scene's own value.
+const VIBE_KEYS = [...new Set(VIBES.flatMap((v) => Object.keys({ ...v.drums, ...v.cards })))] as (keyof Settings)[];
+function vibeNone() {
+  const base = (sceneBase ?? DEFAULTS) as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = { audioVibe: '' };
+  for (const k of VIBE_KEYS) if (cardAllows(k) && k !== 'audioWords') patch[k] = base[k];
+  const before = Object.fromEntries(Object.keys(patch).map((k) => [k, settings[k as keyof Settings]])) as Partial<Settings>;
+  Object.assign(settings, patch);
+  changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+  refresh();
+  showToast('No vibe: the scene’s own reactions', ['Undo', () => {
+    Object.assign(settings, before);
+    changed(new Set(Object.keys(before) as (keyof Settings)[]));
+    refresh();
+  }]);
+}
+let vibeBrowse = false;
+// ‹ Vibe › : step through the vibes (in the gallery's family and order), None first.
+function renderVibeStep() {
+  const el = document.createElement('div');
+  el.className = 'vibestep';
+  el.innerHTML = '<button type="button" aria-label="Previous vibe">‹</button><div><b></b><span></span></div><button type="button" aria-label="Next vibe">›</button>';
+  const [prev, mid, next] = [...el.children] as HTMLElement[];
+  const step = (d: number) => {
+    const list = vibeList();
+    const v = currentVibe();
+    const i = v && !vibeIsOff() ? list.indexOf(v) : -1;
+    const n = list.length + 1;
+    const j = ((i + 1 + d + n) % n) - 1;
+    if (j < 0) vibeNone();
+    else applyVibe(list[j]);
+    draw();
+  };
+  prev.addEventListener('click', () => step(-1));
+  next.addEventListener('click', () => step(1));
+  const draw = () => {
+    const v = currentVibe();
+    const off = vibeIsOff();
+    mid.querySelector('b')!.textContent = off ? 'Off' : v ? vibeLabel() : settings.audioVibe ? 'Your own mix' : 'None';
+    mid.querySelector('span')!.textContent = off ? 'The music leaves the field alone' : v ? v.about : settings.audioVibe ? 'Reactions you set up yourself' : 'The scene’s own reactions';
+  };
+  refreshers.push(draw);
+  draw();
+  return el;
+}
+
 function vibeLabel() {
   const v = currentVibe();
   if (!v) return settings.audioVibe && settings.audioVibe !== 'off' ? 'custom' : '';
@@ -6218,10 +6313,28 @@ function surpriseVibe(lead: VibeLead = pick(['beat', 'bass', 'melody', 'voice', 
   applyVibe(vibe(`Surprise: led by ${LEAD_NAMES[lead]}`, '', lead, drums, cards, look));
 }
 
-const GENRES: [string, string][] = [['general', 'Any'], ['hiphop', 'Rap / drill'], ['dnb', 'Drum & bass'], ['afro', 'Afro'], ['reggae', 'Reggae'], ['techno', 'Techno']];
+// How it listens: Auto, or the beat the music has (each a detector tuning).
+const GENRES: [string, string][] = [['general', 'Auto'], ['reggae', 'Slow & heavy'], ['hiphop', 'Laid-back rap'], ['afro', 'Bouncy, busy'], ['techno', 'Steady four'], ['dnb', 'Fast & broken']];
+const FEEL_ABOUT: Record<string, string> = {
+  general: 'Listens to the tempo and picks one of the beats below for you, and guesses whether the vocals are sung or rapped.',
+  reggae: 'Reggae, dub: 60–95 BPM. Waits longer between kicks, so a heavy bassline isn’t read as drums.',
+  hiphop: 'Rap, trap, drill: the 808 is tracked apart from the kick, snares come half-time, and the vocals count as rap.',
+  afro: 'Afrobeats, amapiano, bouncy house: 95–125 BPM. Catches log drums and busy percussion.',
+  techno: 'Techno, house: a kick on every beat at 118–150 BPM, and nothing in between counts as one.',
+  dnb: 'Drum & bass, jungle: 160–180 BPM. Short gaps, so fast broken kicks all count.',
+};
+const feelName = (g: string) => GENRES.find(([k]) => k === g)?.[1] ?? '';
+// What the Listening card says when folded: source, the beat it hears, the tempo.
+function listenSummary() {
+  if (audio.source === 'off') return 'not listening';
+  const auto = settings.audioGenre === 'general';
+  const feel = auto ? (audio.autoFeel === 'general' ? 'Auto' : `Auto: ${feelName(audio.autoFeel)}`) : feelName(settings.audioGenre);
+  const bpm = audio.levels.bpm ? ` · ${Math.round(audio.levels.bpm)} BPM` : '';
+  const SHORT = { off: '', mic: 'Mic', tab: 'Tab', file: 'File', feed: 'X-Frame' } as const;
+  return `${SHORT[audio.source]} · ${feel}${bpm}`;
+}
 const ft = () => true;
 const kickWave = () => settings.audioKick === 'wave' || settings.audioKick === 'both';
-const AUDIO_LABELS = { off: 'off', mic: 'microphone', tab: 'shared tab', file: 'file', feed: 'X-Frame player' } as const;
 
 const isGlyphs = () => settings.render === 'glyphs' || (settings.render === 'mixed' && settings.mixStyles.split(',').includes('glyphs'));
 const hasFlow = () => settings.flow > 0;
@@ -6628,14 +6741,14 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
 
-  { kind: 'section', id: 'audio', label: 'Sound source', tab: 'music', summary: () => AUDIO_LABELS[audio.source] + (audio.source === 'off' ? '' : ` · ${GENRES.find(([k]) => k === settings.audioGenre)?.[1]}`) },
+  { kind: 'section', id: 'audio', label: 'Listening', tab: 'music', summary: listenSummary },
   { kind: 'audio' },
-  { kind: 'sub', label: 'Genre' },
-  { kind: 'choice', key: 'audioGenre', label: 'Genre', options: GENRES },
-  { kind: 'note', text: 'Tunes how kicks, snares, hats and 808s are picked out.' },
+  { kind: 'sub', label: 'How it listens' },
+  { kind: 'choice', key: 'audioGenre', label: 'How it listens', options: GENRES },
+  ...GENRES.map(([g]): Control => ({ kind: 'note', text: FEEL_ABOUT[g], show: () => settings.audioGenre === g })),
   { kind: 'sub', label: 'Vocals' },
-  { kind: 'choice', key: 'audioVox', label: 'Vocals', options: [['auto', 'Auto'], ['sung', 'Singing'], ['speech', 'Rap & speech']] },
-  { kind: 'note', text: 'Singing follows a held, gliding pitch. Rap & speech also counts syllables. Auto picks Rap & speech for Rap / drill.' },
+  { kind: 'choice', key: 'audioVox', label: 'Vocals', options: [['auto', 'Auto'], ['sung', 'Sung'], ['speech', 'Rapped']] },
+  { kind: 'note', text: 'Sung follows a held, gliding pitch. Rapped counts syllables, pauses and rhymes too. Auto guesses from what it hears.' },
   { kind: 'sub', label: 'Sync' },
   { kind: 'range', key: 'audioSync', label: 'Delay reactions', min: 0, max: 500, step: 10, format: (v) => (v === 0 ? 'off' : `${v} ms`) },
   { kind: 'buttons', buttons: [['Tap along to set it', () => calibrateSync()]] },
@@ -6643,13 +6756,14 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
   { kind: 'note', text: 'Vibes are how the music moves the field, so they show once a sound source is on (above).', show: () => audio.source === 'off' },
-  { kind: 'vibes' },
-  { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
-  { kind: 'toggle', key: 'audioVibeLook', label: 'Vibes also change the look' },
-  { kind: 'note', text: 'Off: a vibe only changes cards on this Music tab. On: it can also set style, size, trails, glow, palette, flow and the Lens (kaleidoscope), and some vibes bring a scene that suits them (a face vibe, a face scene). Each pick says what it switched on, with Undo.' },
-  { kind: 'note', text: 'A vibe sets the drums and the cards below (switching them on or off). Lock a card to keep it as it is when you change vibe. With the switch above off, a vibe never changes the scene.' },
+  { kind: 'vibestep' },
   { kind: 'note', text: 'This vibe plays on your face, and the scene isn’t a face yet.', show: () => currentVibe()?.family === 'face' && !faceScene() },
   { kind: 'buttons', buttons: [['Use a face scene', () => { const v = currentVibe(); if (v) vibeScene(v); }]], show: () => currentVibe()?.family === 'face' && !faceScene() },
+  { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
+  { kind: 'toggle', key: 'audioVibeLook', label: 'Vibes also change the look' },
+  { kind: 'vibes' },
+  { kind: 'note', show: () => vibeBrowse, text: 'Off: a vibe only changes cards on this Music tab. On: it can also set style, size, trails, glow, palette, flow and the Lens (kaleidoscope), and some vibes bring a scene that suits them (a face vibe, a face scene). Each pick says what it switched on, with Undo.' },
+  { kind: 'note', show: () => vibeBrowse, text: 'A vibe sets the drums and the reactions below (switching them on or off). Lock a card to keep it as it is when you change vibe. With the switch above off, a vibe never changes the scene.' },
 
   { kind: 'section', id: 'mgmusic', label: 'Reactions', tab: 'music', about: 'What each part of the music does to the field. Tap a cell to step it, slide sideways for exact strength, hold for flavours.' },
   { kind: 'mixgrid', which: 'music' },
@@ -9633,6 +9747,10 @@ type MgFlav = {
   action?: [string, () => void];
   // No strength to set (a moment fires or it doesn't).
   fixed?: () => boolean;
+  // The settings it reads, to tell whose it is (the scene's, the vibe's or yours).
+  keys?: (keyof Settings)[];
+  // A setting that lives on another card, shown here because the music drives it.
+  home?: string;
 };
 // src: a Connections input; its connections show as reactions in the list too.
 type MgRow = { name: string; when?: string; group?: string; src?: string; level?: () => number; hi?: number; live?: () => boolean; cells: (MgFlav[] | null)[] };
@@ -9655,16 +9773,17 @@ const num = (k: keyof Settings) => settings[k] as unknown as number;
 // Sliding to the far left is off (0), even where the classic slider starts
 // higher because its card switch is the way off (Drop strength, Separation).
 const mgRange = (label: string, k: keyof Settings, hi: number, more: Partial<MgFlav> = {}): MgFlav => ({
-  label, get: () => clamp01(num(k) / hi), put: (v) => (v <= 0.02 ? set(k, 0 as never) : mgPut(k, v * hi)), ...more,
+  label, keys: [k], get: () => clamp01(num(k) / hi), put: (v) => (v <= 0.02 ? set(k, 0 as never) : mgPut(k, v * hi)), ...more,
 });
 // An on/off switch.
 const mgToggle = (label: string, k: keyof Settings, more: Partial<MgFlav> = {}): MgFlav => ({
-  label, get: () => (settings[k] ? 1 : 0), put: (v) => set(k, (v > 0.05) as never), ...more,
+  label, keys: [k], get: () => (settings[k] ? 1 : 0), put: (v) => set(k, (v > 0.05) as never), ...more,
 });
 // A mode that is on at one value, with an amount for how much.
 function mgMode(label: string, k: keyof Settings, on: string, off: string, amt: keyof Settings | null, hi = 1, more: Partial<MgFlav> = {}): MgFlav {
   return {
     label,
+    keys: amt ? [k, amt] : [k],
     get: () => (settings[k] === on ? (amt ? clamp01(num(amt) / hi) : 1) : 0),
     put: (v) => {
       if (v <= 0.05) {
@@ -9683,6 +9802,7 @@ function mgPick(label: string, k: keyof Settings, options: [string, string][], o
   let last = ons.includes(settings[k] as string) ? (settings[k] as string) : ons[0];
   return {
     label,
+    keys: amt ? [k, amt] : [k],
     get: () => (ons.includes(settings[k] as string) ? (amt ? clamp01(num(amt) / hi) : 1) : 0),
     put: (v) => {
       if (v <= 0.05) {
@@ -9711,6 +9831,7 @@ function mgKick(part: 'pulse' | 'wave', label: string, amt: keyof Settings, hi: 
   const has = () => settings.audioKick === part || settings.audioKick === 'both';
   return {
     label,
+    keys: ['audioKick', amt],
     get: () => (has() ? clamp01(num(amt) / hi) : 0),
     put: (v) => {
       const other = part === 'pulse' ? 'wave' : 'pulse';
@@ -9738,6 +9859,44 @@ const lit = (id: string, now: boolean) => {
   return t - (mgSeen[id] ?? -1e9) < 160;
 };
 
+// Music-driven settings that live on other cards, gathered here too.
+const SEQ_BARS: [string, string][] = [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['8bars', 'Every 8 bars']];
+const isSeq = () => settings.shape === 'sequence';
+const X_SNAP = mgToggle('Switch scenes', 'beatSnap', { home: 'Transitions', note: 'Scenes and Shuffle switch on the next kick. Also in Scenes › Transitions.' });
+const X_GLYPH = mgMode('Glyphs', 'glyphChange', 'beat', 'fixed', null, 1, { home: 'Style', note: 'Glyph particles change character on each beat (with random glyphs). Also in Look › Style.' });
+const X_SEQ_BARS: MgFlav = {
+  label: 'Next shape', keys: ['shapeSeqEvery'], home: 'Shape',
+  get: () => (isSeq() && settings.shapeSeqEvery !== 'drop' ? 1 : 0),
+  put: (v) => (v <= 0.05 ? set('shapeSeqEvery', 'drop') : settings.shapeSeqEvery === 'drop' && set('shapeSeqEvery', '4bars')),
+  choice: { options: SEQ_BARS, get: () => (settings.shapeSeqEvery === 'drop' ? '4bars' : settings.shapeSeqEvery), put: (o) => set('shapeSeqEvery', o as never) },
+  note: 'A shape sequence steps to its next shape. Also in Shape › Shape sequence.',
+};
+const X_SEQ_DROP: MgFlav = {
+  label: 'Next shape', keys: ['shapeSeqEvery'], home: 'Shape',
+  get: () => (isSeq() && settings.shapeSeqEvery === 'drop' ? 1 : 0),
+  put: (v) => set('shapeSeqEvery', v > 0.05 ? 'drop' : '4bars'),
+  note: 'A shape sequence steps to its next shape on each drop. Also in Shape › Shape sequence.',
+};
+const X_KALEI_DROP = mgToggle('Kaleidoscope', 'audioKaleidoDrop', { home: 'Lens', note: 'A kaleidoscope for 2 bars at each drop. Also in Look › Lens.' });
+const X_KALEI = mgRange('Kaleidoscope', 'audioKaleido', 8, { home: 'Lens', note: 'Kaleidoscope sides that open up with the energy. Also in Look › Lens.' });
+const X_LENS = mgRange('Lens moves', 'lensMusic', 1, { home: 'Lens', note: 'The lens effect breathes with the music. Also in Look › Lens.' });
+// Only where it can do something: the sequence steps need a shape sequence.
+const X_NEEDS = new Map<MgFlav, () => boolean>([[X_SEQ_BARS, isSeq], [X_SEQ_DROP, isSeq], [X_GLYPH, () => isGlyphs()]]);
+
+const MG_OFF_KEY = 'particle-field:music-show-off';
+let mgShowOff = readJson<boolean>(MG_OFF_KEY, false);
+// Whose a reaction is: the scene came with it, the vibe set it, or you changed it.
+function flavSource(f: MgFlav): '' | 'scene' | 'vibe' | 'yours' {
+  const ks = f.keys;
+  if (!ks?.length) return '';
+  const cur = settings as unknown as Record<string, unknown>;
+  const v = vibeIsOff() ? undefined : currentVibe();
+  const vv = v ? ({ ...v.drums, ...v.cards } as Record<string, unknown>) : null;
+  if (vv && ks.some((k) => k in vv) && ks.every((k) => !(k in vv) || vv[k] === cur[k])) return 'vibe';
+  const base = (sceneBase ?? DEFAULTS) as unknown as Record<string, unknown>;
+  return ks.every((k) => base[k] === cur[k]) ? 'scene' : 'yours';
+}
+
 const MUSIC_GRID: MgGrid = {
   list: true,
   all: true,
@@ -9745,6 +9904,7 @@ const MUSIC_GRID: MgGrid = {
   rows: [
     {
       name: 'Kick',
+      when: 'Kick hits',
       live: () => lit('kick', levelsNow().beat),
       level: () => clamp01(levelsNow().pulse),
       cells: [
@@ -9756,11 +9916,12 @@ const MUSIC_GRID: MgGrid = {
         [mgRange('Punch', 'audioCam', 1.5), mgRange('Echo', 'audioEcho', 1)],
         null,
         [mgRange('Pulse', 'audioWordPulse', 1), mgRange('Hop', 'audioLetterHop', 1)],
-        null,
+        [X_SNAP, X_GLYPH],
       ],
     },
     {
       name: 'Snare',
+      when: 'Snare hits',
       live: () => lit('snare', levelsNow().snare),
       level: () => clamp01(levelsNow().snareEnv),
       cells: [
@@ -9774,11 +9935,13 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Hi-hats',
+      when: 'Hats tick',
       live: () => lit('hat', levelsNow().hat),
       cells: [[mgMode('Sparkle', 'audioHats', 'sparkle', 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })], [mgRange('Twinkle', 'audioHatTwinkle', 1)], [mgRange('Shake', 'audioHatShake', 1)], null, null, null],
     },
     {
       name: 'Bass',
+      when: 'Bass rolls',
       live: () => levelsNow().sub > 0.55,
       level: () => clamp01(levelsNow().sub),
       hi: 0.55,
@@ -9793,6 +9956,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Melody',
+      when: 'Melody moves',
       live: () => lit('note', levelsNow().note),
       level: () => levelsNow().noteEnv,
       cells: [
@@ -9806,6 +9970,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Vocals',
+      when: 'Someone sings',
       live: () => levelsNow().voice > 0.3,
       level: () => clamp01(levelsNow().voice),
       hi: 0.3,
@@ -9820,6 +9985,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Syllable',
+      when: 'Each syllable',
       live: () => lit('syl', levelsNow().syllable),
       level: () => levelsNow().syllEnv,
       cells: [
@@ -9833,6 +9999,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Pause',
+      when: 'A pause',
       live: () => lit('pause', levelsNow().pause),
       level: () => (levelsNow().voxOn ? 0 : clamp01(1 - levelsNow().vocal)),
       cells: [
@@ -9846,6 +10013,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Flow',
+      when: 'Flow speeds up',
       live: () => levelsNow().flow > 0.35,
       level: () => levelsNow().flow,
       hi: 0.35,
@@ -9860,6 +10028,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Accent',
+      when: 'A stressed word',
       live: () => lit('accent', levelsNow().accent),
       cells: [
         [mgRange('Burst', 'audioAccentBurst', 1, { note: 'A syllable clearly louder than the ones around it: a punchline or a stressed word.' })],
@@ -9872,6 +10041,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Pitch',
+      when: 'Voice rises',
       live: () => levelsNow().voxOn && Math.abs(levelsNow().voxRise) > 0.25,
       level: () => (levelsNow().voxOn ? levelsNow().voxPitch : 0),
       cells: [
@@ -9885,6 +10055,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Rhyme',
+      when: 'A rhyme lands',
       live: () => lit('rhyme', levelsNow().rhyme),
       cells: [
         [mgRange('Ripple', 'audioRhymeRipple', 1, { note: 'When a line ends on the same vowel sound as one of the last few lines. A rough guess: it catches end rhymes, not internal ones.' })],
@@ -9897,6 +10068,7 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Bars',
+      when: 'Each bar',
       live: () => lit('bar', levelsNow().bar),
       cells: [
         null,
@@ -9919,11 +10091,12 @@ const MUSIC_GRID: MgGrid = {
           get: () => (settings.audioVj > 0 ? 1 : 0),
           put: (v) => set('audioVj', v > 0.05 ? settings.audioVj || 8 : 0),
           fine: ['audioVj', 'audioVjFrom'],
-        })],
+        }), X_SEQ_BARS],
       ],
     },
     {
       name: 'Build-up',
+      when: 'It builds up',
       live: () => levelsNow().tension > 0.3,
       level: () => levelsNow().tension,
       hi: 0.3,
@@ -9931,13 +10104,14 @@ const MUSIC_GRID: MgGrid = {
     },
     {
       name: 'Drop',
+      when: 'The drop hits',
       live: () => levelsNow().dropEnv > 0.25,
       level: () => levelsNow().dropEnv,
       hi: 0.25,
       cells: [
         [mgRange('Burst', 'audioDrop', 2)],
         [mgToggle('Invert', 'audioInvert'), hueAmt('drop', 'Shift')],
-        [mgToggle('Mirror', 'audioFlip'), mgMode('Cut', 'audioCuts', 'drop', 'off', null)],
+        [mgToggle('Mirror', 'audioFlip'), mgMode('Cut', 'audioCuts', 'drop', 'off', null), X_KALEI_DROP],
         [mgToggle('Gravity', 'audioGravFlip')],
         [{
           label: 'Next',
@@ -9948,18 +10122,19 @@ const MUSIC_GRID: MgGrid = {
           },
           fine: ['audioWords'],
         }],
-        [mgToggle('Switch', 'audioVjDrop', { fine: ['audioVjFrom'] })],
+        [mgToggle('Switch', 'audioVjDrop', { fine: ['audioVjFrom'] }), X_SEQ_DROP],
       ],
     },
     {
       name: 'Energy',
+      when: 'Energy rises',
       live: () => levelsNow().liftLevel > 0.3,
       level: () => clamp01(levelsNow().liftLevel),
       hi: 0.3,
       cells: [
         [mgRange('Tremble', 'audioEnergyShake', 1)],
         [mgRange('Bright', 'audioBright', 1), hueAmt('drift', 'Drift')],
-        [mgRange('Pan', 'audioPan', 1), mgMode('Spin', 'audioSpin', 'energy', 'off', null), mgRange('Tunnel', 'audioTunnel', 1, { fine: ['audioTunnelTurn'] })],
+        [mgRange('Pan', 'audioPan', 1), mgMode('Spin', 'audioSpin', 'energy', 'off', null), mgRange('Tunnel', 'audioTunnel', 1, { fine: ['audioTunnelTurn'] }), X_KALEI, X_LENS],
         [mgRange('Speed', 'audioSpeed', 2), mgRange('Stir', 'audioFlow', 2), mgRange('Trails', 'audioTrailEnergy', 1), mgRange('Split', 'audioBands', 1)],
         [mgRange('Grow', 'audioEnergyWords', 1)],
         null,
@@ -10347,7 +10522,7 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
     if (grid.chips) hint.textContent = 'Tap an effect for its settings. Slide it sideways: strength. + adds one.';
     const cap = document.createElement('div');
     cap.className = 'mg-lhead';
-    cap.innerHTML = '<span>When you…</span><span>…the particles</span>';
+    cap.innerHTML = grid === MUSIC_GRID ? '<span>When…</span><span>…the particles</span>' : '<span>When you…</span><span>…the particles</span>';
     if (!grid.chips) list.append(cap);
     let group = '';
     const MUSIC_GROUPS: Record<string, string> = { Kick: 'Drums', Snare: 'Drums', 'Hi-hats': 'Drums', Bass: 'Tones', Melody: 'Tones', Vocals: 'Voice', Syllable: 'Voice', Pause: 'Voice', Flow: 'Voice', Accent: 'Voice', Pitch: 'Voice', Rhyme: 'Voice', Bars: 'The song', 'Build-up': 'The song', Drop: 'The song', Energy: 'The song' };
@@ -10356,7 +10531,54 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       hint.textContent = 'Tap a dashed reaction to turn it on. Tap a lit one for its settings, slide it sideways for strength.';
       const top = document.createElement('div');
       top.className = 'mg-allhead';
-      top.innerHTML = '<p><b></b><span></span></p><div class="mg-legend"></div>';
+      top.innerHTML = '<p><b></b><span></span><button type="button" class="mg-showoff"></button></p><div class="mg-legend"></div><div class="mg-srclegend"><span data-src="scene">scene</span><span data-src="vibe">vibe</span><span data-src="yours">yours</span><em>whose each one is · ↗ lives on another card</em></div>';
+      // Only what's on, unless you ask to see the rest (to turn more on).
+      const showBtn = top.querySelector<HTMLButtonElement>('.mg-showoff')!;
+      const setShow = (on: boolean) => {
+        mgShowOff = on;
+        writeJson(MG_OFF_KEY, on);
+        list.classList.toggle('hide-off', !on);
+        showBtn.textContent = on ? 'Hide off ones' : 'Show off ones';
+        redraw();
+      };
+      showBtn.addEventListener('click', () => setShow(!mgShowOff));
+      list.classList.toggle('hide-off', !mgShowOff);
+      showBtn.textContent = mgShowOff ? 'Hide off ones' : 'Show off ones';
+      const addAll = document.createElement('button');
+      addAll.type = 'button';
+      addAll.className = 'mg-addall';
+      addAll.textContent = '+ Add a reaction';
+      addAll.addEventListener('click', () => setShow(true));
+      const none = document.createElement('p');
+      none.className = 'mg-nothing';
+      none.textContent = 'Nothing reacts to the music yet. Pick a vibe above, or add a reaction.';
+      queueMicrotask(() => list.append(none, addAll));
+      // Groups whose rows are all hidden hide their heading too (after the rows have drawn).
+      queueMicrotask(() => { draws.push(hideEmpty); hideEmpty(); });
+      const hideEmpty = () => {
+        let g: HTMLElement | null = null;
+        let any = false;
+        let total = 0;
+        const end = () => {
+          if (g) g.hidden = !mgShowOff && !any;
+        };
+        for (const el of list.children as HTMLCollectionOf<HTMLElement>) {
+          if (el.classList.contains('mg-group')) {
+            end();
+            g = el;
+            any = false;
+          } else if (el.classList.contains('mg-lrow')) {
+            const on = !!el.querySelector('.mg-chip:not(.mg-off)');
+            el.hidden = !mgShowOff && !on;
+            if (on) total++;
+            any ||= on;
+          }
+        }
+        end();
+        none.hidden = mgShowOff || total > 0;
+        addAll.hidden = mgShowOff;
+        hint.textContent = mgShowOff ? 'Tap a dashed reaction to turn it on. Tap a lit one for its settings, slide it sideways for strength.' : 'Tap a reaction for its settings, slide it sideways for strength. Scene, vibe or yours says where it came from.';
+      };
       const lg = top.querySelector('.mg-legend')!;
       grid.cols.forEach((c, ci) => {
         const s = document.createElement('span');
@@ -10370,7 +10592,7 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       draws.push(() => {
         const on = flavs.filter((f) => f.get() > 0.02).length;
         nOn.textContent = `${on} on`;
-        nMore.textContent = ` · ${flavs.length - on} more you can turn on`;
+        nMore.textContent = ` · ${flavs.length - on} more`;
       });
       list.append(top);
     }
@@ -10433,10 +10655,10 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => chipName(f), [f], key, () => f.put(0), menu);
       let sig = '-';
       const build = () => {
-        const items = [...fixed, ...linked()];
+        const items = [...fixed, ...linked()].filter(({ f }) => X_NEEDS.get(f)?.() ?? true);
         const on = items.filter(({ f }) => f.get() > 0.02);
         if (grid.all) {
-          const next = 'A' + items.map(({ key, f }) => key + (f.get() > 0.02 ? '1' : '0') + chipName(f)).join('|') + (open ?? '');
+          const next = 'A' + items.map(({ key, f }) => key + (f.get() > 0.02 ? '1' + flavSource(f) : '0') + chipName(f)).join('|') + (open ?? '');
           if (next !== sig && !r.classList.contains('swiping')) {
             sig = next;
             fx.innerHTML = '';
@@ -10446,9 +10668,17 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
               c.type = 'button';
               c.className = lit ? 'mg-chip' : 'mg-chip mg-off';
               c.dataset.col = String(ci);
-              c.title = `${who} → ${col}: ${f.label}${lit ? '' : ' (off: tap to turn on)'}`;
+              const src = lit ? flavSource(f) : '';
+              c.title = `${who} → ${col}: ${f.label}${f.home ? ` (lives in ${f.home})` : ''}${lit ? (src ? `, set by ${src === 'yours' ? 'you' : `the ${src}`}` : '') : ' (off: tap to turn on)'}`;
               c.classList.toggle('open', open === key);
-              c.textContent = chipName(f);
+              c.textContent = (f.home ? '↗ ' : '') + chipName(f);
+              if (src) {
+                const t = document.createElement('small');
+                t.className = 'mg-src';
+                t.dataset.src = src;
+                t.textContent = src;
+                c.append(t);
+              }
               if (lit) {
                 const opener = () => show(f, col, key);
                 mgGesture(c, r, bar, [f], () => `${who} › ${chipName(f)}`, opener, opener, redraw);
@@ -11168,6 +11398,7 @@ function renderControls() {
         });
       }
       if (ctl.summary) refreshers.push(() => (summary.textContent = ctl.summary!()));
+      if (ctl.id === 'audio') listenLights(head, summary, section, top);
       if (ctl.show) conditional.push([section, ctl.show]);
       continue;
     }
@@ -11204,6 +11435,11 @@ function renderControls() {
       });
       sectionBody.append(btn, more);
       body = dest = more;
+      continue;
+    }
+
+    if (ctl.kind === 'vibestep') {
+      searchItem(body, renderVibeStep());
       continue;
     }
 
@@ -11274,7 +11510,23 @@ function renderControls() {
       const leadLbl = document.createElement('div');
       leadLbl.className = 'leads-label';
       leadLbl.textContent = 'Moves with';
-      body.append(chips, leadLbl, leads);
+      // The gallery folds away under the ‹ › stepper until you want to browse.
+      const browse = document.createElement('button');
+      browse.type = 'button';
+      browse.className = 'vibe-browse';
+      const fold = [chips, leadLbl, leads, grid];
+      const setBrowse = (on: boolean) => {
+        vibeBrowse = on;
+        browse.textContent = on ? 'Hide the vibe list' : `Browse all ${VIBES.length} vibes`;
+        browse.setAttribute('aria-expanded', String(on));
+        for (const el of fold) el.classList.toggle('vibe-folded', !on);
+      };
+      browse.addEventListener('click', () => {
+        setBrowse(!vibeBrowse);
+        refresh();
+      });
+      setBrowse(vibeBrowse);
+      body.append(browse, chips, leadLbl, leads);
       searchItem(body, grid);
       continue;
     }
@@ -13406,7 +13658,8 @@ function renderAudio() {
     <div class="meter" aria-hidden="true">
       <span>Sub</span><i></i><span>Bass</span><i></i><span>Mid</span><i></i><span>High</span><i></i>
     </div>
-    <div class="hits"><b aria-hidden="true">Kick</b><b aria-hidden="true">Snare</b><b aria-hidden="true">Hat</b><em></em><button type="button" class="tap-auto" title="Hand the tempo back to the music (Shift+T)">Auto</button><button type="button" class="tap-btn" title="Tap along with the beat, starting on beat 1 (T)">Tap</button></div>
+    <div class="hits"><b aria-hidden="true">Kick</b><b aria-hidden="true">Snare</b><b aria-hidden="true">Hat</b><b aria-hidden="true">808</b><b aria-hidden="true">Voice</b><em></em><button type="button" class="tap-auto" title="Hand the tempo back to the music (Shift+T)">Auto</button><button type="button" class="tap-btn" title="Tap along with the beat, starting on beat 1 (T)">Tap</button></div>
+    <p class="audio-hears" hidden></p>
     <p class="audio-status">Off</p>
     <p class="audio-help"></p>`;
   const fileInput = wrap.querySelector<HTMLInputElement>('input[type=file]')!;
@@ -13415,6 +13668,7 @@ function renderAudio() {
   const bars = [...wrap.querySelectorAll<HTMLElement>('.meter i')];
   const hits = [...wrap.querySelectorAll<HTMLElement>('.hits b')];
   const bpmEl = wrap.querySelector<HTMLElement>('.hits em')!;
+  const hears = wrap.querySelector<HTMLElement>('.audio-hears')!;
   const tapAutoBtn = wrap.querySelector<HTMLButtonElement>('.tap-auto')!;
   wrap.querySelector('.tap-btn')!.addEventListener('click', tapTempo);
   tapAutoBtn.addEventListener('click', tapAuto);
@@ -13509,7 +13763,11 @@ function renderAudio() {
     [L.sub, L.bass, L.mid, L.treble].forEach((v, k) => (bars[k].style.transform = `scaleX(${v.toFixed(3)})`));
     wrap.classList.toggle('beat', L.beat);
     // Hit lights stay lit briefly so single-frame hits are visible.
-    [L.pulse, L.snareEnv, L.hat ? 1 : hatGlow * 0.8].forEach((v, k) => (hits[k].style.opacity = String(0.25 + 0.75 * Math.min(1, v))));
+    [L.pulse, L.snareEnv, L.hat ? 1 : hatGlow * 0.8, L.sub, L.voice].forEach((v, k) => (hits[k].style.opacity = String(0.25 + 0.75 * Math.min(1, v))));
+    // What Auto has made of it so far.
+    const auto = settings.audioGenre === 'general' && audio.source !== 'off';
+    hears.hidden = !auto;
+    if (auto) hears.textContent = `Hears: ${audio.autoFeel === 'general' ? 'still listening…' : feelName(audio.autoFeel)}${settings.audioVox === 'auto' && audio.source !== 'off' ? (audio.feel === 'hiphop' || audio.rapped ? ' · rapped vocals' : ' · sung vocals') : ''}`;
     hatGlow = L.hat ? 1 : hatGlow * 0.8;
     const pin = audio.pinnedBpm;
     bpmEl.textContent = audio.source !== 'off' && L.bpm ? `${Math.round(L.bpm)} BPM${pin ? ' · tapped' : ''}` : '';

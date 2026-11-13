@@ -244,6 +244,16 @@ export class AudioInput {
   private backFast: Backing | null = null; // short window
   private resid = new Float32Array(0); // long-window bins minus the backing
   private sungV = 0;
+  // Auto ('general'): which tuning the music sounds like, from its tempo,
+  // and whether the vocals are rapped (lots of short syllables, little held pitch).
+  autoFeel: Genre = 'general';
+  rapped = false;
+  private feelAt = 0;
+  private rapV = 0;
+  /** The tuning in use: the picked genre, or what Auto has heard. */
+  get feel(): Genre {
+    return this.genre === 'general' ? this.autoFeel : this.genre;
+  }
   private rap = {
     e: 0, prevE: 0, score: 0, vRun: 0, open: false, below: 0, peak: 0.05, sylAt: -1e9, sylPeak: 0, localMin: 1, closedAt: 0, paused: true, mask: 0,
     voicedAt: -1e9, semi: 0, semiHist: [] as { t: number; s: number }[], lo: 0, hi: 12,
@@ -496,7 +506,7 @@ export class AudioInput {
   // Kick, snare and hat on one frame of bins measured at time t.
   private drums({ bins, hz, t }: DrumFrame) {
     const L = this.cur;
-    const tu = TUNING[this.genre];
+    const tu = TUNING[this.feel];
     const band = (r: readonly [number, number]) => bandOf(bins, hz, r);
     // Short windows have coarse low bins (~47 Hz), where a long 808 or sub
     // would bury the kick; its punch (the attack sweeping down from ~150 Hz)
@@ -529,7 +539,15 @@ export class AudioInput {
       this.kickTimes.push(t);
       while (this.kickTimes.length && t - this.kickTimes[0] > 8000) this.kickTimes.shift();
       L.bpm = this.pin.bpm || estimateBpm(this.kickTimes, tu.bpm);
-    }
+      if (this.genre === 'general' && t - this.feelAt > 3000 && this.kickTimes.length >= 12) {
+        // Auto: re-read the tempo over a wide range now and then and pick
+        // the tuning built for it. Slow beats are usually rap or reggae; the
+        // rap tuning catches both kicks of a double kick, so it's the safe one.
+        this.feelAt = t;
+        const b = this.pin.bpm || estimateBpm(this.kickTimes, [60, 180]);
+        this.autoFeel = b >= 158 ? 'dnb' : b >= 118 ? 'techno' : b >= 96 ? 'afro' : b > 0 ? 'hiphop' : 'general';
+      }
+    } else if (this.genre !== 'general') this.autoFeel = 'general';
     // A build-up is when the kick drops out; a rolling bass line still fires
     // weak onsets in the kick band, so only full-strength kicks count here.
     const full = kick > 0 && kick >= this.kickAvg * 0.6 && kickSig > snareBand * 2;
@@ -803,7 +821,10 @@ export class AudioInput {
     const vox = tonal && f < 1100 ? Math.min(1, this.mel.drift * 1.6) * Math.min(1, best / 180) : 0;
     this.sungV = this.sungV * 0.94 + vox * 0.06;
     // Rap and speech: the gated vocal envelope, so gaps between words go quiet.
-    const speechOn = this.vox === 'speech' || (this.vox === 'auto' && this.genre === 'hiphop');
+    // Auto: rapped when the flow stays busy and little of it is held pitch.
+    this.rapV += ((this.cur.flow > 0.3 && this.sungV < 0.25 ? 1 : 0) - this.rapV) * 0.01;
+    this.rapped = this.rapV > 0.5 ? true : this.rapV < 0.3 ? false : this.rapped;
+    const speechOn = this.vox === 'speech' || (this.vox === 'auto' && (this.feel === 'hiphop' || this.rapped));
     L.voice = speechOn ? Math.max(L.vocal, this.sungV * (L.voxOn ? 1 : 0.3)) : this.sungV;
   }
 
