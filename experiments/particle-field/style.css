@@ -2471,3 +2471,34 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .ss-picks { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ss-picks .rail-picker { flex: 1; min-height: 0; height: min(420px, 52dvh); margin: 0; }
 .ss-picks .rail-picker[hidden] { display: none; }
+
+/* Add a reaction: when…, then …the particles. */
+.mg-addflow { margin: 10px 0 4px; padding: 10px; border-radius: 14px; background: #141418; border: 1px solid #2c2d35; display: flex; flex-direction: column; gap: 6px; }
+.mg-addflow[hidden] { display: none; }
+.af-top { display: flex; align-items: center; gap: 8px; }
+.af-top b { font-size: 15px; flex: 1; min-width: 0; }
+.af-top span { font-size: 11px; color: var(--muted); }
+.af-top button { height: 32px; padding: 0 12px; border: 1px solid #2c2d35; border-radius: 999px; background: none; color: var(--label); font: inherit; font-size: 12px; cursor: pointer; }
+.af-top .af-back { width: 32px; padding: 0; font-size: 16px; }
+.af-hint { margin: 0; font-size: 11.5px; color: var(--muted); }
+.af-group { margin: 6px 2px 0; font-size: 12px; font-weight: 600; color: var(--text); }
+.af-group[data-col] { color: var(--cc); }
+.af-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.af-opt, .af-fx { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 10px; border: 0; border-radius: 12px; background: #1b1b22; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.af-opt span, .af-fx span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.af-opt b, .af-fx b { font-size: 13.5px; font-weight: 600; }
+.af-opt small, .af-fx small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.af-opt em { flex: none; width: 34px; height: 4px; border-radius: 2px; background: #2a2a33; overflow: hidden; }
+.af-opt em u { display: block; height: 100%; width: 0; background: #f0a35c; }
+.af-fx i { width: 9px; height: 9px; border-radius: 50%; background: var(--cc); flex: none; }
+.af-fx em { font-style: normal; font-size: 16px; color: var(--muted); width: 26px; text-align: center; }
+.af-fx.on { opacity: .7; }
+.af-fx.on em { font-size: 11px; }
+:is(.af-group, .af-fx)[data-col='0'] { --cc: var(--c0); } :is(.af-group, .af-fx)[data-col='1'] { --cc: var(--c1); } :is(.af-group, .af-fx)[data-col='2'] { --cc: var(--c2); }
+:is(.af-group, .af-fx)[data-col='3'] { --cc: var(--c3); } :is(.af-group, .af-fx)[data-col='4'] { --cc: var(--c4); } :is(.af-group, .af-fx)[data-col='5'] { --cc: var(--c5); }
+
+/* Reaction chips: a plain label, the strength as a thin line underneath, a dot in its family colour. */
+.mg-chip[data-col]:not(.mg-off) { position: relative; overflow: hidden; height: 30px; padding: 0 11px 0 9px; gap: 6px; display: inline-flex; align-items: center; color: var(--text); background: #1d1d24; font-size: 12.5px; }
+.mg-chip[data-col]:not(.mg-off)::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--cc); flex: none; }
+.mg-chip[data-col]:not(.mg-off)::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--v, 0%); background: var(--cc); }
+.mg-chip .mg-src { margin-left: 0; font-size: 10px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); opacity: 1; }

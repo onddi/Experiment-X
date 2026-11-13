@@ -10785,6 +10785,8 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
   hint.className = 'mg-hint';
   hint.textContent = 'Tap: off · low · mid · high. Slide sideways: exact strength. Hold: flavours and fine settings.';
 
+  // Opens a reaction's settings in its row (the add flow lands there).
+  const rowShow: ((f: MgFlav) => void)[] = [];
   // When you… → …the particles: each trigger lists what it does now, + adds more.
   const list = document.createElement('div');
   list.className = 'mg-list';
@@ -10802,7 +10804,7 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       hint.textContent = 'Tap a dashed reaction to turn it on. Tap a lit one for its settings, slide it sideways for strength.';
       const top = document.createElement('div');
       top.className = 'mg-allhead';
-      top.innerHTML = '<p><b></b><span></span><button type="button" class="mg-showoff"></button></p><div class="mg-legend"></div><div class="mg-srclegend"><span data-src="scene">scene</span><span data-src="vibe">vibe</span><span data-src="yours">yours</span><em>whose each one is · ↗ lives on another card</em></div>';
+      top.innerHTML = '<p><b></b><span></span><button type="button" class="mg-showoff"></button></p><div class="mg-legend"></div><div class="mg-srclegend"><span data-src="yours">you</span><em>changed by you · ↗ lives on another card</em></div>';
       // Only what's on, unless you ask to see the rest (to turn more on).
       const showBtn = top.querySelector<HTMLButtonElement>('.mg-showoff')!;
       const setShow = (on: boolean) => {
@@ -10819,11 +10821,89 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       addAll.type = 'button';
       addAll.className = 'mg-addall';
       addAll.textContent = '+ Add a reaction';
-      addAll.addEventListener('click', () => setShow(true));
+      // Adding is two short steps: when (a moment in the music), then what the particles do.
+      const flow = document.createElement('div');
+      flow.className = 'mg-addflow';
+      flow.hidden = true;
+      const closeFlow = () => {
+        flow.hidden = true;
+        addAll.hidden = mgShowOff;
+      };
+      const stepWhen = () => {
+        flow.innerHTML = '<div class="af-top"><b>When…</b><span>1 of 2</span><button type="button">Cancel</button></div><p class="af-hint">Lit bars show what the music is doing right now.</p>';
+        flow.querySelector('button')!.addEventListener('click', closeFlow);
+        let group = '';
+        let gridEl: HTMLElement | null = null;
+        grid.rows.forEach((row, ri) => {
+          const g = row.group ?? MUSIC_GROUPS[row.name] ?? '';
+          if (g !== group || !gridEl) {
+            group = g;
+            const h = document.createElement('p');
+            h.className = 'af-group';
+            h.textContent = g;
+            gridEl = document.createElement('div');
+            gridEl.className = 'af-grid';
+            flow.append(h, gridEl);
+          }
+          const flavs = row.cells.flatMap((c) => c ?? []).filter((f) => X_NEEDS.get(f)?.() ?? true);
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'af-opt';
+          b.innerHTML = '<span><b></b><small></small></span><em><u></u></em>';
+          b.querySelector('b')!.textContent = row.when ?? row.name;
+          const n = flavs.filter((f) => f.get() > 0.02).length;
+          b.querySelector('small')!.textContent = n ? `${n} on` : 'nothing yet';
+          const u = b.querySelector('u')!;
+          const lvl = row.level ?? (row.live ? () => (row.live!() ? 1 : 0) : () => 0);
+          meterLoop(b, () => (u.style.width = `${Math.round(clamp01(lvl()) * 100)}%`));
+          b.addEventListener('click', () => stepWhat(ri));
+          gridEl.append(b);
+        });
+      };
+      const stepWhat = (ri: number) => {
+        const row = grid.rows[ri];
+        flow.innerHTML = '<div class="af-top"><button type="button" class="af-back">‹</button><b></b><span>2 of 2</span><button type="button">Cancel</button></div><p class="af-hint">…the particles. Tap one to add it; set its strength next.</p>';
+        flow.querySelector('b')!.textContent = row.when ?? row.name;
+        flow.querySelector('.af-back')!.addEventListener('click', stepWhen);
+        flow.querySelector('.af-top button:last-child')!.addEventListener('click', closeFlow);
+        row.cells.forEach((fl, ci) => {
+          const fx = (fl ?? []).filter((f) => X_NEEDS.get(f)?.() ?? true);
+          if (!fx.length) return;
+          const h = document.createElement('p');
+          h.className = 'af-group';
+          h.dataset.col = String(ci);
+          h.textContent = grid.cols[ci];
+          flow.append(h);
+          for (const f of fx) {
+            const on = f.get() > 0.02;
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = on ? 'af-fx on' : 'af-fx';
+            b.dataset.col = String(ci);
+            b.innerHTML = '<i></i><span><b></b><small></small></span><em></em>';
+            b.querySelector('b')!.textContent = (f.home ? '↗ ' : '') + f.label;
+            b.querySelector('small')!.textContent = f.note ?? (f.choice ? f.choice.options.map(([, t]) => t).slice(0, 3).join(', ') : '');
+            b.querySelector('em')!.textContent = on ? 'on' : '+';
+            b.addEventListener('click', () => {
+              if (!on) f.put(2 / 3);
+              closeFlow();
+              redraw();
+              rowShow[ri]?.(f);
+            });
+            flow.append(b);
+          }
+        });
+      };
+      addAll.addEventListener('click', () => {
+        addAll.hidden = true;
+        flow.hidden = false;
+        stepWhen();
+        flow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
       const none = document.createElement('p');
       none.className = 'mg-nothing';
       none.textContent = 'Nothing reacts to the music yet. Pick a vibe above, or add a reaction.';
-      queueMicrotask(() => list.append(none, addAll));
+      queueMicrotask(() => list.append(none, addAll, flow));
       // Groups whose rows are all hidden hide their heading too (after the rows have drawn).
       queueMicrotask(() => { draws.push(hideEmpty); hideEmpty(); });
       const hideEmpty = () => {
@@ -10847,8 +10927,8 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
         }
         end();
         none.hidden = mgShowOff || total > 0;
-        addAll.hidden = mgShowOff;
-        hint.textContent = mgShowOff ? 'Tap a dashed reaction to turn it on. Tap a lit one for its settings, slide it sideways for strength.' : 'Tap a reaction for its settings, slide it sideways for strength. Scene, vibe or yours says where it came from.';
+        addAll.hidden = mgShowOff || !flow.hidden;
+        hint.textContent = mgShowOff ? 'Tap a dashed reaction to turn it on. Tap a lit one for its settings, slide it sideways for strength.' : 'Tap a reaction for its settings, slide it sideways for strength.';
       };
       const lg = top.querySelector('.mg-legend')!;
       grid.cols.forEach((c, ci) => {
@@ -10924,6 +11004,12 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
         return pick || f.label;
       };
       const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => chipName(f), [f], key, () => f.put(0), menu);
+      rowShow[ri] = (f) => {
+        const it = fixed.find((x) => x.f === f);
+        if (!it) return;
+        show(it.f, it.col, it.key);
+        r.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      };
       let sig = '-';
       const build = () => {
         const items = [...fixed, ...linked()].filter(({ f }) => X_NEEDS.get(f)?.() ?? true);
@@ -10943,11 +11029,12 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
               c.title = `${who} → ${col}: ${f.label}${f.home ? ` (lives in ${f.home})` : ''}${lit ? (src ? `, set by ${src === 'yours' ? 'you' : `the ${src}`}` : '') : ' (off: tap to turn on)'}`;
               c.classList.toggle('open', open === key);
               c.textContent = (f.home ? '↗ ' : '') + chipName(f);
-              if (src) {
+              if (src === 'yours') {
+                // Only your own changes are marked; the rest came with the scene or vibe.
                 const t = document.createElement('small');
                 t.className = 'mg-src';
                 t.dataset.src = src;
-                t.textContent = src;
+                t.textContent = 'you';
                 c.append(t);
               }
               if (lit) {
