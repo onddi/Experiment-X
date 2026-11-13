@@ -11933,7 +11933,7 @@ function renderControls() {
       setVibeBrowse = setBrowse;
       setBrowse(musicTab === 'vibes');
       body.append(browse);
-      searchItem(body, picker.el);
+      body.append(picker.el);
       continue;
     }
 
@@ -11993,7 +11993,7 @@ function renderControls() {
       const picker = scenePicker();
       refreshers.push(picker.draw);
       picker.draw();
-      searchItem(body, picker.el);
+      body.append(picker.el);
       continue;
     }
 
@@ -15259,6 +15259,10 @@ function uGo(v: UView) {
   }
   uPaint(true);
 }
+function uDeckBtn(sel: string) {
+  ovEl?.querySelector<HTMLButtonElement>(sel)?.click();
+  uPaint(true);
+}
 function uCrossfade() {
   if (xf.on) {
     xfSetOn(false);
@@ -15269,7 +15273,12 @@ function uCrossfade() {
 const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], uRec(), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : [])],
-  deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''], ['Shuffle', ICONS.shuffle, () => shuffle(), 'primary']],
+  // Phones: the Deck has no top bar; its knob picking and layout live here.
+  deck: () => [
+    [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
+    [ovPickKnobs ? 'Done picking knobs' : 'Pick field knobs', svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l4.2-4.2"/>'), () => uDeckBtn('.ov-pickknobs'), ovPickKnobs ? 'on' : ''],
+    [`Layout: ${OV_DENSITIES.find(([k]) => k === ovDensity)![1]}`, svg(DENSITY_ICON[ovDensity]), () => uDeckBtn('.ov-density')],
+  ],
   studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], uMore()],
 };
 // Desktop: icons for Shuffle and Pause, More for the rest of the actions.
@@ -15298,7 +15307,7 @@ function uPaint(force = false) {
   const v = uView();
   const desk = !sheetMode();
   if (desk) uPlace();
-  const sig = `${v}|${xf.on}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
+  const sig = `${v}|${xf.on}|${ovPickKnobs}|${ovDensity}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
   if (sig === uSig && !force) return;
   uSig = sig;
   ubar.classList.remove('stage', 'deck', 'studio');

@@ -2075,9 +2075,11 @@ body.arranging .u-bar, body.arranging .m-bar, body.arranging .play-row, body.arr
   .panel.fmode .fpane { display: none; }
   .panel.fmode.f-in .fidx { display: none; }
   .panel.fmode.f-in .fpane { display: flex; }
-  .panel.fmode.finding .fidx { display: none; }
-  .panel.fmode.finding .fpane { display: flex; }
-  .panel.fmode.finding .fhead { display: none; }
+  /* Search shows its results once you type (2+ letters); until then the
+     folders (or the folder you're in) stay as they were under the field. */
+  .panel.fmode.finding:has(#controls.searching) .fidx { display: none; }
+  .panel.fmode.finding:has(#controls.searching) .fpane { display: flex; }
+  .panel.fmode.finding:has(#controls.searching) .fhead { display: none; }
   .fd-head { grid-template-columns: 38px minmax(0, 1fr) 14px; gap: 12px; padding: 11px 8px; border-radius: 14px; }
   .fd-ic { width: 38px; height: 38px; border-radius: 11px; }
   .fd-ic svg { width: 18px; height: 18px; }
@@ -2512,10 +2514,21 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .mtabs.other-tab { display: none; }
 .mtabs button { flex: 1; height: 34px; border: 0; border-radius: 9px; background: none; color: #9a9aab; font: inherit; font-size: 13px; cursor: pointer; }
 .mtabs button.on { background: #ececf1; color: #111; font-weight: 600; }
-#controls[data-mtab='mix'] .group[data-mt]:not([data-mt~='mix']),
-#controls[data-mtab='reactions'] .group[data-mt]:not([data-mt~='reactions']),
-#controls[data-mtab='vibes'] .group[data-mt]:not([data-mt~='vibes']) { display: none; }
-#controls[data-mtab='vibes'] .group[data-sec='vibe'] > .group-body > :not(.rail-picker) { display: none !important; }
-#controls[data-mtab='mix'] .group[data-sec='vibe'] .vibe-browse { display: none; }
+#controls[data-mtab='mix']:not(.searching) .group[data-mt]:not([data-mt~='mix']),
+#controls[data-mtab='reactions']:not(.searching) .group[data-mt]:not([data-mt~='reactions']),
+#controls[data-mtab='vibes']:not(.searching) .group[data-mt]:not([data-mt~='vibes']) { display: none; }
+#controls[data-mtab='vibes']:not(.searching) .group[data-sec='vibe'] > .group-body > :not(.rail-picker) { display: none !important; }
+#controls[data-mtab='mix']:not(.searching) .group[data-sec='vibe'] .vibe-browse { display: none; }
 /* The tab names the card, so its own header goes. */
-#controls[data-mtab] .group:is([data-sec='vibe'], [data-sec='mgmusic']) > .group-top { display: none; }
+#controls[data-mtab]:not(.searching) .group:is([data-sec='vibe'], [data-sec='mgmusic']) > .group-top { display: none; }
+
+/* Phones: Studio and Deck have no top bar; search, knob picking and layout
+   are in the bottom bar. */
+@media (max-width: 720px) {
+  .panel:not(.collapsed) > header { display: none; }
+  .panel:not(.collapsed) { padding-top: env(safe-area-inset-top); }
+  .overview .ov-head { display: none; }
+  .overview { padding-top: env(safe-area-inset-top); }
+}
+#controls.searching .mtabs { display: none; }
+#controls.searching :is(.rail-picker, .vibe-browse) { display: none !important; }
