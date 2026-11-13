@@ -632,6 +632,10 @@ button:hover, select:hover { border-color: #3c3f46; }
 .listen-toggle { margin: 0 10px 0 0; align-self: center; flex: none; }
 .listen-toggle[hidden] { display: none; }
 .group.listen-closed > .group-body, .group.listen-closed > .about { display: none; }
+/* Folded and silent: only the source buttons stay, so starting is one tap. */
+.group.listen-closed.listen-off > .group-body { display: grid; }
+.group.listen-closed.listen-off > .group-body > :not(.audio), .group.listen-closed.listen-off .audio > :not(.sources), .group.listen-closed.listen-off .audio .sources [data-src='off'] { display: none !important; }
+.group.listen-closed.listen-off .audio .sources { margin-top: 0; }
 .rail-picker { grid-column: 1 / -1; display: flex; gap: 8px; height: min(440px, 58vh); margin-top: 6px; }
 .rp-rail { flex: none; width: 112px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; border-right: 1px solid #23232b; padding-right: 6px; }
 .rp-rail button { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: #b5b5c3; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
@@ -2502,3 +2506,16 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .mg-chip[data-col]:not(.mg-off)::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--cc); flex: none; }
 .mg-chip[data-col]:not(.mg-off)::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--v, 0%); background: var(--cc); }
 .mg-chip .mg-src { margin-left: 0; font-size: 10px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); opacity: 1; }
+
+/* Music page tabs: Mix, Reactions, Vibes under the Listening row. */
+.mtabs { display: flex; gap: 3px; padding: 3px; margin: 8px 0; border-radius: 12px; background: #1b1b22; }
+.mtabs.other-tab { display: none; }
+.mtabs button { flex: 1; height: 34px; border: 0; border-radius: 9px; background: none; color: #9a9aab; font: inherit; font-size: 13px; cursor: pointer; }
+.mtabs button.on { background: #ececf1; color: #111; font-weight: 600; }
+#controls[data-mtab='mix'] .group[data-mt]:not([data-mt~='mix']),
+#controls[data-mtab='reactions'] .group[data-mt]:not([data-mt~='reactions']),
+#controls[data-mtab='vibes'] .group[data-mt]:not([data-mt~='vibes']) { display: none; }
+#controls[data-mtab='vibes'] .group[data-sec='vibe'] > .group-body > :not(.rail-picker) { display: none !important; }
+#controls[data-mtab='mix'] .group[data-sec='vibe'] .vibe-browse { display: none; }
+/* The tab names the card, so its own header goes. */
+#controls[data-mtab] .group:is([data-sec='vibe'], [data-sec='mgmusic']) > .group-top { display: none; }

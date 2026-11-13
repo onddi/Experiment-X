@@ -2000,20 +2000,22 @@ function nextMine() {
 // ends for good once el has left the page (cards are rebuilt often).
 // Three small lights on the Listening header (kick, snare, voice), so you
 // can see it hears the music with the card folded. The summary follows the tempo.
-// The Listening card folds to its header strip once it's listening (its own
-// fold, since Studio cards don't fold); "Settings" opens it again.
+// The Listening card is folded to its header strip (its own fold, since
+// Studio cards don't fold); "Settings" opens it inline.
 let listenOpen: boolean | null = null;
 function listenLights(_head: HTMLElement, summary: HTMLElement, section: HTMLElement, top: HTMLElement) {
   const tog = document.createElement('button');
   tog.type = 'button';
   tog.className = 'listen-toggle';
   top.append(tog);
+  // Folded by default: one row (lights, source, feel, BPM). While nothing is
+  // playing, the folded row keeps the source buttons so starting is one tap.
   const fold = () => {
-    const open = listenOpen ?? audio.source === 'off';
+    const open = listenOpen ?? false;
     section.classList.toggle('listen-closed', !open);
+    section.classList.toggle('listen-off', audio.source === 'off');
     tog.textContent = open ? 'Hide' : 'Settings';
     tog.setAttribute('aria-expanded', String(open));
-    tog.hidden = audio.source === 'off' && listenOpen === null;
   };
   tog.addEventListener('click', () => {
     listenOpen = section.classList.contains('listen-closed');
@@ -2031,8 +2033,8 @@ function listenLights(_head: HTMLElement, summary: HTMLElement, section: HTMLEle
   meterLoop(box, (now) => {
     const L = audio.levels;
     const on = audio.source !== 'off';
-    // Once it's listening, the card folds to this strip (unless you've opened or hidden it yourself).
-    if (on !== was) setTimeout(fold, on ? 2500 : 0);
+    // Started or stopped: switch between the source buttons and the plain strip.
+    if (on !== was) fold();
     was = on;
     box.classList.toggle('on', on);
     k.style.opacity = String(on ? 0.25 + 0.75 * clamp01(L.pulse) : 0.15);
@@ -6167,6 +6169,58 @@ function vibeNone() {
   }]);
 }
 let vibeBrowse = false;
+let setVibeBrowse: (on: boolean) => void = (on) => (vibeBrowse = on);
+// The Music page is three tabs under Listening: Mix (the vibe and its faders),
+// Reactions (the list, and Rap flow) and Vibes (the full vibe picker).
+type MusicTab = 'mix' | 'reactions' | 'vibes';
+const MUSIC_TAB_KEY = 'particle-field:music-tab';
+const MUSIC_TABS: [MusicTab, string][] = [['mix', 'Mix'], ['reactions', 'Reactions'], ['vibes', 'Vibes']];
+const MT_OF: Record<string, string> = { vibe: 'mix vibes', mgmusic: 'reactions', rapflow: 'reactions' };
+let musicTab: MusicTab = (() => {
+  try {
+    const t = localStorage.getItem(MUSIC_TAB_KEY);
+    return MUSIC_TABS.some(([x]) => x === t) ? (t as MusicTab) : 'mix';
+  } catch {
+    return 'mix';
+  }
+})();
+function musicTabs() {
+  const bar = document.createElement('div');
+  bar.className = 'mtabs';
+  bar.setAttribute('role', 'tablist');
+  const btns = MUSIC_TABS.map(([t, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.textContent = label;
+    b.addEventListener('click', () => setMusicTab(t));
+    bar.append(b);
+    return [t, b] as const;
+  });
+  const paint = () => {
+    for (const [t, b] of btns) {
+      b.classList.toggle('on', t === musicTab);
+      b.setAttribute('aria-selected', String(t === musicTab));
+    }
+    controls.dataset.mtab = musicTab;
+  };
+  paintMusicTab = paint;
+  paint();
+  return bar;
+}
+let paintMusicTab = () => {};
+function setMusicTab(t: MusicTab) {
+  musicTab = t;
+  try {
+    localStorage.setItem(MUSIC_TAB_KEY, t);
+  } catch {
+    /* not persisted */
+  }
+  setVibeBrowse(t === 'vibes');
+  paintMusicTab();
+  refresh();
+  controls.scrollTop = 0;
+}
 // One picker for scenes and vibes: a rail of families on the left, a dense
 // list of names on the right, ★ to keep favourites (the Saved family).
 type RailItem = { name: string; sub?: string; on: boolean; fav?: boolean; dot?: string; fp?: number[] };
@@ -6572,7 +6626,7 @@ function useKnobSet(keys: string[]) {
 }
 
 const CONTROLS: Control[] = [
-  { kind: 'section', id: 'presets', label: 'Scene library', tab: 'presets', summary: () => familyLabel(presetFamily) },
+  { kind: 'section', id: 'presets', label: 'Scene library', tab: 'presets', summary: () => currentMine?.name || lastSceneName || '' },
   { kind: 'presetlib' },
 
   { kind: 'section', id: 'mine', label: 'My scenes', tab: 'presets',
@@ -6917,7 +6971,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Bluetooth headphones play the sound 150–250 ms after the field hears it, so reactions land early. Tap along to the kick and the delay is set for you.' },
 
   { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
-  { kind: 'note', text: 'Vibes are how the music moves the field, so they show once a sound source is on (above).', show: () => audio.source === 'off' },
+  { kind: 'note', text: 'Start a sound above (Mic, Share tab or File) and the mix moves the field.', show: () => audio.source === 'off' },
   { kind: 'vibestep' },
   { kind: 'vibemix' },
   { kind: 'note', text: 'This vibe plays on your face, and the scene isn’t a face yet.', show: () => currentVibe()?.family === 'face' && !faceScene() },
@@ -7206,55 +7260,6 @@ function playPreset(name: string, p: Partial<Settings>) {
   else showToast(name);
 }
 
-// Family chips (wrapping, so every family is one tap away on a phone), then
-// that family's presets A–Z.
-function renderPresetLibrary() {
-  const wrap = document.createElement('div');
-  wrap.className = 'presetlib';
-  const chips = document.createElement('div');
-  chips.className = 'families';
-  chips.setAttribute('role', 'tablist');
-  const grid = document.createElement('div');
-  grid.className = 'buttons';
-  const draw = () => {
-    for (const c of chips.children) c.classList.toggle('on', (c as HTMLElement).dataset.fam === presetFamily);
-    grid.innerHTML = '';
-    const list = PRESETS.filter(([n]) => presetFamily === 'all' || FAMILY_OF[n] === presetFamily).sort(([a], [b]) => a.localeCompare(b));
-    for (const [name, p] of list) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = name;
-      b.dataset.scene = name;
-      b.addEventListener('click', () => playPreset(name, p));
-      grid.append(b);
-    }
-    markLibrary(wrap);
-  };
-  for (const [fam, label] of FAMILIES) {
-    const c = document.createElement('button');
-    c.type = 'button';
-    c.dataset.fam = fam;
-    c.setAttribute('role', 'tab');
-    const count = fam === 'all' ? PRESETS.length : PRESETS.filter(([n]) => FAMILY_OF[n] === fam).length;
-    c.innerHTML = `${label} <small>${count}</small>`;
-    c.addEventListener('click', () => {
-      presetFamily = fam;
-      writeJson(FAMILY_KEY, fam);
-      draw();
-      refresh();
-    });
-    chips.append(c);
-  }
-  // A plain start: still grey dots, no shape, flow or effects, to build on.
-  const blank = document.createElement('button');
-  blank.type = 'button';
-  blank.className = 'scene-blank';
-  blank.innerHTML = '<b>Blank</b><span>Plain dots, nothing else: a starting point to build on</span>';
-  blank.addEventListener('click', () => playPreset('Blank', BLANK_SCENE));
-  wrap.append(blank, chips, grid);
-  draw();
-  return wrap;
-}
 const BLANK_SCENE: Partial<Settings> = { count: 900, size: 1.6, speed: 0.6, jitter: 0.02, flow: 0, trail: 0.5, glow: false, depth: 0, palette: 'mono', shape: 'none', emitter: 'none' };
 
 // The scene playing now, and its family chip, are marked in the library.
@@ -10163,7 +10168,7 @@ function renderVibeMix() {
   draws.forEach((d) => d());
   const note = document.createElement('p');
   note.className = 'vm-note';
-  note.textContent = 'Slide to make that part of the music move the field more or less. The vibe keeps its character; Reactions below has every detail.';
+  note.textContent = 'Slide to make that part of the music move the field more or less. The vibe keeps its character; the Reactions tab has every detail.';
   box.append(note);
   return box;
 }
@@ -11732,8 +11737,14 @@ function renderControls() {
         actionBar.append(section);
         continue;
       }
+      if (ctl.id === 'vibe') {
+        const bar = musicTabs();
+        controls.append(bar);
+        sectionTabs.push([bar, pageOf(ctl)]);
+      }
       controls.append(section);
       section.dataset.sec = ctl.id;
+      if (MT_OF[ctl.id]) section.dataset.mt = MT_OF[ctl.id];
       if (CLASSIC_SECS.has(ctl.id)) section.classList.add('classic');
       sectionTabs.push([section, pageOf(ctl)]);
       {
@@ -11820,11 +11831,9 @@ function renderControls() {
         picker.el.classList.toggle('vibe-folded', !on);
         if (on) picker.draw();
       };
-      browse.addEventListener('click', () => {
-        setBrowse(!vibeBrowse);
-        refresh();
-      });
-      setBrowse(vibeBrowse);
+      browse.addEventListener('click', () => setMusicTab('vibes'));
+      setVibeBrowse = setBrowse;
+      setBrowse(musicTab === 'vibes');
       body.append(browse);
       searchItem(body, picker.el);
       continue;
@@ -11882,7 +11891,11 @@ function renderControls() {
     }
 
     if (ctl.kind === 'presetlib') {
-      searchItem(body, renderPresetLibrary());
+      // The same picker as the scene sheet and vibes: families down the side, ★ to keep.
+      const picker = scenePicker();
+      refreshers.push(picker.draw);
+      picker.draw();
+      searchItem(body, picker.el);
       continue;
     }
 
