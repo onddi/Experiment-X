@@ -401,7 +401,7 @@ canvas.addEventListener('pointermove', (e) => {
     [thumb.x, thumb.y] = unspin(e.offsetX, e.offsetY);
     // Dragging leaves a wall behind: a line of small stones that melt in 3 s.
     const last = thumbWall[thumbWall.length - 1];
-    if (!last || Math.hypot(last.x - thumb.x, last.y - thumb.y) > 12) {
+    if (settings.thumbWall && (!last || Math.hypot(last.x - thumb.x, last.y - thumb.y) > 12)) {
       thumbWall.push({ x: thumb.x, y: thumb.y, t: performance.now() });
       if (thumbWall.length > 80) thumbWall.shift();
     }
@@ -6831,8 +6831,15 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: 'Two fingers' },
   { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
+  { kind: 'select', key: 'twistTwo', label: 'Twist', options: PLAYABLE },
+  { kind: 'select', key: 'holdTwo', label: 'Hold still', options: [['freeze', 'Freeze'], ['none', 'Nothing']] },
   { kind: 'note', text: 'A quick sideways swipe plays the previous or next scene, a quick swipe up shuffles. Tap near the bottom edge for the bar.' },
-  { kind: 'note', text: 'Anywhere: double-tap fires the drop. Twist two fingers to turn the spiral twirl, hold two fingers still to freeze. Swipe three fingers sideways for the next vibe, tap with three fingers to set the tempo. With Thumb in the stream, dragging leaves a wall that melts away.' },
+  { kind: 'sub', label: 'Taps & three fingers' },
+  { kind: 'select', key: 'tapTwice', label: 'Double-tap', options: [['drop', 'The drop'], ['burst', 'Burst'], ['shuffle', 'Shuffle'], ['freeze', 'Freeze'], ['none', 'Nothing']] },
+  { kind: 'select', key: 'swipeThree', label: 'Three-finger swipe', options: [['vibe', 'Next vibe'], ['scene', 'Next scene'], ['none', 'Nothing']] },
+  { kind: 'select', key: 'tapThree', label: 'Three-finger tap', options: [['tempo', 'Tap tempo'], ['drop', 'The drop'], ['shuffle', 'Shuffle'], ['none', 'Nothing']] },
+  { kind: 'toggle', key: 'thumbWall', label: 'Thumb stone leaves a wall', show: () => settings.click === 'thumb' },
+  { kind: 'note', text: 'The drop fires your drop reactions with music on, and a burst without. Twist turns its setting like a dial; half a turn goes end to end.' },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -7440,7 +7447,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 // you play, your on-screen knobs and locked cards.
 function blankTarget(): Settings {
   const S0 = settings as unknown as Record<string, unknown>;
-  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch'];
+  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'tapThree', 'thumbWall'];
   const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
   for (const k of lockedKeys()) target[k] = S0[k];
   return target as unknown as Settings;
@@ -7461,7 +7468,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'tapThree', 'thumbWall'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -9620,7 +9627,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   forces: ['gravity', 'wind', 'windDir'],
   swarm: ['flock', 'space'],
   obstacles: ['obstacles', 'obsText', 'obsShow', 'obsForce'],
-  pointer: ['pointerMode', 'click', 'radius', 'playTwo', 'playPinch'],
+  pointer: ['pointerMode', 'click', 'radius', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'tapThree', 'thumbWall'],
   drums: ['audioKick', 'audioPulse', 'audioSpeed'],
   mcolour: ['audioHue', 'audioHueAmt', 'audioBright'],
   camera: ['audioCam', 'audioSpin', 'audioCuts'],
@@ -16196,12 +16203,12 @@ const twoEnd = (e: PointerEvent) => {
 };
 canvas.addEventListener('pointerup', twoEnd);
 canvas.addEventListener('pointercancel', twoEnd);
-// More touch gestures on the field (any mode):
-// - double-tap: the drop, now (with music: your drop reactions; without: a burst)
-// - two fingers twisting: the Lens spiral twirl, like a dial
-// - two fingers held still: freeze until you lift
-// - three fingers swiping sideways: previous / next vibe
-// - three fingers tapping together: tap tempo
+// More touch gestures on the field (any mode), each set in Touch & gestures:
+// - double-tap (tapTwice): the drop, a burst, shuffle or freeze
+// - two fingers twisting (twistTwo): turns a setting like a dial
+// - two fingers held still (holdTwo): freeze until you lift
+// - three fingers swiping sideways (swipeThree): previous / next vibe or scene
+// - three fingers tapping together (tapThree): tap tempo, the drop or shuffle
 let dropNow = false;
 let twist: { a0: number; base: number; on: boolean } | null = null;
 const fingers = new Map<number, { x0: number; y0: number; x: number; y: number }>();
@@ -16213,14 +16220,27 @@ const twoAngle = () => {
   const [a, b] = [...fingers.values()];
   return Math.atan2(b.y - a.y, b.x - a.x);
 };
+function fieldBurst(x: number, y: number) {
+  const [ux, uy] = unspin(x, y);
+  explode(ux, uy, 1.2 * settings.clickForce);
+  addWave('shockwave', x, y, { force: 1.5 * settings.clickForce });
+}
 function fireDrop(x: number, y: number) {
   if (reacting()) dropNow = true;
-  else {
-    const [ux, uy] = unspin(x, y);
-    explode(ux, uy, 1.2 * settings.clickForce);
-    addWave('shockwave', x, y, { force: 1.5 * settings.clickForce });
-  }
+  else fieldBurst(x, y);
   showToast('Drop');
+}
+function tapAction(a: string, x: number, y: number) {
+  if (a === 'drop') fireDrop(x, y);
+  else if (a === 'burst') fieldBurst(x, y);
+  else if (a === 'shuffle') shuffle();
+  else if (a === 'freeze') {
+    togglePause();
+    showToast(paused ? 'Frozen · double-tap to go on' : 'Going on');
+  } else if (a === 'tempo') {
+    tapTempo();
+    showToast(tapRun.length >= 2 ? `Tempo ${tl.bpm} BPM` : 'Tap tempo: keep tapping with three fingers');
+  }
 }
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
@@ -16230,8 +16250,8 @@ canvas.addEventListener('pointerdown', (e) => {
   clearTimeout(freezeTimer);
   twist = null;
   if (fingers.size === 2) {
-    twist = { a0: twoAngle(), base: settings.lensTwirl, on: false };
-    freezeTimer = window.setTimeout(() => {
+    twist = { a0: twoAngle(), base: playBase(settings.twistTwo), on: false };
+    if (settings.holdTwo === 'freeze') freezeTimer = window.setTimeout(() => {
       if (fingers.size !== 2 || gest.moved > 14 || twist?.on || paused) return;
       frozeByHold = true;
       togglePause();
@@ -16248,13 +16268,13 @@ canvas.addEventListener('pointermove', (e) => {
   if (fingers.size !== 2 || !twist) return;
   let rot = twoAngle() - twist.a0;
   rot = Math.atan2(Math.sin(rot), Math.cos(rot));
-  if (!twist.on && Math.abs(rot) > 0.3 && !frozeByHold) {
+  if (!twist.on && Math.abs(rot) > 0.3 && !frozeByHold && settings.twistTwo) {
     twist.on = true;
     clearTimeout(freezeTimer);
-    showToast('Twist: spiral twirl');
+    showToast(`Twist: ${PLAYABLE.find(([k]) => k === settings.twistTwo)?.[1].split(' · ').pop() ?? settings.twistTwo}`);
   }
-  // Half a turn clockwise takes the twirl from off to full.
-  if (twist.on) set('lensTwirl', Math.round(clamp01(twist.base + rot / Math.PI) * 100) / 100);
+  // Half a turn clockwise takes the setting from one end to the other.
+  if (twist.on) playNudge(settings.twistTwo, twist.base, rot / Math.PI);
 });
 const fingerUp = (e: PointerEvent) => {
   const f = fingers.get(e.pointerId);
@@ -16274,18 +16294,17 @@ const fingerUp = (e: PointerEvent) => {
   if (gest.most === 3 && gest.dx.length >= 3) {
     const dx = gest.dx.reduce((a, b) => a + b, 0) / gest.dx.length;
     if (Math.abs(dx) > 60 && dur < 800) {
-      stepVibe(dx < 0 ? 1 : -1);
-      showToast(`Vibe: ${vibeIsOff() ? 'Off' : vibeLabel() || 'None'}`);
-      refresh();
-    } else if (gest.moved < 20 && dur < 400) {
-      tapTempo();
-      showToast(tapRun.length >= 2 ? `Tempo ${tl.bpm} BPM` : 'Tap tempo: keep tapping with three fingers');
-    }
+      if (settings.swipeThree === 'vibe') {
+        stepVibe(dx < 0 ? 1 : -1);
+        showToast(`Vibe: ${vibeIsOff() ? 'Off' : vibeLabel() || 'None'}`);
+        refresh();
+      } else if (settings.swipeThree === 'scene') stepScene(dx < 0 ? 1 : -1);
+    } else if (gest.moved < 20 && dur < 400) tapAction(settings.tapThree, e.offsetX, e.offsetY);
   } else if (gest.most === 1 && gest.moved < 12 && dur < 260) {
     const now = performance.now();
     if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
       lastTap.t = 0;
-      fireDrop(e.offsetX, e.offsetY);
+      tapAction(settings.tapTwice, e.offsetX, e.offsetY);
     } else lastTap = { t: now, x: e.clientX, y: e.clientY };
   }
 };

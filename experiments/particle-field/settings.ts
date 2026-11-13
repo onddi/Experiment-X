@@ -137,6 +137,13 @@ export interface Settings {
   playRight: string;
   playTwo: string;
   playPinch: string;
+  // Touch gestures on the field (phones and tablets).
+  tapTwice: 'drop' | 'burst' | 'shuffle' | 'freeze' | 'none';
+  twistTwo: string;
+  holdTwo: 'freeze' | 'none';
+  swipeThree: 'vibe' | 'scene' | 'none';
+  tapThree: 'tempo' | 'drop' | 'shuffle' | 'none';
+  thumbWall: boolean;
   playWheel3: string;
   playWheel4: string;
   playWheel5: string;
@@ -475,6 +482,12 @@ export const DEFAULTS: Settings = {
   playRight: 'mDream',
   playTwo: 'mHeat',
   playPinch: 'size',
+  tapTwice: 'drop',
+  twistTwo: 'lensTwirl',
+  holdTwo: 'freeze',
+  swipeThree: 'vibe',
+  tapThree: 'tempo',
+  thumbWall: true,
   playWheel3: 'mOrder',
   playWheel4: 'mHeat',
   playWheel5: 'mDensity',
