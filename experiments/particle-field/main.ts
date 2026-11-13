@@ -4,7 +4,7 @@ import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
-import { VIBE_FAMILIES, LEAD_ABOUT, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
+import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
@@ -6249,6 +6249,54 @@ let favVibes = new Set(readJson<string[]>(FAV_VIBES_KEY, []));
 // Each vibe's mix, worked out once (it only depends on the vibe).
 const FP_CACHE = new Map<string, number[]>();
 const vibeFp = (v: VibeDef) => FP_CACHE.get(v.name) ?? (FP_CACHE.set(v.name, vibeMix(v)), FP_CACHE.get(v.name)!);
+const FAV_SCENES_KEY = 'particle-field:fav-scenes';
+let favScenes = new Set(readJson<string[]>(FAV_SCENES_KEY, []));
+// A scene's dot: the middle colour of its palette.
+const sceneDot = (p: Partial<Settings>) => {
+  const pal = PALETTES[(p.palette ?? DEFAULTS.palette) as keyof typeof PALETTES];
+  const st = pal?.stops[Math.floor(pal.stops.length / 2)];
+  return st ? `hsl(${st[0]} ${st[1]}% ${st[2]}%)` : '#3a3a44';
+};
+function scenePicker() {
+  let railNow: string = currentMine ? 'mine' : favScenes.size ? 'saved' : (lastSceneName && FAMILY_OF[lastSceneName]) || presetFamily;
+  const known = (n: string) => PRESETS.some(([p]) => p === n) || myPresets.some((m) => m.name === n);
+  const item = (n: string): RailItem => {
+    const mine = !PRESETS.some(([p]) => p === n);
+    const p = PRESETS.find(([x]) => x === n)?.[1] ?? myPresets.find((m) => m.name === n)?.settings ?? {};
+    return { name: n, on: mine ? currentMine?.name === n : !currentMine && lastSceneName === n, fav: favScenes.has(n), dot: sceneDot(p as Partial<Settings>) };
+  };
+  return railPicker({
+    rail: () => [
+      ['saved', '★ Saved', [...favScenes].filter(known).length],
+      ['recent', 'Recent', recentScenes().filter(known).length],
+      ...(myPresets.length ? [['mine', 'My scenes', myPresets.length] as [string, string, number]] : []),
+      ...FAMILIES.filter(([f]) => f !== 'all').map(([f, l]): [string, string, number] => [f, l, PRESETS.filter(([n]) => FAMILY_OF[n] === f).length]),
+      ['all', 'All', PRESETS.length + 1],
+    ],
+    now: () => railNow,
+    setRail: (id) => (railNow = id),
+    items: () => {
+      if (railNow === 'saved') return [...favScenes].filter(known).sort((a, b) => a.localeCompare(b)).map(item);
+      if (railNow === 'recent') return recentScenes().filter(known).map(item);
+      if (railNow === 'mine') return myPresets.map((m) => item(m.name));
+      const names = PRESETS.filter(([n]) => railNow === 'all' || FAMILY_OF[n] === railNow).map(([n]) => n).sort((a, b) => a.localeCompare(b));
+      const blank: RailItem[] = railNow === 'all' ? [{ name: 'Blank', sub: 'A clean, minimal start', on: !currentMine && lastSceneName === 'Blank' }] : [];
+      return [...blank, ...names.map(item)];
+    },
+    pick: (name) => {
+      if (name === 'Blank') return playPreset('Blank', BLANK_SCENE);
+      const m = myPresets.find((x) => x.name === name);
+      const p = PRESETS.find(([n]) => n === name);
+      if (p && !(railNow === 'mine' && m)) playPreset(p[0], p[1]);
+      else if (m) playMine(m);
+    },
+    fav: (name) => {
+      if (favScenes.has(name)) favScenes.delete(name);
+      else favScenes.add(name);
+      writeJson(FAV_SCENES_KEY, [...favScenes]);
+    },
+  });
+}
 function vibePicker() {
   let railNow: string = favVibes.size ? 'saved' : vibeFamily;
   return railPicker({
@@ -15248,7 +15296,7 @@ function toggleSceneSheet() {
   el.className = 'scene-sheet';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Scenes');
-  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-fold" aria-label="Show only this row" aria-expanded="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg></button><button type="button" class="ss-close" aria-label="Close">✕</button></div><label class="ss-find">${svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>')}<input type="search" placeholder="Find a scene" aria-label="Find a scene"></label><div class="ss-recent"></div><div class="families"></div><div class="ss-list"></div><button type="button" class="ss-mic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span><b>Turn on the microphone</b><small>Vibes move the field with what it hears</small></span></button><button type="button" class="ss-vlook ss-von" role="switch"><span>Vibe</span><i></i></button><button type="button" class="ss-vlook ss-look" role="switch"><span>Vibes also change the look</span><i></i></button>`;
+  el.innerHTML = `<div class="ss-head"><button type="button" class="ss-step" aria-label="Previous scene">‹</button><div class="ss-now"><small></small><b></b></div><button type="button" class="ss-step" aria-label="Next scene">›</button><button type="button" class="ss-fold" aria-label="Show only this row" aria-expanded="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg></button><button type="button" class="ss-close" aria-label="Close">✕</button></div><div class="ss-picks"></div><button type="button" class="ss-mic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span><b>Turn on the microphone</b><small>Vibes move the field with what it hears</small></span></button><button type="button" class="ss-vlook ss-von" role="switch"><span>Vibe</span><i></i></button><button type="button" class="ss-vlook ss-look" role="switch"><span>Vibes also change the look</span><i></i></button>`;
   const tabsEl = document.createElement('div');
   tabsEl.className = 'ss-tabs';
   tabsEl.setAttribute('role', 'tablist');
@@ -15263,9 +15311,8 @@ function toggleSceneSheet() {
     b.innerHTML = `${t === 'scenes' ? ICON_SCENES : ICON_VIBES}<span><small>${t === 'scenes' ? 'Scenes' : 'Vibes'}</small><b></b></span>`;
     b.addEventListener('click', () => {
       sheetTab = t;
-      input.value = '';
       draw();
-      list.querySelector<HTMLElement>('.on')?.scrollIntoView({ block: 'nearest' });
+      picks.querySelector<HTMLElement>(':scope > :not([hidden]) .rp-item.on')?.scrollIntoView({ block: 'nearest' });
     });
     tabsEl.append(b);
   }
@@ -15309,61 +15356,19 @@ function toggleSceneSheet() {
   foldB.addEventListener('click', () => fold(!el.classList.contains('mini')));
   try { if (localStorage.getItem('pf-scene-sheet-mini')) fold(true); } catch {}
   sheetDrag(el);
-  const input = el.querySelector('input')!;
-  const recentEl = el.querySelector<HTMLElement>('.ss-recent')!;
-  const chipsEl = el.querySelector<HTMLElement>('.families')!;
-  const list = el.querySelector<HTMLElement>('.ss-list')!;
-  let fam: string = currentMine ? 'mine' : (lastSceneName && FAMILY_OF[lastSceneName]) || presetFamily;
-  const fams: [string, string][] = [...(myPresets.length ? [['mine', 'My scenes'] as [string, string]] : []), ...FAMILIES];
-  let chipsFor = '';
-  const drawChips = (vibes: boolean) => {
-    if (chipsFor === (vibes ? 'v' : 's')) return;
-    chipsFor = vibes ? 'v' : 's';
-    chipsEl.innerHTML = '';
-    for (const [f, label] of vibes ? VIBE_FAMILIES : fams) {
-      const c = document.createElement('button');
-      c.type = 'button';
-      c.dataset.fam = f;
-      c.textContent = label;
-      c.addEventListener('click', () => {
-        if (vibes) {
-          vibeFamily = f as VibeFamily;
-          writeJson(VIBE_FAMILY_KEY, f);
-        } else fam = f;
-        input.value = '';
-        draw();
-      });
-      chipsEl.append(c);
-    }
-  };
-  const play = (name: string, mine: boolean) => {
-    if (mine) {
-      const m = myPresets.find((p) => p.name === name);
-      if (m) playMine(m);
-    } else {
-      const p = PRESETS.find(([n]) => n === name);
-      if (p) playPreset(p[0], p[1]);
-    }
-    draw();
-  };
-  const item = (into: HTMLElement, name: string, mine: boolean) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = name;
-    b.classList.toggle('on', mine ? currentMine?.name === name : !currentMine && lastSceneName === name);
-    b.addEventListener('click', () => play(name, mine));
-    into.append(b);
-  };
+  // One picker for both tabs: families down the side, names on the right, ★ to keep.
+  const picks = el.querySelector<HTMLElement>('.ss-picks')!;
+  const scenes = scenePicker();
+  const vibes = vibePicker();
+  picks.append(scenes.el, vibes.el);
   let sig = '';
-  const sigNow = () => `${lastSceneName}|${currentMine?.name ?? ''}|${fam}|${input.value}|${musicOn()}|${sheetTab}|${vibeLabel()}|${vibeFamily}|${settings.audioVibeLook}`;
+  const sigNow = () => `${lastSceneName}|${currentMine?.name ?? ''}|${musicOn()}|${sheetTab}|${vibeLabel()}|${settings.audioVibeLook}`;
   const draw = () => {
     sig = sigNow();
     const music = musicOn();
     const vib = sheetTab === 'vibes';
     const sceneName = currentMine?.name || lastSceneName || 'Your mix';
     tabsEl.hidden = false;
-    input.placeholder = vib ? 'Find a vibe' : 'Find a scene';
-    input.setAttribute('aria-label', input.placeholder);
     micB.hidden = !vib || music;
     lookB.hidden = !vib || !music || vibeIsOff();
     onB.hidden = !vib || !music;
@@ -15376,101 +15381,19 @@ function toggleSceneSheet() {
     tabB.scenes.querySelector('b')!.textContent = sceneName;
     tabB.vibes.querySelector('b')!.textContent = vibeIsOff() ? 'Off' : vibeLabel() || 'None';
     lookB.setAttribute('aria-checked', String(settings.audioVibeLook));
-    drawChips(vib);
-    if (vib) return drawVibes();
-    el.querySelector('.ss-now b')!.textContent = currentMine?.name || lastSceneName || 'Your mix';
-    el.querySelector('.ss-now small')!.textContent = currentMine ? 'My scenes' : lastSceneName ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Scene';
-    const q = input.value.trim().toLowerCase();
-    for (const c of chipsEl.children) c.classList.toggle('on', !q && (c as HTMLElement).dataset.fam === fam);
-    recentEl.innerHTML = '';
-    const rec = recentScenes().filter((n) => n !== (currentMine?.name ?? lastSceneName) && (PRESETS.some(([p]) => p === n) || myPresets.some((m) => m.name === n))).slice(0, 4);
-    recentEl.hidden = !!q || !rec.length;
-    if (rec.length) {
-      const h = document.createElement('span');
-      h.textContent = 'Recent';
-      recentEl.append(h);
-      for (const n of rec) item(recentEl, n, !PRESETS.some(([p]) => p === n));
+    scenes.el.hidden = vib;
+    vibes.el.hidden = !vib;
+    if (vib) {
+      const v = currentVibe();
+      el.querySelector('.ss-now b')!.textContent = vibeIsOff() ? 'Vibe off' : vibeLabel() || 'No vibe';
+      el.querySelector('.ss-now small')!.textContent = v ? vibeFamilyLabel(v.family) : 'Vibe';
+      vibes.draw();
+    } else {
+      el.querySelector('.ss-now b')!.textContent = sceneName;
+      el.querySelector('.ss-now small')!.textContent = currentMine ? 'My scenes' : lastSceneName ? familyLabel(FAMILY_OF[lastSceneName] ?? 'stories') : 'Scene';
+      scenes.draw();
     }
-    list.innerHTML = '';
-    if (q) {
-      for (const m of myPresets.filter((m) => m.name.toLowerCase().includes(q))) item(list, m.name, true);
-      for (const [n] of PRESETS.filter(([n]) => n.toLowerCase().includes(q)).sort(([a], [b]) => a.localeCompare(b))) item(list, n, false);
-      if ('blank'.includes(q)) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = 'Blank';
-        b.addEventListener('click', () => {
-          playPreset('Blank', BLANK_SCENE);
-          draw();
-        });
-        list.append(b);
-      }
-      if (!list.childElementCount) list.innerHTML = '<p class="ss-none">No scene by that name.</p>';
-      list.classList.remove('vibes');
-      return;
-    }
-    list.classList.remove('vibes');
-    // Blank, a clean start, leads every list.
-    const blankB = document.createElement('button');
-    blankB.type = 'button';
-    blankB.className = 'ss-blank';
-    blankB.textContent = 'Blank';
-    blankB.title = 'A clean, minimal start';
-    blankB.classList.toggle('on', !currentMine && lastSceneName === 'Blank');
-    blankB.addEventListener('click', () => {
-      playPreset('Blank', BLANK_SCENE);
-      draw();
-    });
-    list.append(blankB);
-    if (fam === 'mine') {
-      for (const m of myPresets) item(list, m.name, true);
-      return;
-    }
-    for (const [n] of PRESETS.filter(([n]) => fam === 'all' || FAMILY_OF[n] === fam).sort(([a], [b]) => a.localeCompare(b))) item(list, n, false);
   };
-  // Vibes tab: ‹ name › steps vibes, chips are vibe families, each vibe says what it does.
-  const drawVibes = () => {
-    const v = currentVibe();
-    el.querySelector('.ss-now b')!.textContent = vibeIsOff() ? 'Vibe off' : vibeLabel() || 'No vibe';
-    el.querySelector('.ss-now small')!.textContent = v ? vibeFamilyLabel(v.family) : 'Vibe';
-    const q = input.value.trim().toLowerCase();
-    for (const c of chipsEl.children) c.classList.toggle('on', !q && (c as HTMLElement).dataset.fam === vibeFamily);
-    recentEl.hidden = true;
-    list.innerHTML = '';
-    list.classList.add('vibes');
-    const vibes = q ? VIBES.filter((x) => x.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name)) : vibeList();
-    if (!q) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'ss-blank';
-      b.innerHTML = '<b>Surprise</b><small></small>';
-      b.querySelector('small')!.textContent = vibeLead === 'any' ? 'A random mix, led by one layer (F)' : `A random mix led by ${LEAD_ABOUT[vibeLead]} (F)`;
-      b.addEventListener('click', () => {
-        surpriseVibe(vibeLead === 'any' ? undefined : vibeLead);
-        draw();
-      });
-      list.append(b);
-    }
-    for (const x of vibes) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.innerHTML = '<b></b><small></small>';
-      b.querySelector('b')!.textContent = x.name;
-      b.querySelector('small')!.textContent = x.about;
-      b.classList.toggle('on', settings.audioVibe === x.name && vibeIntact(x));
-      b.addEventListener('click', () => {
-        applyVibe(x);
-        draw();
-      });
-      list.append(b);
-    }
-    if (!list.childElementCount) list.innerHTML = '<p class="ss-none">No vibe by that name.</p>';
-  };
-  input.addEventListener('input', draw);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeSceneSheet();
-    if (e.key === 'Enter') list.querySelector<HTMLButtonElement>('button')?.click();
-  });
   draw();
   // Follows scene changes made elsewhere (swipes, keys, shuffle).
   const timer = window.setInterval(() => {
@@ -15480,7 +15403,7 @@ function toggleSceneSheet() {
   document.body.append(el);
   sceneSheetEl = el;
   ubar.classList.add('sheet-open');
-  list.querySelector<HTMLElement>('.on')?.scrollIntoView({ block: 'nearest' });
+  picks.querySelector<HTMLElement>(':scope > :not([hidden]) .rp-item.on')?.scrollIntoView({ block: 'nearest' });
 }
 // Tapping the field, or leaving the Stage, closes it.
 document.addEventListener('pointerdown', (e) => {

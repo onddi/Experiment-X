@@ -2467,3 +2467,7 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .audio-input { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; font-size: 13px; color: var(--muted); }
 .audio-input[hidden] { display: none; }
 .audio-input select { flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--tile); color: var(--text); font: inherit; font-size: 13px; }
+/* Scene sheet: the shared rail picker fills the rest of the sheet. */
+.ss-picks { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ss-picks .rail-picker { flex: 1; min-height: 0; height: min(420px, 52dvh); margin: 0; }
+.ss-picks .rail-picker[hidden] { display: none; }
