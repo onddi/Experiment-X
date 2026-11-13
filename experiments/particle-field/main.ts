@@ -11579,6 +11579,104 @@ document.addEventListener('click', (e) => {
 addEventListener('scroll', tipHide, true);
 addEventListener('wheel', tipHide, { passive: true });
 
+// Tabs inside a Studio folder (like Music's): each tab shows a few of the
+// folder's cards; a dot marks a tab with something switched on. Whole-tab
+// switches go with the tab whose page they belong to.
+type FTab = { id: string; label: string; secs: string[]; power?: Tab };
+const FOLDER_TABS: Record<string, FTab[]> = {
+  motion: [
+    { id: 'particles', label: 'Particles', secs: ['particles'] },
+    { id: 'forces', label: 'Flow & forces', secs: ['flow', 'forces', 'swarm'] },
+    { id: 'obstacles', label: 'Obstacles', secs: ['obstacles', 'collide'] },
+  ],
+  play: [
+    { id: 'knobs', label: 'Knobs', secs: ['macros', 'play', 'anim'], power: 'knobs' },
+    { id: 'touch', label: 'Touch', secs: ['pointer'] },
+    { id: 'timeline', label: 'Timeline', secs: ['timeline'], power: 'timeline' },
+    { id: 'xfader', label: 'Crossfader', secs: ['xfader'], power: 'xfader' },
+  ],
+};
+const FTAB_KEY = 'particle-field:folder-tabs';
+const ftabNow: Record<string, string> = readJson<Record<string, string>>(FTAB_KEY, {});
+function buildFolderTabs() {
+  for (const [fid, tabs] of Object.entries(FOLDER_TABS)) {
+    const secOf = (id: string) => controls.querySelector<HTMLElement>(`:scope > .group[data-sec="${id}"]`);
+    const members = tabs.map((t) => [
+      ...t.secs.map(secOf).filter((e): e is HTMLElement => !!e),
+      ...(t.power ? [controls.querySelector<HTMLElement>(`:scope > .tab-power[data-ptab="${t.power}"]`)].filter((e): e is HTMLElement => !!e) : []),
+    ]);
+    const all = members.flat();
+    if (!all.length) continue;
+    const first = [...controls.children].find((c) => all.includes(c as HTMLElement)) as HTMLElement;
+    const bar = document.createElement('div');
+    bar.className = 'mtabs ftabs';
+    bar.setAttribute('role', 'tablist');
+    const btns = tabs.map((t) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.innerHTML = '<i aria-hidden="true"></i><span></span>';
+      b.querySelector('span')!.textContent = t.label;
+      b.addEventListener('click', () => {
+        ftabNow[fid] = t.id;
+        writeJson(FTAB_KEY, ftabNow);
+        paint();
+        controls.scrollTop = 0;
+      });
+      bar.append(b);
+      return b;
+    });
+    first.before(bar);
+    sectionTabs.push([bar, FOLDERS.find((f) => f.id === fid)!.tabs[0]]);
+    const paint = () => {
+      const sel = Math.max(0, tabs.findIndex((t) => t.id === ftabNow[fid]));
+      tabs.forEach((_, i) => {
+        // Lit: a card in it that has an on/off switch is on.
+        const on = members[i].some((e) => !!e.querySelector(':scope > .group-top > .power[aria-checked="true"]') && !e.classList.contains('bypassed') && !e.hidden);
+        btns[i].classList.toggle('on', i === sel);
+        btns[i].classList.toggle('lit', on);
+        btns[i].setAttribute('aria-selected', String(i === sel));
+        for (const e of members[i]) e.classList.toggle('ft-hide', i !== sel);
+      });
+    };
+    refreshers.push(paint);
+    paint();
+  }
+  // Touch & gestures: its own tabs for one finger, two fingers, and taps.
+  const ptr = controls.querySelector<HTMLElement>(':scope > .group[data-sec="pointer"] .ess-body');
+  if (ptr) {
+    const heads = [...ptr.querySelectorAll<HTMLElement>(':scope > h3')];
+    const parts = heads.map((h) => {
+      const els: HTMLElement[] = [h];
+      for (let n = h.nextElementSibling as HTMLElement | null; n && n.tagName !== 'H3'; n = n.nextElementSibling as HTMLElement | null) els.push(n);
+      return els;
+    });
+    const fine = ptr.parentElement!.querySelectorAll<HTMLElement>(':scope > .fine-toggle, :scope > .fine-body');
+    const bar = document.createElement('div');
+    bar.className = 'mtabs ftabs sub';
+    const names = ['One finger', 'Two fingers', 'Taps'];
+    let sel = 0;
+    const btns = heads.map((h, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = names[i] ?? h.textContent ?? '';
+      b.addEventListener('click', () => {
+        sel = i;
+        paint();
+      });
+      bar.append(b);
+      return b;
+    });
+    const paint = () => {
+      btns.forEach((b, i) => b.classList.toggle('on', i === sel));
+      parts.forEach((els, i) => els.forEach((e) => e.classList.toggle('ft-hide', i !== sel || e.tagName === 'H3')));
+      // Radius, force and strength are the one-finger settings.
+      fine.forEach((e) => e.classList.toggle('ft-hide', sel !== 0));
+    };
+    ptr.prepend(bar);
+    paint();
+  }
+}
 function renderControls() {
   let collapsed: Record<string, boolean> = {};
   try {
@@ -12295,9 +12393,11 @@ function renderControls() {
     refreshers.push(sync);
     sync();
     first.before(bar);
+    bar.dataset.ptab = t;
     sectionTabs.push([bar, t]);
   }
   syncBypassUi();
+  buildFolderTabs();
   const stats = document.createElement('p');
   stats.className = 'stats';
   stats.id = 'stats';

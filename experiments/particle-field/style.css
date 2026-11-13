@@ -2532,3 +2532,11 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 }
 #controls.searching .mtabs { display: none; }
 #controls.searching :is(.rail-picker, .vibe-browse) { display: none !important; }
+/* Folder tabs (Motion, Play) and Touch & gestures' own tabs. */
+.ftabs { flex: none; overflow-x: auto; scrollbar-width: none; }
+.ftabs button { flex: 1 0 auto; padding: 0 12px; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.ftabs button i { width: 6px; height: 6px; border-radius: 3px; background: #7fd6a4; display: none; }
+.ftabs button.lit i { display: inline-block; }
+.ftabs.sub { grid-column: 1 / -1; margin: 0 0 6px; }
+#controls:not(.searching) .ft-hide { display: none !important; }
+#controls.searching .ftabs { display: none; }
