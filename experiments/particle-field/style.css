@@ -1550,6 +1550,9 @@ body.watching .fab, body.watching #toggle, body.watching .panel, body.watching .
 .ov-density svg circle { fill: currentColor; stroke: none; }
 /* Solo: one setting over the field, every menu hidden. */
 body.solo .overview { visibility: hidden; }
+/* While the big slider is open, only the field and the slider show; the menu
+   is hidden in place, so closing brings it back where it was. */
+body.tuner-open .overview, body.tuner-open .panel, body.tuner-open .fab, body.tuner-open #toggle, body.tuner-open .hint, body.tuner-open .desk-shuffle, body.tuner-open .watch-bar { visibility: hidden !important; }
 body.solo .fab, body.solo #toggle, body.solo .panel, body.solo .hint, body.solo .desk-shuffle, body.solo .watch-bar { display: none !important; }
 .solo-sheet { flex-direction: row; align-items: center; }
 .solo-sheet .rack-row { flex: 1; min-width: 0; }

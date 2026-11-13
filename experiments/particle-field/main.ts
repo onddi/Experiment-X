@@ -12999,6 +12999,7 @@ function closeTuner() {
   if (document.body.classList.contains('solo')) exitSolo();
   tunerEl?.remove();
   tunerEl = null;
+  document.body.classList.remove('tuner-open');
   tunerKnob?.classList.remove('tuning');
   tunerKnob = null;
 }
@@ -13567,6 +13568,8 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   tunerEl = el;
   tunerKnob = knob;
   knob.classList.add('tuning');
+  // The menu steps aside (kept in place, scroll and all) so you see the field.
+  document.body.classList.add('tuner-open');
 }
 // Solo: hold a setting in the overview (touch screens) and every menu hides,
 // leaving the field and just that setting along the bottom. Let go of it with
