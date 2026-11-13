@@ -385,9 +385,18 @@ function unspin(x: number, y: number): [number, number] {
   return [w / 2 + dx * c - dy * sn, h / 2 + dx * sn + dy * c];
 }
 
+// Thumb in the stream (Hold / click): while you hold, a round stone about
+// the size of a thumb sits under your finger and the particles part round it.
+// It follows the finger and melts away when you lift.
+const thumb = { x: 0, y: 0, r: 0, k: 0, held: false };
+const thumbR = () => 36 * Math.sqrt(settings.clickForce);
 canvas.addEventListener('pointermove', (e) => {
   // Two fingers play settings (Play mode), they don't push particles.
   if (playTouch.size > 1) return;
+  if (thumb.held) {
+    [thumb.x, thumb.y] = unspin(e.offsetX, e.offsetY);
+    return;
+  }
   [pointer.x, pointer.y] = unspin(e.offsetX, e.offsetY);
   pointer.active = true;
 });
@@ -574,6 +583,7 @@ function toggleObstacle(x: number, y: number) {
 // Faint fill so you can see what the particles avoid. Drawn at a strength
 // scaled by the trail fade so it settles at the same look with any trail.
 function drawObstacles(fade: number, light: boolean) {
+  drawThumb(fade, light);
   if (settings.obstacles === 'none' || !settings.obsShow) return;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
@@ -584,6 +594,24 @@ function drawObstacles(fade: number, light: boolean) {
     ctx.translate(-w / 2, -h / 2);
   }
   traceObstacles(ctx);
+  ctx.restore();
+}
+
+function drawThumb(fade: number, light: boolean) {
+  // Eases in under the finger and out after it lifts.
+  thumb.k += ((thumb.held ? 1 : 0) - thumb.k) * (thumb.held ? 0.35 : 0.12);
+  if (thumb.k < 0.01) return (thumb.k = 0);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  if (camA !== 0) {
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(camA);
+    ctx.translate(-w / 2, -h / 2);
+  }
+  ctx.beginPath();
+  ctx.arc(thumb.x, thumb.y, thumb.r * thumb.k, 0, Math.PI * 2);
+  ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.1 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.08 * fade).toFixed(4)})`;
+  ctx.fill();
   ctx.restore();
 }
 
@@ -609,6 +637,13 @@ canvas.addEventListener('pointerdown', (e) => {
     hint.classList.add('gone');
     return;
   }
+  if (settings.click === 'thumb') {
+    [thumb.x, thumb.y] = unspin(e.offsetX, e.offsetY);
+    thumb.held = true;
+    thumb.r = thumbR();
+    hint.classList.add('gone');
+    return;
+  }
   [pointer.x, pointer.y] = unspin(e.offsetX, e.offsetY);
   pointer.active = e.pointerType === 'mouse';
   pointer.down = true;
@@ -626,6 +661,7 @@ let holdImplodeAt = 0;
 let holdRingAt = 0;
 const holdCharge = () => Math.min(1, (performance.now() - holdImplodeAt) / 3000);
 const release = (e: PointerEvent) => {
+  thumb.held = false;
   if (pointer.down && holdImplodeAt && settings.click === 'implodeHold') {
     // A tap pops; a full 3 s hold bursts about nine times as hard.
     explode(pointer.x, pointer.y, (0.15 + holdCharge() ** 1.3 * 1.2) * settings.clickForce);
@@ -1049,6 +1085,9 @@ function step(dt: number) {
   if (fin >= 1) forceIn = null;
   const finE = fin * fin * (3 - 2 * fin);
   const obF = settings.obsForce * finE;
+  const thumbOn = thumb.k > 0.01;
+  const thumbRad = thumb.r * thumb.k;
+  const thumbReach = thumbRad + OB_MARGIN;
   const wellF = settings.wellForce * 0.12 * finE;
   const wellReach = settings.wellRange;
   const emitting = settings.emitter !== 'none';
@@ -1449,6 +1488,32 @@ function step(dt: number) {
             px[i] += nx * out;
             py[i] += ny * out;
           }
+        }
+      }
+    }
+    if (thumbOn) {
+      const dx = px[i] - thumb.x;
+      const dy = py[i] - thumb.y;
+      const dd = dx * dx + dy * dy;
+      if (dd < thumbReach * thumbReach) {
+        const dist = Math.sqrt(dd) || 1;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const d = dist - thumbRad;
+        const near = 1 - Math.max(0, d) / OB_MARGIN;
+        const vn = vx[i] * nx + vy[i] * ny;
+        if (vn < 0) {
+          const k = Math.min(1, near);
+          vx[i] -= vn * nx * k;
+          vy[i] -= vn * ny * k;
+        }
+        vx[i] += nx * near * near * 0.3 * dt;
+        vy[i] += ny * near * near * 0.3 * dt;
+        // Anything under the thumb when it lands is pushed out, not trapped.
+        if (d < 0) {
+          const out = Math.min(-d + 1, 10 * dt);
+          px[i] += nx * out;
+          py[i] += ny * out;
         }
       }
     }
@@ -6029,7 +6094,7 @@ const FLOW_TYPES: [string, string][] = [
 const label = (options: [string, string][], v: unknown) => options.find(([k]) => k === v)?.[1] ?? '';
 
 const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']];
-const CLICK_MODES: [string, string][] = [['implodeHold', 'Implode & burst (hold)'], ['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
+const CLICK_MODES: [string, string][] = [['implodeHold', 'Implode & burst (hold)'], ['thumb', 'Thumb in the stream (hold)'], ['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
 const RENDERS: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
