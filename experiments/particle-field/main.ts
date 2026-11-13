@@ -4,7 +4,7 @@ import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
-import { VIBE_FAMILIES, VIBE_LEADS, LEAD_ABOUT, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
+import { VIBE_FAMILIES, LEAD_ABOUT, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
@@ -5989,6 +5989,7 @@ type ControlBody =
   | { kind: 'section'; id: string; label: string; tab?: Tab; fixed?: boolean; summary?: () => string; lock?: (keyof Settings)[]; power?: Power; about?: string; folded?: boolean }
   | { kind: 'vibes' }
   | { kind: 'vibestep' }
+  | { kind: 'vibemix' }
   | { kind: 'more'; label: string }
   | { kind: 'mypresets' }
   | { kind: 'timeline' }
@@ -6041,11 +6042,8 @@ const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face feat
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
-const VIBE_LEAD_KEY = 'particle-field:vibe-lead';
-let vibeLead: VibeLead | 'any' = (() => {
-  const v = readJson<string>(VIBE_LEAD_KEY, 'any');
-  return VIBE_LEADS.some(([f]) => f === v) ? (v as VibeLead | 'any') : 'any';
-})();
+// What a vibe moves with is now a line on each vibe, not a filter.
+const vibeLead: VibeLead | 'any' = 'any';
 let vibeFamily: VibeFamily = (() => {
   const v = readJson<string>(VIBE_FAMILY_KEY, 'all');
   return VIBE_FAMILIES.some(([f]) => f === v) ? (v as VibeFamily) : 'all';
@@ -6169,6 +6167,122 @@ function vibeNone() {
   }]);
 }
 let vibeBrowse = false;
+// One picker for scenes and vibes: a rail of families on the left, a dense
+// list of names on the right, ★ to keep favourites (the Saved family).
+type RailItem = { name: string; sub?: string; on: boolean; fav?: boolean; dot?: string; fp?: number[] };
+function railPicker(o: {
+  rail: () => [string, string, number][];
+  now: () => string;
+  setRail: (id: string) => void;
+  items: () => RailItem[];
+  pick: (name: string) => void;
+  fav: (name: string) => void;
+}) {
+  const el = document.createElement('div');
+  el.className = 'rail-picker';
+  el.innerHTML = '<div class="rp-rail" role="tablist"></div><div class="rp-list"></div>';
+  const [railEl, listEl] = [...el.children] as HTMLElement[];
+  let sig = '';
+  const draw = () => {
+    const rail = o.rail();
+    const items = o.items();
+    const next = o.now() + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}`).join('|');
+    if (next === sig) return;
+    sig = next;
+    railEl.innerHTML = '';
+    for (const [id, label, n] of rail) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.classList.toggle('on', id === o.now());
+      b.setAttribute('aria-selected', String(id === o.now()));
+      b.innerHTML = '<span></span><i></i>';
+      b.querySelector('span')!.textContent = label;
+      b.querySelector('i')!.textContent = String(n);
+      b.addEventListener('click', () => {
+        o.setRail(id);
+        draw();
+        listEl.scrollTop = 0;
+      });
+      railEl.append(b);
+    }
+    listEl.innerHTML = '';
+    for (const it of items) {
+      const row = document.createElement('div');
+      row.className = 'rp-item';
+      row.classList.toggle('on', it.on);
+      row.innerHTML = '<button type="button" class="rp-name"><i></i><span><b></b><small></small></span></button><button type="button" class="rp-star"></button>';
+      const nb = row.querySelector<HTMLButtonElement>('.rp-name')!;
+      const mark = row.querySelector<HTMLElement>('.rp-name > i')!;
+      if (it.fp) {
+        // The vibe's mix: five small bars (drums, bass, melody, voice, song).
+        mark.className = 'rp-fp';
+        mark.innerHTML = it.fp.map((v, k) => `<s data-g="${MIX_GROUPS[k].id}" style="height:${Math.max(2, Math.round(v * 16))}px"></s>`).join('');
+        mark.title = it.fp.map((v, k) => `${MIX_GROUPS[k].label} ${Math.round(v * 100)}%`).join(', ');
+      } else if (it.dot) mark.style.background = it.dot;
+      nb.querySelector('b')!.textContent = it.name;
+      const sm = nb.querySelector('small')!;
+      if (it.sub) sm.textContent = it.sub;
+      else sm.remove();
+      nb.addEventListener('click', () => {
+        o.pick(it.name);
+        draw();
+      });
+      const st = row.querySelector<HTMLButtonElement>('.rp-star')!;
+      if (it.fav === undefined) st.style.visibility = 'hidden';
+      st.textContent = it.fav ? '★' : '☆';
+      st.classList.toggle('y', !!it.fav);
+      st.setAttribute('aria-label', it.fav ? `Remove ${it.name} from Saved` : `Save ${it.name}`);
+      st.addEventListener('click', () => {
+        o.fav(it.name);
+        draw();
+      });
+      listEl.append(row);
+    }
+    if (!items.length) listEl.innerHTML = '<p class="rp-none">Nothing here yet. Tap ☆ on one to keep it here.</p>';
+  };
+  draw();
+  return { el, draw };
+}
+const FAV_VIBES_KEY = 'particle-field:fav-vibes';
+let favVibes = new Set(readJson<string[]>(FAV_VIBES_KEY, []));
+// Each vibe's mix, worked out once (it only depends on the vibe).
+const FP_CACHE = new Map<string, number[]>();
+const vibeFp = (v: VibeDef) => FP_CACHE.get(v.name) ?? (FP_CACHE.set(v.name, vibeMix(v)), FP_CACHE.get(v.name)!);
+function vibePicker() {
+  let railNow: string = favVibes.size ? 'saved' : vibeFamily;
+  return railPicker({
+    rail: () => [
+      ['saved', '★ Saved', favVibes.size],
+      ...VIBE_FAMILIES.map(([f, l]): [string, string, number] => [f, l, f === 'all' ? VIBES.length : VIBES.filter((v) => v.family === f).length]),
+    ],
+    now: () => railNow,
+    setRail: (id) => {
+      railNow = id;
+      if (id !== 'saved') {
+        vibeFamily = id as VibeFamily;
+        writeJson(VIBE_FAMILY_KEY, id);
+      }
+    },
+    items: () => {
+      const cur = vibeIsOff() ? undefined : currentVibe();
+      const list = railNow === 'saved' ? VIBES.filter((v) => favVibes.has(v.name)).sort((a, b) => a.name.localeCompare(b.name)) : vibeList();
+      const none: RailItem[] = railNow === 'saved' ? [] : [{ name: 'None', sub: 'The scene’s own reactions', on: !cur && !vibeIsOff() && !settings.audioVibe }];
+      return [...none, ...list.map((v) => ({ name: v.name, sub: v.about, on: cur === v && vibeIntact(v), fav: favVibes.has(v.name), fp: vibeFp(v) }))];
+    },
+    pick: (name) => {
+      const v = VIBES.find((x) => x.name === name);
+      if (v) applyVibe(v);
+      else vibeNone();
+    },
+    fav: (name) => {
+      if (name === 'None') return;
+      if (favVibes.has(name)) favVibes.delete(name);
+      else favVibes.add(name);
+      writeJson(FAV_VIBES_KEY, [...favVibes]);
+    },
+  });
+}
 // ‹ Vibe › : step through the vibes (in the gallery's family and order), None first.
 function renderVibeStep() {
   const el = document.createElement('div');
@@ -6757,6 +6871,7 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
   { kind: 'note', text: 'Vibes are how the music moves the field, so they show once a sound source is on (above).', show: () => audio.source === 'off' },
   { kind: 'vibestep' },
+  { kind: 'vibemix' },
   { kind: 'note', text: 'This vibe plays on your face, and the scene isn’t a face yet.', show: () => currentVibe()?.family === 'face' && !faceScene() },
   { kind: 'buttons', buttons: [['Use a face scene', () => { const v = currentVibe(); if (v) vibeScene(v); }]], show: () => currentVibe()?.family === 'face' && !faceScene() },
   { kind: 'range', key: 'audioIntensity', label: 'Intensity', min: 0, max: 2, step: 0.05, format: pct },
@@ -9897,6 +10012,114 @@ function flavSource(f: MgFlav): '' | 'scene' | 'vibe' | 'yours' {
   return ks.every((k) => base[k] === cur[k]) ? 'scene' : 'yours';
 }
 
+// The mix: five faders for how much each part of the music moves the field.
+// A fader's fill is how strongly that group's reactions are on (the vibe's
+// fingerprint); dragging scales them all together, and pushing up an empty
+// one switches on that group's basic reaction.
+type MixGroup = { id: string; label: string; rows: string[]; live: () => number; start: [string, number] };
+const MIX_GROUPS: MixGroup[] = [
+  { id: 'drums', label: 'Drums', rows: ['Kick', 'Snare', 'Hi-hats'], live: () => clamp01(audio.levels.pulse), start: ['Kick', 0] },
+  { id: 'bass', label: 'Bass', rows: ['Bass'], live: () => clamp01(audio.levels.bass), start: ['Bass', 0] },
+  { id: 'melody', label: 'Melody', rows: ['Melody'], live: () => clamp01(audio.levels.noteEnv), start: ['Melody', 0] },
+  { id: 'voice', label: 'Voice', rows: ['Vocals', 'Syllable', 'Pause', 'Flow', 'Accent', 'Pitch', 'Rhyme'], live: () => clamp01(audio.levels.voice), start: ['Vocals', 0] },
+  { id: 'song', label: 'Song', rows: ['Bars', 'Build-up', 'Drop', 'Energy'], live: () => clamp01(Math.max(audio.levels.tension, audio.levels.dropEnv)), start: ['Drop', 0] },
+];
+function mixFlavs(g: MixGroup) {
+  return MUSIC_GRID.rows.filter((r) => g.rows.includes(r.name)).flatMap((r) => r.cells.flatMap((c) => c ?? [])).filter((f) => !f.home);
+}
+const mixRaw = (g: MixGroup) => mixFlavs(g).reduce((a, f) => a + f.get(), 0);
+// A vibe's raw mix without applying it (from a field with nothing on).
+function vibeRaw(v: VibeDef) {
+  const saved = { ...settings };
+  Object.assign(settings, { audioKick: 'none', audioSnare: 'none', audioHats: 'none', audioSub: 'none', audioSpeed: 0, audioFlow: 0, ...CARDS_OFF }, v.drums, v.cards);
+  const out = MIX_GROUPS.map(mixRaw);
+  Object.assign(settings, saved);
+  return out;
+}
+// How much reaction fills each fader: a bit under the busiest vibe's, per
+// group (the song has many small reactions, the melody few).
+let mixFull: number[] | null = null;
+const fullOf = (k: number) => (mixFull ??= MIX_GROUPS.map((_, i) => Math.max(1, 0.85 * Math.max(...VIBES.map((v) => vibeRaw(v)[i])))))[k];
+const mixLevel = (g: MixGroup) => clamp01(mixRaw(g) / fullOf(MIX_GROUPS.indexOf(g)));
+const vibeMix = (v: VibeDef) => vibeRaw(v).map((x, i) => clamp01(x / fullOf(i)));
+function setMix(g: MixGroup, target: number, from: { f: MgFlav; v: number }[]) {
+  const MIX_FULL = fullOf(MIX_GROUPS.indexOf(g));
+  const sum = from.reduce((a, x) => a + x.v, 0);
+  if (sum < 0.02) {
+    if (target < 0.03) return;
+    const row = MUSIC_GRID.rows.find((r) => r.name === g.start[0]);
+    const f = row?.cells.flatMap((c) => c ?? [])[g.start[1]];
+    f?.put(clamp01(target * MIX_FULL));
+    return;
+  }
+  const k = (target * MIX_FULL) / sum;
+  for (const { f, v } of from) {
+    if (v <= 0.02) continue;
+    const nv = clamp01(v * k);
+    // Switches (no strength) stay on until the fader is nearly down.
+    if (f.get() >= 0.999 && v >= 0.999 && nv > 0.12) continue;
+    f.put(nv < 0.04 ? 0 : nv);
+  }
+}
+function renderVibeMix() {
+  const box = document.createElement('div');
+  box.className = 'vibemix';
+  box.innerHTML = '<p>What moves the field</p>';
+  const draws: (() => void)[] = [];
+  for (const g of MIX_GROUPS) {
+    const row = document.createElement('div');
+    row.className = 'vm-row';
+    row.dataset.g = g.id;
+    row.innerHTML = '<span class="vm-name"><i></i><b></b></span><span class="vm-track" role="slider" tabindex="0"><u></u><em></em></span><span class="vm-val"></span>';
+    row.querySelector('b')!.textContent = g.label;
+    const light = row.querySelector('i')!;
+    const track = row.querySelector<HTMLElement>('.vm-track')!;
+    const fill = row.querySelector('u')!;
+    const knob = row.querySelector('em')!;
+    const val = row.querySelector<HTMLElement>('.vm-val')!;
+    track.setAttribute('aria-label', `${g.label}: how much it moves the field`);
+    const draw = () => {
+      const v = mixLevel(g);
+      fill.style.width = knob.style.left = `${v * 100}%`;
+      val.textContent = v < 0.02 ? 'off' : `${Math.round(v * 100)}%`;
+      track.setAttribute('aria-valuenow', String(Math.round(v * 100)));
+    };
+    draws.push(draw);
+    let from: { f: MgFlav; v: number }[] = [];
+    const at = (e: PointerEvent) => {
+      const r = track.getBoundingClientRect();
+      setMix(g, clamp01((e.clientX - r.left) / r.width), from);
+      draw();
+    };
+    track.addEventListener('pointerdown', (e) => {
+      from = mixFlavs(g).map((f) => ({ f, v: f.get() }));
+      try { track.setPointerCapture(e.pointerId); } catch { /* fine */ }
+      at(e);
+    });
+    track.addEventListener('pointermove', (e) => {
+      if (track.hasPointerCapture?.(e.pointerId)) at(e);
+    });
+    track.addEventListener('pointerup', () => refresh());
+    track.addEventListener('keydown', (e) => {
+      const d = e.key === 'ArrowRight' ? 0.05 : e.key === 'ArrowLeft' ? -0.05 : 0;
+      if (!d) return;
+      e.preventDefault();
+      setMix(g, clamp01(mixLevel(g) + d), mixFlavs(g).map((f) => ({ f, v: f.get() })));
+      draw();
+      refresh();
+    });
+    meterLoop(light, () => (light.style.opacity = String(audio.source === 'off' ? 0.2 : 0.2 + 0.8 * g.live())));
+    box.append(row);
+  }
+  refreshers.push(() => draws.forEach((d) => d()));
+  draws.forEach((d) => d());
+  const note = document.createElement('p');
+  note.className = 'vm-note';
+  note.textContent = 'Slide to make that part of the music move the field more or less. The vibe keeps its character; Reactions below has every detail.';
+  box.append(note);
+  return box;
+}
+
 const MUSIC_GRID: MgGrid = {
   list: true,
   all: true,
@@ -11438,96 +11661,37 @@ function renderControls() {
       continue;
     }
 
+    if (ctl.kind === 'vibemix') {
+      searchItem(body, renderVibeMix());
+      continue;
+    }
+
     if (ctl.kind === 'vibestep') {
       searchItem(body, renderVibeStep());
       continue;
     }
 
     if (ctl.kind === 'vibes') {
-      // Vibe gallery: name and a one-line description each.
-      // Family chips first (like the preset library), then that family A–Z.
-      const chips = document.createElement('div');
-      chips.className = 'families';
-      chips.setAttribute('role', 'tablist');
-      // A second row: what the vibe listens to (the drums, bass, melody…).
-      const leads = document.createElement('div');
-      leads.className = 'families leads';
-      leads.setAttribute('role', 'tablist');
-      const grid = document.createElement('div');
-      grid.className = 'vibes';
-      const btns: [VibeDef, HTMLButtonElement][] = [];
-      const drawVibes = () => {
-        for (const c of chips.children) c.classList.toggle('on', (c as HTMLElement).dataset.fam === vibeFamily);
-        for (const c of leads.children) c.classList.toggle('on', (c as HTMLElement).dataset.lead === vibeLead);
-        grid.innerHTML = '';
-        btns.length = 0;
-        const list = VIBES.filter((v) => (vibeFamily === 'all' || v.family === vibeFamily) && (vibeLead === 'any' || v.lead === vibeLead)).sort((a, b) => a.name.localeCompare(b.name));
-        for (const v of [...list, null]) {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.innerHTML = '<b></b><span></span><i></i>';
-          b.querySelector('b')!.textContent = v ? v.name : 'Surprise me';
-          b.querySelector('span')!.textContent = v ? v.about : vibeLead === 'any' ? 'A random mix, led by one layer (F)' : `A random mix led by ${LEAD_ABOUT[vibeLead]} (F)`;
-          b.querySelector('i')!.textContent = v ? `Moves with ${LEAD_ABOUT[v.lead]}` : '';
-          b.addEventListener('click', () => (v ? applyVibe(v) : surpriseVibe(vibeLead === 'any' ? undefined : vibeLead)));
-          if (v) {
-            btns.push([v, b]);
-            b.classList.toggle('on', settings.audioVibe === v.name && vibeIntact(v));
-          }
-          grid.append(b);
-        }
-      };
-      refreshers.push(() => {
-        for (const [v, b] of btns) b.classList.toggle('on', settings.audioVibe === v.name && vibeIntact(v));
-      });
-      for (const [fam, lbl] of VIBE_FAMILIES) {
-        const c = document.createElement('button');
-        c.type = 'button';
-        c.dataset.fam = fam;
-        c.setAttribute('role', 'tab');
-        c.innerHTML = `${lbl} <small>${fam === 'all' ? VIBES.length : VIBES.filter((v) => v.family === fam).length}</small>`;
-        c.addEventListener('click', () => {
-          vibeFamily = fam;
-          writeJson(VIBE_FAMILY_KEY, fam);
-          drawVibes();
-        });
-        chips.append(c);
-      }
-      for (const [lead, lbl] of VIBE_LEADS) {
-        const c = document.createElement('button');
-        c.type = 'button';
-        c.dataset.lead = lead;
-        c.setAttribute('role', 'tab');
-        c.innerHTML = `${lbl} <small>${lead === 'any' ? VIBES.length : VIBES.filter((v) => v.lead === lead).length}</small>`;
-        c.addEventListener('click', () => {
-          vibeLead = lead;
-          writeJson(VIBE_LEAD_KEY, lead);
-          drawVibes();
-        });
-        leads.append(c);
-      }
-      drawVibes();
-      const leadLbl = document.createElement('div');
-      leadLbl.className = 'leads-label';
-      leadLbl.textContent = 'Moves with';
-      // The gallery folds away under the ‹ › stepper until you want to browse.
+      // The same picker as scenes: families down the side, names to tap, ★ to keep.
+      const picker = vibePicker();
+      refreshers.push(picker.draw);
       const browse = document.createElement('button');
       browse.type = 'button';
       browse.className = 'vibe-browse';
-      const fold = [chips, leadLbl, leads, grid];
       const setBrowse = (on: boolean) => {
         vibeBrowse = on;
         browse.textContent = on ? 'Hide the vibe list' : `Browse all ${VIBES.length} vibes`;
         browse.setAttribute('aria-expanded', String(on));
-        for (const el of fold) el.classList.toggle('vibe-folded', !on);
+        picker.el.classList.toggle('vibe-folded', !on);
+        if (on) picker.draw();
       };
       browse.addEventListener('click', () => {
         setBrowse(!vibeBrowse);
         refresh();
       });
       setBrowse(vibeBrowse);
-      body.append(browse, chips, leadLbl, leads);
-      searchItem(body, grid);
+      body.append(browse);
+      searchItem(body, picker.el);
       continue;
     }
 

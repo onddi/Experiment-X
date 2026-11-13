@@ -632,6 +632,43 @@ button:hover, select:hover { border-color: #3c3f46; }
 .listen-toggle { margin: 0 10px 0 0; align-self: center; flex: none; }
 .listen-toggle[hidden] { display: none; }
 .group.listen-closed > .group-body, .group.listen-closed > .about { display: none; }
+.rail-picker { grid-column: 1 / -1; display: flex; gap: 8px; height: min(440px, 58vh); margin-top: 6px; }
+.rp-rail { flex: none; width: 112px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; border-right: 1px solid #23232b; padding-right: 6px; }
+.rp-rail button { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: #b5b5c3; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.rp-rail button.on { background: #ececf1; color: #111; font-weight: 600; }
+.rp-rail i { font-style: normal; font-size: 11px; color: #77778a; }
+.rp-list { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.rp-item { display: flex; align-items: center; border-radius: 10px; }
+.rp-item.on { background: #262a52; }
+.rp-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 5px 8px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.rp-name > i.rp-fp { width: 24px; height: 16px; border-radius: 0; background: none; display: flex; align-items: flex-end; gap: 1px; }
+.rp-fp s { flex: 1; border-radius: 1px; background: var(--vc); text-decoration: none; }
+.rp-fp s[data-g='drums'] { --vc: #ff8a3d; } .rp-fp s[data-g='bass'] { --vc: #8b93ff; } .rp-fp s[data-g='melody'] { --vc: #ff6fb5; } .rp-fp s[data-g='voice'] { --vc: #3fd29a; } .rp-fp s[data-g='song'] { --vc: #4fd1ff; }
+.rp-name > i { width: 10px; height: 10px; border-radius: 5px; flex: none; background: #3a3a44; }
+.rp-name span { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.rp-name b { font-size: 14px; font-weight: 500; }
+.rp-item.on .rp-name b { color: #dfe1ff; font-weight: 600; }
+.rp-name small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-star { flex: none; width: 36px; height: 36px; border: 0; background: none; color: #5e5e6e; font-size: 16px; cursor: pointer; }
+.rp-star.y { color: #ffcf6b; }
+.rp-none { margin: 10px 6px; font-size: 12.5px; color: var(--muted); }
+.vibemix { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; margin: 2px 0 6px; }
+.vibemix > p { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+.vibemix .vm-note { margin: 4px 0 0; font-size: 11px; }
+.vm-row { display: flex; align-items: center; gap: 10px; height: 38px; }
+.vm-name { width: 78px; flex: none; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.vm-name i { width: 7px; height: 7px; border-radius: 50%; background: var(--vc); opacity: .2; }
+.vm-name b { font-weight: 500; }
+.vm-track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: #23232b; cursor: pointer; touch-action: none; }
+.vm-track::before { content: ''; position: absolute; inset: -14px 0; }
+.vm-track u { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--vc); }
+.vm-track em { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #ececf1; }
+.vm-val { width: 36px; flex: none; text-align: right; font-size: 12px; color: var(--muted); }
+.vm-row[data-g='drums'] { --vc: #ff8a3d; }
+.vm-row[data-g='bass'] { --vc: #8b93ff; }
+.vm-row[data-g='melody'] { --vc: #ff6fb5; }
+.vm-row[data-g='voice'] { --vc: #3fd29a; }
+.vm-row[data-g='song'] { --vc: #4fd1ff; }
 .vibestep { display: flex; align-items: stretch; gap: 6px; margin: 4px 0 8px; }
 .vibestep button { flex: 0 0 40px; font-size: 20px; line-height: 1; }
 .vibestep div { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 6px 10px; border: 1px solid var(--line, #2c2d35); border-radius: 8px; }
