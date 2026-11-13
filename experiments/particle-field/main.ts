@@ -6235,18 +6235,18 @@ function vibeNone() {
 }
 let vibeBrowse = false;
 let setVibeBrowse: (on: boolean) => void = (on) => (vibeBrowse = on);
-// The Music page is three tabs under Listening: Mix (the vibe and its faders),
-// Reactions (the list, and Rap flow) and Vibes (the full vibe picker).
+// The Music page is three tabs under Listening: Vibes (the full vibe picker),
+// Mix (the vibe and its faders) and Reactions (the list, and Rap flow).
 type MusicTab = 'mix' | 'reactions' | 'vibes';
 const MUSIC_TAB_KEY = 'particle-field:music-tab';
-const MUSIC_TABS: [MusicTab, string][] = [['mix', 'Mix'], ['reactions', 'Reactions'], ['vibes', 'Vibes']];
+const MUSIC_TABS: [MusicTab, string][] = [['vibes', 'Vibes'], ['mix', 'Mix'], ['reactions', 'Reactions']];
 const MT_OF: Record<string, string> = { vibe: 'mix vibes', mgmusic: 'reactions', rapflow: 'reactions' };
 let musicTab: MusicTab = (() => {
   try {
     const t = localStorage.getItem(MUSIC_TAB_KEY);
-    return MUSIC_TABS.some(([x]) => x === t) ? (t as MusicTab) : 'mix';
+    return MUSIC_TABS.some(([x]) => x === t) ? (t as MusicTab) : 'vibes';
   } catch {
-    return 'mix';
+    return 'vibes';
   }
 })();
 function musicTabs() {
