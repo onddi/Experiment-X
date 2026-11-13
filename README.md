@@ -117,8 +117,16 @@ is unchanged. Per layer you can set:
 
 - **Placement**: *Stacked* covers the base (and blends with it), *Docked
   top/bottom/left/right* takes a strip of the stage and shrinks what's left.
-- **Blend mode** and **opacity** for stacked layers. `screen` is a good default
-  for visuals on a dark background: black disappears, light adds up.
+- **Order**: drag a layer by its ⠿ grip (mouse or touch), or use ↑ / ↓. Any
+  layer can move, the base included; whatever ends up at the bottom becomes the
+  full-screen base.
+- **Blend mode** and **opacity** for stacked layers. New layers start with no
+  blending, so a see-through layer sits plainly in front. `screen` suits visuals
+  on a dark base: black disappears, light adds up (on a bright base it washes
+  the layer out).
+- **See-through**: a stacked experiment should drop its background, and if it
+  sets `color-scheme: dark` it needs `html:has(body.see-through) { color-scheme: normal; }`,
+  or the browser paints its iframe opaque.
 - **Gets the mouse**: only one stacked layer (or the base) gets pointer input;
   docked strips always do. While the layer with the mouse has its options panel
   open, stacked layers above it fade back to 20% so the panel stays readable. The chip in the toolbar names the layer

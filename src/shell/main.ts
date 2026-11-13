@@ -247,7 +247,8 @@ function cycleMouse() {
 function addLayer(slug: string, placement: Placement = 'full') {
   if (view.layers.some((l) => l.slug === slug) || !bySlug(slug)) return;
   updateView((v) => {
-    v.layers.push(newLayer(slug, placement));
+    // No blending: a see-through layer then sits plainly in front of the others.
+    v.layers.push({ ...newLayer(slug, placement), blend: 'normal' });
     v.input = -1; // the new layer is on top: give it the mouse
   });
   openPanel(true);
@@ -261,14 +262,26 @@ function removeLayer(i: number) {
   });
 }
 
+/**
+ * Put the layers in a new order (slugs, bottom first). Any layer can move,
+ * the base included: whatever lands at the bottom becomes the full-screen
+ * base. The layer with the mouse keeps it.
+ */
+function reorderLayers(order: string[]) {
+  const inputSlug = view.layers[inputLayer(view)]?.slug;
+  updateView((v) => {
+    v.layers = order.map((slug) => v.layers.find((l) => l.slug === slug)!).filter(Boolean);
+    v.layers[0].placement = 'full';
+    v.input = v.layers.findIndex((l) => l.slug === inputSlug);
+  });
+}
+
 function moveLayer(i: number, delta: number) {
   const j = i + delta;
-  if (i <= 0 || j <= 0 || j >= view.layers.length) return;
-  updateView((v) => {
-    [v.layers[i], v.layers[j]] = [v.layers[j], v.layers[i]];
-    if (v.input === i) v.input = j;
-    else if (v.input === j) v.input = i;
-  });
+  if (j < 0 || j >= view.layers.length) return;
+  const order = view.layers.map((l) => l.slug);
+  [order[i], order[j]] = [order[j], order[i]];
+  reorderLayers(order);
 }
 
 function route() {
@@ -355,23 +368,26 @@ function slider(value: number, min: number, max: number, onInput: (v: number) =>
 function layerRow(l: Layer, i: number) {
   const exp = bySlug(l.slug)!;
   const isBase = i === 0;
-  const head = el('div', { class: 'panel__layer-head' }, el('strong', {}, exp.title));
-  if (isBase) {
-    head.append(el('span', { class: 'panel__tag' }, 'base'));
-  } else {
-    const btn = (text: string, title: string, fn: () => void, disabled = false) => {
-      const b = el('button', { class: 'icon-btn icon-btn--sm', textContent: text, title, disabled });
-      b.setAttribute('aria-label', title);
-      b.addEventListener('click', fn);
-      return b;
-    };
+  const grip = el('button', { class: 'icon-btn icon-btn--sm panel__grip', textContent: '⠿', title: 'Drag to reorder' });
+  grip.setAttribute('aria-label', 'Drag to reorder');
+  const head = el('div', { class: 'panel__layer-head' }, grip, el('strong', {}, exp.title));
+  if (isBase) head.append(el('span', { class: 'panel__tag' }, 'base'));
+  const btn = (text: string, title: string, fn: () => void, disabled = false) => {
+    const b = el('button', { class: 'icon-btn icon-btn--sm', textContent: text, title, disabled });
+    b.setAttribute('aria-label', title);
+    b.addEventListener('click', fn);
+    return b;
+  };
+  if (view.layers.length > 1) {
     head.append(
-      btn('↑', 'Move up', () => moveLayer(i, 1), i === view.layers.length - 1),
-      btn('↓', 'Move down', () => moveLayer(i, -1), i === 1),
-      btn('✕', 'Remove layer', () => removeLayer(i)),
+      btn('↑', 'Bring forward', () => moveLayer(i, 1), i === view.layers.length - 1),
+      btn('↓', 'Send back', () => moveLayer(i, -1), i === 0),
     );
   }
+  if (!isBase) head.append(btn('✕', 'Remove layer', () => removeLayer(i)));
   const row = el('li', { class: 'panel__layer' }, head);
+  row.dataset.slug = l.slug;
+  grip.addEventListener('pointerdown', (e) => dragLayer(e, row));
   const docked = !isBase && l.placement !== 'full';
 
   if (!isBase) {
@@ -402,6 +418,53 @@ function layerRow(l: Layer, i: number) {
     row.append(el('p', { class: 'panel__hint' }, 'Docked strips always get the mouse.'));
   }
   return row;
+}
+
+/**
+ * Drag a row of the layers list by its grip (mouse or touch). The row follows
+ * the pointer and the others make room; letting go applies the new order.
+ */
+function dragLayer(e: PointerEvent, row: HTMLElement) {
+  const list = row.parentElement;
+  if (!list || view.layers.length < 2) return;
+  e.preventDefault();
+  const startY = e.clientY;
+  const startTop = row.offsetTop;
+  row.classList.add('panel__layer--dragging');
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
+    const y = ev.clientY;
+    // Swap with a neighbour once the pointer passes its middle.
+    let moved = true;
+    while (moved) {
+      moved = false;
+      const prev = row.previousElementSibling as HTMLElement | null;
+      const next = row.nextElementSibling as HTMLElement | null;
+      if (prev && y < prev.getBoundingClientRect().top + prev.offsetHeight / 2) {
+        list.insertBefore(row, prev);
+        moved = true;
+      } else if (next && y > next.getBoundingClientRect().top + next.offsetHeight / 2) {
+        list.insertBefore(next, row);
+        moved = true;
+      }
+    }
+    row.style.transform = `translateY(${y - startY - (row.offsetTop - startTop)}px)`;
+  };
+  const end = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+    row.style.transform = '';
+    row.classList.remove('panel__layer--dragging');
+    // The list shows the top layer first; layers are stored bottom first.
+    const order = ([...list.children] as HTMLElement[]).map((r) => r.dataset.slug!).reverse();
+    if (order.join() !== view.layers.map((l) => l.slug).join()) reorderLayers(order);
+  };
+  // On the window: moving the row in the list can drop the grip's pointer capture.
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
 }
 
 /** Restyle one layer without rebuilding the panel (keeps a dragged slider alive). */

@@ -2540,3 +2540,5 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .ftabs.sub { grid-column: 1 / -1; margin: 0 0 6px; }
 #controls:not(.searching) .ft-hide { display: none !important; }
 #controls.searching .ftabs { display: none; }
+/* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
+html:has(body.see-through) { color-scheme: normal; }
