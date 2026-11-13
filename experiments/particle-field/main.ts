@@ -389,12 +389,22 @@ function unspin(x: number, y: number): [number, number] {
 // the size of a thumb sits under your finger and the particles part round it.
 // It follows the finger and melts away when you lift.
 const thumb = { x: 0, y: 0, r: 0, k: 0, held: false };
+const thumbWall: { x: number; y: number; t: number }[] = [];
+const WALL_MS = 3000;
+// The wall's live stones this frame (radius shrinks as they melt).
+let wallNow: { x: number; y: number; r: number }[] = [];
 const thumbR = () => 36 * Math.sqrt(settings.clickForce);
 canvas.addEventListener('pointermove', (e) => {
   // Two fingers play settings (Play mode), they don't push particles.
   if (playTouch.size > 1) return;
   if (thumb.held) {
     [thumb.x, thumb.y] = unspin(e.offsetX, e.offsetY);
+    // Dragging leaves a wall behind: a line of small stones that melt in 3 s.
+    const last = thumbWall[thumbWall.length - 1];
+    if (!last || Math.hypot(last.x - thumb.x, last.y - thumb.y) > 12) {
+      thumbWall.push({ x: thumb.x, y: thumb.y, t: performance.now() });
+      if (thumbWall.length > 80) thumbWall.shift();
+    }
     return;
   }
   [pointer.x, pointer.y] = unspin(e.offsetX, e.offsetY);
@@ -600,7 +610,10 @@ function drawObstacles(fade: number, light: boolean) {
 function drawThumb(fade: number, light: boolean) {
   // Eases in under the finger and out after it lifts.
   thumb.k += ((thumb.held ? 1 : 0) - thumb.k) * (thumb.held ? 0.35 : 0.12);
-  if (thumb.k < 0.01) return (thumb.k = 0);
+  const now = performance.now();
+  while (thumbWall.length && now - thumbWall[0].t > WALL_MS) thumbWall.shift();
+  wallNow = thumbWall.map((p) => ({ x: p.x, y: p.y, r: thumb.r * 0.42 * (1 - (now - p.t) / WALL_MS) }));
+  if (thumb.k < 0.01 && !wallNow.length) return (thumb.k = 0);
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   if (camA !== 0) {
@@ -609,7 +622,11 @@ function drawThumb(fade: number, light: boolean) {
     ctx.translate(-w / 2, -h / 2);
   }
   ctx.beginPath();
-  ctx.arc(thumb.x, thumb.y, thumb.r * thumb.k, 0, Math.PI * 2);
+  if (thumb.k >= 0.01) ctx.arc(thumb.x, thumb.y, thumb.r * thumb.k, 0, Math.PI * 2);
+  for (const p of wallNow) {
+    ctx.moveTo(p.x + p.r, p.y);
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+  }
   ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.1 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.08 * fade).toFixed(4)})`;
   ctx.fill();
   ctx.restore();
@@ -617,8 +634,8 @@ function drawThumb(fade: number, light: boolean) {
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
-  // A second finger starts a two-finger play gesture instead.
-  if (playing() && e.pointerType === 'touch' && playTouch.size >= 1) return;
+  // A second finger starts a two-finger gesture instead (twist, freeze, play knobs).
+  if (e.pointerType === 'touch' && playTouch.size >= 1) return;
   pressAt = performance.now();
   if (settings.obstacles === 'circles' && settings.obsPlace && settings.placeWell === 'off') {
     toggleObstacle(e.offsetX, e.offsetY);
@@ -1085,9 +1102,8 @@ function step(dt: number) {
   if (fin >= 1) forceIn = null;
   const finE = fin * fin * (3 - 2 * fin);
   const obF = settings.obsForce * finE;
-  const thumbOn = thumb.k > 0.01;
-  const thumbRad = thumb.r * thumb.k;
-  const thumbReach = thumbRad + OB_MARGIN;
+  // The thumb stone and its wall: round obstacles the particles part round.
+  const stones = thumb.k > 0.01 ? [{ x: thumb.x, y: thumb.y, r: thumb.r * thumb.k }, ...wallNow] : wallNow;
   const wellF = settings.wellForce * 0.12 * finE;
   const wellReach = settings.wellRange;
   const emitting = settings.emitter !== 'none';
@@ -1491,9 +1507,13 @@ function step(dt: number) {
         }
       }
     }
-    if (thumbOn) {
-      const dx = px[i] - thumb.x;
-      const dy = py[i] - thumb.y;
+    for (let si = 0; si < stones.length; si++) {
+      const st = stones[si];
+      const dx = px[i] - st.x;
+      const dy = py[i] - st.y;
+      if (dx > st.r + OB_MARGIN || dx < -st.r - OB_MARGIN || dy > st.r + OB_MARGIN || dy < -st.r - OB_MARGIN) continue;
+      const thumbRad = st.r;
+      const thumbReach = st.r + OB_MARGIN;
       const dd = dx * dx + dy * dy;
       if (dd < thumbReach * thumbReach) {
         const dist = Math.sqrt(dd) || 1;
@@ -5915,6 +5935,14 @@ function frame(now: number) {
   audio.vox = settings.audioVox;
   audio.sync = settings.audioSync;
   audio.update(now);
+  if (dropNow) {
+    // Double-tap: the music's drop, on demand.
+    dropNow = false;
+    const L = audio.levels;
+    L.drop = true;
+    L.dropEnv = 1;
+    L.tension = 0;
+  }
   badgeTick();
   if (!frozen) {
     updateGlyphs();
@@ -6450,6 +6478,16 @@ function vibePicker() {
     },
   });
 }
+// Next / previous vibe in the gallery's family and order, None first.
+function stepVibe(d: number) {
+  const list = vibeList();
+  const v = currentVibe();
+  const i = v && !vibeIsOff() ? list.indexOf(v) : -1;
+  const n = list.length + 1;
+  const j = ((i + 1 + d + n) % n) - 1;
+  if (j < 0) vibeNone();
+  else applyVibe(list[j]);
+}
 // ‹ Vibe › : step through the vibes (in the gallery's family and order), None first.
 function renderVibeStep() {
   const el = document.createElement('div');
@@ -6457,13 +6495,7 @@ function renderVibeStep() {
   el.innerHTML = '<button type="button" aria-label="Previous vibe">‹</button><div><b></b><span></span></div><button type="button" aria-label="Next vibe">›</button>';
   const [prev, mid, next] = [...el.children] as HTMLElement[];
   const step = (d: number) => {
-    const list = vibeList();
-    const v = currentVibe();
-    const i = v && !vibeIsOff() ? list.indexOf(v) : -1;
-    const n = list.length + 1;
-    const j = ((i + 1 + d + n) % n) - 1;
-    if (j < 0) vibeNone();
-    else applyVibe(list[j]);
+    stepVibe(d);
     draw();
   };
   prev.addEventListener('click', () => step(-1));
@@ -6800,6 +6832,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'playTwo', label: 'Drag up / down', options: PLAYABLE },
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
   { kind: 'note', text: 'A quick sideways swipe plays the previous or next scene, a quick swipe up shuffles. Tap near the bottom edge for the bar.' },
+  { kind: 'note', text: 'Anywhere: double-tap fires the drop. Twist two fingers to turn the spiral twirl, hold two fingers still to freeze. Swipe three fingers sideways for the next vibe, tap with three fingers to set the tempo. With Thumb in the stream, dragging leaves a wall that melts away.' },
   { kind: 'section', id: 'links', label: 'Connections', tab: 'presets',
     about: 'Link any input (music, face, hands, body, pointer) to any action or amount.',
     lock: ['links'],
@@ -12382,7 +12415,8 @@ function stopWatching() {
   canvas.addEventListener('pointerdown', (e) => {
     // The field showing on its own (menu and overview closed), on a phone.
     const bare = sheetMode() && panel.classList.contains('collapsed') && !ovEl && !document.body.classList.contains('solo');
-    sw = bare ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
+    // A second finger makes it a multi-finger gesture, not a scene swipe.
+    sw = bare && !playTouch.size ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
   });
   canvas.addEventListener('pointerup', (e) => {
     if (!sw) return;
@@ -16139,7 +16173,7 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   if (!playTouch.has(e.pointerId)) return;
   playTouch.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (!twoStart || playTouch.size !== 2) return;
+  if (!twoStart || playTouch.size !== 2 || twist?.on) return;
   const g = twoGeom();
   const dy = (twoStart.cy - g.cy) / (stage.clientHeight * 0.55);
   const pinch = Math.log2(g.d / twoStart.d) * 0.35;
@@ -16153,6 +16187,101 @@ const twoEnd = (e: PointerEvent) => {
 };
 canvas.addEventListener('pointerup', twoEnd);
 canvas.addEventListener('pointercancel', twoEnd);
+// More touch gestures on the field (any mode):
+// - double-tap: the drop, now (with music: your drop reactions; without: a burst)
+// - two fingers twisting: the Lens spiral twirl, like a dial
+// - two fingers held still: freeze until you lift
+// - three fingers swiping sideways: previous / next vibe
+// - three fingers tapping together: tap tempo
+let dropNow = false;
+let twist: { a0: number; base: number; on: boolean } | null = null;
+const fingers = new Map<number, { x0: number; y0: number; x: number; y: number }>();
+let gest = { t0: 0, most: 0, moved: 0, dx: [] as number[] };
+let lastTap = { t: 0, x: 0, y: 0 };
+let freezeTimer = 0;
+let frozeByHold = false;
+const twoAngle = () => {
+  const [a, b] = [...fingers.values()];
+  return Math.atan2(b.y - a.y, b.x - a.x);
+};
+function fireDrop(x: number, y: number) {
+  if (reacting()) dropNow = true;
+  else {
+    const [ux, uy] = unspin(x, y);
+    explode(ux, uy, 1.2 * settings.clickForce);
+    addWave('shockwave', x, y, { force: 1.5 * settings.clickForce });
+  }
+  showToast('Drop');
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch') return;
+  if (!fingers.size) gest = { t0: performance.now(), most: 0, moved: 0, dx: [] };
+  fingers.set(e.pointerId, { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY });
+  gest.most = Math.max(gest.most, fingers.size);
+  clearTimeout(freezeTimer);
+  twist = null;
+  if (fingers.size === 2) {
+    twist = { a0: twoAngle(), base: settings.lensTwirl, on: false };
+    freezeTimer = window.setTimeout(() => {
+      if (fingers.size !== 2 || gest.moved > 14 || twist?.on || paused) return;
+      frozeByHold = true;
+      togglePause();
+      showToast('Frozen · lift to go on');
+    }, 450);
+  }
+});
+canvas.addEventListener('pointermove', (e) => {
+  const f = fingers.get(e.pointerId);
+  if (!f) return;
+  f.x = e.clientX;
+  f.y = e.clientY;
+  gest.moved = Math.max(gest.moved, Math.hypot(f.x - f.x0, f.y - f.y0));
+  if (fingers.size !== 2 || !twist) return;
+  let rot = twoAngle() - twist.a0;
+  rot = Math.atan2(Math.sin(rot), Math.cos(rot));
+  if (!twist.on && Math.abs(rot) > 0.3 && !frozeByHold) {
+    twist.on = true;
+    clearTimeout(freezeTimer);
+    showToast('Twist: spiral twirl');
+  }
+  // Half a turn clockwise takes the twirl from off to full.
+  if (twist.on) set('lensTwirl', Math.round(clamp01(twist.base + rot / Math.PI) * 100) / 100);
+});
+const fingerUp = (e: PointerEvent) => {
+  const f = fingers.get(e.pointerId);
+  if (!f) return;
+  fingers.delete(e.pointerId);
+  gest.dx.push(f.x - f.x0);
+  if (fingers.size < 2) {
+    clearTimeout(freezeTimer);
+    twist = null;
+    if (frozeByHold) {
+      frozeByHold = false;
+      if (paused) togglePause();
+    }
+  }
+  if (fingers.size || e.type === 'pointercancel') return;
+  const dur = performance.now() - gest.t0;
+  if (gest.most === 3 && gest.dx.length >= 3) {
+    const dx = gest.dx.reduce((a, b) => a + b, 0) / gest.dx.length;
+    if (Math.abs(dx) > 60 && dur < 800) {
+      stepVibe(dx < 0 ? 1 : -1);
+      showToast(`Vibe: ${vibeIsOff() ? 'Off' : vibeLabel() || 'None'}`);
+      refresh();
+    } else if (gest.moved < 20 && dur < 400) {
+      tapTempo();
+      showToast(tapRun.length >= 2 ? `Tempo ${tl.bpm} BPM` : 'Tap tempo: keep tapping with three fingers');
+    }
+  } else if (gest.most === 1 && gest.moved < 12 && dur < 260) {
+    const now = performance.now();
+    if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      lastTap.t = 0;
+      fireDrop(e.offsetX, e.offsetY);
+    } else lastTap = { t: now, x: e.clientX, y: e.clientY };
+  }
+};
+canvas.addEventListener('pointerup', fingerUp);
+canvas.addEventListener('pointercancel', fingerUp);
 // Listen on the window, not the canvas, so the wheel still turns a knob while
 // the pointer sits over a knob zone, a toast or the HUD. Only the menu keeps
 // its own scrolling. Every wheel over the field is cancelled, which (with
