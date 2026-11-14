@@ -14807,11 +14807,11 @@ function pick<T>(xs: readonly T[]): T {
 // for less (so rare ones come up), and the screen is checked a moment later:
 // nearly blank or washed out, it quietly rolls again.
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
-const REMIX_TABS: string[] = ['shape', 'motion', 'look'];
+const REMIX_TABS: string[] = ['shape', 'motion', 'look', 'fx'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set(['placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
+const REMIX_SKIP = new Set(['placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick']);
 // How often a switchable card is on in a remix.
-const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85 };
+const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85, gfxlight: 0.35, gfxfeed: 0.15, gfxlens: 0.2, gfxsurface: 0.12, gfxgrade: 0.25 };
 const REMIX_KEY = 'particle-field:remix';
 let remixCardList: RemixCard[] | null = null;
 // Scenes usable as donors: not ones that need your camera, a drawing or an image.
@@ -15013,7 +15013,8 @@ function shuffle(again?: unknown) {
     const P = upgradeShape(prev) as Record<string, unknown>;
     const D = DEFAULTS as unknown as Record<string, unknown>;
     const locked = new Set<string>(lockedKeys());
-    for (const k of [...SCENE_INPUT_KEYS, ...MUSIC_KEYS]) {
+    // (and its moving settings, unless you changed them)
+    for (const k of [...SCENE_INPUT_KEYS, ...MUSIC_KEYS, 'anim']) {
       if (k in patch || locked.has(k) || !(k in P) || P[k] === D[k] || S[k] !== P[k]) continue;
       S[k] = D[k];
       keys.add(k as keyof Settings);
