@@ -1764,6 +1764,7 @@ imageInput.addEventListener('change', () => {
         shapeImage = big;
         shapeKey = '';
         buildShape();
+        imageColoursOn();
       };
       big.src = c.toDataURL('image/png');
       return;
@@ -1771,9 +1772,18 @@ imageInput.addEventListener('change', () => {
     shapeImage = img;
     shapeKey = '';
     buildShape();
+    imageColoursOn();
   };
   img.src = URL.createObjectURL(f);
 });
+
+// A new image: its particles take the image's own colours (Undo keeps the old).
+function imageColoursOn() {
+  const prev = settings.colorBy;
+  if (prev === 'image') return buildShades();
+  set('colorBy', 'image');
+  showToast('Particles take the image\u2019s colours', ['Undo', () => set('colorBy', prev)]);
+}
 
 // --- camera ----------------------------------------------------------------------
 // The camera can be the shape (face tracking, a body cut-out or the plain
@@ -2952,6 +2962,46 @@ function camShade(i: number) {
   return camRank[gy * CG_W + gx];
 }
 
+// Image colours: like camera colours, for an uploaded image. Sampled once
+// when the shape is built: the image's colours ranked by brightness become
+// the shades, and each particle takes the shade of its home spot.
+let imgShades: Rgb[] | null = null;
+let imgCol: { rank: Float32Array; iw: number; ih: number; ix: number; iy: number; step: number } | null = null;
+function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, iy: number, step: number) {
+  const N = iw * ih;
+  const lum = new Float32Array(N);
+  for (let k = 0; k < N; k++) lum[k] = d[k * 4] * 0.299 + d[k * 4 + 1] * 0.587 + d[k * 4 + 2] * 0.114 + (d[k * 4 + 3] < 60 ? -999 : 0);
+  // Fully see-through pixels don't count (a logo's empty background).
+  const order = Array.from({ length: N }, (_, k) => k).filter((k) => lum[k] > -500).sort((a, b) => lum[a] - lum[b]);
+  const rank = new Float32Array(N).fill(-1);
+  const shades: Rgb[] = [];
+  const per = Math.max(1, order.length / SHADES);
+  for (let s = 0; s < SHADES; s++) {
+    let r = 0, g = 0, bl = 0, c = 0;
+    for (let q = Math.floor(s * per); q < Math.min(order.length, Math.floor((s + 1) * per)); q++) {
+      const k = order[q];
+      r += d[k * 4];
+      g += d[k * 4 + 1];
+      bl += d[k * 4 + 2];
+      c++;
+      rank[k] = s / SHADES + 0.5 / SHADES;
+    }
+    const lift = 18 * (1 - s / SHADES);
+    shades.push(c ? [r / c + lift, g / c + lift, bl / c + lift] : shades[s - 1] ?? [128, 128, 128]);
+  }
+  imgShades = shades;
+  imgCol = { rank, iw, ih, ix, iy, step };
+  if (settings.colorBy === 'image') buildShades();
+}
+function imgShade(i: number) {
+  const c = imgCol;
+  if (!c || !imgShades || settings.shape !== 'image') return tone[i];
+  const kx = Math.max(0, Math.min(c.iw - 1, Math.floor(hx[i] / c.step) - c.ix));
+  const ky = Math.max(0, Math.min(c.ih - 1, Math.floor(hy[i] / c.step) - c.iy));
+  const r = c.rank[ky * c.iw + kx];
+  return r < 0 ? tone[i] : r;
+}
+
 // The small preview of what the camera sees.
 cam.video.className = 'cam-preview';
 let previewShown = false;
@@ -3077,6 +3127,7 @@ function sampleImage(): [number, number][] {
     lum[k] = (0.299 * d[k * 4] + 0.587 * d[k * 4 + 1] + 0.114 * d[k * 4 + 2]) / 255;
     alpha[k] = d[k * 4 + 3] / 255;
   }
+  if (!camOn) imageColours(d, iw, ih, ix, iy, step);
   const wt = new Float32Array(N);
   const subject = () => {
     // Pixels that differ from the corner colour (the background).
@@ -3958,8 +4009,9 @@ function buildShades() {
   spriteCache.clear();
   scaledCache.clear();
   const stops = pal().stops;
-  if (settings.colorBy === 'camera' && camShades) {
-    shadeRgb = camShades.map((c) => c.map((v) => Math.min(255, v)) as Rgb);
+  const own = settings.colorBy === 'camera' ? camShades : settings.colorBy === 'image' && settings.shape === 'image' ? imgShades : null;
+  if (own) {
+    shadeRgb = own.map((c) => c.map((v) => Math.min(255, v)) as Rgb);
     shades = shadeRgb.map(([r, g, b]) => `rgb(${r.toFixed(0)} ${g.toFixed(0)} ${b.toFixed(0)})`);
     return;
   }
@@ -4047,6 +4099,9 @@ function shadeIndex(i: number) {
     }
     case 'camera':
       u = cam.on ? camShade(i) : tone[i];
+      break;
+    case 'image':
+      u = imgShade(i);
       break;
     case 'audio':
       // Calm colours in quiet passages, the hot end of the palette on loud ones.
@@ -6133,7 +6188,7 @@ const RENDERS: [string, string][] = [
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'],
   ['mixed', 'Mixed'],
 ];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
@@ -9593,6 +9648,8 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
     camShades = null;
     camColourAt = 0;
   }
+  // Image colours come and go with the colour mode and the shape.
+  if (keys.has('colorBy') || keys.has('shape')) buildShades();
   if (keys.has('emitter') && settings.emitter !== prevEmitter) {
     prevEmitter = settings.emitter;
     emitterChanged();
