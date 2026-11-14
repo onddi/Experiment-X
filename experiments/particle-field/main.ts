@@ -12877,7 +12877,7 @@ function stopWatching() {
 // The scene rack: every setting the scene changed, playable, grouped by tab
 // and card. Tap a card's name to go to it.
 const OV_COLS: [string, Tab[]][] = [
-  ['Look', ['look']], ['Shape', ['shape']], ['Motion', ['motion']], ['Music', ['music']], ['Camera', ['camera']],
+  ['Look', ['look']], ['FX', ['fx']], ['Shape', ['shape']], ['Motion', ['motion']], ['Music', ['music']], ['Camera', ['camera']],
   ['Play', ['presets', 'timeline', 'knobs', 'record', 'links']],
 ];
 function openSection(id: string) {
