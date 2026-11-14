@@ -2618,5 +2618,15 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .seq-grid button { height: 40px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--tile); cursor: pointer; }
 .seq-grid button:active { background: #2c2f55; }
 .rack-text.seq { flex-direction: column; align-items: stretch; gap: 6px; }
+/* Scene sheet: One row. The Scenes / Vibes tabs sit in the header between ‹ and ›. */
+.ss-head > .ss-now[hidden] { display: none; }
+.scene-sheet .ss-head { gap: 6px; }
+.scene-sheet .ss-head > button { width: 38px; }
+.scene-sheet .ss-head .ss-tabs { flex: 1; min-width: 0; display: flex; gap: 2px; padding: 3px; border: 0; border-radius: 12px; background: var(--tile); }
+.scene-sheet .ss-head .ss-tabs button { flex: 1 1 0; width: auto; min-width: 0; height: 34px; padding: 0 8px; gap: 6px; justify-content: center; border-radius: 9px; background: none; font-size: 13px; }
+.scene-sheet .ss-head .ss-tabs button.on { flex-grow: 1.6; background: var(--accent-bg); }
+.scene-sheet .ss-head .ss-tabs button svg { width: 14px; height: 14px; }
+.scene-sheet .ss-head .ss-tabs button small { display: none; }
+.scene-sheet .ss-head .ss-tabs button b { font-size: 13px; }
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }

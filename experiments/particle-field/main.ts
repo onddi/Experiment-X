@@ -15925,12 +15925,15 @@ function toggleSceneSheet() {
     });
     tabsEl.append(b);
   }
-  el.querySelector('.ss-head')!.after(tabsEl);
+  // One row: ‹ [Scenes · name | Vibes · name] › ⌄ ✕. The tabs name the picks.
+  const nowEl = el.querySelector<HTMLElement>('.ss-now')!;
+  nowEl.hidden = true;
+  nowEl.after(tabsEl);
   const lookB = el.querySelector<HTMLButtonElement>('.ss-look')!;
   const onB = el.querySelector<HTMLButtonElement>('.ss-von')!;
   // The switches sit right under the tabs, before the vibe families.
   const micB = el.querySelector<HTMLButtonElement>('.ss-mic')!;
-  tabsEl.after(micB, onB, lookB);
+  el.querySelector('.ss-head')!.after(micB, onB, lookB);
   micB.addEventListener('click', () => {
     micB.disabled = true;
     micB.querySelector('b')!.textContent = 'Asking for the microphone…';
