@@ -307,12 +307,15 @@ export interface Settings {
   gfxSpread: number;
   gfxSplit: number;
   gfxRays: number;
-  gfxFeedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt';
+  gfxFlare: number;
+  gfxTint: 'white' | 'warm' | 'cool' | 'pink' | 'green';
+  gfxBloomKick: boolean;
+  gfxFeedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt' | 'spiral' | 'spread';
   gfxZoom: number;
   gfxSpin: number;
   gfxFlow: number;
   gfxLength: number;
-  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort';
+  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad';
   gfxLensSize: number;
   gfxBend: number;
   gfxShock: number;
@@ -320,13 +323,28 @@ export interface Settings {
   gfxLensMix: number;
   gfxFollow: 'finger' | 'wander' | 'centre';
   gfxCount: number;
-  gfxSurface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic';
+  gfxSurface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic' | 'stitch' | 'lego' | 'vhs' | 'oil' | 'neon';
   gfxCell: number;
   gfxSurfMix: number;
-  gfxGrade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono';
+  gfxGrade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono' | 'scene';
   gfxGradeAmt: number;
   gfxGrain: number;
   gfxVignette: number;
+  gfxPoster: number;
+  gfxHueCycle: number;
+  gfxInvertDrop: boolean;
+  gfxDisplace: number;
+  gfxHaze: number;
+  gfxEcho: number;
+  gfxEchoDelay: number;
+  gfxEchoSpread: number;
+  gfxGlitch: number;
+  gfxGlitchOn: 'snare' | 'kick' | 'random' | 'always';
+  gfxGlitchBlock: number;
+  gfxLightBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
+  gfxFeedBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
+  gfxLensBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
+  gfxSurfBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
   gfxKick: number;
   audioKaleidoDrop: boolean;
   audioEcho: number;
@@ -669,6 +687,9 @@ export const DEFAULTS: Settings = {
   gfxSpread: 0.55,
   gfxSplit: 0,
   gfxRays: 0,
+  gfxFlare: 0,
+  gfxTint: 'white',
+  gfxBloomKick: false,
   gfxFeedback: 'off',
   gfxZoom: 0.5,
   gfxSpin: 0.35,
@@ -689,6 +710,21 @@ export const DEFAULTS: Settings = {
   gfxGradeAmt: 0.8,
   gfxGrain: 0,
   gfxVignette: 0,
+  gfxPoster: 0,
+  gfxHueCycle: 0,
+  gfxInvertDrop: false,
+  gfxDisplace: 0,
+  gfxHaze: 0,
+  gfxEcho: 0,
+  gfxEchoDelay: 6,
+  gfxEchoSpread: 0.3,
+  gfxGlitch: 0,
+  gfxGlitchOn: 'snare',
+  gfxGlitchBlock: 0.5,
+  gfxLightBy: 'kick',
+  gfxFeedBy: 'kick',
+  gfxLensBy: 'kick',
+  gfxSurfBy: 'kick',
   gfxKick: 0.6,
   audioKaleidoDrop: false,
   audioEcho: 0,

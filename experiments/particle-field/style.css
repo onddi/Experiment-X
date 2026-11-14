@@ -2644,5 +2644,13 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .play-readout .pr-bar i { display: block; height: 100%; border-radius: 1px; background: #fff; }
 /* Deck rows: a long press opens the single-setting view, so it mustn't select the text (that cancels the press on iPhone). */
 .rack-row, .ov-fader-row { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.fx-looks { display: grid; gap: 8px; margin: 4px 0 8px; }
+.fx-look-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fx-look { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--tile); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.fx-look.on { border-color: var(--accent); color: var(--accent); }
+.fx-look i { font-style: normal; opacity: 0.55; padding-left: 2px; }
+.fx-look-acts { display: flex; gap: 6px; }
+.fx-look-acts button { flex: 1; height: 34px; border-radius: 10px; border: 1px dashed var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.fx-look-acts button:disabled { opacity: 0.4; cursor: default; }
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }

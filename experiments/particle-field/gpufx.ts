@@ -5,21 +5,26 @@
 // own buffer, so it keeps the look before light and surface are added.
 
 export type GpuFxParams = {
-  bloom: number; spread: number; split: number; rays: number;
-  feedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt'; zoom: number; spin: number; flow: number; length: number;
-  lens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort'; lensSize: number; bend: number; shock: number; slices: number; lensMix: number; count: number;
-  surface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic'; cell: number; surfMix: number;
-  grade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono'; gradeAmt: number; grain: number; vignette: number;
+  bloom: number; spread: number; split: number; rays: number; flare: number; tint: [number, number, number];
+  feedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt' | 'spiral' | 'spread'; zoom: number; spin: number; flow: number; length: number;
+  lens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad';
+  lensSize: number; bend: number; shock: number; slices: number; lensMix: number; count: number;
+  surface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic' | 'stitch' | 'lego' | 'vhs' | 'oil' | 'neon'; cell: number; surfMix: number;
+  grade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono' | 'scene'; gradeAmt: number; gradeA: [number, number, number]; gradeB: [number, number, number];
+  grain: number; vignette: number; poster: number; hue: number; invert: number;
+  displace: number; haze: number; echo: number; echoDelay: number; echoSpread: number; glitch: number; glitchBlock: number; glitchSeed: number;
 };
-/** ptrs: up to four glass lens centres (0–1, y up); ptr: where light rays come from. */
-export type GpuFxFrame = { t: number; kick: number; ptr: [number, number]; ptrs: number[]; wave: [number, number, number] };
+/** ptrs: up to four glass lens centres (0–1, y up); ptr: the finger (or a drifting point).
+ * kick (light), kickF (feedback, echo), kickL (lenses, displace), kickS (surface): 0..1 music pushes. */
+export type GpuFxFrame = { t: number; kick: number; kickF: number; kickL: number; kickS: number; ptr: [number, number]; ptrs: number[]; wave: [number, number, number] };
 
-const LENS_ID = { off: 0, glass: 1, shock: 2, kaleido: 3, liquid: 4, fisheye: 5, sort: 6 } as const;
-const SURF_ID = { off: 0, led: 1, halftone: 2, ascii: 3, crt: 4, thermal: 5, mosaic: 6 } as const;
-const FEED_ID = { off: 0, tunnel: 1, smear: 2, mirror: 3, melt: 4 } as const;
-const GRADE_ID = { off: 0, sunset: 1, ocean: 2, acid: 3, mono: 4 } as const;
+const LENS_ID = { off: 0, glass: 1, shock: 2, kaleido: 3, liquid: 4, fisheye: 5, sort: 6, twirl: 7, pinch: 8, bulge: 9, tilt: 10, mirrorx: 11, mirrory: 12, quad: 13 } as const;
+const SURF_ID = { off: 0, led: 1, halftone: 2, ascii: 3, crt: 4, thermal: 5, mosaic: 6, stitch: 7, lego: 8, vhs: 9, oil: 10, neon: 11 } as const;
+const FEED_ID = { off: 0, tunnel: 1, smear: 2, mirror: 3, melt: 4, spiral: 5, spread: 6 } as const;
+const GRADE_ID = { off: 0, sunset: 1, ocean: 2, acid: 3, mono: 4, scene: 5 } as const;
 // ASCII glyphs, darkest to brightest.
 const GLYPHS = ' .:-=+*#%@';
+const ECHO_SLOTS = 6;
 
 const VS = `#version 300 es
 in vec2 p; out vec2 vUv; void main(){ vUv = p * .5 + .5; gl_Position = vec4(p, 0., 1.); }`;
@@ -32,7 +37,12 @@ uniform float uT;
 float asp(){ return uRes.x / uRes.y; }
 vec2 turn(vec2 uv, float a, float z){ vec2 p = uv - .5; p.x *= asp(); float c = cos(a), s = sin(a); p = mat2(c, s, -s, c) * p / z; p.x /= asp(); return p + .5; }
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec3 hueTurn(vec3 c, float a){ const vec3 k = vec3(.57735); float co = cos(a); return c * co + cross(k, c) * sin(a) + k * dot(k, c) * (1. - co); }
 `;
+
+const FS_COPY = COMMON + `
+uniform sampler2D uSrc;
+void main(){ o = texture(uSrc, vUv); }`;
 
 // Pass 1 (only with feedback on): the picture mixed with the last frame.
 const FS_FEED = COMMON + `
@@ -43,7 +53,11 @@ void main(){
   float z = 1. + (uZoom + uKick * .5) * .05;
   if (uMode == 1) prev = texture(uPrev, turn(vUv, uSpin * .05, z));
   else if (uMode == 3) prev = texture(uPrev, turn(vec2(1. - vUv.x, vUv.y), uSpin * .05, z));
-  else if (uMode == 4) {
+  else if (uMode == 5) { prev = texture(uPrev, turn(vUv, uSpin * .05, z)); prev.rgb = max(hueTurn(prev.rgb, .05 + uKick * .1), 0.); }
+  else if (uMode == 6) {
+    vec2 e = (1.2 + uFlow * 1.5 + uKick * 2.) / uRes;
+    prev = (texture(uPrev, vUv + vec2(e.x, 0.)) + texture(uPrev, vUv - vec2(e.x, 0.)) + texture(uPrev, vUv + vec2(0., e.y)) + texture(uPrev, vUv - vec2(0., e.y))) * .25;
+  } else if (uMode == 4) {
     float col = .35 + .65 * fract(sin(floor(vUv.x * uRes.x / 3.) * 12.9898) * 43758.5453);
     prev = texture(uPrev, vUv + vec2(0., .004 * (uFlow + uKick) * col));
   } else {
@@ -53,15 +67,28 @@ void main(){
   o = max(now, prev * uLen);
 }`;
 
-// Pass 2: lenses bend where we read, light and surface change what we show,
-// the grade colours it last.
+// Pass 2: displace and lenses bend where we read, light and surface change
+// what we show, echoes and glitches join in, the grade colours it last.
 const FS_MAIN = COMMON + `
-uniform sampler2D uSrc, uGlyph;
-uniform int uLens, uSurf, uGrade, uCount;
-uniform float uBloom, uSpread, uSplit, uRays, uSize, uBend, uShock, uSlices, uLensMix, uCell, uSurfMix, uGradeAmt, uGrain, uVig, uKick;
+uniform sampler2D uSrc, uGlyph, uE0, uE1, uE2, uE3, uE4, uE5;
+uniform int uLens, uSurf, uGrade, uCount, uEcho;
+uniform float uBloom, uSpread, uSplit, uRays, uFlare, uSize, uBend, uShock, uSlices, uLensMix, uCell, uSurfMix, uGradeAmt, uGrain, uVig;
+uniform float uPoster, uHue, uInvert, uDisp, uHaze, uEchoSpread, uGlitch, uBlock, uSeed;
+uniform float uKick, uKickL, uKickS, uKickF;
+uniform vec3 uTint, uGA, uGB;
 uniform vec2 uPtr; uniform vec2 uPtrs[4]; uniform vec3 uWave;
 vec4 px(vec2 uv){ return texture(uSrc, clamp(uv, .0005, .9995)); }
 float lumOf(vec3 c){ return max(c.r, max(c.g, c.b)); }
+float lumAt(vec2 uv){ vec4 c = px(uv); return dot(c.rgb, vec3(.3, .55, .15)); }
+vec2 displace(vec2 uv){
+  if (uDisp > 0.) {
+    vec2 e = 2.5 / uRes;
+    vec2 g = vec2(lumAt(uv + vec2(e.x, 0.)) - lumAt(uv - vec2(e.x, 0.)), lumAt(uv + vec2(0., e.y)) - lumAt(uv - vec2(0., e.y)));
+    uv -= g * uDisp * .045 * (1. + uKickL);
+  }
+  if (uHaze > 0.) uv += vec2(sin(uv.y * 42. + uT * 3.1 + sin(uv.x * 9.) * 2.), cos(uv.x * 37. - uT * 2.6)) * .0025 * uHaze * (1. + uKickL);
+  return uv;
+}
 vec2 warp(vec2 uv, int lens, out vec2 fringe, out float rim){
   fringe = vec2(0.); rim = 0.;
   if (lens == 3) {
@@ -71,7 +98,7 @@ vec2 warp(vec2 uv, int lens, out vec2 fringe, out float rim){
     return p * .9 + vec2(.5, .42);
   }
   if (lens == 1) {
-    float r = uSize * .22 * (1. + uKick * .15) / (1. + float(uCount - 1) * .25);
+    float r = uSize * .22 * (1. + uKickL * .15) / (1. + float(uCount - 1) * .25);
     for (int i = 0; i < 4; i++) {
       if (i >= uCount) break;
       vec2 c0 = uPtrs[i], d = uv - c0; d.x *= asp(); float l = length(d);
@@ -93,23 +120,48 @@ vec2 warp(vec2 uv, int lens, out vec2 fringe, out float rim){
     return uv - n * w * .05 * uShock;
   }
   if (lens == 4) {
-    float a = uShock * (1. + uKick * 1.5);
+    float a = uShock * (1. + uKickL * 1.5);
     vec2 o2 = vec2(sin(uv.y * 9. + uT * 1.3 + sin(uv.x * 5. + uT * .7) * 1.5), cos(uv.x * 8. - uT * 1.1 + sin(uv.y * 6. - uT * .5) * 1.5));
     fringe = o2 * .002 * a;
     return uv + o2 * .012 * a;
   }
   if (lens == 5) {
-    vec2 p = uv - .5; p.x *= asp(); float r2 = dot(p, p), k = uShock * .45 * (1. + uKick * .3);
+    vec2 p = uv - .5; p.x *= asp(); float r2 = dot(p, p), k = uShock * .45 * (1. + uKickL * .3);
     p *= (1. - k * .55) + k * r2 * 1.6; p.x /= asp();
     fringe = p * .01 * k;
     return p + .5;
   }
+  if (lens == 7 || lens == 8 || lens == 9) {
+    vec2 d = uv - uPtr; d.x *= asp(); float r = length(d);
+    if (lens == 7) {
+      float a = uShock * 2.6 * (1. + uKickL * .6) * pow(1. - smoothstep(0., .5, r), 2.);
+      float c = cos(a), s = sin(a); d = mat2(c, s, -s, c) * d;
+    } else {
+      float k = smoothstep(.38, 0., r) * (1. + uKickL * .4);
+      d *= lens == 8 ? 1. + k * uShock * .6 : 1. - k * uShock * .42;
+    }
+    d.x /= asp();
+    return uPtr + d;
+  }
+  if (lens == 11) return vec2(.5 - abs(uv.x - .5), uv.y);
+  if (lens == 12) return vec2(uv.x, .5 + abs(uv.y - .5));
+  if (lens == 13) return vec2(.5 - abs(uv.x - .5), .5 + abs(uv.y - .5));
   return uv;
 }
 vec4 shade(vec2 uv, int lens){
   vec2 fringe; float rim;
-  vec2 q = warp(uv, lens, fringe, rim);
+  vec2 q = warp(displace(uv), lens, fringe, rim);
   vec4 c = px(q);
+  if (lens == 10) {
+    // Tilt-shift: sharp along a band at your finger's height, soft above and below.
+    float amt = smoothstep(.05, .32, abs(q.y - uPtr.y)) * uShock;
+    if (amt > .01) {
+      vec4 acc = c;
+      for (int i = 1; i < 14; i++) { float fi = float(i), a = fi * 2.39996, r = sqrt(fi / 14.) * amt * .016; acc += px(q + vec2(cos(a) / asp(), sin(a)) * r); }
+      c = acc / 14.;
+    }
+    float l = dot(c.rgb, vec3(.3, .55, .15)); c.rgb = max(mix(vec3(l) * c.a, c.rgb, 1.3), 0.);
+  }
   if (uSplit > 0. || fringe != vec2(0.)) {
     vec2 d = q - .5; vec2 s = d * uSplit * .018 * (.3 + length(d) * 2.) * (1. + uKick * 3.) + fringe;
     c.r = px(q + s).r; c.b = px(q - s).b;
@@ -120,7 +172,7 @@ vec4 shade(vec2 uv, int lens){
       float fi = float(i), a = fi * 2.39996, r = sqrt(fi / 28.) * uSpread * .09;
       acc += max(px(q + vec2(cos(a) / asp(), sin(a)) * r).rgb - .28, 0.) * (1.2 - fi / 28.);
     }
-    vec3 x = (c.rgb * 1.15 + acc / 28. * uBloom * (9. + uKick * 6.)) * 1.1;
+    vec3 x = (c.rgb * 1.15 + acc / 28. * uTint * uBloom * (9. + uKick * 6.)) * 1.1;
     vec3 tm = clamp((x * (2.51 * x + .03)) / (x * (2.43 * x + .59) + .14), 0., 1.);
     // Ease in: a little bloom is a little glow, not the whole look at once.
     float amt = min(uBloom, 1.);
@@ -133,13 +185,38 @@ vec4 shade(vec2 uv, int lens){
     vec3 add = acc * uRays * .12 * (1. + uKick * 1.5);
     c.rgb += add; c.a = max(c.a, min(1., lumOf(add)));
   }
+  if (uFlare > 0.) {
+    // Anamorphic flare: bright spots stretched into long horizontal streaks.
+    vec3 acc = vec3(0.);
+    for (int i = 1; i <= 16; i++) {
+      float fi = float(i), dx = fi * fi * .0016, w = 1. - fi / 17.;
+      acc += (max(px(q + vec2(dx, 0.)).rgb - .45, 0.) + max(px(q - vec2(dx, 0.)).rgb - .45, 0.)) * w;
+    }
+    float l = dot(acc, vec3(.33));
+    vec3 add = l * mix(vec3(.45, .7, 1.2), uTint, step(.01, abs(uTint.r - 1.) + abs(uTint.g - 1.) + abs(uTint.b - 1.))) * uFlare * .22 * (1. + uKick);
+    c.rgb += add; c.a = max(c.a, min(1., lumOf(add)));
+  }
   c.rgb += rim; c.a = max(c.a, rim);
   return c;
+}
+vec4 echoes(vec2 uv){
+  vec4 acc = vec4(0.);
+  if (uEcho < 1) return acc;
+  float n = float(uEcho);
+  for (int i = 1; i <= 6; i++) {
+    if (i > uEcho) break;
+    float fi = float(i);
+    vec2 p = (uv - .5) / (1. + fi * uEchoSpread * .035 * (1. + uKickF)) + .5;
+    vec4 e = i == 1 ? texture(uE0, p) : i == 2 ? texture(uE1, p) : i == 3 ? texture(uE2, p) : i == 4 ? texture(uE3, p) : i == 5 ? texture(uE4, p) : texture(uE5, p);
+    e.rgb = max(hueTurn(e.rgb, fi * 1.05), 0.);
+    acc = max(acc, e * (1. - fi / (n + 1.)) * .85);
+  }
+  return acc;
 }
 vec4 picture(vec2 uv){
   vec4 c = shade(uv, uLens);
   if (uLens == 3 && uLensMix < 1.) c = mix(shade(uv, 0), c, uLensMix);
-  return c;
+  return max(c, echoes(uv));
 }
 vec3 thermal(float l){
   vec3 a = mix(vec3(0., 0., .1), vec3(.3, 0., .6), smoothstep(0., .25, l));
@@ -198,18 +275,99 @@ vec4 surface(vec2 uv){
     float grout = smoothstep(.02, .08, d2 - d1);
     return vec4(c.rgb * (.85 + .15 * (1. - d1)) * grout, c.a * grout);
   }
+  if (uSurf == 7) {
+    // Cross-stitch: an X of thread per cell, on dark cloth.
+    vec2 id = floor(p / uCell), f = fract(p / uCell);
+    vec4 c = picture((id + .5) * uCell / uRes);
+    float d = min(abs(f.x - f.y), abs(f.x + f.y - 1.));
+    float th = smoothstep(.2, .1, d) * step(.04, lumOf(c.rgb));
+    float sheen = .75 + .25 * sin((f.x + f.y) * 18.);
+    vec3 cloth = vec3(.06, .055, .05) * (.8 + .2 * hash(id));
+    return vec4(mix(cloth, c.rgb / max(c.a, .05) * sheen, th), 1.);
+  }
+  if (uSurf == 8) {
+    // Bricks: square tiles with a bevel and a stud on top.
+    float sz = uCell * 1.4; vec2 id = floor(p / sz), f = fract(p / sz);
+    vec4 c = picture((id + .5) * sz / uRes);
+    vec3 col = c.a > .03 ? floor(c.rgb / max(c.a, .05) * 5. + .5) / 5. : vec3(.05, .05, .07);
+    float edge = min(min(f.x, f.y), min(1. - f.x, 1. - f.y));
+    float bevel = 1. - smoothstep(.1, 0., edge) * .4 + smoothstep(.1, 0., min(f.x, 1. - f.y)) * .25;
+    float r = length(f - .5), stud = smoothstep(.3, .27, r);
+    float lit = stud * (.12 + .25 * smoothstep(.27, .2, length(f - vec2(.42, .58)))) - smoothstep(.27, .3, r) * smoothstep(.36, .3, r) * .2;
+    lit *= .2 + .8 * clamp(lumOf(col) * 3., 0., 1.);
+    return vec4(col * bevel + lit, 1.);
+  }
+  if (uSurf == 9) {
+    // VHS: wobble, colour bleed, a tracking band and tape noise.
+    float line = floor(p.y / 2.);
+    vec2 q = uv + vec2(sin(uv.y * 3. + uT * 2.) * .002 + (hash(vec2(line, floor(uT * 30.))) - .5) * .0015, 0.);
+    float band = fract(uT * .11 + uKickS * .05), inBand = smoothstep(.04, 0., abs(uv.y - (1. - band)));
+    q.x += inBand * (.02 + hash(vec2(line, uT)) * .02);
+    vec4 c = picture(q);
+    c.r = mix(c.r, px(q + vec2(.005, 0.)).r, .6); c.b = mix(c.b, px(q - vec2(.005, 0.)).b, .6);
+    float l = dot(c.rgb, vec3(.3, .55, .15)); c.rgb = mix(vec3(l) * c.a, c.rgb, .8);
+    c.rgb *= .9 + .1 * sin(p.y * 1.6);
+    float noise = inBand * hash(p + uT) * .5 + step(.985, hash(vec2(line, floor(uT * 12.)))) * .25 + smoothstep(.03, 0., uv.y) * hash(p * .5 + uT) * .6;
+    return vec4(c.rgb + noise, max(c.a, noise));
+  }
+  if (uSurf == 10) {
+    // Oil paint (Kuwahara): each pixel takes the calmest of four neighbourhoods.
+    vec2 st = max(1., uCell / 6.) / uRes;
+    vec3 m0 = vec3(0.), m1 = vec3(0.), m2 = vec3(0.), m3 = vec3(0.), s0 = vec3(0.), s1 = vec3(0.), s2 = vec3(0.), s3 = vec3(0.);
+    for (int j = 0; j <= 3; j++) for (int i = 0; i <= 3; i++) {
+      vec2 o2 = vec2(float(i), float(j)) * st;
+      vec3 a = px(uv + vec2(-o2.x, -o2.y)).rgb, b = px(uv + vec2(o2.x, -o2.y)).rgb, cc = px(uv + vec2(-o2.x, o2.y)).rgb, d = px(uv + o2).rgb;
+      m0 += a; s0 += a * a; m1 += b; s1 += b * b; m2 += cc; s2 += cc * cc; m3 += d; s3 += d * d;
+    }
+    m0 /= 16.; m1 /= 16.; m2 /= 16.; m3 /= 16.;
+    float v0 = dot(s0 / 16. - m0 * m0, vec3(1.)), v1 = dot(s1 / 16. - m1 * m1, vec3(1.)), v2 = dot(s2 / 16. - m2 * m2, vec3(1.)), v3 = dot(s3 / 16. - m3 * m3, vec3(1.));
+    vec3 col = m0; float v = v0;
+    if (v1 < v) { v = v1; col = m1; } if (v2 < v) { v = v2; col = m2; } if (v3 < v) { col = m3; }
+    // Sparse scenes would paint over their own dots, so the brightest stroke still shows through.
+    vec3 hi = max(max(m0, m1), max(m2, m3)); col = max(col, hi * .75);
+    col = mix(col * 1.05, 1. - exp(-col * 3.2), 1. - smoothstep(.05, .3, lumOf(col)));
+    return vec4(col, min(1., lumOf(col) * 2.));
+  }
+  if (uSurf == 11) {
+    // Neon outline: only the edges glow, in their own colour.
+    vec2 e = max(1., uCell / 6.) / uRes;
+    float tl = lumAt(uv + vec2(-e.x, e.y)), t = lumAt(uv + vec2(0., e.y)), tr = lumAt(uv + e), l = lumAt(uv - vec2(e.x, 0.)), r = lumAt(uv + vec2(e.x, 0.));
+    float bl = lumAt(uv - e), b = lumAt(uv - vec2(0., e.y)), br = lumAt(uv + vec2(e.x, -e.y));
+    vec2 g = vec2(tr + 2. * r + br - tl - 2. * l - bl, tl + 2. * t + tr - bl - 2. * b - br);
+    float edge = smoothstep(.04, .35, length(g));
+    vec4 c = picture(uv);
+    vec3 col = c.rgb / max(max(c.r, max(c.g, c.b)), .05);
+    return vec4(col * edge + c.rgb * .06, max(edge, c.a * .06));
+  }
   return picture(uv);
 }
 vec3 gradeOf(float l){
   if (uGrade == 1) return mix(vec3(.07, .01, .12), vec3(1., .6, .24), l);
   if (uGrade == 2) return mix(vec3(0., .04, .09), vec3(.37, .95, 1.), l);
   if (uGrade == 3) return mix(vec3(.05, 0., .1), vec3(.78, 1., 0.), l);
+  if (uGrade == 5) return mix(uGA, uGB, l);
   return vec3(l);
 }
 void main(){
   vec2 uv = vUv;
+  float gl = uGlitch;
+  if (gl > 0.) {
+    // Glitch: bands slide sideways, blocks jump.
+    float rows = mix(48., 7., uBlock), band = floor(uv.y * rows);
+    if (hash(vec2(band, uSeed)) < .4 * gl) uv.x += (hash(vec2(band, uSeed + 1.)) - .5) * .3 * gl;
+    vec2 cell = floor(uv * vec2(6., 10.) * mix(2.5, .7, uBlock));
+    if (hash(cell + uSeed * 3.1) < .07 * gl) uv += (vec2(hash(cell + uSeed), hash(cell - uSeed)) - .5) * .12 * gl;
+    uv = fract(uv);
+  }
   vec4 c = uSurf == 0 ? picture(uv) : surface(uv);
+  if (uSurf != 0) c.rgb *= 1. + uKickS * .35;
   if (uSurf != 0 && uSurfMix < 1.) c = mix(picture(uv), c, uSurfMix);
+  if (gl > .05) {
+    float off = .015 * gl * (hash(vec2(floor(uv.y * 30.), uSeed)) - .3);
+    c.r = max(c.r * .6, px(uv + vec2(off, 0.)).r); c.b = max(c.b * .6, px(uv - vec2(off, 0.)).b);
+    float tear = step(1. - .015 * gl, hash(vec2(floor(uv.y * uRes.y / 2.), uSeed)));
+    c = max(c, vec4(vec3(tear * .8), tear * .8));
+  }
   if (uLens == 6) {
     // Pixel sort: bright pixels drip down in streaks of uneven length.
     float col = hash(vec2(floor(uv.x * uRes.x / 2.), 3.1)), stepY = .0045 * uShock * (.4 + col);
@@ -221,11 +379,17 @@ void main(){
     }
     c = max(c, acc);
   }
+  if (uHue != 0.) c.rgb = max(hueTurn(c.rgb, uHue), 0.);
   if (uGrade != 0 && uGradeAmt > 0.) {
     vec3 rgb = c.rgb / max(c.a, 1e-3);
     float l = dot(rgb, vec3(.3, .55, .15));
     c.rgb = mix(c.rgb, gradeOf(clamp(l, 0., 1.)) * c.a, uGradeAmt);
   }
+  if (uPoster > 1.) {
+    vec3 rgb = c.rgb / max(c.a, 1e-3);
+    c.rgb = floor(rgb * uPoster + .5) / uPoster * c.a;
+  }
+  if (uInvert > 0.) c = mix(c, vec4(vec3(1.) - c.rgb, 1.), uInvert);
   if (uGrain > 0.) {
     float n = (hash(uv * uRes + fract(uT * 7.3) * 91.) - .5) * uGrain * .35;
     c.rgb = max(c.rgb + n * max(c.a, .3), 0.); c.a = max(c.a, max(n, 0.));
@@ -244,6 +408,13 @@ export class GpuFx {
   private gl: WebGL2RenderingContext | null;
   private feed!: WebGLProgram;
   private main!: WebGLProgram;
+  private copy!: WebGLProgram;
+  private echoes: { f: WebGLFramebuffer; t: WebGLTexture }[] = [];
+  private echoHead = 0;
+  private echoFrame = 0;
+  private echoFresh = true;
+  private ew = 0;
+  private eh = 0;
   private u = new Map<string, WebGLUniformLocation | null>();
   private src!: WebGLTexture;
   private glyph!: WebGLTexture;
@@ -297,6 +468,7 @@ export class GpuFx {
     try {
       this.feed = this.prog(FS_FEED, 'feed');
       this.main = this.prog(FS_MAIN, 'main');
+      this.copy = this.prog(FS_COPY, 'copy');
     } catch (e) {
       console.warn('GPU looks unavailable:', e);
       return false;
@@ -320,6 +492,7 @@ export class GpuFx {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, a);
     for (let i = 0; i < 2; i++) this.bufs.push({ f: gl.createFramebuffer()!, t: this.tex() });
+    for (let i = 0; i < ECHO_SLOTS; i++) this.echoes.push({ f: gl.createFramebuffer()!, t: this.tex() });
     return true;
   }
 
@@ -343,9 +516,30 @@ export class GpuFx {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
+  // Echo frames are kept at half size: six of them, one every few frames.
+  private echoSize(w: number, h: number) {
+    const gl = this.gl!;
+    const ew = Math.max(1, w >> 1);
+    const eh = Math.max(1, h >> 1);
+    if (this.ew === ew && this.eh === eh && !this.echoFresh) return;
+    this.ew = ew;
+    this.eh = eh;
+    this.echoFresh = false;
+    for (const b of this.echoes) {
+      gl.bindTexture(gl.TEXTURE_2D, b.t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, ew, eh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, b.f);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, b.t, 0);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
   /** Forget the feedback trail (after a big jump such as a scene change). */
   reset() {
     this.fresh = true;
+    this.echoFresh = true;
   }
 
   render(source: HTMLCanvasElement, P: GpuFxParams, F: GpuFxFrame) {
@@ -387,13 +581,52 @@ export class GpuFx {
       gl.uniform1f(u('feed.uSpin'), P.spin);
       gl.uniform1f(u('feed.uFlow'), P.flow);
       gl.uniform1f(u('feed.uLen'), P.length);
-      gl.uniform1f(u('feed.uKick'), F.kick);
+      gl.uniform1f(u('feed.uKick'), F.kickF);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       this.flip = 1 - this.flip;
       input = next.t;
     } else this.fresh = true;
+    const echo = Math.max(0, Math.min(ECHO_SLOTS, Math.round(P.echo)));
+    if (echo > 0) {
+      this.echoSize(w, h);
+      if (this.echoFrame++ % Math.max(1, Math.round(P.echoDelay)) === 0) {
+        const slot = this.echoes[this.echoHead];
+        gl.bindFramebuffer(gl.FRAMEBUFFER, slot.f);
+        gl.viewport(0, 0, this.ew, this.eh);
+        gl.useProgram(this.copy);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, input);
+        gl.uniform1i(u('copy.uSrc'), 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.viewport(0, 0, w, h);
+        this.echoHead = (this.echoHead + 1) % ECHO_SLOTS;
+      }
+    } else this.echoFresh = true;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.useProgram(this.main);
+    for (let i = 0; i < ECHO_SLOTS; i++) {
+      // Echo 1 is the newest kept frame, echo 6 the oldest.
+      gl.activeTexture(gl.TEXTURE3 + i);
+      gl.bindTexture(gl.TEXTURE_2D, this.echoes[(this.echoHead - 1 - i + ECHO_SLOTS * 2) % ECHO_SLOTS].t);
+      gl.uniform1i(u(`main.uE${i}`), 3 + i);
+    }
+    gl.uniform1i(u('main.uEcho'), echo);
+    gl.uniform1f(u('main.uEchoSpread'), P.echoSpread);
+    gl.uniform1f(u('main.uFlare'), P.flare);
+    gl.uniform3f(u('main.uTint'), ...P.tint);
+    gl.uniform1f(u('main.uPoster'), P.poster);
+    gl.uniform1f(u('main.uHue'), P.hue);
+    gl.uniform1f(u('main.uInvert'), P.invert);
+    gl.uniform1f(u('main.uDisp'), P.displace);
+    gl.uniform1f(u('main.uHaze'), P.haze);
+    gl.uniform1f(u('main.uGlitch'), P.glitch);
+    gl.uniform1f(u('main.uBlock'), P.glitchBlock);
+    gl.uniform1f(u('main.uSeed'), P.glitchSeed);
+    gl.uniform3f(u('main.uGA'), ...P.gradeA);
+    gl.uniform3f(u('main.uGB'), ...P.gradeB);
+    gl.uniform1f(u('main.uKickL'), F.kickL);
+    gl.uniform1f(u('main.uKickS'), F.kickS);
+    gl.uniform1f(u('main.uKickF'), F.kickF);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, input);
     gl.uniform1i(u('main.uSrc'), 0);

@@ -339,6 +339,16 @@ const FX: [string, Partial<Settings>][] = [
     gfxSurface: 'halftone', gfxCell: 11, gfxBloom: 0.35 }],
   ['Bass drop', { ...CLEAN, count: 4500, size: 1.3, render: 'comets', wells: '0.5,0.5,vortex', wellForce: 1, wellRange: 500, showWells: false, flow: 0.5, flowType: 'curl', speed: 1.4, trail: 0.75, friction: 0.03, palette: 'crimson', colorBy: 'speed', glow: true, click: 'shockwave',
     gfxLens: 'shock', gfxShock: 1.5, gfxBloom: 1, gfxRays: 0.45, gfxSplit: 0.4, gfxKick: 1 }],
+  ['VHS tape', { ...CLEAN, count: 2200, size: 1.6, render: 'streaks', flow: 0.8, flowType: 'waves', flowScale: 0.003, flowSpeed: 0.3, speed: 1, trail: 0.8, friction: 0.04, jitter: 0.02, palette: 'vapor', colorBy: 'horizontal', glow: true, pointerMode: 'vortex', radius: 180, force: 0.6,
+    gfxSurface: 'vhs', gfxBloom: 0.6, gfxGrain: 0.35, gfxVignette: 0.5, gfxGlitch: 0.35, gfxGlitchOn: 'random' }],
+  ['Oil painting', { ...CLEAN, count: 1200, size: 3, sizeVar: 0.5, render: 'glow', flow: 0.6, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.12, speed: 0.6, trail: 0.8, friction: 0.05, jitter: 0.02, palette: 'sunset', colorBy: 'direction', glow: true, pointerMode: 'vortex', radius: 200, force: 0.5,
+    gfxSurface: 'oil', gfxCell: 12, gfxVignette: 0.35, gfxGrain: 0.15 }],
+  ['Datamosh', { ...CLEAN, count: 3000, size: 1.5, render: 'comets', flow: 1.2, flowType: 'cells', flowScale: 0.004, flowSpeed: 0.6, speed: 1.5, trail: 0.6, friction: 0.03, jitter: 0.03, palette: 'neon', colorBy: 'speed', glow: true, click: 'shockwave',
+    gfxEcho: 4, gfxEchoDelay: 4, gfxEchoSpread: 0.5, gfxGlitch: 0.7, gfxGlitchOn: 'snare', gfxSplit: 0.5, gfxKick: 0.9 }],
+  ['Neon outline', { ...CLEAN, count: 1200, size: 2.2, sizeVar: 0.4, render: 'streaks', flow: 0.5, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, speed: 0.8, trail: 0.5, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'radial', glow: true,
+    gfxSurface: 'neon', gfxCell: 8, gfxBloom: 0.5, gfxSpread: 0.7, gfxTint: 'pink', gfxHueCycle: 0.3 }],
+  ['Miniature city', { ...CLEAN, count: 2500, size: 1.8, render: 'squares', flow: 0.9, flowType: 'wind', flowScale: 0.003, flowSpeed: 0.3, speed: 1, trail: 0.5, friction: 0.04, jitter: 0.02, palette: 'tealorange', colorBy: 'horizontal', glow: true,
+    gfxLens: 'tilt', gfxShock: 1.3, gfxBloom: 0.35, gfxDisplace: 0.2 }],
 ];
 PRESETS.push(...FX);
 
@@ -364,7 +374,7 @@ for (const [fam, names] of [
   ['shapes', 'Heartbeat, Spirograph, DNA, Globe, Equalizer, Midnight clock, Oscilloscope, Hive, Shapeshift, Doodle, Triangle, Hexagram, Rose curve, Atom, Saturn, Snowflake, Möbius, Flower of life, Crystal, Torus knot, Jellyfish, Tornado, Klein bottle, Sound ring, Metronome'],
   ['growth', 'Seed, Sprout, Bud, Roots, Branches, Canopy, Blossom, Extravaganza'],
   ['lenses', 'Shattered glass, Time slices, Tunnel, Hall of mirrors, Fan dance, LED wall'],
-  ['fx', 'Starburst bloom, Hyperspace, Liquid dream, Retro arcade, Green screen, Heat signature, Rose window, Mirror dimension, Candle melt, Pixel rain, Magnifiers, Peephole rave, Silent film, Pop art, Bass drop'],
+  ['fx', 'Starburst bloom, Hyperspace, Liquid dream, Retro arcade, Green screen, Heat signature, Rose window, Mirror dimension, Candle melt, Pixel rain, Magnifiers, Peephole rave, Silent film, Pop art, Bass drop, VHS tape, Oil painting, Datamosh, Neon outline, Miniature city'],
   ['stories', 'Singularity, Big bang, Primordial gas, First stars, Galaxies, Event horizon, Dawn, Morning, Midday, Golden hour, Dusk embers, Firefly night, Starry night, Still pond, Wind rises, Rain, Lightning, Full storm, Clearing, Raindrop, Ripples, Streams, River, Falls, Open ocean, Star cloud, Collapse, Young star, Red giant, Supernova, Remnant, A few birds, Flock, Murmuration, The split, Sky shapes, Scatter'],
 ] as [Family, string][]) for (const n of names.split(', ')) FAMILY_OF[n] = fam;
 
@@ -708,4 +718,9 @@ export const ADDED: Record<string, string> = {
   "Silent film": '2026-11-14T23:30',
   "Pop art": '2026-11-14T23:30',
   "Bass drop": '2026-11-14T23:30',
+  "VHS tape": '2026-11-15T00:10',
+  "Oil painting": '2026-11-15T00:10',
+  "Datamosh": '2026-11-15T00:10',
+  "Neon outline": '2026-11-15T00:10',
+  "Miniature city": '2026-11-15T00:10',
 };

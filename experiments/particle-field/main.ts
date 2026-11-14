@@ -4985,12 +4985,29 @@ const lensCtx = lensCanvas.getContext('2d')!;
 // FX folder: GPU looks over the finished frame, on their own canvas.
 const gpuFx = new GpuFx();
 lensCanvas.after(gpuFx.canvas);
-const gfxOn = () => gpuFx.ok && (settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxFeedback !== 'off' || settings.gfxLens !== 'off' || settings.gfxSurface !== 'off' || settings.gfxRays > 0 || settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0);
+const gfxOn = () => gpuFx.ok && (settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxFeedback !== 'off' || settings.gfxLens !== 'off' || settings.gfxSurface !== 'off' || settings.gfxRays > 0 || settings.gfxFlare > 0 || settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0 || settings.gfxPoster > 1 || settings.gfxHueCycle > 0 || settings.gfxInvertDrop || settings.gfxDisplace > 0 || settings.gfxHaze > 0 || settings.gfxEcho > 0 || settings.gfxGlitch > 0);
 // What the field shows right now: the GPU looks, the lens pass or the plain canvas.
 const shownCanvas = () => (!gpuFx.canvas.hidden ? gpuFx.canvas : lensCanvas.hidden ? canvas : lensCanvas);
 let gfxWave: [number, number, number] = [0.5, 0.5, -10];
 let gfxNextWave = 0;
 let gfxKickEnv = 0;
+// Each FX group's own music push (0..1, before How much), and the glitch burst.
+const gfxDrive = { kick: 0, snare: 0, bass: 0, voice: 0, off: 0 };
+let gfxGlitchEnv = 0;
+let gfxGlitchSeed = 0;
+let gfxGlitchNext = 0;
+let gfxInvertEnv = 0;
+let gfxHue = 0;
+let gfxLastT = 0;
+const GFX_TINTS: Record<Settings['gfxTint'], [number, number, number]> = { white: [1, 1, 1], warm: [1.15, 0.78, 0.45], cool: [0.55, 0.85, 1.25], pink: [1.25, 0.5, 0.95], green: [0.5, 1.2, 0.6] };
+// The scene's own palette as two grade colours: its background (lifted a touch) and its brightest colour.
+function gfxSceneGrade(): [[number, number, number], [number, number, number]] {
+  const P = pal();
+  const bg = P.bg.map((v) => Math.min(1, v / 255 + 0.02)) as [number, number, number];
+  const top = [...P.stops].sort((a, b) => b[2] - a[2])[0] ?? [0, 0, 100];
+  const [r, g, b] = hslToRgb(top[0], top[1], Math.max(55, top[2]));
+  return [bg, [r / 255, g / 255, b / 255]];
+}
 function gpuFrame(now: number) {
   const on = gfxOn();
   const under = lensCanvas.hidden ? canvas : lensCanvas;
@@ -5013,6 +5030,27 @@ function gpuFrame(now: number) {
   const L = audio.levels;
   const music = reacting();
   gfxKickEnv = Math.max(gfxKickEnv * 0.88, music ? clamp01(L.pulse) * S.gfxKick : 0);
+  gfxDrive.kick = music ? clamp01(L.pulse) : 0;
+  gfxDrive.snare = music ? clamp01(L.snareEnv) : 0;
+  gfxDrive.bass = music ? clamp01(Math.max(L.sub, L.liftLevel)) : 0;
+  gfxDrive.voice = music ? clamp01(L.vocal) : 0;
+  const by = (k: Settings['gfxLightBy']) => gfxDrive[k] * S.gfxKick;
+  const dt = Math.min(0.1, Math.max(0, t - gfxLastT));
+  gfxLastT = t;
+  // Glitch bursts: on the snare, the kick, now and then, or all the time.
+  if (S.gfxGlitch > 0) {
+    const hitOn = S.gfxGlitchOn === 'snare' ? L.snare : S.gfxGlitchOn === 'kick' ? L.beat : false;
+    const randomly = S.gfxGlitchOn === 'random' || (!music && S.gfxGlitchOn !== 'always');
+    if ((music && hitOn) || (randomly && t > gfxGlitchNext)) {
+      gfxGlitchEnv = 1;
+      gfxGlitchNext = t + 0.6 + Math.random() * 2.4;
+    }
+    gfxGlitchEnv = S.gfxGlitchOn === 'always' ? 1 : gfxGlitchEnv * 0.86;
+    if (Math.random() < 0.35) gfxGlitchSeed = Math.random() * 100;
+  } else gfxGlitchEnv = 0;
+  gfxInvertEnv = S.gfxInvertDrop && music && L.drop ? 1 : gfxInvertEnv * 0.9;
+  gfxHue = (gfxHue + dt * S.gfxHueCycle * (0.6 + by(S.gfxLightBy) * 3)) % (Math.PI * 2);
+  const [gA, gB] = S.gfxGrade === 'scene' ? gfxSceneGrade() : [[0, 0, 0] as [number, number, number], [1, 1, 1] as [number, number, number]];
   const ptrIn = pointer.x > -1000;
   const px = ptrIn ? pointer.x / w : 0.5 + Math.sin(t * 0.5) * 0.28;
   const py = ptrIn ? 1 - pointer.y / h : 0.5 + Math.sin(t * 0.37) * 0.2;
@@ -5032,12 +5070,16 @@ function gpuFrame(now: number) {
     else ptrs.push(0.5 + Math.sin(t * (0.5 + i * 0.07) + ph) * 0.3, 0.5 + Math.sin(t * (0.37 + i * 0.05) + ph * 1.3) * 0.25);
   }
   gpuFx.render(under, {
-    bloom: S.gfxBloom, spread: S.gfxSpread, split: S.gfxSplit, rays: S.gfxRays,
+    bloom: S.gfxBloom * (S.gfxBloomKick ? (music ? Math.min(1, gfxDrive[S.gfxLightBy === 'off' ? 'kick' : S.gfxLightBy] * 1.4) : 0.5 + 0.5 * Math.sin(t * 4)) : 1),
+    spread: S.gfxSpread, split: S.gfxSplit, rays: S.gfxRays, flare: S.gfxFlare, tint: GFX_TINTS[S.gfxTint] ?? GFX_TINTS.white,
     feedback: S.gfxFeedback, zoom: S.gfxZoom, spin: S.gfxSpin, flow: S.gfxFlow, length: S.gfxLength,
     lens: S.gfxLens, lensSize: S.gfxLensSize, bend: S.gfxBend, shock: S.gfxShock, slices: S.gfxSlices, lensMix: S.gfxLensMix, count: S.gfxCount,
     surface: S.gfxSurface, cell: S.gfxCell * (under.width / Math.max(1, w)), surfMix: S.gfxSurfMix,
-    grade: S.gfxGrade, gradeAmt: S.gfxGradeAmt, grain: S.gfxGrain, vignette: S.gfxVignette,
-  }, { t, kick: gfxKickEnv, ptr: [px, py], ptrs, wave: gfxWave });
+    grade: S.gfxGrade, gradeAmt: S.gfxGradeAmt, gradeA: gA, gradeB: gB, grain: S.gfxGrain, vignette: S.gfxVignette,
+    poster: S.gfxPoster, hue: gfxHue, invert: gfxInvertEnv,
+    displace: S.gfxDisplace, haze: S.gfxHaze, echo: S.gfxEcho, echoDelay: S.gfxEchoDelay, echoSpread: S.gfxEchoSpread,
+    glitch: S.gfxGlitch * gfxGlitchEnv, glitchBlock: S.gfxGlitchBlock, glitchSeed: gfxGlitchSeed,
+  }, { t, kick: by(S.gfxLightBy), kickF: by(S.gfxFeedBy), kickL: by(S.gfxLensBy), kickS: by(S.gfxSurfBy), ptr: [px, py], ptrs, wave: gfxWave });
 }
 canvas.addEventListener('pointerdown', (e) => {
   if (!gfxOn() || settings.gfxLens !== 'shock') return;
@@ -6325,6 +6367,7 @@ type ControlBody =
   | { kind: 'xfader' }
   | { kind: 'knobsmore' }
   | { kind: 'animlist' }
+  | { kind: 'fxlooks' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'rapmeters' }
@@ -6347,6 +6390,8 @@ type ControlBody =
   | { kind: 'audio' };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+const GFX_LENSES: [string, string][] = [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort'], ['twirl', 'Whirlpool'], ['pinch', 'Pinch'], ['bulge', 'Bulge'], ['tilt', 'Tilt-shift'], ['mirrorx', 'Mirror ←→'], ['mirrory', 'Mirror ↑↓'], ['quad', 'Mirror four ways']];
+const GFX_SURFACES: [string, string][] = [['off', 'Off'], ['led', 'LED wall'], ['halftone', 'Halftone'], ['ascii', 'ASCII'], ['crt', 'CRT'], ['thermal', 'Thermal'], ['mosaic', 'Mosaic'], ['stitch', 'Cross-stitch'], ['lego', 'Toy bricks'], ['vhs', 'VHS'], ['oil', 'Oil paint'], ['neon', 'Neon outline']];
 const FLOW_TYPES: [string, string][] = [
   ['waves', 'Currents (streams)'], ['curl', 'Smoke (stays spread)'], ['vortex', 'Vortex (orbits the centre)'], ['wind', 'Wind (gusts one way)'],
   ['cells', 'Cells (spinning eddies)'], ['rise', 'Rise (like heat)'], ['tide', 'Tide (breathes in and out)'], ['spiral', 'Spiral arms (galaxy)'],
@@ -7203,63 +7248,102 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. The twirl spins and winds tighter on kicks, waves swell with the bass, a ripple goes out on each kick, shards burst at a drop, echoes flash and the glow breathes. Without music they drift by themselves. Every one can go on a knob (Field knobs & gestures).' },
 
   // FX: GPU looks over the finished frame (gpufx.ts).
+  { kind: 'section', id: 'gfxlooks', label: 'FX looks', tab: 'fx',
+    about: 'Ready-made combinations of the FX below, and your own. A look sets the whole FX folder at once, on any scene.',
+    summary: () => fxLookName() ?? (gfxOn() ? 'your mix' : 'none') },
+  { kind: 'fxlooks' },
   { kind: 'section', id: 'gfxlight', label: 'Light', tab: 'fx',
-    about: 'Bloom lets bright particles glow into their neighbours and add up to light instead of flat white. Colour split pulls red, green and blue apart toward the edges. Light rays stream out of bright spots, away from where you touch (or a drifting point). Runs on the graphics chip.',
-    lock: ['gfxBloom', 'gfxSpread', 'gfxSplit', 'gfxRays'],
-    power: { on: () => settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxRays > 0, off: { gfxBloom: 0, gfxSplit: 0, gfxRays: 0 }, start: { gfxBloom: 1.1 } },
-    summary: () => [settings.gfxBloom > 0 ? 'bloom' : '', settings.gfxSplit > 0 ? 'colour split' : '', settings.gfxRays > 0 ? 'rays' : ''].filter(Boolean).join(' · ') || 'off' },
+    about: 'Bloom lets bright particles glow into their neighbours and add up to light instead of flat white. Colour split pulls red, green and blue apart toward the edges. Light rays stream out of bright spots, away from where you touch (or a drifting point). Film flare stretches bright spots into long sideways streaks, like an anamorphic lens. Runs on the graphics chip.',
+    lock: ['gfxBloom', 'gfxSpread', 'gfxSplit', 'gfxRays', 'gfxFlare', 'gfxTint', 'gfxBloomKick'],
+    power: { on: () => settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxRays > 0 || settings.gfxFlare > 0, off: { gfxBloom: 0, gfxSplit: 0, gfxRays: 0, gfxFlare: 0 }, start: { gfxBloom: 1.1 } },
+    summary: () => [settings.gfxBloom > 0 ? 'bloom' : '', settings.gfxSplit > 0 ? 'colour split' : '', settings.gfxRays > 0 ? 'rays' : '', settings.gfxFlare > 0 ? 'flare' : ''].filter(Boolean).join(' · ') || 'off' },
   { kind: 'note', text: 'FX need WebGL 2, which this browser has turned off.', show: () => !gpuFx.ok },
   { kind: 'range', key: 'gfxBloom', label: 'Bloom', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v / 2)) },
   { kind: 'range', key: 'gfxSpread', label: 'Bloom spread', min: 0.1, max: 1, step: 0.05, format: pct, show: () => settings.gfxBloom > 0 },
+  { kind: 'toggle', key: 'gfxBloomKick', label: 'Bloom only on the beat', show: () => settings.gfxBloom > 0 },
   { kind: 'range', key: 'gfxSplit', label: 'Colour split', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v / 2)) },
   { kind: 'range', key: 'gfxRays', label: 'Light rays', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'gfxFlare', label: 'Film flare', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'select', key: 'gfxTint', label: 'Glow colour', options: [['white', 'As it is'], ['warm', 'Warm'], ['cool', 'Cool'], ['pink', 'Pink'], ['green', 'Green']], show: () => settings.gfxBloom > 0 || settings.gfxFlare > 0 },
   { kind: 'section', id: 'gfxfeed', label: 'Feedback', tab: 'fx',
-    about: 'The last frame is drawn back into the next one. Tunnel zooms and turns it into an endless spiral; Mirror does the same, reflected left to right; Smear pushes trails along a slow current; Melt lets them drip down.',
+    about: 'The last frame is drawn back into the next one. Tunnel zooms and turns it into an endless spiral; Mirror does the same, reflected left to right; Spiral colours drifts the colour on every pass; Smear pushes trails along a slow current; Melt lets them drip down; Spread lets every glow ripple outward.',
     lock: ['gfxFeedback', 'gfxZoom', 'gfxSpin', 'gfxFlow', 'gfxLength'],
     power: { on: () => settings.gfxFeedback !== 'off', off: { gfxFeedback: 'off' }, start: { gfxFeedback: 'tunnel' } },
     summary: () => (settings.gfxFeedback === 'off' ? 'off' : settings.gfxFeedback) },
-  { kind: 'select', key: 'gfxFeedback', label: 'Feedback', options: [['off', 'Off'], ['tunnel', 'Tunnel'], ['mirror', 'Mirror'], ['smear', 'Smear'], ['melt', 'Melt']] },
-  { kind: 'range', key: 'gfxZoom', label: 'Zoom', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxFeedback === 'tunnel' || settings.gfxFeedback === 'mirror' },
-  { kind: 'range', key: 'gfxSpin', label: 'Spin', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'none' : `${v > 0 ? '↻' : '↺'} ${pct(Math.abs(v))}`), show: () => settings.gfxFeedback === 'tunnel' || settings.gfxFeedback === 'mirror' },
-  { kind: 'range', key: 'gfxFlow', label: 'Flow', min: 0, max: 2, step: 0.05, format: (v) => pct(v / 2), show: () => settings.gfxFeedback === 'smear' || settings.gfxFeedback === 'melt' },
+  { kind: 'select', key: 'gfxFeedback', label: 'Feedback', options: [['off', 'Off'], ['tunnel', 'Tunnel'], ['mirror', 'Mirror'], ['spiral', 'Spiral colours'], ['smear', 'Smear'], ['melt', 'Melt'], ['spread', 'Spread']] },
+  { kind: 'range', key: 'gfxZoom', label: 'Zoom', min: 0, max: 1, step: 0.05, format: pct, show: () => ['tunnel', 'mirror', 'spiral'].includes(settings.gfxFeedback) },
+  { kind: 'range', key: 'gfxSpin', label: 'Spin', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'none' : `${v > 0 ? '↻' : '↺'} ${pct(Math.abs(v))}`), show: () => ['tunnel', 'mirror', 'spiral'].includes(settings.gfxFeedback) },
+  { kind: 'range', key: 'gfxFlow', label: 'Flow', min: 0, max: 2, step: 0.05, format: (v) => pct(v / 2), show: () => ['smear', 'melt', 'spread'].includes(settings.gfxFeedback) },
   { kind: 'range', key: 'gfxLength', label: 'Trail length', min: 0.5, max: 0.99, step: 0.01, format: (v) => pct((v - 0.5) / 0.49), show: () => settings.gfxFeedback !== 'off' },
+  { kind: 'section', id: 'gfxecho', label: 'Echo frames', tab: 'fx',
+    about: 'Copies of the picture from a moment ago, each a little further back in time, tinted round the colour wheel and spread outward.',
+    lock: ['gfxEcho', 'gfxEchoDelay', 'gfxEchoSpread'],
+    power: { on: () => settings.gfxEcho > 0, off: { gfxEcho: 0 }, start: { gfxEcho: 3 } },
+    summary: () => (settings.gfxEcho > 0 ? `${settings.gfxEcho} copies` : 'off') },
+  { kind: 'range', key: 'gfxEcho', label: 'Copies', min: 0, max: 6, step: 1, format: (v) => (v === 0 ? 'off' : `${v}`) },
+  { kind: 'range', key: 'gfxEchoDelay', label: 'Time between', min: 2, max: 20, step: 1, format: (v) => `${v} frames`, show: () => settings.gfxEcho > 0 },
+  { kind: 'range', key: 'gfxEchoSpread', label: 'Spread', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxEcho > 0 },
   { kind: 'section', id: 'gfxlens', label: 'Lenses', tab: 'fx',
-    about: 'Bend the finished picture: glass lenses that follow your finger, a shockwave ring on each kick, kaleidoscope slices, a liquid wobble, a fisheye bulge, or pixel sort (bright pixels drip down in streaks).',
+    about: 'Bend the finished picture: glass lenses, a shockwave ring on each kick, kaleidoscope slices, a liquid wobble, a fisheye bulge, pixel sort (bright pixels drip down), a whirlpool, pinch or bulge under your finger, tilt-shift (a sharp band, the rest soft, like a miniature), or clean mirrors.',
     lock: ['gfxLens', 'gfxLensSize', 'gfxBend', 'gfxShock', 'gfxSlices', 'gfxLensMix', 'gfxFollow', 'gfxCount'],
     power: { on: () => settings.gfxLens !== 'off', off: { gfxLens: 'off' }, start: { gfxLens: 'glass' } },
-    summary: () => ({ off: 'off', glass: 'glass', shock: 'shockwave', kaleido: 'kaleido', liquid: 'liquid', fisheye: 'fisheye', sort: 'pixel sort' })[settings.gfxLens] },
-  { kind: 'select', key: 'gfxLens', label: 'Lens', options: [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort']] },
+    summary: () => GFX_LENSES.find(([k]) => k === settings.gfxLens)?.[1].toLowerCase() ?? 'off' },
+  { kind: 'select', key: 'gfxLens', label: 'Lens', options: GFX_LENSES },
   { kind: 'range', key: 'gfxLensSize', label: 'Size', min: 0.3, max: 1.5, step: 0.05, format: (v) => pct(v / 1.5), show: () => settings.gfxLens === 'glass' },
   { kind: 'range', key: 'gfxBend', label: 'Bend', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxLens === 'glass' },
   { kind: 'select', key: 'gfxFollow', label: 'Follows', options: [['finger', 'Your finger'], ['wander', 'Wanders'], ['centre', 'Centre']], show: () => settings.gfxLens === 'glass' },
   { kind: 'range', key: 'gfxCount', label: 'Lenses', min: 1, max: 4, step: 1, format: (v) => `${v}`, show: () => settings.gfxLens === 'glass' },
   { kind: 'note', text: 'With Your finger, the first lens follows your finger or mouse and drifts on its own when you’re not touching; the others always drift. With Centre they circle the middle.', show: () => settings.gfxLens === 'glass' },
-  { kind: 'range', key: 'gfxShock', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => pct(v / 2), show: () => ['shock', 'liquid', 'fisheye', 'sort'].includes(settings.gfxLens) },
+  { kind: 'range', key: 'gfxShock', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => pct(v / 2), show: () => ['shock', 'liquid', 'fisheye', 'sort', 'twirl', 'pinch', 'bulge', 'tilt'].includes(settings.gfxLens) },
   { kind: 'note', text: 'A ring fires on each kick with music on, every two seconds without, and wherever you tap.', show: () => settings.gfxLens === 'shock' },
+  { kind: 'note', text: 'Follows your finger or mouse, and drifts on its own when you’re not touching. Tilt-shift keeps the band at your finger’s height sharp.', show: () => ['twirl', 'pinch', 'bulge', 'tilt'].includes(settings.gfxLens) },
   { kind: 'range', key: 'gfxSlices', label: 'Slices', min: 3, max: 12, step: 1, format: (v) => `${v}`, show: () => settings.gfxLens === 'kaleido' },
   { kind: 'range', key: 'gfxLensMix', label: 'Mix', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxLens === 'kaleido' },
+  { kind: 'section', id: 'gfxdisplace', label: 'Displace', tab: 'fx',
+    about: 'Bright particles bend the picture around them like glass or water (Refract), and the air shimmers like heat haze.',
+    lock: ['gfxDisplace', 'gfxHaze'],
+    power: { on: () => settings.gfxDisplace > 0 || settings.gfxHaze > 0, off: { gfxDisplace: 0, gfxHaze: 0 }, start: { gfxDisplace: 0.6 } },
+    summary: () => [settings.gfxDisplace > 0 ? 'refract' : '', settings.gfxHaze > 0 ? 'haze' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'range', key: 'gfxDisplace', label: 'Refract', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'gfxHaze', label: 'Heat haze', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'section', id: 'gfxglitch', label: 'Glitch', tab: 'fx',
+    about: 'Bursts of digital damage: bands slide sideways, blocks jump, colours tear apart, bright lines flash.',
+    lock: ['gfxGlitch', 'gfxGlitchOn', 'gfxGlitchBlock'],
+    power: { on: () => settings.gfxGlitch > 0, off: { gfxGlitch: 0 }, start: { gfxGlitch: 0.6 } },
+    summary: () => (settings.gfxGlitch > 0 ? `${pct(settings.gfxGlitch)} · ${settings.gfxGlitchOn}` : 'off') },
+  { kind: 'range', key: 'gfxGlitch', label: 'Amount', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'select', key: 'gfxGlitchOn', label: 'When', options: [['snare', 'On the snare'], ['kick', 'On the kick'], ['random', 'Now and then'], ['always', 'All the time']], show: () => settings.gfxGlitch > 0 },
+  { kind: 'range', key: 'gfxGlitchBlock', label: 'Block size', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxGlitch > 0 },
+  { kind: 'note', text: 'Without music, On the snare and On the kick glitch now and then instead.', show: () => settings.gfxGlitch > 0 && (settings.gfxGlitchOn === 'snare' || settings.gfxGlitchOn === 'kick') && audio.source === 'off' },
   { kind: 'section', id: 'gfxsurface', label: 'Surface', tab: 'fx',
-    about: 'Show the picture as something else: round LEDs like a stage screen up close, printed halftone dots, ASCII letters, an old CRT with scanlines, a heat camera, or mosaic tiles.',
+    about: 'Show the picture as something else: round LEDs, printed halftone dots, ASCII letters, an old CRT, a heat camera, mosaic tiles, cross-stitch, toy bricks, a worn VHS tape, oil paint, or glowing neon outlines.',
     lock: ['gfxSurface', 'gfxCell', 'gfxSurfMix'],
     power: { on: () => settings.gfxSurface !== 'off', off: { gfxSurface: 'off' }, start: { gfxSurface: 'led' } },
-    summary: () => ({ off: 'off', led: 'LED wall', halftone: 'halftone', ascii: 'ASCII', crt: 'CRT', thermal: 'thermal', mosaic: 'mosaic' })[settings.gfxSurface] },
-  { kind: 'select', key: 'gfxSurface', label: 'Surface', options: [['off', 'Off'], ['led', 'LED wall'], ['halftone', 'Halftone'], ['ascii', 'ASCII'], ['crt', 'CRT'], ['thermal', 'Thermal'], ['mosaic', 'Mosaic']] },
-  { kind: 'range', key: 'gfxCell', label: 'Dot size', min: 4, max: 24, step: 1, format: (v) => `${v}px`, show: () => settings.gfxSurface !== 'off' && settings.gfxSurface !== 'thermal' },
+    summary: () => GFX_SURFACES.find(([k]) => k === settings.gfxSurface)?.[1] ?? 'off' },
+  { kind: 'select', key: 'gfxSurface', label: 'Surface', options: GFX_SURFACES },
+  { kind: 'range', key: 'gfxCell', label: 'Dot size', min: 4, max: 24, step: 1, format: (v) => `${v}px`, show: () => !['off', 'thermal', 'vhs'].includes(settings.gfxSurface) },
   { kind: 'range', key: 'gfxSurfMix', label: 'Mix', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxSurface !== 'off' },
   { kind: 'section', id: 'gfxgrade', label: 'Grade', tab: 'fx',
-    about: 'The last touch: tint the whole picture in two colours (or black and white), add film grain, and darken the corners.',
-    lock: ['gfxGrade', 'gfxGradeAmt', 'gfxGrain', 'gfxVignette'],
-    power: { on: () => settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0, off: { gfxGrade: 'off', gfxGrain: 0, gfxVignette: 0 }, start: { gfxGrade: 'sunset' } },
-    summary: () => [settings.gfxGrade !== 'off' ? settings.gfxGrade : '', settings.gfxGrain > 0 ? 'grain' : '', settings.gfxVignette > 0 ? 'vignette' : ''].filter(Boolean).join(' · ') || 'off' },
-  { kind: 'select', key: 'gfxGrade', label: 'Colours', options: [['off', 'Off'], ['sunset', 'Sunset'], ['ocean', 'Ocean'], ['acid', 'Acid'], ['mono', 'Black & white']] },
+    about: 'The last touch: tint the whole picture in two colours (or black and white, or the scene’s own palette), cut it into flat poster bands, turn the colours round the wheel, flash it inverted on the drop, add film grain and darken the corners.',
+    lock: ['gfxGrade', 'gfxGradeAmt', 'gfxGrain', 'gfxVignette', 'gfxPoster', 'gfxHueCycle', 'gfxInvertDrop'],
+    power: { on: () => settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0 || settings.gfxPoster > 1 || settings.gfxHueCycle > 0 || settings.gfxInvertDrop, off: { gfxGrade: 'off', gfxGrain: 0, gfxVignette: 0, gfxPoster: 0, gfxHueCycle: 0, gfxInvertDrop: false }, start: { gfxGrade: 'sunset' } },
+    summary: () => [settings.gfxGrade !== 'off' ? settings.gfxGrade : '', settings.gfxPoster > 1 ? 'poster' : '', settings.gfxHueCycle > 0 ? 'hue cycle' : '', settings.gfxInvertDrop ? 'invert on drop' : '', settings.gfxGrain > 0 ? 'grain' : '', settings.gfxVignette > 0 ? 'vignette' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'select', key: 'gfxGrade', label: 'Colours', options: [['off', 'Off'], ['sunset', 'Sunset'], ['ocean', 'Ocean'], ['acid', 'Acid'], ['mono', 'Black & white'], ['scene', 'The scene’s palette']] },
   { kind: 'range', key: 'gfxGradeAmt', label: 'Amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxGrade !== 'off' },
+  { kind: 'range', key: 'gfxPoster', label: 'Poster bands', min: 0, max: 8, step: 1, format: (v) => (v < 2 ? 'off' : `${v} steps`) },
+  { kind: 'range', key: 'gfxHueCycle', label: 'Hue cycle', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'toggle', key: 'gfxInvertDrop', label: 'Flash inverted on the drop' },
   { kind: 'range', key: 'gfxGrain', label: 'Film grain', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'gfxVignette', label: 'Vignette', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'section', id: 'gfxmusic', label: 'FX on the kick', tab: 'fx',
-    about: 'With music on, each kick pushes the FX: brighter bloom and rays, wider colour split, a tunnel surge, a shockwave ring, a stronger wobble.',
-    lock: ['gfxKick'],
+  { kind: 'section', id: 'gfxmusic', label: 'FX and music', tab: 'fx',
+    about: 'With music on, the FX move with it: pick what drives each group (the kick, the snare, the bass or the voice) and how hard.',
+    lock: ['gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy'],
     summary: () => (settings.gfxKick > 0 ? pct(settings.gfxKick) : 'off') },
-  { kind: 'range', key: 'gfxKick', label: 'Kick amount', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'gfxKick', label: 'How much', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'select', key: 'gfxLightBy', label: 'Light and grade', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Nothing']], show: () => settings.gfxKick > 0 },
+  { kind: 'select', key: 'gfxFeedBy', label: 'Feedback and echoes', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Nothing']], show: () => settings.gfxKick > 0 },
+  { kind: 'select', key: 'gfxLensBy', label: 'Lenses and displace', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Nothing']], show: () => settings.gfxKick > 0 },
+  { kind: 'select', key: 'gfxSurfBy', label: 'Surface', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Nothing']], show: () => settings.gfxKick > 0 },
   { kind: 'note', text: 'Needs a sound source (Music).', show: () => audio.source === 'off' },
 
   { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
@@ -12434,6 +12518,10 @@ function renderControls() {
       searchItem(body, renderXfader());
       continue;
     }
+    if (ctl.kind === 'fxlooks') {
+      searchItem(body, renderFxLooks(), 'fx looks presets save vhs thermal dreamy noir');
+      continue;
+    }
     if (ctl.kind === 'animlist') {
       searchItem(body, renderAnimList(), 'animate moving settings keyframes swing lfo automation record');
       continue;
@@ -13770,6 +13858,101 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
 
 // What's moving: the Play folder's card. The clock, each moving setting
 // (tap to open its slider), Freeze and Stop all.
+// --- FX looks: the whole FX folder at once --------------------------------------
+// (How much the music moves the FX is yours, so looks leave it as it is.)
+const GFX_KEYS = (Object.keys(DEFAULTS) as (keyof Settings)[]).filter((k) => k.startsWith('gfx') && !['gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy'].includes(k));
+const FX_LOOKS: [string, Partial<Settings>][] = [
+  ['Dreamy', { gfxBloom: 1.2, gfxSpread: 0.9, gfxFlare: 0.3, gfxTint: 'pink', gfxGrade: 'sunset', gfxGradeAmt: 0.35, gfxVignette: 0.4 }],
+  ['VHS night', { gfxSurface: 'vhs', gfxBloom: 0.5, gfxGrade: 'ocean', gfxGradeAmt: 0.35, gfxGrain: 0.4, gfxVignette: 0.5 }],
+  ['Film noir', { gfxGrade: 'mono', gfxGradeAmt: 1, gfxGrain: 0.7, gfxVignette: 0.8, gfxFlare: 0.25 }],
+  ['Thermal cam', { gfxSurface: 'thermal', gfxGrain: 0.3, gfxVignette: 0.4 }],
+  ['Arcade', { gfxSurface: 'crt', gfxCell: 8, gfxBloom: 0.6, gfxSplit: 0.4 }],
+  ['Glitch storm', { gfxGlitch: 0.8, gfxGlitchOn: 'snare', gfxSplit: 0.6, gfxEcho: 3, gfxEchoDelay: 4 }],
+  ['Oil painting', { gfxSurface: 'oil', gfxCell: 10, gfxVignette: 0.3, gfxGrain: 0.15 }],
+  ['Miniature', { gfxLens: 'tilt', gfxShock: 1.2, gfxBloom: 0.3 }],
+  ['Neon sign', { gfxSurface: 'neon', gfxBloom: 1, gfxSpread: 0.7, gfxTint: 'pink' }],
+  ['Underwater', { gfxDisplace: 0.5, gfxHaze: 0.6, gfxGrade: 'ocean', gfxGradeAmt: 0.6, gfxBloom: 0.4, gfxVignette: 0.5 }],
+];
+const FX_LOOKS_KEY = 'particle-field:fx-looks';
+const myFxLooks = () => readJson<[string, Partial<Settings>][]>(FX_LOOKS_KEY, []);
+const fxLookOf = (look: Partial<Settings>) => ({ ...Object.fromEntries(GFX_KEYS.map((k) => [k, DEFAULTS[k]])), ...look }) as Partial<Settings>;
+function fxLookName(): string | null {
+  const S = settings as unknown as Record<string, unknown>;
+  for (const [name, look] of [...myFxLooks(), ...FX_LOOKS]) {
+    const L = fxLookOf(look) as Record<string, unknown>;
+    if (GFX_KEYS.every((k) => S[k] === L[k])) return name;
+  }
+  return null;
+}
+function useFxLook(look: Partial<Settings>) {
+  Object.assign(settings, fxLookOf(look));
+  changed(new Set(GFX_KEYS));
+}
+function renderFxLooks(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'fx-looks';
+  let sig = '';
+  const draw = () => {
+    const mine = myFxLooks();
+    const cur = fxLookName();
+    const next = `${cur}|${JSON.stringify(mine.map(([n]) => n))}|${gfxOn()}`;
+    if (next === sig && box.childElementCount) return;
+    sig = next;
+    box.innerHTML = '';
+    const chips = document.createElement('div');
+    chips.className = 'fx-look-chips';
+    const add = (name: string, look: Partial<Settings>, own: boolean) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fx-look';
+      b.classList.toggle('on', cur === name);
+      b.textContent = name;
+      b.addEventListener('click', () => {
+        useFxLook(look);
+        showToast(`FX look: ${name}`);
+      });
+      if (own) {
+        const x = document.createElement('i');
+        x.textContent = '×';
+        x.title = `Delete ${name}`;
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          writeJson(FX_LOOKS_KEY, myFxLooks().filter(([n]) => n !== name));
+          draw();
+        });
+        b.append(x);
+      }
+      chips.append(b);
+    };
+    for (const [n, l] of mine) add(n, l, true);
+    for (const [n, l] of FX_LOOKS) add(n, l, false);
+    const acts = document.createElement('div');
+    acts.className = 'fx-look-acts';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.textContent = '+ Save these FX';
+    save.disabled = !gfxOn();
+    save.addEventListener('click', () => {
+      const name = prompt('Name this FX look', `My look ${mine.length + 1}`)?.trim();
+      if (!name) return;
+      const S = settings as unknown as Record<string, unknown>;
+      const look = Object.fromEntries(GFX_KEYS.filter((k) => S[k] !== DEFAULTS[k]).map((k) => [k, S[k]])) as Partial<Settings>;
+      writeJson(FX_LOOKS_KEY, [[name, look], ...myFxLooks().filter(([n]) => n !== name)]);
+      draw();
+    });
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.textContent = 'All FX off';
+    clear.disabled = !gfxOn();
+    clear.addEventListener('click', () => useFxLook({}));
+    acts.append(save, clear);
+    box.append(chips, acts);
+  };
+  refreshers.push(() => box.isConnected && draw());
+  draw();
+  return box;
+}
+
 function renderAnimList(): HTMLElement {
   const box = document.createElement('div');
   box.className = 'anim-list';
@@ -14809,9 +14992,9 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look', 'fx'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set(['placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick']);
+const REMIX_SKIP = new Set(['gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxBloomKick', 'gfxInvertDrop', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick']);
 // How often a switchable card is on in a remix.
-const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85, gfxlight: 0.35, gfxfeed: 0.15, gfxlens: 0.2, gfxsurface: 0.12, gfxgrade: 0.25 };
+const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85, gfxlight: 0.35, gfxfeed: 0.15, gfxlens: 0.2, gfxsurface: 0.12, gfxgrade: 0.25, gfxecho: 0.1, gfxdisplace: 0.12, gfxglitch: 0.08 };
 const REMIX_KEY = 'particle-field:remix';
 let remixCardList: RemixCard[] | null = null;
 // Scenes usable as donors: not ones that need your camera, a drawing or an image.
