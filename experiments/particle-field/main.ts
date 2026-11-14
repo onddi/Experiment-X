@@ -9866,12 +9866,18 @@ const reactSub: [Tab, HTMLButtonElement][] = [];
 // The dock's page buttons light up while their page is open.
 const dockTabs: [Tab, HTMLButtonElement][] = [];
 let dockMoreBtn: HTMLButtonElement | null = null;
+// Record lives in the ⋯ menu; while it records, a red stop button shows in the bar.
+function recFromMenu() {
+  toggleRecord();
+  uPaint(true);
+}
 let dockMoreEl: HTMLElement | null = null;
 function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
   if (!dockMoreEl) {
     dockMoreEl = document.createElement('div');
     dockMoreEl.className = 'dock-more';
     const items: [string, string, () => void][] = [
+      ['Record a clip (V)', ICONS.record, recFromMenu],
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
       ['Explode from the centre (E)', ICONS.explode, () => explode()],
       ['Scatter (S)', ICONS.scatter, scatter],
@@ -9889,6 +9895,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
         toggleDockMore(false);
       });
       if (fn === toggleGather) gatherButtons.push(b);
+      if (fn === recFromMenu) b.classList.add('dm-rec');
       if (fn === toggleProject) projectUi.push(() => (b.querySelector('span')!.textContent = projector.on ? 'Stop projecting (P)' : t));
       dockMoreEl.append(b);
     }
@@ -9900,6 +9907,8 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
   }
   // The scene sheet sits over the bar's menu: one at a time.
   if (open && sceneSheetEl) closeSceneSheet();
+  const rb = dockMoreEl.querySelector('.dm-rec span');
+  if (rb) rb.textContent = recorder.on ? 'Stop recording (V)' : 'Record a clip (V)';
   dockMoreEl.classList.toggle('open', open);
   dockMoreBtn?.classList.toggle('on', open);
 }
@@ -15659,7 +15668,7 @@ function uCrossfade() {
 }
 const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], uRec(), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : [])],
+  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...(recorder.on ? [uRec()] : []), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : []), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -15685,7 +15694,7 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uRec(), uPause(), uMore()],
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
   studio: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
 };
