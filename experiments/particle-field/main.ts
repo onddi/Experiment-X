@@ -15575,9 +15575,31 @@ function playPaint(id: string, key: string) {
   k.name.textContent = r.label;
   return true;
 }
+// What you're turning, as a small pill at the top of the field: easy to
+// see while your fingers cover the middle and the knob row.
+const readout = document.createElement('div');
+readout.className = 'play-readout';
+readout.setAttribute('aria-live', 'polite');
+readout.innerHTML = '<span class="pr-name"></span><b class="pr-val"></b><i class="pr-bar"><i></i></i>';
+stage.append(readout);
+let readoutTimer = 0;
+function readoutShow(key: string) {
+  const r = knobSpec(key);
+  if (!r) return;
+  const v = playBase(key);
+  readout.querySelector('.pr-name')!.textContent = r.label;
+  readout.querySelector('.pr-val')!.textContent = r.text(v);
+  (readout.querySelector('.pr-bar i') as HTMLElement).style.width = `${(((v - r.min) / (r.max - r.min || 1)) * 100).toFixed(1)}%`;
+  readout.classList.add('show');
+  clearTimeout(readoutTimer);
+  readoutTimer = window.setTimeout(() => readout.classList.remove('show'), 1200);
+}
 function playShow(key: string) {
   const i = fieldKnobKeys().indexOf(key);
-  const id = i >= 0 && playing() ? `k${i}` : 'centre';
+  readoutShow(key);
+  // Not on the knob row: the pill alone says it.
+  if (!(i >= 0 && playing())) return;
+  const id = `k${i}`;
   if (!playPaint(id, key)) return;
   const k = knobs.get(id)!;
   k.el.classList.add('show');
@@ -16877,7 +16899,6 @@ canvas.addEventListener('pointermove', (e) => {
   if (!twist.on && Math.abs(rot) > 0.3 && !frozeByHold && settings.twistTwo) {
     twist.on = true;
     clearTimeout(freezeTimer);
-    showToast(`Twist: ${PLAYABLE.find(([k]) => k === settings.twistTwo)?.[1].split(' · ').pop() ?? settings.twistTwo}`);
   }
   // Half a turn clockwise takes the setting from one end to the other.
   if (twist.on) playNudge(settings.twistTwo, twist.base, rot / Math.PI);
