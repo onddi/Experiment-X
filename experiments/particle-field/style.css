@@ -2642,5 +2642,7 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .play-readout .pr-val { font-weight: 600; font-variant-numeric: tabular-nums; }
 .play-readout .pr-bar { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; border-radius: 1px; background: rgb(255 255 255 / 0.18); }
 .play-readout .pr-bar i { display: block; height: 100%; border-radius: 1px; background: #fff; }
+/* Deck rows: a long press opens the single-setting view, so it mustn't select the text (that cancels the press on iPhone). */
+.rack-row, .ov-fader-row { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }
