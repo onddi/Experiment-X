@@ -15422,10 +15422,19 @@ function uPaint(force = false) {
   uSig = sig;
   ubar.classList.remove('stage', 'deck', 'studio');
   ubar.classList.add(v);
-  const on = ubar.querySelector<HTMLElement>(`.u-seg button[data-v="${v}"]`)!;
-  const thumb = ubar.querySelector<HTMLElement>('.u-thumb')!;
-  thumb.style.width = `${on.offsetWidth}px`;
-  thumb.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+  // After the tray (it shares the row): the label, then the highlight,
+  // which slides straight to the label's final size.
+  const place = () => {
+    try {
+      stageLabel();
+    } catch {
+      // Not ready yet while the page starts.
+    }
+    const on = ubar.querySelector<HTMLElement>(`.u-seg button[data-v="${v}"]`)!;
+    const thumb = ubar.querySelector<HTMLElement>('.u-thumb')!;
+    thumb.style.width = `${Number(on.dataset.tw) || on.offsetWidth}px`;
+    thumb.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+  };
   ubar.querySelectorAll<HTMLButtonElement>('.u-seg button').forEach((b) => {
     b.classList.toggle('on', b.dataset.v === v);
     b.setAttribute('aria-selected', String(b.dataset.v === v));
@@ -15436,7 +15445,7 @@ function uPaint(force = false) {
   // Rebuilt only when its buttons change, so a click never lands on a button
   // that was just swapped out.
   const key = list.map(([l, , , c]) => `${l}/${c ?? ''}`).join('|');
-  if (tray.dataset.key === key) return;
+  if (tray.dataset.key === key) return place();
   tray.dataset.key = key;
   tray.innerHTML = '';
   list.forEach(([label, ic, fn, cls], j) => {
@@ -15454,6 +15463,7 @@ function uPaint(force = false) {
     });
     tray.append(b);
   });
+  place();
   if (desk) uPlace();
 }
 // Desktop: the bar floats over the field, clear of the Studio or
@@ -15747,19 +15757,45 @@ function badgeTick() {
   b.style.transform = `translateY(${(-lift).toFixed(1)}px) scale(${grow.toFixed(3)})`;
   b.style.opacity = String(0.55 + Math.min(1, L.level * 1.4 + badgeBounce) * 0.45);
 }
+// The Stage button's label: the scene's name on the Stage, or 'Stage'. When
+// its width changes the button grows or shrinks smoothly (the switch's
+// highlight follows), instead of jumping. True when it changed.
+let stageGrow = 0;
+function stageLabel() {
+  const b = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]');
+  if (!b) return false;
+  const onStage = uView() === 'stage';
+  const name = onStage ? currentMine?.name || lastSceneName || 'Your mix' : 'Stage';
+  const span = b.querySelector('span')!;
+  if (span.textContent === name) return false;
+  const from = b.offsetWidth;
+  b.style.removeProperty('width');
+  span.textContent = name;
+  b.classList.toggle('named', onStage);
+  b.title = onStage ? `${name}: tap for scenes, swipe for the next one` : 'Stage';
+  b.setAttribute('aria-label', onStage ? `Scene ${name}, open scenes` : 'Stage');
+  const to = b.offsetWidth;
+  clearTimeout(stageGrow);
+  if (from && to && from !== to && !calmMotion.matches) {
+    b.dataset.tw = String(to);
+    b.style.transition = 'none';
+    b.style.setProperty('width', `${from}px`, 'important');
+    void b.offsetWidth;
+    b.style.transition = 'width 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.2s';
+    b.style.setProperty('width', `${to}px`, 'important');
+    stageGrow = window.setTimeout(() => {
+      b.style.removeProperty('width');
+      b.style.removeProperty('transition');
+      delete b.dataset.tw;
+    }, 300);
+  }
+  return true;
+}
 function stageName() {
   const b = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]');
   if (!b) return;
   const onStage = uView() === 'stage';
-  const name = onStage ? currentMine?.name || lastSceneName || 'Your mix' : 'Stage';
-  const span = b.querySelector('span')!;
-  if (span.textContent !== name) {
-    span.textContent = name;
-    b.classList.toggle('named', onStage);
-    b.title = onStage ? `${name}: tap for scenes, swipe for the next one` : 'Stage';
-    b.setAttribute('aria-label', onStage ? `Scene ${name}, open scenes` : 'Stage');
-    uPaint(true);
-  }
+  if (stageLabel()) uPaint(true);
   // A small note badge while a sound source is on: filled while a vibe
   // plays, hollow with vibes off. It bounces with what it hears.
   const vibeOn = onStage && musicOn();
