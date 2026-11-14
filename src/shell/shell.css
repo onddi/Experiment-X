@@ -329,3 +329,10 @@ kbd {
 .shell--fullscreen .fs-exit:hover, .shell--fullscreen .fs-exit:focus-visible { opacity: 1; }
 .shell--fullscreen .handover { top: 0 !important; }
 
+
+/* Links: items → scenes */
+.panel__link { margin-bottom: 8px; }
+.panel__map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 4px 8px; align-items: center; }
+.panel__map-item { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel__map .panel__select { width: 100%; min-width: 0; }
+.panel__add-link { width: 100%; margin-bottom: 8px; padding: 6px 8px; font: inherit; font-size: 12px; text-align: left; color: inherit; background: var(--bg); border: 1px dashed var(--border); border-radius: 8px; cursor: pointer; }

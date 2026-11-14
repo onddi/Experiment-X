@@ -82,6 +82,11 @@ export class Carousel {
     this.bindKeys();
   }
 
+  /** The items, in order. */
+  get itemList(): readonly CarouselItem[] {
+    return this.items;
+  }
+
   get count() {
     return this.items.length;
   }

@@ -93,6 +93,14 @@ export function shellPublish(name: string, data: unknown) {
   for (const win of t.subscribers) send(win, name, data, 'x-frame');
 }
 
+/** Send from X-Frame to one experiment's window, if it subscribed to the topic (not kept as the last value). */
+export function shellSendTo(win: Window | null | undefined, name: string, data: unknown) {
+  const t = topic(name);
+  t.publishers.add('x-frame');
+  t.count++;
+  if (win && t.subscribers.has(win)) send(win, name, data, 'x-frame');
+}
+
 /** X-Frame's own listener on a topic (experiments' publishes only). */
 export function shellSubscribe(name: string, fn: (data: unknown, from: string) => void) {
   let set = shellListeners.get(name);

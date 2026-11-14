@@ -1,9 +1,9 @@
 import './shell.css';
 import { experiments, type Experiment } from './experiments.ts';
-import { busStats, dropFrame, dropPublisher, handleBusMessage, hasSubscribers, lastFrom, lastValue, setSlugResolver, shellPublish, shellSubscribe } from './bus.ts';
+import { busStats, dropFrame, dropPublisher, handleBusMessage, hasSubscribers, lastFrom, lastValue, setSlugResolver, shellPublish, shellSendTo, shellSubscribe } from './bus.ts';
 import {
-  BLENDS, PLACEMENTS, inputLayer, layout, newLayer, parseHash, toHash,
-  type Layer, type Placement, type View,
+  BLENDS, PLACEMENTS, defaultSceneKey, inputLayer, layout, newLayer, parseHash, toHash,
+  type Layer, type Link, type Placement, type View,
 } from './view.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -143,6 +143,7 @@ function removeFrame(slug: string) {
 /** Make the iframes match `view`, reusing the ones that are already running. */
 function applyView() {
   const wanted = new Set(view.layers.map((l) => l.slug));
+  view.links = (view.links ?? []).filter((l) => wanted.has(l.from) && wanted.has(l.to) && l.from !== l.to);
   for (const slug of [...frames.keys()]) if (!wanted.has(slug)) removeFrame(slug);
 
   const rects = layout(view);
@@ -310,7 +311,7 @@ function route() {
   const seen = new Set<string>();
   const layers = (parsed?.layers ?? []).filter((l) => bySlug(l.slug) && !seen.has(l.slug) && seen.add(l.slug));
   if (!layers.length && experiments[0]) layers.push({ ...newLayer(experiments[0].slug), blend: 'normal' });
-  view = { layers, input: parsed?.input ?? -1 };
+  view = { layers, input: parsed?.input ?? -1, links: parsed?.links ?? [] };
   // A player that's just opening gets the mouse, so its options (and its
   // track list) are what's in front, whatever layer the link had active.
   const player = layers.findIndex((l) => !frames.has(l.slug) && bySlug(l.slug)?.provides?.includes('transport'));
@@ -550,10 +551,112 @@ function renderPanel() {
     el('header', { class: 'panel__head' }, el('h2', {}, 'Layers'), close),
     el('ul', { class: 'panel__layers' }, ...rows),
     available.length ? add : '',
+    ...linksSection(),
     el('h2', { class: 'panel__sub' }, 'Feeds'),
     feedsBox,
   );
   renderFeeds();
+}
+
+// --- links -----------------------------------------------------------------
+// X-Frame wires experiments together without them knowing about each other.
+// An experiment that offers items ('items' + 'item.change', e.g. the carousel
+// grid) can drive one that offers scenes ('scenes' + accepts 'scene.select',
+// e.g. the particle field): when an item comes up, X-Frame picks the scene the
+// person mapped to it. Links live in the URL (see view.ts).
+
+type ItemSource = { source: string; name?: string; items: string[] };
+type Scene = { key: string; name: string };
+const itemsBy = new Map<string, ItemSource[]>();
+const scenesBy = new Map<string, Scene[]>();
+shellSubscribe('items', (data, from) => {
+  const sources = (data as { sources?: ItemSource[] } | undefined)?.sources;
+  if (Array.isArray(sources)) itemsBy.set(from, sources.filter((x) => x && typeof x.source === 'string' && Array.isArray(x.items)));
+  renderPanel();
+});
+shellSubscribe('scenes', (data, from) => {
+  const scenes = (data as { scenes?: Scene[] } | undefined)?.scenes;
+  if (Array.isArray(scenes)) scenesBy.set(from, scenes.filter((x) => x && typeof x.key === 'string'));
+  renderPanel();
+});
+shellSubscribe('item.change', (data, from) => {
+  const d = data as { source?: string; index?: number } | undefined;
+  if (typeof d?.index !== 'number') return;
+  for (const l of view.links ?? []) {
+    if (l.from !== from || l.source !== String(d.source)) continue;
+    const key = l.keys[d.index] || defaultScene(l.to, d.index);
+    shellSendTo(frames.get(l.to)?.contentWindow, 'scene.select', { key });
+  }
+});
+
+/**
+ * The scene an item plays when none was picked: the one on number key n
+ * (item 1 → key 1 … item 10 → key 0) if there is one, else the n-th scene listed.
+ */
+function defaultScene(to: string, index: number): string {
+  const key = defaultSceneKey(index);
+  const scenes = scenesBy.get(to);
+  if (!scenes?.length || scenes.some((x) => x.key === key)) return key;
+  return scenes[index % scenes.length].key;
+}
+
+const offersItems = (slug: string) => itemsBy.has(slug) || !!bySlug(slug)?.provides?.includes('item.change');
+const offersScenes = (slug: string) => scenesBy.has(slug) || !!bySlug(slug)?.accepts?.includes('scene.select');
+
+function setLinks(change: (links: Link[]) => void) {
+  view.links ??= [];
+  change(view.links);
+  history.replaceState(null, '', toHash(view));
+  renderPanel();
+}
+
+function linksSection(): (HTMLElement | string)[] {
+  const slugs = view.layers.map((l) => l.slug);
+  const pairs: [string, string][] = [];
+  for (const from of slugs) if (offersItems(from)) for (const to of slugs) if (to !== from && offersScenes(to)) pairs.push([from, to]);
+  if (!pairs.length) return [];
+  const title = (slug: string) => bySlug(slug)?.title ?? slug;
+  const out: HTMLElement[] = [el('h2', { class: 'panel__sub' }, 'Links')];
+  for (const [from, to] of pairs) {
+    const sources = itemsBy.get(from) ?? [];
+    const links = (view.links ?? []).filter((l) => l.from === from && l.to === to);
+    for (const link of links) {
+      const box = el('div', { class: 'panel__layer panel__link' });
+      const remove = el('button', { class: 'icon-btn icon-btn--sm', textContent: '✕', title: 'Remove link' });
+      remove.setAttribute('aria-label', 'Remove link');
+      remove.addEventListener('click', () => setLinks((ls) => ls.splice(ls.indexOf(link), 1)));
+      box.append(el('div', { class: 'panel__layer-head' }, el('strong', {}, `${title(from)} → ${title(to)}`), remove));
+      const sourceOptions: [string, string][] = sources.length
+        ? sources.map((x) => [x.source, x.name ?? x.source])
+        : [[link.source, link.source === 'main' ? 'Main row' : `Source ${link.source}`]];
+      if (!sourceOptions.some(([v]) => v === link.source)) sourceOptions.unshift([link.source, `Source ${link.source}`]);
+      const src = select(sourceOptions, link.source, (v) => setLinks(() => { link.source = v; }), 'Follow');
+      box.append(el('label', { class: 'panel__field' }, el('span', {}, 'Follow'), src));
+      const items = sources.find((x) => x.source === link.source)?.items ?? [];
+      const scenes = scenesBy.get(to) ?? [];
+      const count = Math.max(items.length, link.keys.length, items.length ? 0 : 10);
+      const rows = el('div', { class: 'panel__map' });
+      for (let i = 0; i < count; i++) {
+        const def = defaultScene(to, i);
+        const defName = scenes.find((x) => x.key === def)?.name ?? `key ${def}`;
+        const options: [string, string][] = [['', `Default: ${defName}`], ...scenes.map((x): [string, string] => [x.key, x.key === x.name ? x.name : `${x.key} · ${x.name}`])];
+        const cur = link.keys[i] ?? '';
+        if (cur && !options.some(([v]) => v === cur)) options.push([cur, cur]);
+        const pick = select(options, cur, (v) => setLinks(() => {
+          while (link.keys.length <= i) link.keys.push('');
+          link.keys[i] = v;
+        }), `Scene for item ${i + 1}`);
+        rows.append(el('span', { class: 'panel__map-item' }, `${i + 1}${items[i] ? ` · ${items[i]}` : ''}`), pick);
+      }
+      box.append(rows);
+      out.push(box);
+    }
+    const add = el('button', { class: 'panel__add-link', textContent: `+ ${title(from)} items pick ${title(to)} scenes` });
+    add.addEventListener('click', () => setLinks((ls) => ls.push({ from, to, source: sources[0]?.source ?? 'main', keys: [] })));
+    out.push(add);
+  }
+  if (!pairs.some(([, to]) => scenesBy.has(to))) out.push(el('p', { class: 'panel__hint' }, 'Scene names show up once the layer shares its scene list.'));
+  return out;
 }
 
 // --- hand-over ---------------------------------------------------------------

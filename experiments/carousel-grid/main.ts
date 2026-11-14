@@ -463,6 +463,7 @@ function build() {
     }
   }
   for (const cell of cells) announceChanges(cell);
+  publishItems();
   applyStyle();
   layout();
   updateStats();
@@ -470,16 +471,33 @@ function build() {
 }
 
 /**
- * X-Frame data bus: when a carousel comes to rest on a different item, tell
- * the other layers ('carousel.change'), e.g. so the particle field can switch
- * scene. Waits until the carousel has stopped, so a drag or flick across
- * several items sends one message, for where it lands.
- *   { cell: 'main' | 0.., row, col, index, count, word, group, groupName }
- * cell is the reading-order index (0 = top-left grid cell, 'main' = the main
- * row), the same numbering a hand-over uses; index is the item (0..count-1).
+ * X-Frame data bus, in generic terms (nothing here knows who listens):
+ *   'items'       { sources: [{ source, name, items: [label, ...] }] }
+ *                 what can be picked: one source per carousel, sent on every rebuild
+ *   'item.change' { source, index, count, label? }
+ *                 a carousel came to rest on a different item; sent once it has
+ *                 stopped, so a drag or flick across several items sends one message
+ * source is 'main' for the main row, or the cell's reading-order number ('0' =
+ * top-left), the same numbering a hand-over uses.
  */
 const SETTLE_MS = 180;
-function announceChanges(cell: { r: number; c: number; carousel: Carousel }) {
+type Cell = { r: number; c: number; carousel: Carousel };
+const sourceOf = (cell: Cell) => (cell.r === HERO ? 'main' : String(cell.r * settings.cols + cell.c));
+function itemLabel(item: CarouselItem | undefined) {
+  if (!item) return undefined;
+  if (settings.surface !== 'colors' && item.group !== undefined) return theme().groups[item.group]?.name ?? item.word;
+  return item.word;
+}
+function publishItems() {
+  xframe.publish('items', {
+    sources: cells.map((cell) => ({
+      source: sourceOf(cell),
+      name: cell.r === HERO ? 'Main row' : `Cell ${cell.r * settings.cols + cell.c + 1} (row ${cell.r + 1}, column ${cell.c + 1})`,
+      items: cell.carousel.itemList.map((it) => itemLabel(it) ?? ''),
+    })),
+  });
+}
+function announceChanges(cell: Cell) {
   const { carousel } = cell;
   const before = carousel.onMove;
   let last = carousel.index;
@@ -489,22 +507,9 @@ function announceChanges(cell: { r: number; c: number; carousel: Carousel }) {
     clearTimeout(timer);
     timer = window.setTimeout(() => {
       const index = c.index;
-      if (index === last) return;
+      if (index === last || !cells.includes(cell)) return;
       last = index;
-      const item = c.currentItem;
-      const isMain = cell.r === HERO;
-      const group = item?.group;
-      const groupName = settings.surface !== 'colors' && group !== undefined ? theme().groups[group]?.name : undefined;
-      xframe.publish('carousel.change', {
-        cell: isMain ? 'main' : cell.r * settings.cols + cell.c,
-        row: isMain ? null : cell.r,
-        col: isMain ? null : cell.c,
-        index,
-        count: c.count,
-        word: item?.word,
-        group,
-        groupName,
-      });
+      xframe.publish('item.change', { source: sourceOf(cell), index, count: c.count, label: itemLabel(c.currentItem) });
     }, SETTLE_MS);
   };
 }
@@ -573,6 +578,7 @@ function syncToHero() {
 
 function recolor() {
   for (const x of cells) x.carousel.setItems(itemsFor(x.r, x.c));
+  publishItems();
   syncToHero();
 }
 

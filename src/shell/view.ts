@@ -14,6 +14,11 @@
  *   size       docked strips only: % of the stage they take (default 30)
  * `input=<index>` picks which stacked layer gets the mouse (docked strips
  * always do). It defaults to the top-most stacked layer.
+ *
+ * `link=<from>><to>:<source>:<key0>|<key1>|…` (repeatable) is a Link: when
+ * <from> reports an item change on <source>, X-Frame tells <to> to play the
+ * scene with key<index> (an empty key: the default, the scene on number key
+ * n % 10 for item n, or else the n-th scene the layer lists).
  */
 
 export type Placement = 'full' | 'top' | 'bottom' | 'left' | 'right';
@@ -43,6 +48,33 @@ export interface View {
   layers: Layer[];
   /** Index of the stacked layer that gets mouse input; -1 = top-most stacked. */
   input: number;
+  links?: Link[];
+}
+
+/** Items → scenes: one layer's item changes ('item.change') pick another layer's scene ('scene.select'). */
+export interface Link {
+  from: string;
+  to: string;
+  /** Which of the publisher's item sources to follow, e.g. 'main' or '0'. */
+  source: string;
+  /** Scene key per item index; '' = the default for that item. */
+  keys: string[];
+}
+
+/** The scene key an item plays when nobody picked one: item 1 → '1' … item 10 → '0'. */
+export const defaultSceneKey = (index: number) => String((index + 1) % 10);
+
+function parseLink(text: string): Link | null {
+  const m = text.match(/^([^>]+)>([^:]+):([^:]*):(.*)$/);
+  if (!m) return null;
+  const keys = m[4] ? m[4].split('|').map((k) => { try { return decodeURIComponent(k); } catch { return ''; } }) : [];
+  return { from: m[1], to: m[2], source: m[3], keys };
+}
+
+function linkText(l: Link): string {
+  let keys = l.keys.map((k) => encodeURIComponent(k));
+  while (keys.length && !keys[keys.length - 1]) keys = keys.slice(0, -1);
+  return `${l.from}>${l.to}:${l.source}:${keys.join('|')}`;
 }
 
 export const newLayer = (slug: string, placement: Placement = 'full'): Layer => ({
@@ -72,7 +104,8 @@ export function parseHash(hash: string): View | null {
     return layer;
   });
   const input = q.has('input') ? Number(q.get('input')) : -1;
-  return { layers, input: Number.isInteger(input) ? input : -1 };
+  const links = q.getAll('link').map(parseLink).filter((l): l is Link => !!l);
+  return { layers, input: Number.isInteger(input) ? input : -1, links };
 }
 
 export function toHash(view: View): string {
@@ -85,6 +118,7 @@ export function toHash(view: View): string {
     q.set(String(i), parts.join(','));
   });
   if (view.input >= 0) q.set('input', String(view.input));
+  for (const l of view.links ?? []) q.append('link', linkText(l));
   const query = q.toString().replace(/%2C/g, ',');
   return `#/${slugs}${query ? `?${query}` : ''}`;
 }
