@@ -3217,6 +3217,116 @@ const seqToken = () => {
   const t = seqTokens();
   return t.length ? t[seqIdx % t.length] : 'heart';
 };
+// A sequence item: an icon's name draws the icon; anything else, or a
+// name in quotes ("heart"), draws the word.
+const seqItem = (tok: string) => {
+  const q = tok.length > 1 && /^["“”].*["“”]$/.test(tok);
+  const text = q ? tok.slice(1, -1) : tok;
+  return { icon: !q && isIcon(text.toLowerCase()) ? text.toLowerCase() : '', text };
+};
+// The Sequence box as chips: icon chips show the icon, word chips show Aa.
+// Tap a chip's badge to switch an icon's name between icon and word.
+function seqEditor(get: () => string, put: (v: string) => void) {
+  const el = document.createElement('div');
+  el.className = 'seq-ed';
+  el.innerHTML = '<div class="seq-chips"><input type="text" class="seq-in" maxlength="40" placeholder="Type a word" aria-label="Add a word"></div><div class="seq-tools"><button type="button" class="seq-ic">+ Icon</button><small>Tap a chip’s round badge to switch between icon and word.</small></div><div class="seq-grid" hidden></div>';
+  const chipsEl = el.querySelector<HTMLElement>('.seq-chips')!;
+  const input = el.querySelector<HTMLInputElement>('.seq-in')!;
+  const grid = el.querySelector<HTMLElement>('.seq-grid')!;
+  const toks = () => get().split(',').map((x) => x.trim()).filter(Boolean);
+  const save = (t: string[]) => put(t.join(', '));
+  const iconCanvas = (id: string, px: number) => {
+    const c = document.createElement('canvas');
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    c.width = c.height = Math.round(px * dpr);
+    c.style.width = c.style.height = `${px}px`;
+    const g = c.getContext('2d')!;
+    drawIcon(g, id, c.width / 2, c.height / 2, c.width * 0.42);
+    return c;
+  };
+  const add = (tok: string) => {
+    const t = tok.replace(/,/g, ' ').trim();
+    if (t) save([...toks(), t]);
+    draw();
+  };
+  let sig = '';
+  const draw = () => {
+    const t = toks();
+    const next = t.join('|');
+    if (next === sig) return;
+    sig = next;
+    chipsEl.querySelectorAll('.seq-chip').forEach((c) => c.remove());
+    t.forEach((tok, k) => {
+      const it = seqItem(tok);
+      const chip = document.createElement('span');
+      chip.className = 'seq-chip';
+      chip.classList.toggle('is-icon', !!it.icon);
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = 'seq-badge';
+      if (it.icon) badge.append(iconCanvas(it.icon, 16));
+      else badge.textContent = 'Aa';
+      const canSwap = isIcon(it.text.toLowerCase());
+      badge.disabled = !canSwap;
+      badge.setAttribute('aria-label', canSwap ? (it.icon ? `Draw ${it.text} as a word` : `Draw ${it.text} as an icon`) : 'A word');
+      badge.addEventListener('click', () => {
+        const all = toks();
+        all[k] = it.icon ? `"${it.text}"` : it.text;
+        save(all);
+        draw();
+      });
+      const name = document.createElement('b');
+      name.textContent = it.text;
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'seq-x';
+      x.textContent = '×';
+      x.setAttribute('aria-label', `Remove ${it.text}`);
+      x.addEventListener('click', () => {
+        const all = toks();
+        all.splice(k, 1);
+        save(all);
+        draw();
+      });
+      chip.append(badge, name, x);
+      chipsEl.insertBefore(chip, input);
+    });
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      add(input.value);
+      input.value = '';
+    } else if (e.key === 'Backspace' && !input.value) {
+      const all = toks();
+      all.pop();
+      save(all);
+      draw();
+    }
+  });
+  input.addEventListener('blur', () => {
+    if (input.value.trim()) add(input.value);
+    input.value = '';
+  });
+  chipsEl.addEventListener('click', (e) => e.target === chipsEl && input.focus());
+  el.querySelector('.seq-ic')!.addEventListener('click', (e) => {
+    grid.hidden = !grid.hidden;
+    (e.currentTarget as HTMLElement).classList.toggle('on', !grid.hidden);
+    if (!grid.hidden && !grid.childElementCount)
+      for (const [id, label] of ICON_SHAPES) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = label;
+        b.setAttribute('aria-label', `Add ${label}`);
+        b.append(iconCanvas(id, 22));
+        b.addEventListener('click', () => add(id));
+        grid.append(b);
+      }
+  });
+  draw();
+  return { el, update: draw };
+}
 const clockText = () => {
   const d = new Date();
   return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':');
@@ -3590,8 +3700,8 @@ function buildShape() {
     if (S.shape === 'text') return word(S.shapeText);
     if (S.shape === 'icon') return icon(S.shapeIcon);
     if (S.shape === 'sequence') {
-      const tok = seqToken();
-      return isIcon(tok.toLowerCase()) ? icon(tok.toLowerCase()) : word(tok);
+      const it = seqItem(seqToken());
+      return it.icon ? icon(it.icon) : word(it.text);
     }
     if (S.shape === 'live') return word(S.shapeLive === 'clock' ? clockText() : tempoText());
     if (S.shape === 'drawing') {
@@ -7052,7 +7162,6 @@ const CONTROLS: Control[] = [
   { kind: 'text', key: 'shapeSeq', label: 'Sequence', placeholder: 'heart, star, LOVE', show: () => settings.shape === 'sequence' },
   { kind: 'select', key: 'shapeSeqEvery', label: 'Next one', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['8bars', 'Every 8 bars'], ['drop', 'Only on drops']], show: () => settings.shape === 'sequence' },
   { kind: 'range', key: 'shapeSeqSec', label: 'Hold each (no music)', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
-  { kind: 'note', text: `Words and icons, separated by commas. Icons: ${ICON_SHAPES.map(([k]) => k).join(', ')}.`, show: () => settings.shape === 'sequence' },
   { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
   { kind: 'toggle', key: 'drawOutline', label: 'Show the outline', show: () => settings.shape === 'drawing' },
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
@@ -11583,6 +11692,11 @@ function mgFine(k: keyof Settings, draws: (() => void)[]) {
     draws.push(() => (cb.checked = !!settings[k]));
     row.classList.add('toggle');
     row.prepend(cb);
+  } else if (c.kind === 'text' && k === 'shapeSeq') {
+    const ed = seqEditor(() => String(settings[k]), (v) => set(k, v as never));
+    draws.push(ed.update);
+    row.classList.add('text', 'seq');
+    row.append(ed.el);
   } else if (c.kind === 'text') {
     const t = document.createElement('input');
     t.type = 'text';
@@ -12412,6 +12526,11 @@ function renderControls() {
         refreshers.push(() => b.classList.toggle('on', String(settings[k]).split(',').includes(value)));
       }
       row.append(wrap);
+    } else if (ctl.kind === 'text' && k === 'shapeSeq') {
+      const ed = seqEditor(() => String(settings[k]), (v) => set(k, v as never));
+      row.classList.add('stack', 'seq');
+      row.append(ed.el);
+      refreshers.push(ed.update);
     } else if (ctl.kind === 'text') {
       const input = document.createElement('input');
       input.type = 'text';
@@ -13839,6 +13958,13 @@ function rackText(c: Extract<Control, { kind: 'text' }>, src: RackSrc) {
   const name = document.createElement('span');
   name.textContent = c.label;
   tipOn(name, c.key);
+  if (c.key === 'shapeSeq') {
+    const ed = seqEditor(() => String(src.get(c.key) ?? ''), (v) => src.put(c.key, v));
+    const box = document.createElement('div');
+    box.className = 'rack-row rack-text seq';
+    box.append(name, ed.el);
+    return { el: box, update: ed.update };
+  }
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = c.placeholder ?? '';
