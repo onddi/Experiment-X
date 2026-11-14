@@ -196,6 +196,20 @@ export const PRESETS: [string, Partial<Settings>][] = [
   ['Tesla coil', { count: 700, size: 1.4, render: 'lightning', obstacles: 'circles', obsCircles: '0.3,0.5;0.7,0.5', obsRadius: 55, obsForce: 1.2, obsShow: true, obsPlace: true, flow: 0.8, flowType: 'curl', flowScale: 0.004, flowSpeed: 0.6, trail: 0.4, friction: 0.03, jitter: 0.08, palette: 'vapor', colorBy: 'speed', glow: true, pointerMode: 'attract', radius: 220, force: 0.9, click: 'shockwave' }],
   ['Sumi ink', { count: 2600, size: 1.6, render: 'ink', flow: 0.8, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.1, trail: 0.94, friction: 0.06, jitter: 0.01, palette: 'paper', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 180, force: 0.5, click: 'gather' }],
   ['Reef', { count: 900, size: 2, render: 'arrows', flock: 1, flockAlign: 1.1, flockCohesion: 0.9, flockSep: 0.9, flockRange: 40, obstacles: 'circles', obsCircles: '0.25,0.7;0.55,0.4;0.8,0.72', obsRadius: 60, obsForce: 1.3, obsShow: true, obsPlace: true, flow: 0.2, flowType: 'tide', flowScale: 0.002, flowSpeed: 0.15, trail: 0.5, friction: 0.01, jitter: 0.05, palette: 'ocean', colorBy: 'direction', glow: true, pointerMode: 'repel', radius: 150, force: 1, click: 'thumb' }],
+  // Spawning and collisions (the Physics family).
+  ['Chain fireworks', { count: 4000, size: 1.1, render: 'sparkles', emitter: 'point', emitMode: 'burst', burstEvery: 0.9, burstSize: 0.02, emitX: 0.5, emitY: 0.97, emitOut: false, launchSpeed: 6.5, launchDir: 270, launchSpread: 30, lifespan: 1.2, lifeFade: 'edges', gravity: 0.25, spawnOn: 'death', spawnCount: 26, spawnSpeed: 3, spawnLife: 1.2, spawnSize: 0.8, spawnTone: 0.08, spawnShare: 0.94, spawnChain: true, flow: 0, trail: 0.8, friction: 0.015, jitter: 0, palette: 'rainbow', colorBy: 'palette', glow: false, pointerMode: 'none', click: 'shockwave' }],
+  ['Rain splash', { count: 5000, size: 1.2, render: 'streaks', emitter: 'line', emitMode: 'steady', emitRate: 0.6, emitX: 0.5, emitY: 0.005, emitSize: 2000, emitAngle: 0, emitOut: false, launchSpeed: 4, launchDir: 96, launchSpread: 4, lifespan: 2.2, lifeFade: 'edges', gravity: 0.7, hitWalls: 'floor', hitFloor: 0.88, hitDo: 'bounce', hitBounce: 0.1, hitFriction: 0.6, spawnOn: 'hit', spawnCount: 5, spawnSpeed: 2.2, spawnLife: 0.45, spawnSize: 0.7, spawnTone: 0.1, spawnShare: 0.5, flow: 0, trail: 0.55, friction: 0.01, jitter: 0, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 140, force: 0.8, click: 'ripple' }],
+  ['Sand heap', { count: 8000, size: 2, render: 'squares', emitter: 'point', emitMode: 'steady', emitRate: 0.06, emitX: 0.5, emitY: 0.04, emitOut: false, launchSpeed: 0.6, launchDir: 90, launchSpread: 40, lifespan: 0, gravity: 0.6, hitWalls: 'box', hitFloor: 0.97, hitDo: 'pile', flow: 0, trail: 0, friction: 0.003, jitter: 0, palette: 'sunset', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 120, force: 1.4, click: 'shockwave' }],
+  ['Snow on words', { count: 5000, size: 2.2, render: 'circles', obstacles: 'text', obsText: 'WINTER', obsSize: 0.75, obsShow: false, hitObstacles: true, hitWalls: 'floor', hitFloor: 0.985, hitDo: 'stick', gravity: 0.12, wind: 0.04, windDir: 0, flow: 0.25, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, lifespan: 16, lifeFade: 'edges', trail: 0, friction: 0.05, jitter: 0.05, speed: 0.9, palette: 'ice', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 140, force: 1, click: 'ripple' }],
+  ['Pinball', { count: 500, size: 3.5, render: 'circles', emitter: 'point', emitMode: 'steady', emitRate: 0.2, emitX: 0.5, emitY: 0.95, emitOut: false, launchSpeed: 10, launchDir: 270, launchSpread: 60, lifespan: 7, lifeFade: 'edges', hitWalls: 'box', hitFloor: 0.97, hitDo: 'bounce', hitBounce: 0.85, hitFriction: 0.02, obstacles: 'circles', obsCircles: '0.25,0.35;0.5,0.5;0.75,0.35;0.38,0.7;0.62,0.7', obsRadius: 50, obsShow: true, hitObstacles: true, gravity: 0.35, flow: 0, trail: 0.5, friction: 0.002, jitter: 0, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 160, force: 2, click: 'shockwave' }],
+  ['Comet trails', { count: 6000, size: 1.8, render: 'sparkles', flow: 0.9, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, speed: 1.6, spawnOn: 'trail', spawnCount: 10, spawnSpeed: 0.6, spawnLife: 1.2, spawnSize: 0.6, spawnTone: 0.25, spawnShare: 0.92, trail: 0.4, friction: 0.02, jitter: 0, palette: 'cosmic', colorBy: 'palette', glow: true, pointerMode: 'vortex', radius: 200, force: 0.8, click: 'shockwave' }],
+  ['Marble bowl', { count: 900, size: 3, render: 'bubbles', hitWalls: 'bowl', hitFloor: 0.95, hitDo: 'bounce', hitBounce: 0.5, hitFriction: 0.01, gravity: 0.35, flow: 0, trail: 0, friction: 0.004, jitter: 0, space: 0.6, spaceDist: 10, palette: 'pastel', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 1.5, click: 'shockwave' }],
+  // Media emitters: sprites, 3D models, video.
+  ['Butterflies', { count: 260, size: 3, render: 'sprite', spriteScale: 5, spriteTurn: 'heading', spriteTint: true, spriteFps: 12, flock: 0.6, flockAlign: 0.8, flockCohesion: 0.6, flockSep: 1.2, flockRange: 60, flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, speed: 0.9, trail: 0, friction: 0.03, jitter: 0.1, sizeVar: 0.4, palette: 'candy', colorBy: 'palette', glow: false, pointerMode: 'repel', radius: 160, force: 0.8, click: 'gather' }],
+  ['Rocket launch', { count: 9000, size: 1.3, render: 'dots', shape: 'solid', shapeSolid: 'model', shapeSize: 0.62, shapeSpin: 0.4, shapeTilt: 0, entrance: 'centre', homeStrength: 1.4, spawnOn: 'trail', spawnFrom: 'bottom', spawnCount: 10, spawnSpeed: 7, spawnLife: 1.1, spawnSize: 1.1, spawnTone: 0.12, spawnShare: 0.55, spawnChain: true, gravity: 0.3, flow: 0, trail: 0.7, friction: 0.02, jitter: 0, depth: 0.8, palette: 'ember', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 0.8, click: 'shockwave' }],
+  ['Running fox', { count: 9000, size: 1.2, render: 'dots', shape: 'solid', shapeSolid: 'fox', modelClip: 3, modelSpeed: 1, modelBeat: true, shapeSize: 0.85, shapeSpin: 0, shapeFacing: 60, shapeTilt: -10, entrance: 'centre', homeStrength: 1.8, flow: 0, trail: 0.55, friction: 0.05, jitter: 0, depth: 0.6, palette: 'ember', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
+  ['Night walker', { count: 9000, size: 1.2, render: 'dots', shape: 'solid', shapeSolid: 'walker', modelClip: 1, modelSpeed: 1, modelBeat: true, shapeSize: 0.9, shapeSpin: 0.25, shapeFacing: 0, shapeTilt: -15, entrance: 'centre', homeStrength: 1.8, flow: 0, trail: 0.5, friction: 0.05, jitter: 0, depth: 0.7, palette: 'ocean', colorBy: 'depth', glow: true, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
+  ['Your video', { count: 5000, size: 1.4, render: 'dots', shape: 'image', imageMode: 'bright', imageRate: 12, shapeSize: 0.95, homeStrength: 1.5, colorBy: 'camera', flow: 0, trail: 0.4, friction: 0.06, jitter: 0, palette: 'mono', glow: false, pointerMode: 'repel', radius: 120, force: 1, click: 'shockwave' }],
 ];
 
 // --- Growth: "seed to tree" ---
@@ -306,14 +320,16 @@ story(
 
 
 // Preset families: each built around one engine feature (see the proposal doc).
-export type Family = 'all' | 'lenses' | 'animated' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+export type Family = 'all' | 'lenses' | 'animated' | 'physics' | 'media' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 export const FAMILIES: [Family, string][] = [
-  ['all', 'All'], ['animated', 'Animated'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
+  ['all', 'All'], ['animated', 'Animated'], ['physics', 'Physics'], ['media', 'Media'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
   ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['lenses', 'Lenses'], ['shapes', 'Shapes'], ['growth', 'Growth'], ['stories', 'Stories'],
 ];
 export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
   ['animated', 'Tidal breath, Colour wheel, Heartbeat lights, Weather front, Tumbling globe, Shifting flock, Glitch pulse, Orbiting ring, Kaleido bloom, Stop motion, Warp drive, Ribbon dance, Monsoon, Spinning top'],
+  ['physics', 'Chain fireworks, Rain splash, Sand heap, Snow on words, Pinball, Comet trails, Marble bowl'],
+  ['media', 'Butterflies, Rocket launch, Running fox, Night walker, Your video'],
   ['words', 'Hello, Marquee, Neon sign, Typewriter, Smoke writing, Shatter, Glyph word, Dot matrix, Breathing word'],
   ['patterns', 'Sunflower, Lattice, Halo, Mandala, Pond, Portrait, Honeycomb, Spiral arms, Maze runner, Ripple tank, Checkerboard, Sunburst'],
   ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl, Light painting, Smoke drawing, Neon graffiti, Finger sparks, Hand magnets, Force field, Gesture DJ, Stretch, Hand skeleton, Throw, Finger paint, Flame head, Crying rainbow, Laser eyes, Wizard beard, Angel halo, Crown, Singer, Eye contact, Dancer, Arm sweep, Rain on me, Twins'],
@@ -656,3 +672,10 @@ export const ADDED: Record<string, string> = {
   "Sky shapes": '2026-11-10T09:33',
   "Scatter": '2026-11-07T23:37',
 };
+
+// Dates for the Physics and Media scenes, which arrived on their own branch.
+Object.assign(ADDED, {
+  'Chain fireworks': '2026-11-12T13:19', 'Rain splash': '2026-11-12T13:19', 'Sand heap': '2026-11-12T13:19', 'Snow on words': '2026-11-12T13:19',
+  'Pinball': '2026-11-12T13:19', 'Comet trails': '2026-11-12T13:19', 'Marble bowl': '2026-11-12T13:19', 'Butterflies': '2026-11-12T13:19',
+  'Rocket launch': '2026-11-12T13:19', 'Your video': '2026-11-12T13:19', 'Running fox': '2026-11-12T20:13', 'Night walker': '2026-11-12T20:24',
+});

@@ -3,11 +3,14 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
-import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
+import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel, hasModel, MODEL_SOLIDS } from './shapes.ts';
+import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
+import { GLSprites, type Blend } from './webgl.ts';
+import { GLFx, affine, hueMatrix, type Target } from './glfx.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
@@ -156,6 +159,8 @@ let pz = new Float32Array(0); // depth: 0 far, 1 near
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 let free = new Float32Array(0); // 1 for face-effect particles: no home, short life
 let gone = new Float32Array(0); // seconds when it started fading out (count going down), 0 = staying
+let kid = new Float32Array(0); // Spawning: 0 an ordinary particle, 1 a slot for children (a child while alive), 2 a grandchild, 3 a slot's old particle fading out
+let rest = new Float32Array(0); // Collisions: 1 while stuck or resting on a pile
 // Particles fade in after a (re)spawn and fade out before the end of a lifespan,
 // so they never pop in or out.
 const FADE_IN = 45;
@@ -168,11 +173,14 @@ let t = 0;
 let paused = false;
 let dpr = 1;
 
+// Most particles the Count slider offers: more with the WebGL renderer
+// (shuffles stay capped lower). The Density macro may go a little past it.
+const MAX_COUNT = new URLSearchParams(location.search).get('renderer') === '2d' ? 8000 : 50000;
 // The particle count with the Density macro applied.
 const countNow = () => {
   const c = settings.count * densityK;
   // Small counts stay exact (a seed of 7); larger ones move in tens.
-  const v = Math.max(3, Math.min(10000, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
+  const v = Math.max(3, Math.min(MAX_COUNT * 1.25, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
   return Math.min(v, growCap(v));
 };
 // Grow transition: the count is held down, then let out over a bar or two.
@@ -194,7 +202,7 @@ function ensureCount(want = countNow()) {
       b.set(a.subarray(0, n));
       return b;
     };
-    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone].map(grow);
+    [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone, kid, rest] = [px, py, vx, vy, ox, oy, tone, gl, age, span, rnd, psz, dead, hx, hy, pz, free, gone, kid, rest].map(grow);
     cap = want;
   }
   // With a shape on, newcomers appear beside an existing particle, so they
@@ -211,6 +219,7 @@ function ensureCount(want = countNow()) {
     } else spawn(i, Math.random() * w, Math.random() * h);
     dead[i] = settings.emitter !== 'none' ? 1 : 0;
     gone[i] = 0;
+    kid[i] = 0;
   }
   n = want;
 }
@@ -259,6 +268,7 @@ function launch(i: number) {
 
 function rebirth(i: number) {
   age[i] = 0;
+  rest[i] = 0;
   rnd[i] = Math.random();
   // Spread lifetimes (50–150%) so particles don't all fade at once.
   span[i] = settings.lifespan > 0 ? settings.lifespan * 60 * (0.5 + Math.random()) : 0;
@@ -330,9 +340,15 @@ function clear() {
     document.body.style.background = 'transparent';
     return;
   }
+  document.body.style.background = `rgb(${r} ${g} ${b})`;
+  if (glOnly && glr) {
+    ctx.clearRect(0, 0, w, h);
+    glDirty2d = false;
+    glr.reset(canvas.width, canvas.height, r, g, b);
+    return;
+  }
   ctx.fillStyle = `rgb(${r} ${g} ${b})`;
   ctx.fillRect(0, 0, w, h);
-  document.body.style.background = `rgb(${r} ${g} ${b})`;
 }
 
 // --- pointer -----------------------------------------------------------------
@@ -595,6 +611,7 @@ function toggleObstacle(x: number, y: number) {
 function drawObstacles(fade: number, light: boolean) {
   drawThumb(fade, light);
   if (settings.obstacles === 'none' || !settings.obsShow) return;
+  if (glOnly) glDirty2d = true;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.07 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.06 * fade).toFixed(4)})`;
@@ -918,6 +935,48 @@ function flowAngle(x: number, y: number) {
 }
 
 let renewAcc = 0;
+// What a particle does when it hits something solid (normal nx, ny points
+// out of the surface). Returns how hard it hit.
+function hitResp(i: number, nx: number, ny: number) {
+  const vn = vx[i] * nx + vy[i] * ny;
+  if (vn >= 0) return 0;
+  const S = settings;
+  if (S.hitDo === 'stick' || S.hitDo === 'pile') {
+    vx[i] = vy[i] = 0;
+    rest[i] = 1;
+    return -vn;
+  }
+  const tx = vx[i] - vn * nx;
+  const ty = vy[i] - vn * ny;
+  const keep = 1 - S.hitFriction * (S.hitDo === 'slide' ? 0.3 : 1);
+  const b = S.hitDo === 'bounce' ? S.hitBounce : 0;
+  vx[i] = tx * keep - vn * nx * b;
+  vy[i] = ty * keep - vn * ny * b;
+  return -vn;
+}
+// Piles: the top of the heap in each narrow column of the floor, rebuilt
+// each frame from the particles at rest.
+let pileTop = new Float32Array(0);
+let pileN = 0;
+let pileCell = 3;
+let pileGrain = 1;
+function pileBuild(floorY: number, bowlD: number) {
+  const sz = Math.max(1, settings.size);
+  pileCell = Math.max(2, Math.round(sz * 1.4));
+  pileGrain = Math.max(0.5, sz * 0.55);
+  pileN = Math.ceil(w / pileCell) + 1;
+  if (pileTop.length < pileN) pileTop = new Float32Array(pileN);
+  for (let c = 0; c < pileN; c++) {
+    const u = (((c + 0.5) * pileCell) / w) * 2 - 1;
+    pileTop[c] = floorY - bowlD * u * u;
+  }
+  // Each grain on a heap (rest 2, not one stuck on an obstacle) raises its column.
+  for (let i = 0; i < n; i++) {
+    if (rest[i] !== 2 || dead[i]) continue;
+    pileTop[Math.min(pileN - 1, Math.max(0, (px[i] / pileCell) | 0))] -= pileGrain;
+  }
+}
+
 function step(dt: number) {
   updateFlowFreqs();
   recordHistory();
@@ -1016,7 +1075,7 @@ function step(dt: number) {
     const m = Math.min(400, Math.ceil(n * 0.035 * kickAmt));
     for (let q = 0; q < m; q++) {
       const i = (Math.random() * n) | 0;
-      if (dead[i] || free[i]) continue;
+      if (dead[i] || free[i] || kid[i]) continue;
       const a = Math.random() * Math.PI * 2;
       const r = Math.random() * 14;
       px[i] = ox[i] = sx + Math.cos(a) * r;
@@ -1133,7 +1192,21 @@ function step(dt: number) {
     if (left <= 0 || settings.shape === 'none') entrance = null;
     else entK = Math.min(1, left / 1200);
   }
+  // Children's slots first, so the emitter only launches parents.
+  syncKids();
   runEmitter(dt, on && A.beat);
+  spawnTick(dt, on && A.beat);
+  const deathKids = S.spawnOn === 'death' ? S.spawnCount : 0;
+  const hitKids = S.spawnOn === 'hit';
+  // Collisions: floors, walls, a bowl, obstacles.
+  const hitW = S.hitWalls;
+  const hitOb = S.hitObstacles && !!ob;
+  const sticky = (hitW !== 'none' || hitOb) && (S.hitDo === 'stick' || S.hitDo === 'pile');
+  const pile = sticky && S.hitDo === 'pile' && hitW !== 'none';
+  const floorY = Math.min(h - 1, S.hitFloor * h);
+  const bowlD = hitW === 'bowl' ? h * 0.3 : 0;
+  if (pile) pileBuild(floorY, bowlD);
+  const restHold = (0.3 + jitterNow * 0.6) ** 2;
   const swarm = swarmForces();
   const depthOn = settings.depth > 0;
   // Keep fresh: mark a trickle of particles to fade out and start over, so
@@ -1149,7 +1222,14 @@ function step(dt: number) {
   for (let i = 0; i < n; i++) {
     if (dead[i]) continue;
     age[i] += dt;
-    if (free[i]) {
+    if (kid[i] && !free[i]) {
+      // A child (or a slot's old particle fading out) at the end of its life.
+      if (age[i] >= span[i]) {
+        if (kid[i] === 1 && S.spawnChain && span[i] - age[i] > -dt - 1 && i >= kidFrom) spawnBurst(i, 2);
+        kidDied(i);
+        continue;
+      }
+    } else if (free[i]) {
       // Face effects: short-lived sparks with their own drift, no home.
       if (age[i] >= span[i]) {
         dead[i] = 1;
@@ -1159,6 +1239,7 @@ function step(dt: number) {
       vy[i] += fxAy + (Math.random() - 0.5) * fxJit;
     } else if (lifeOn && (span[i] <= 0 || age[i] >= span[i])) {
       // End of life (or lifespan just switched on): start again somewhere new.
+      if (span[i] > 0 && deathKids) spawnBurst(i, deathKids);
       if (span[i] > 0 && emitting) {
         dead[i] = 1; // wait for the emitter
         continue;
@@ -1208,7 +1289,7 @@ function step(dt: number) {
       ax += swx[i];
       ay += swy[i];
     }
-    if (homeK > 0 && !free[i]) {
+    if (homeK > 0 && !free[i] && !kid[i]) {
       // Spring towards the home position, with a little extra damping so it
       // settles instead of wobbling forever.
       // Word pulse scales the target about the centre with the kick.
@@ -1449,6 +1530,18 @@ function step(dt: number) {
       }
     }
 
+    if (rest[i]) {
+      // Stuck or resting on a pile: stays put until something pushes harder
+      // than gravity (a blast, a wave, the pointer).
+      const ey = ay - gravNow * 0.05;
+      if (sticky && blastK === 0 && ax * ax + ey * ey < restHold) {
+        vx[i] = vy[i] = 0;
+        ox[i] = px[i];
+        oy[i] = py[i];
+        continue;
+      }
+      rest[i] = 0;
+    }
     vx[i] = (vx[i] + ax * dt) * Math.pow(damp, dt);
     vy[i] = (vy[i] + ay * dt) * Math.pow(damp, dt);
     ox[i] = px[i];
@@ -1457,9 +1550,77 @@ function step(dt: number) {
     px[i] += vx[i] * speedNow * zs * dt;
     py[i] += vy[i] * speedNow * zs * dt;
 
+    if (hitW !== 'none') {
+      let hit = 0;
+      let hnx = 0;
+      let hny = -1;
+      // The floor (a bowl curves up to the sides), with piles on top.
+      let fy = floorY;
+      if (bowlD) {
+        const u = (px[i] / w) * 2 - 1;
+        fy = floorY - bowlD * u * u;
+        const sl = (-bowlD * 2 * u * 2) / w;
+        const l = Math.hypot(sl, 1);
+        hnx = sl / l;
+        hny = -1 / l;
+      }
+      if (pile) {
+        const c = Math.min(pileN - 1, Math.max(0, (px[i] / pileCell) | 0));
+        const top = pileTop[c];
+        if (py[i] >= top && oy[i] <= top + pileGrain * 2) {
+          const lo = c > 0 ? pileTop[c - 1] : -1e9;
+          const ro = c < pileN - 1 ? pileTop[c + 1] : -1e9;
+          const right = ro > lo || (ro === lo && Math.random() < 0.5);
+          if (Math.max(lo, ro) - top > pileGrain * 1.5) {
+            // Rolls down the side of the heap.
+            px[i] += (right ? 1 : -1) * pileCell;
+            py[i] = top;
+            vx[i] = (right ? 1 : -1) * 0.4;
+            vy[i] = 0.3;
+          } else {
+            py[i] = oy[i] = top;
+            hit = Math.max(0, vy[i]);
+            vx[i] = vy[i] = 0;
+            rest[i] = 2;
+            pileTop[c] -= pileGrain;
+          }
+        } else if (py[i] > fy) {
+          py[i] = fy;
+          hit = hitResp(i, hnx, hny);
+        }
+      } else if (py[i] > fy) {
+        py[i] = fy;
+        hit = hitResp(i, hnx, hny);
+      }
+      // A ceiling, so nothing wraps round to below the floor.
+      if (py[i] < 0 && !emitting) {
+        py[i] = 0;
+        hit = Math.max(hit, hitResp(i, 0, 1));
+      }
+      if (hitW === 'box') {
+        if (px[i] < 0) {
+          px[i] = 0;
+          hit = Math.max(hit, hitResp(i, 1, 0));
+          hnx = 1;
+          hny = 0;
+        } else if (px[i] >= w) {
+          px[i] = w - 0.5;
+          hit = Math.max(hit, hitResp(i, -1, 0));
+          hnx = -1;
+          hny = 0;
+        }
+      }
+      if (hit > 0.6 && hitKids && (!kid[i] || (kid[i] === 1 && S.spawnChain))) spawnBurst(i, kid[i] ? 2 : S.spawnCount, hnx, hny, Math.min(1.5, 0.4 + hit / 2.5));
+      if (rest[i]) continue;
+    }
+
     if (px[i] < 0 || px[i] >= w || py[i] < 0 || py[i] >= h) {
       const edges = settings.edges;
-      if (emitting) {
+      if (kid[i] && kid[i] < 3 && i >= kidFrom && i < kidTo) {
+        // Children that leave the screen are done (no wrapping back in).
+        kidDied(i);
+        continue;
+      } else if (emitting) {
         // Emitted particles leave for good and wait to be emitted again.
         dead[i] = 1;
         px[i] = ox[i] = Math.min(w - 1, Math.max(0, px[i]));
@@ -1486,7 +1647,17 @@ function step(dt: number) {
       if (gx >= 0 && gy >= 0 && gx < ob.W && gy < ob.H) {
         const c = gy * ob.W + gx;
         const d = ob.sd[c];
-        if (d < OB_MARGIN) {
+        if (hitOb) {
+          // Solid: bounce, slide or stick on the edge.
+          if (d < 1.5) {
+            const nx = ob.nx[c];
+            const ny = ob.ny[c];
+            px[i] += nx * (1.5 - d);
+            py[i] += ny * (1.5 - d);
+            const hit = hitResp(i, nx, ny);
+            if (hit > 0.6 && hitKids && (!kid[i] || (kid[i] === 1 && S.spawnChain))) spawnBurst(i, kid[i] ? 2 : S.spawnCount, nx, ny, Math.min(1.5, 0.4 + hit / 2.5));
+          }
+        } else if (d < OB_MARGIN) {
           const nx = ob.nx[c];
           const ny = ob.ny[c];
           const near = 1 - Math.max(0, d) / OB_MARGIN;
@@ -1677,6 +1848,7 @@ function recordHistory() {
 // Ribbons: a smooth curve through each particle's recent positions, drawn in
 // three passes that get thinner and fainter towards the tail.
 function drawRibbons(list: number[], k: number, s: number) {
+  const P = penFor();
   const L = histLen;
   if (!L) return;
   // The history is stored unrotated: rotate each point with the camera spin.
@@ -1693,22 +1865,22 @@ function drawRibbons(list: number[], k: number, s: number) {
     ry = h / 2 + dx * sn + dy * c;
     return w / 2 + dx * c - dy * sn;
   };
-  ctx.strokeStyle = shades[k];
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  P.strokeStyle = shades[k];
+  P.lineCap = 'round';
+  P.lineJoin = 'round';
   const PASSES = 2;
   // Stroking cost grows with segments, so long ribbons skip points: at most
   // about 8 segments each, whatever the length.
   const stride = Math.max(1, Math.round(L / 9));
   const per = Math.ceil((L - 1) / PASSES);
-  const a0 = ctx.globalAlpha;
+  const a0 = P.globalAlpha;
   for (let pass = 0; pass < PASSES; pass++) {
     const from = pass * per;
     const to = Math.min(L - 1, from + per);
     if (from >= to) break;
-    ctx.lineWidth = Math.max(0.5, s * (1 - pass * 0.45));
-    ctx.globalAlpha = a0 * (1 - pass * 0.45);
-    ctx.beginPath();
+    P.lineWidth = Math.max(0.5, s * (1 - pass * 0.45));
+    P.globalAlpha = a0 * (1 - pass * 0.45);
+    P.beginPath();
     for (const i of list) {
       const base = i * L;
       // Parallax offset (the history is stored unshifted).
@@ -1718,7 +1890,7 @@ function drawRibbons(list: number[], k: number, s: number) {
       let slot = (histHead - from + L) % L;
       let x0 = rx(hist[(base + slot) * 2] + offx, hist[(base + slot) * 2 + 1] + offy);
       let y0 = ry;
-      ctx.moveTo(x0, y0);
+      P.moveTo(x0, y0);
       for (let q = Math.min(to, from + stride); q <= to; q = q === to ? to + 1 : Math.min(to, q + stride)) {
         slot = (histHead - q + L) % L;
         const x1 = rx(hist[(base + slot) * 2] + offx, hist[(base + slot) * 2 + 1] + offy);
@@ -1727,26 +1899,179 @@ function drawRibbons(list: number[], k: number, s: number) {
         const dy = y1 - y0;
         // A big jump means a wrap or a respawn: break the ribbon there.
         if (dx * dx + dy * dy > 2500 * stride * stride) break;
-        ctx.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+        P.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
         x0 = x1;
         y0 = y1;
       }
     }
-    ctx.stroke();
+    P.stroke();
   }
-  ctx.globalAlpha = a0;
+  P.globalAlpha = a0;
 }
 
 // --- shape (home positions) ------------------------------------------------------
 
 let shapeImage: HTMLImageElement | null = null;
 let shapeKey = '';
+// A playing picture for the image shape: a video or a GIF's frames.
+let shapeMedia: { video: HTMLVideoElement | null; frames: HTMLCanvasElement[] | null; ms: number[]; src: string } | null = null;
+let mediaFrameNo = 0;
+let mediaAt = 0;
+const mediaCanvas = document.createElement('canvas');
+function mediaStop() {
+  shapeMedia?.video?.pause();
+  shapeMedia = null;
+}
+// The picture as it is now (drawn into a canvas small enough to sample).
+function mediaFrame(): HTMLCanvasElement | null {
+  const m = shapeMedia;
+  if (!m) return null;
+  let src: CanvasImageSource;
+  let sw: number;
+  let sh: number;
+  if (m.video) {
+    if (m.video.readyState < 2) return null;
+    src = m.video;
+    sw = m.video.videoWidth;
+    sh = m.video.videoHeight;
+  } else {
+    const total = m.ms.reduce((a, b) => a + b, 0) || 1;
+    let t0 = performance.now() % total;
+    let k = 0;
+    while (k < m.ms.length - 1 && t0 >= m.ms[k]) t0 -= m.ms[k++];
+    src = m.frames![k];
+    sw = m.frames![k].width;
+    sh = m.frames![k].height;
+  }
+  const sc = Math.min(1, 640 / Math.max(sw, sh, 1));
+  const W = Math.max(2, Math.round(sw * sc));
+  const H = Math.max(2, Math.round(sh * sc));
+  if (mediaCanvas.width !== W || mediaCanvas.height !== H) {
+    mediaCanvas.width = W;
+    mediaCanvas.height = H;
+  }
+  const g = mediaCanvas.getContext('2d', { willReadFrequently: true })!;
+  g.clearRect(0, 0, W, H);
+  g.drawImage(src, 0, 0, W, H);
+  return mediaCanvas;
+}
+// Video and GIF shapes are sampled again a few times a second.
+function mediaTick(now: number) {
+  if (settings.shape !== 'image') return;
+  if (shapeMedia && now - mediaAt > 1000 / settings.imageRate) {
+    mediaAt = now;
+    mediaFrameNo++;
+    buildShape();
+  }
+  picColours(now);
+}
+// An animated model's clock, in the clip's seconds.
+let modelT = 0;
+let modelAt = 0;
+function modelTick(now: number) {
+  const S = settings;
+  const dt = modelAt ? Math.min(0.1, (now - modelAt) / 1000) : 0;
+  modelAt = now;
+  if (!modelSolid()) return;
+  const slot = S.shapeSolid;
+  if (slot in EXAMPLE_MODELS && !hasModel(slot)) {
+    // Fetch the other examples too, so switching between them morphs straight across.
+    for (const k of [slot, ...Object.keys(EXAMPLE_MODELS)]) loadExample(k);
+    return;
+  }
+  const clips = modelClips(slot);
+  if (!clips.length) return;
+  const clip = S.modelClip - 1;
+  if (clip < 0 || paused) {
+    poseModel(clip, modelT, slot);
+    return;
+  }
+  const beat = S.modelBeat && reacting() ? 0.3 + audio.levels.level * 2.2 : 1;
+  modelT += dt * S.modelSpeed * beat;
+  poseModel(Math.min(clip, clips.length - 1), modelT, slot);
+}
+const modelSolid = () => settings.shape === 'solid' && MODEL_SOLIDS.includes(settings.shapeSolid);
+const shownClips = () => (modelSolid() ? modelClips(settings.shapeSolid) : []);
+// The bundled animated examples, from Khronos's glTF sample models (textures
+// stripped): the fox (CC0 model by PixelMannen; CC BY 4.0 rigging and animation
+// by tomkranis, glTF by AsoboStudio and scurest) and Cesium Man (CC BY 4.0, Cesium).
+const EXAMPLE_MODELS: Record<string, [string, URL]> = {
+  fox: ['Fox', new URL('./models/fox.glb', import.meta.url)],
+  walker: ['Walking figure', new URL('./models/walker.glb', import.meta.url)],
+};
+const exampleLoading = new Set<string>();
+function loadExample(slot: string) {
+  if (exampleLoading.has(slot)) return;
+  exampleLoading.add(slot);
+  const [name, url] = EXAMPLE_MODELS[slot];
+  fetch(url)
+    .then((r) => r.arrayBuffer())
+    .then((b) => {
+      const m = gltfModel(b);
+      setModel(m.pts, name, m.anim, slot);
+      if (settings.shapeSolid === slot) reshape(900);
+      refresh();
+    })
+    .catch(() => exampleLoading.delete(slot));
+}
+// 3D model files for the "Your 3D model" solid.
+const modelInput = document.createElement('input');
+modelInput.type = 'file';
+modelInput.accept = '.obj,.stl,.glb,.gltf';
+modelInput.addEventListener('change', async () => {
+  const f = modelInput.files?.[0];
+  modelInput.value = '';
+  if (!f) return;
+  try {
+    const { pts, anim } = await modelFromFile(f);
+    if (pts.length < 30) throw new Error('empty');
+    setModel(pts, f.name.replace(/\.[^.]+$/, ''), anim);
+    modelT = 0;
+    if (anim) showToast(`${anim.clips.length === 1 ? 'Its animation plays' : `${anim.clips.length} animations; the first one plays`}. Pick another under Shape.`);
+    if (settings.shape !== 'solid' || settings.shapeSolid !== 'model') {
+      settings.shape = 'solid';
+      settings.shapeSolid = 'model';
+      changed(new Set(['shape', 'shapeSolid']));
+    }
+    reshape(900);
+    refresh();
+  } catch {
+    showToast(/\.gltf$/i.test(f.name) ? 'This glTF keeps its data in a separate file. Try a .glb instead.' : 'Couldn’t read that model. OBJ, STL, GLB or glTF work.');
+  }
+});
 const imageInput = document.createElement('input');
 imageInput.type = 'file';
-imageInput.accept = 'image/*,.svg';
-imageInput.addEventListener('change', () => {
+imageInput.accept = 'image/*,.svg,video/*';
+imageInput.addEventListener('change', async () => {
   const f = imageInput.files?.[0];
   if (!f) return;
+  mediaStop();
+  // A video, or an animated GIF: the shape follows it as it plays.
+  if (f.type.startsWith('video/')) {
+    const v = document.createElement('video');
+    v.muted = true;
+    v.loop = true;
+    v.playsInline = true;
+    v.src = URL.createObjectURL(f);
+    v.addEventListener('loadeddata', () => {
+      shapeMedia = { video: v, frames: null, ms: [], src: v.src };
+      shapeImage = null;
+      shapeKey = '';
+      buildShape();
+    }, { once: true });
+    void v.play().catch(() => {});
+    return;
+  }
+  if (f.type === 'image/gif' || /\.(gif|webp|apng)$/i.test(f.name)) {
+    const an = await decodeFrames(f);
+    if (an) {
+      shapeMedia = { video: null, frames: an.frames, ms: an.ms, src: URL.createObjectURL(f) };
+      shapeImage = null;
+      shapeKey = '';
+      buildShape();
+      return;
+    }
+  }
   const img = new Image();
   const svg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
   img.onload = () => {
@@ -1775,6 +2100,7 @@ imageInput.addEventListener('change', () => {
     imageColoursOn();
   };
   img.src = URL.createObjectURL(f);
+  imageInput.value = '';
 });
 
 // A new image: its particles take the image's own colours (Undo keeps the old).
@@ -2927,7 +3253,21 @@ let camColourAt = 0;
 function camColours(now: number) {
   if (settings.colorBy !== 'camera' || !cam.ready || now - camColourAt < 400) return;
   camColourAt = now;
-  cgCtx.drawImage(cam.video, 0, 0, CG_W, CG_H);
+  rankColours(cam.video);
+}
+// Picture colours for the image shape (a still, a video or a GIF).
+let imgMap = { x: 0, y: 0, w: 1, h: 1 };
+const picOn = () => !cam.on && settings.shape === 'image' && (!!shapeImage || !!shapeMedia);
+function picColours(now: number) {
+  if (settings.colorBy !== 'camera' || !picOn() || now - camColourAt < (shapeMedia ? 400 : 2000)) return;
+  const src = mediaFrame() ?? shapeImage;
+  if (!src) return;
+  camColourAt = now;
+  rankColours(src);
+}
+function rankColours(src: CanvasImageSource) {
+  cgCtx.clearRect(0, 0, CG_W, CG_H);
+  cgCtx.drawImage(src, 0, 0, CG_W, CG_H);
   const d = cgCtx.getImageData(0, 0, CG_W, CG_H).data;
   const N = CG_W * CG_H;
   const lum = new Float32Array(N);
@@ -2955,6 +3295,11 @@ function camColours(now: number) {
 }
 function camShade(i: number) {
   if (!camShades) return tone[i];
+  if (!cam.on) {
+    const gx = Math.max(0, Math.min(CG_W - 1, (((hx[i] - imgMap.x) / imgMap.w) * CG_W) | 0));
+    const gy = Math.max(0, Math.min(CG_H - 1, (((hy[i] - imgMap.y) / imgMap.h) * CG_H) | 0));
+    return camRank[gy * CG_W + gx];
+  }
   const vxp = camMap.ox + (hx[i] - w / 2) / (camMap.sc * camMap.mir);
   const vyp = camMap.oy + (hy[i] - h / 2) / camMap.sc;
   const gx = Math.max(0, Math.min(CG_W - 1, ((vxp / cam.width) * CG_W) | 0));
@@ -3101,7 +3446,7 @@ function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number)
 function sampleImage(): [number, number][] {
   const camOn = settings.shape === 'camera';
   if (camOn) grabCamera();
-  const src: { width: number; height: number } | null = camOn ? (cam.ready ? camCanvas : null) : shapeImage;
+  const src: { width: number; height: number } | null = camOn ? (cam.ready ? camCanvas : null) : (mediaFrame() ?? shapeImage);
   if (!src) return [];
   const step = 2;
   const W = Math.max(1, Math.round(w / step));
@@ -3114,6 +3459,7 @@ function sampleImage(): [number, number][] {
   const ih = Math.max(2, Math.round(src.height * sc));
   const ix = Math.round((Wv - iw) / 2);
   const iy = Math.round((H - ih) / 2);
+  if (!camOn) imgMap = { x: ix * step, y: iy * step, w: iw * step, h: ih * step };
   const c = document.createElement('canvas');
   c.width = iw;
   c.height = ih;
@@ -3479,6 +3825,7 @@ function animateShape(now: number) {
       reshape(400);
     }
   }
+  modelTick(now);
   const ps = paramShape;
   // Curves and solids glide on their own; a traced-shape glide would fight it.
   if (ps && homeGlide) homeGlide = null;
@@ -3632,7 +3979,7 @@ function buildShape() {
   // An animated size plays as a scale on the built shape (see placeFrame), so
   // the shape is built once at the knob's own size, not every frame.
   const sz = animBase.shapeSize ?? S.shapeSize;
-  const key = [S.shape, S.shapeText, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
+  const key = [S.shape, S.shapeText, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', shapeMedia ? `${shapeMedia.src}#${mediaFrameNo}` : '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   if (S.shape === 'camera' && trackMode()) {
     // Face, hand and body modes: the homes follow the tracking every frame.
@@ -3763,7 +4110,7 @@ let entrance: { start: number; dur: number } | null = null;
 function playEntrance() {
   const S = settings;
   if (S.shape === 'none' || S.emitter !== 'none' || S.entrance === 'scatter') return;
-  if ((S.shape === 'image' && !shapeImage) || S.shape === 'camera') return;
+  if ((S.shape === 'image' && !shapeImage && !shapeMedia) || S.shape === 'camera') return;
   buildShape();
   const cx = w / 2;
   const cy = h / 2;
@@ -3930,6 +4277,164 @@ function matchNearest(tx: Float32Array, ty: Float32Array): Int32Array {
   return owner;
 }
 
+// --- spawning: particles that make particles ----------------------------------
+// A share of the particles (just below the face-effect pool) is set aside as
+// children. A parent makes children when it dies, hits something, on the
+// beat, or leaves a trail as it moves. Children live short lives with no
+// home, and with "chain" a dying child leaves a puff of slower, longer
+// grandchildren (fireworks → sparks → smoke). When the pool is busy, new
+// children are skipped instead of cutting old ones short.
+let kidFrom = 0;
+let kidTo = 0;
+let kidStack = new Int32Array(0);
+let kidTop = 0;
+let trailAcc = 0;
+const spawnOn = () => settings.spawnOn !== 'none';
+function syncKids() {
+  const S = settings;
+  const end = poolTo === n ? Math.min(n, poolFrom) : n;
+  const want = spawnOn() ? Math.round(end * S.spawnShare) : 0;
+  const from = end - want;
+  if (from === kidFrom && end === kidTo) return;
+  // Slots leaving the pool become ordinary particles again, fading in.
+  for (let i = kidFrom; i < Math.min(kidTo, n); i++) {
+    if (i >= from && i < end) continue;
+    if (!kid[i]) continue;
+    kid[i] = 0;
+    if (free[i]) continue;
+    spawn(i, Math.random() * w, Math.random() * h);
+    dead[i] = settings.emitter !== 'none' ? 1 : 0;
+  }
+  // New slots: whoever was there fades out, then waits to be a child.
+  for (let i = from; i < end; i++) {
+    if (kid[i]) continue;
+    // 3: an old particle on its way out (no smoke, no special size).
+    kid[i] = dead[i] ? 1 : 3;
+    if (!dead[i]) span[i] = Math.min(span[i] > 0 ? span[i] : Infinity, Math.max(age[i], FADE_IN) + FADE_OUT * 0.5);
+  }
+  kidFrom = from;
+  kidTo = end;
+  if (kidStack.length < want) kidStack = new Int32Array(Math.max(want, cap));
+  kidTop = 0;
+  for (let i = from; i < end; i++) if (dead[i]) kidStack[kidTop++] = i;
+}
+function kidDied(i: number) {
+  if (dead[i]) return;
+  dead[i] = 1;
+  rest[i] = 0;
+  if (i >= kidFrom && i < kidTo && kidTop < kidStack.length) kidStack[kidTop++] = i;
+}
+// A child at x, y; false once the pool is busy.
+function kidEmit(x: number, y: number, vX: number, vY: number, tn: number, z: number, gen: number) {
+  let i = -1;
+  while (kidTop > 0) {
+    const j = kidStack[--kidTop];
+    if (j >= kidFrom && j < kidTo && dead[j] && kid[j]) {
+      i = j;
+      break;
+    }
+  }
+  if (i < 0) return false;
+  const S = settings;
+  px[i] = ox[i] = x;
+  py[i] = oy[i] = y;
+  vx[i] = vX;
+  vy[i] = vY;
+  tone[i] = (((tn + S.spawnTone * gen) % 1) + 1) % 1;
+  gl[i] = Math.random();
+  pz[i] = z;
+  rnd[i] = Math.random();
+  rest[i] = 0;
+  gone[i] = 0;
+  kid[i] = gen;
+  dead[i] = 0;
+  age[i] = FADE_IN * 0.8;
+  // Grandchildren (smoke) linger longer.
+  span[i] = age[i] + S.spawnLife * 60 * (gen > 1 ? 2.5 : 1) * (0.6 + Math.random() * 0.8);
+  return true;
+}
+// A burst of children from particle i, around direction (dx, dy) if given.
+function spawnBurst(i: number, count: number, dx = 0, dy = 0, kick = 1) {
+  const S = settings;
+  const gen = kid[i] ? 2 : 1;
+  const sp0 = S.spawnSpeed * (gen > 1 ? 0.25 : 1) * kick;
+  const aim = dx || dy ? Math.atan2(dy, dx) : 0;
+  for (let k = 0; k < count; k++) {
+    const a = dx || dy ? aim + (Math.random() - 0.5) * 2.4 : Math.random() * Math.PI * 2;
+    const sp = sp0 * (0.35 + Math.random() * 0.65);
+    if (!kidEmit(px[i], py[i], Math.cos(a) * sp + vx[i] * 0.25, Math.sin(a) * sp + vy[i] * 0.25, tone[i], pz[i], gen)) return;
+  }
+}
+// Exhaust: a jet pouring down from the lowest tenth of the parents, moving or not.
+const lowIdx: number[] = [];
+function exhaustTick(dt: number) {
+  const S = settings;
+  const pool = kidTo - kidFrom;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < kidFrom; i++) {
+    if (dead[i] || free[i]) continue;
+    if (py[i] < lo) lo = py[i];
+    if (py[i] > hi) hi = py[i];
+  }
+  if (!(hi > lo)) return;
+  const cut = hi - (hi - lo) * 0.1;
+  lowIdx.length = 0;
+  for (let i = 0; i < kidFrom; i++) if (!dead[i] && !free[i] && py[i] >= cut) lowIdx.push(i);
+  if (!lowIdx.length) return;
+  // Count is per second for each particle in the jet's mouth.
+  const want = lowIdx.length * S.spawnCount * 3 * (dt / 60);
+  const most = (pool / Math.max(0.2, S.spawnLife * 60)) * dt * 1.3;
+  trailAcc += Math.min(want, most);
+  while (trailAcc >= 1) {
+    trailAcc--;
+    const i = lowIdx[(Math.random() * lowIdx.length) | 0];
+    const a = Math.PI / 2 + (Math.random() - 0.5) * 0.7;
+    const sp = Math.max(0.3, S.spawnSpeed) * (0.5 + Math.random() * 0.8);
+    if (!kidEmit(px[i], py[i], Math.cos(a) * sp + vx[i] * 0.3, Math.sin(a) * sp + vy[i] * 0.3, tone[i], pz[i], 1)) {
+      trailAcc = 0;
+      break;
+    }
+  }
+}
+// Once a frame: trails and beat bursts (death and hit bursts happen in step).
+function spawnTick(dt: number, beat: boolean) {
+  const S = settings;
+  const pool = kidTo - kidFrom;
+  if (!spawnOn() || pool <= 0 || kidFrom <= 0) return;
+  if (S.spawnOn === 'trail' && S.spawnFrom !== 'bottom') {
+    // Each moving parent drops about Count children a second, held to what
+    // the pool can keep alive.
+    const want = kidFrom * S.spawnCount * (dt / 60);
+    const most = (pool / Math.max(0.2, S.spawnLife * 60)) * dt * 1.3;
+    trailAcc += Math.min(want, most);
+    let tries = 0;
+    while (trailAcc >= 1 && tries++ < 4000) {
+      const i = (Math.random() * kidFrom) | 0;
+      if (dead[i] || free[i] || rest[i]) continue;
+      const sp = Math.hypot(vx[i], vy[i]);
+      if (sp < 0.15) continue;
+      trailAcc--;
+      const a = Math.random() * Math.PI * 2;
+      const j = S.spawnSpeed * 0.15 * Math.random();
+      if (!kidEmit(px[i], py[i], vx[i] * 0.15 + Math.cos(a) * j, vy[i] * 0.15 + Math.sin(a) * j, tone[i], pz[i], 1)) {
+        trailAcc = 0;
+        break;
+      }
+    }
+    if (tries >= 4000) trailAcc = 0;
+  } else if (S.spawnOn === 'trail' && S.spawnFrom === 'bottom') {
+    exhaustTick(dt);
+  } else if (S.spawnOn === 'beat' && beat) {
+    // A handful of parents burst on each kick.
+    const m = Math.max(1, Math.min(40, Math.round(pool / Math.max(1, S.spawnCount) / 4)));
+    for (let q = 0; q < m; q++) {
+      const i = (Math.random() * kidFrom) | 0;
+      if (!dead[i] && !free[i]) spawnBurst(i, S.spawnCount);
+    }
+  }
+}
+
 // --- emitter -------------------------------------------------------------------
 
 let emitAcc = 0;
@@ -4006,13 +4511,15 @@ function emitOne(i: number) {
   }
 }
 
+// Children have their own slots; the emitter launches the parents.
+const emitN = () => (kidTo > kidFrom && kidFrom > 0 ? kidFrom : n);
 function emitMany(k: number) {
   if (n === 0) return;
   // Prefer particles waiting to be born, then the oldest by turn.
   for (let j = 0; j < k; j++) {
     let i = -1;
     for (let tries = 0; tries < n; tries++) {
-      const c = emitNext++ % n;
+      const c = emitNext++ % emitN();
       if (dead[c]) {
         i = c;
         break;
@@ -4022,7 +4529,7 @@ function emitMany(k: number) {
         break;
       }
     }
-    if (i < 0) i = emitNext++ % n;
+    if (i < 0) i = emitNext++ % emitN();
     emitOne(i);
   }
 }
@@ -4031,7 +4538,7 @@ function runEmitter(dt: number, beat: boolean) {
   const S = settings;
   if (S.emitter === 'none') return;
   if (S.emitMode === 'steady') {
-    emitAcc += n * S.emitRate * macro.emit * (dt / 60);
+    emitAcc += emitN() * S.emitRate * macro.emit * (dt / 60);
     const k = Math.floor(emitAcc);
     emitAcc -= k;
     emitMany(k);
@@ -4039,9 +4546,9 @@ function runEmitter(dt: number, beat: boolean) {
     burstClock += dt / 60;
     if (burstClock >= S.burstEvery) {
       burstClock = 0;
-      emitMany(Math.round(n * S.burstSize));
+      emitMany(Math.round(Math.max(1, emitN() * S.burstSize)));
     }
-  } else if (beat) emitMany(Math.round(n * S.burstSize));
+  } else if (beat) emitMany(Math.round(Math.max(1, emitN() * S.burstSize)));
 }
 
 // Switching the emitter on empties the screen so it fills from the emitter;
@@ -4208,7 +4715,7 @@ function shadeIndex(i: number) {
       break;
     }
     case 'camera':
-      u = cam.on ? camShade(i) : tone[i];
+      u = cam.on || picOn() ? camShade(i) : tone[i];
       break;
     case 'image':
       u = imgShade(i);
@@ -4233,6 +4740,156 @@ function audioSizeBoost() {
   if (S.audioSnare === 'flash') b += L.snareEnv * 1.5 * S.audioHits * S.audioIntensity;
   if (S.audioSub === 'size') b += L.sub * L.sub * 1.2 * S.audioSubAmt * S.audioIntensity;
   return b;
+}
+
+// --- your sprites ------------------------------------------------------------
+// The Your sprite style: frames from an image, a sprite sheet or a GIF (or
+// the built-in butterfly). Tinted copies take the palette's colours.
+const isSprite = () => settings.render === 'sprite' || (settings.render === 'mixed' && settings.mixStyles.includes('sprite'));
+let spriteSheet: HTMLImageElement | null = null;
+let spriteAnim: HTMLCanvasElement[] | null = null;
+let spriteRaw: HTMLCanvasElement[] = [];
+let spriteGrey: HTMLCanvasElement[] = [];
+let spriteRawKey = '';
+// The sheet's grid as used (auto resolved), and its frames grouped by row
+// (one animation per row is the usual layout); empty cells are left out.
+let spriteGrid: [number, number] = [1, 1];
+let spriteRowsIdx: number[][] = [];
+const spriteTints = new Map<string, HTMLCanvasElement>();
+const spriteInput = document.createElement('input');
+spriteInput.type = 'file';
+spriteInput.accept = 'image/*';
+spriteInput.addEventListener('change', async () => {
+  const f = spriteInput.files?.[0];
+  spriteInput.value = '';
+  if (!f) return;
+  const an = /gif|webp|png/i.test(f.type) ? await decodeFrames(f) : null;
+  if (an) return spriteUse(null, an.frames.map((c) => sliceSheet(c, 1, 1)[0]));
+  const img = new Image();
+  img.onload = () => spriteUse(img);
+  img.src = URL.createObjectURL(f);
+});
+function spriteUse(img: HTMLImageElement | null, frames: HTMLCanvasElement[] | null = null) {
+  spriteSheet = img;
+  spriteAnim = frames;
+  spriteRawKey = '';
+  spriteFramesNow();
+  if (settings.render !== 'sprite' && settings.render !== 'mixed') {
+    settings.render = 'sprite';
+    changed(new Set(['render']));
+  }
+  refresh();
+}
+function spriteFramesNow() {
+  const S = settings;
+  const key = `${spriteSheet?.src ?? (spriteAnim ? `anim${spriteAnim.length}` : 'fly')}|${S.spriteCols}|${S.spriteRows}`;
+  if (key !== spriteRawKey) {
+    spriteRawKey = key;
+    if (spriteSheet) {
+      const auto = !S.spriteCols || !S.spriteRows ? detectGrid(spriteSheet) : [1, 1];
+      spriteGrid = [S.spriteCols || auto[0], S.spriteRows || auto[1]];
+      const all = sliceSheet(spriteSheet, spriteGrid[0], spriteGrid[1]);
+      spriteRaw = [];
+      spriteRowsIdx = [];
+      for (let r = 0; r < spriteGrid[1]; r++) {
+        const idx: number[] = [];
+        for (let c = 0; c < spriteGrid[0]; c++) {
+          const cv = all[r * spriteGrid[0] + c];
+          if (!cv || cellEmpty(cv)) continue;
+          idx.push(spriteRaw.length);
+          spriteRaw.push(cv);
+        }
+        if (idx.length) spriteRowsIdx.push(idx);
+      }
+      if (!spriteRaw.length) {
+        spriteRaw = all.slice(0, 1);
+        spriteRowsIdx = [[0]];
+      }
+    } else {
+      spriteRaw = spriteAnim ?? butterflySheet();
+      spriteGrid = [spriteRaw.length, 1];
+      spriteRowsIdx = [spriteRaw.map((_, q) => q)];
+    }
+    // Light grey copies keep the shading; the palette colour multiplies in.
+    spriteGrey = spriteRaw.map((c) => {
+      const o = document.createElement('canvas');
+      o.width = c.width;
+      o.height = c.height;
+      const g = o.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(c, 0, 0);
+      const im = g.getImageData(0, 0, o.width, o.height);
+      const d = im.data;
+      for (let q = 0; q < d.length; q += 4) {
+        const l = Math.min(255, (d[q] * 0.299 + d[q + 1] * 0.587 + d[q + 2] * 0.114) * 1.25 + 40);
+        d[q] = d[q + 1] = d[q + 2] = l;
+      }
+      g.putImageData(im, 0, 0);
+      return o;
+    });
+    spriteTints.clear();
+  }
+  return spriteRaw;
+}
+function cellEmpty(cv: HTMLCanvasElement) {
+  const d = cv.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, cv.width, cv.height).data;
+  let n = 0;
+  for (let q = 3; q < d.length; q += 4) if (d[q] > 16 && ++n > 6) return false;
+  return true;
+}
+function spriteTinted(f: number, k: number) {
+  const key = `${f}:${k}`;
+  let c = spriteTints.get(key);
+  if (c) return c;
+  const src = spriteGrey[f];
+  c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const g = c.getContext('2d')!;
+  g.drawImage(src, 0, 0);
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = shades[k];
+  g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(src, 0, 0);
+  if (spriteTints.size > 2000) spriteTints.clear();
+  spriteTints.set(key, c);
+  return c;
+}
+function drawUserSprites(list: number[], k: number, s: number) {
+  const S = settings;
+  const frames = spriteFramesNow();
+  const R = spriteRowsIdx.length;
+  const one = S.spriteRow > 0 ? spriteRowsIdx[Math.min(R, S.spriteRow) - 1] : null;
+  const A = ctx.globalAlpha;
+  const d0 = s * S.spriteScale;
+  const rgb = shadeRgb[k] ?? [255, 255, 255];
+  const tint = S.spriteTint ? (Math.round(rgb[0]) << 16) | (Math.round(rgb[1]) << 8) | Math.round(rgb[2]) : 0xffffff;
+  const turn = S.spriteTurn;
+  for (const i of list) {
+    // Each particle plays one row: the chosen one, or its own.
+    const row = one ?? spriteRowsIdx[R > 1 ? (Math.imul(i, 2654435761) >>> 0) % R : 0];
+    const F = row.length;
+    let f = row[0];
+    if (F > 1) {
+      if (S.spriteFps > 0) f = row[Math.floor(t * S.spriteFps + rnd[i] * F) % F];
+      else f = row[span[i] > 0 ? Math.min(F - 1, Math.floor((age[i] / span[i]) * F)) : Math.floor(t * 8 + rnd[i] * F) % F];
+    }
+    const d = uniformSize ? d0 : d0 * psz[i];
+    const a = turn === 'heading' ? Math.atan2(vy[i], vx[i]) : turn === 'spin' ? t * 1.5 * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28 : 0;
+    if (glr) {
+      glr.pushR(S.spriteTint ? spriteGrey[f] : frames[f], px[i], py[i], d, d, a, A, tint);
+      continue;
+    }
+    const img = S.spriteTint ? spriteTinted(f, k) : frames[f];
+    if (a === 0) ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+    else {
+      const c = Math.cos(a) * dpr;
+      const sn = Math.sin(a) * dpr;
+      ctx.setTransform(c, sn, -sn, c, px[i] * dpr, py[i] * dpr);
+      ctx.drawImage(img, -d / 2, -d / 2, d, d);
+    }
+  }
+  if (!glr && turn !== 'none') ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 // --- sprites -----------------------------------------------------------------
@@ -4392,6 +5049,7 @@ function spriteFor(style: SpriteStyle, k: number) {
     g.fill();
   }
   spriteCache.set(key, c);
+  spriteKind.set(c, style);
   return c;
 }
 
@@ -4494,11 +5152,497 @@ function drawGlyphs(list: number[], k: number, s: number) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
+// Glyphs on the GPU: each character drawn once in white (per font) and
+// tinted per colour, sized and turned per particle like the 2D version.
+const GLYPH_PX = 34;
+function glyphSprite(ch: string) {
+  const key = `glyph:${settings.glyphFont}:${ch}`;
+  let c = spriteCache.get(key);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = SPRITE_PX;
+  const g = c.getContext('2d')!;
+  const f = FONTS[settings.glyphFont];
+  g.font = f.includes('{px}') ? f.replace('{px}', `${GLYPH_PX}px`) : `${GLYPH_PX}px ${f}`;
+  g.fillStyle = '#fff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(ch, SPRITE_PX / 2, SPRITE_PX / 2);
+  spriteCache.set(key, c);
+  return c;
+}
+function drawGlyphsGL(list: number[], k: number, s: number) {
+  const G = glr!;
+  const size = Math.max(6, s * 5 * settings.glyphScale) * (SPRITE_PX / GLYPH_PX);
+  const [r, g, b] = shadeRgb[k];
+  const tint = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+  const A = ctx.globalAlpha;
+  const rot = settings.glyphRotate;
+  for (const i of list) {
+    const a = rot === 'none' ? 0 : rot === 'heading' ? Math.atan2(vy[i], vx[i]) : t * (1 + tone[i] * 2) * (tone[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+    const z = uniformSize ? 1 : Math.exp(glyphLevel(psz[i]) * GLYPH_STEP);
+    G.pushR(glyphSprite(glyphFor(i)), px[i], py[i], size * z, size * z, a, A, tint);
+  }
+}
+
 // Buckets let us draw every particle of one colour in a single path.
 const buckets: number[][] = Array.from({ length: SHADES }, () => []);
 
+// Renderers (?renderer=2d | copy; the default is WebGL only):
+//   2D     everything on the 2D canvas.
+//   copy   particles are drawn by the GPU, then laid onto the 2D canvas,
+//          which keeps the picture (trails, lenses…).
+//   only   the picture lives on the GPU and is shown as it is; the 2D canvas
+//          only carries what is still drawn in 2D, laid on top when used.
+//          Effects that need the 2D picture (lenses, tunnel, kaleidoscope,
+//          mirror, echo, recording, projector) switch to copy while on.
+const RENDERER = (() => {
+  const r = new URLSearchParams(location.search).get('renderer');
+  return r === '2d' || r === 'copy' ? r : 'only';
+})();
+const glr = RENDERER === '2d' ? null : GLSprites.create();
+let glOnly = false;
+// Something was drawn on the 2D canvas that the GPU picture hasn't taken yet.
+let glDirty2d = false;
+// Why only mode is off right now (shown in the Stage fps readout).
+let glWhyNot = '';
+function glOnlyWanted() {
+  glWhyNot = glWhy();
+  return !glWhyNot;
+}
+function glWhy() {
+  if (!glr) return 'no WebGL';
+  if (RENDERER !== 'only') return 'chosen';
+  if (seeThrough) return 'see-through';
+  return '';
+}
+function glSetOnly(on: boolean) {
+  if (!glr || on === glOnly) return;
+  glOnly = glr.only = on;
+  document.body.classList.toggle('gl-only', on);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  if (on) {
+    if (!glr.canvas.isConnected) {
+      glr.canvas.className = 'gl-layer';
+      glr.canvas.setAttribute('aria-hidden', 'true');
+      canvas.after(glr.canvas);
+    }
+    // Carry the picture over, then the 2D canvas starts empty.
+    glr.layer(canvas, 'copy');
+    if (!lensCanvas.hidden) {
+      lensCanvas.hidden = true;
+      canvas.style.opacity = '';
+    }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    glDirty2d = false;
+  } else {
+    // Back to the 2D canvas: carry the GPU picture over.
+    glr.present();
+    ctx.globalCompositeOperation = 'copy';
+    ctx.drawImage(glr.canvas, 0, 0);
+    glr.drop();
+    glfx?.drop();
+    glShown = null;
+  }
+  ctx.restore();
+}
+// Lay what was drawn in 2D onto the GPU picture and empty the 2D canvas.
+function glTake2d(blend: Blend) {
+  if (!glOnly || !glDirty2d) return;
+  glDirty2d = false;
+  glr!.layer(canvas, blend);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+function glBlend(): Blend {
+  const op = ctx.globalCompositeOperation;
+  return op === 'lighter' ? 'add' : op === 'multiply' ? 'multiply' : 'over';
+}
+// The finished picture as a canvas to copy from (snapshots, checks).
+function picture(): HTMLCanvasElement {
+  if (glOnly && glr) {
+    glShow();
+    return glr.canvas;
+  }
+  if (!lensCanvas.hidden) return lensCanvas;
+  return canvas;
+}
+// Effects on the GPU picture (lenses, feedback), and what is on screen.
+const glfx = glr ? new GLFx(glr.gl) : null;
+let glShown: Target | null = null;
+function glPic() {
+  return glr!.picture(canvas.width, canvas.height);
+}
+function glShow() {
+  if (!glfx) return;
+  const pic = glPic();
+  glfx.sw = pic.w;
+  glfx.sh = pic.h;
+  glfx.draw(glShown && glShown.w === pic.w && glShown.h === pic.h ? glShown : pic, null, affine(0, 0), { blend: 'copy' });
+}
+// Redraw the GPU picture into itself through an effect (kaleidoscope, mirror world).
+function glFeedback(name: string, u: Record<string, number | number[]>) {
+  const pic = glPic();
+  const tmp = glfx!.target('fb', pic.w, pic.h);
+  glfx!.draw(pic, tmp, affine(0, 0), { blend: 'copy' });
+  glfx!.pass(name, tmp, pic, u);
+}
+
 // Draws one bucket of particles (all the same colour) in one style.
+// Soft sprites split in two (WebGL only): the sharp middle drawn at full
+// resolution, the soft halo round it at half (it looks the same blurred, and
+// costs a quarter). cut: where the halo starts, as a part of the radius.
+const HALO_CUT: Partial<Record<SpriteStyle, number>> = { glow: 0.35, neon: 0.3, sparkles: 0.5, ink: 0 };
+let halfHalos = true;
+try {
+  halfHalos = localStorage.getItem('pf-halfhalo') !== '0';
+} catch {}
+const spriteKind = new WeakMap<HTMLCanvasElement, SpriteStyle>();
+const haloSplit = new WeakMap<HTMLCanvasElement, { core: HTMLCanvasElement | null; halo: HTMLCanvasElement; f: number } | null>();
+function splitFor(img: HTMLCanvasElement) {
+  let e = haloSplit.get(img);
+  if (e !== undefined) return e;
+  const st = spriteKind.get(img);
+  const cut = st && HALO_CUT[st];
+  if (cut === undefined) {
+    haloSplit.set(img, null);
+    return null;
+  }
+  const P = SPRITE_PX;
+  const m = P / 2;
+  const rIn = cut * m;
+  const rOut = Math.min(m, (cut + 0.2) * m);
+  const halo = document.createElement('canvas');
+  halo.width = halo.height = P;
+  const hg = halo.getContext('2d')!;
+  hg.drawImage(img, 0, 0);
+  let core: HTMLCanvasElement | null = null;
+  if (cut > 0) {
+    const mask = (g: CanvasRenderingContext2D, c: number, r0: number, r1: number) => {
+      const gr = g.createRadialGradient(c, c, r0, c, c, r1);
+      gr.addColorStop(0, '#000');
+      gr.addColorStop(1, 'rgb(0 0 0 / 0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, P, P);
+    };
+    hg.globalCompositeOperation = 'destination-out';
+    mask(hg, m, rIn, rOut);
+    // The middle, cropped and enlarged to the whole cell (sharper too).
+    core = document.createElement('canvas');
+    core.width = core.height = P;
+    const cg = core.getContext('2d')!;
+    cg.drawImage(img, m - rOut, m - rOut, rOut * 2, rOut * 2, 0, 0, P, P);
+    cg.globalCompositeOperation = 'destination-in';
+    mask(cg, m, (rIn / rOut) * m, m);
+  }
+  e = { core, halo, f: rOut / m };
+  haloSplit.set(img, e);
+  return e;
+}
+function stamp(img: HTMLCanvasElement, x: number, y: number, d: number) {
+  if (glr) {
+    // Small ones aren't worth splitting.
+    const sp = glOnly && halfHalos && d * dpr > 14 ? splitFor(img) : null;
+    if (!sp) return glr.push(img, x, y, d, ctx.globalAlpha);
+    glr.pushR(sp.halo, x, y, d, d, 0, ctx.globalAlpha, 0xffffff, true);
+    if (sp.core) glr.pushR(sp.core, x, y, d * sp.f, d * sp.f, 0, ctx.globalAlpha);
+  } else ctx.drawImage(img, x - d / 2, y - d / 2, d, d);
+}
+// GPU versions of the drawn (not stamped) styles: each particle is one
+// sprite, stretched and turned. A cell per shape and colour.
+type GlShape = 'square' | 'disc' | 'tri' | 'cross' | 'shard' | 'strand' | 'white' | 'wdisc' | 'ember';
+function glSprite(kind: GlShape, k: number) {
+  const key = `gl:${kind}:${k}`;
+  let c = spriteCache.get(key);
+  if (c) return c;
+  c = document.createElement('canvas');
+  const P = SPRITE_PX;
+  c.width = c.height = P;
+  const g = c.getContext('2d')!;
+  g.fillStyle = kind === 'white' || kind === 'wdisc' ? '#fff' : kind === 'ember' ? 'rgba(255,240,220,0.9)' : shades[k];
+  g.strokeStyle = shades[k];
+  g.beginPath();
+  if (kind === 'square' || kind === 'white' || kind === 'ember') g.rect(0, 0, P, P);
+  else if (kind === 'disc' || kind === 'wdisc') g.arc(P / 2, P / 2, P / 2 - 0.5, 0, Math.PI * 2);
+  // Arrow: tip at the right edge, base along the left.
+  else if (kind === 'tri') {
+    g.moveTo(P, P / 2);
+    g.lineTo(0, 0);
+    g.lineTo(0, P);
+  } else if (kind === 'cross') {
+    const a = P * 0.4375;
+    const b = P * 0.5625;
+    g.rect(0, a, P, b - a);
+    g.rect(a, 0, b - a, P);
+  } else if (kind === 'shard') {
+    // Tip at the right; see the shard geometry in drawShapes.
+    g.moveTo(P, (0.4 / 1.4) * P);
+    g.lineTo((0.3 / 1.8) * P, P);
+    g.lineTo(0, 0);
+  } else {
+    // A strand: a gentle curve along the cell, drawn flat and stretched tall.
+    const t = document.createElement('canvas');
+    t.width = P;
+    t.height = 13;
+    const tg = t.getContext('2d')!;
+    tg.strokeStyle = shades[k];
+    tg.lineWidth = 3.2;
+    tg.lineCap = 'round';
+    tg.beginPath();
+    tg.moveTo(2, 9);
+    tg.quadraticCurveTo(P / 2, -1, P - 2, 9);
+    tg.stroke();
+    g.drawImage(t, 0, 0, P, P);
+  }
+  if (kind !== 'strand') g.fill();
+  spriteCache.set(key, c);
+  return c;
+}
+// A stand-in for the 2D context's path drawing (lines, curves, arcs, rects)
+// that queues GPU sprites instead: strokes become thin stretched squares,
+// filled circles discs. Used for links, threads, lightning, ribbons, grids
+// and markers. Colours come from the style strings (white sprites, tinted).
+const colCache = new Map<string, [number, number]>();
+const colCtx = document.createElement('canvas').getContext('2d')!;
+function parseCol(c: string): [number, number] {
+  let v = colCache.get(c);
+  if (v) return v;
+  colCtx.fillStyle = '#000';
+  colCtx.fillStyle = c;
+  const n = colCtx.fillStyle;
+  let r = 0, g = 0, b = 0, a = 1;
+  if (n.startsWith('#')) {
+    const x = parseInt(n.slice(1), 16);
+    r = x >> 16;
+    g = (x >> 8) & 255;
+    b = x & 255;
+  } else {
+    const m = n.match(/[\d.]+/g)?.map(Number) ?? [];
+    [r, g, b] = m;
+    a = m[3] ?? 1;
+  }
+  v = [(r << 16) | (g << 8) | b, a];
+  if (colCache.size > 400) colCache.clear();
+  colCache.set(c, v);
+  return v;
+}
+type Pen = Pick<CanvasRenderingContext2D, 'beginPath' | 'moveTo' | 'lineTo' | 'quadraticCurveTo' | 'arc' | 'rect' | 'closePath' | 'stroke' | 'fill' | 'setLineDash'> & {
+  strokeStyle: string | CanvasGradient | CanvasPattern;
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  lineWidth: number;
+  globalAlpha: number;
+  lineCap: CanvasLineCap;
+  lineJoin: CanvasLineJoin;
+};
+class GlPen {
+  lineWidth = 1;
+  globalAlpha = 1;
+  lineCap: CanvasLineCap = 'butt';
+  lineJoin: CanvasLineJoin = 'miter';
+  private sc: [number, number] = [0xffffff, 1];
+  private fc: [number, number] = [0xffffff, 1];
+  private paths: number[][] = [];
+  private cur: number[] | null = null;
+  private circles: number[] = [];
+  private rects: number[] = [];
+  set strokeStyle(c: string | CanvasGradient | CanvasPattern) {
+    if (typeof c === 'string') this.sc = parseCol(c);
+  }
+  get strokeStyle() {
+    return '';
+  }
+  set fillStyle(c: string | CanvasGradient | CanvasPattern) {
+    if (typeof c === 'string') this.fc = parseCol(c);
+  }
+  get fillStyle() {
+    return '';
+  }
+  setLineDash() {}
+  beginPath() {
+    this.paths.length = 0;
+    this.cur = null;
+    this.circles.length = 0;
+    this.rects.length = 0;
+  }
+  moveTo(x: number, y: number) {
+    this.cur = [x, y];
+    this.paths.push(this.cur);
+  }
+  lineTo(x: number, y: number) {
+    if (!this.cur) return this.moveTo(x, y);
+    this.cur.push(x, y);
+  }
+  quadraticCurveTo(cx: number, cy: number, x: number, y: number) {
+    if (!this.cur) this.moveTo(cx, cy);
+    const c = this.cur!;
+    const x0 = c[c.length - 2];
+    const y0 = c[c.length - 1];
+    for (let q = 1; q <= 3; q++) {
+      const t = q / 3;
+      const u = 1 - t;
+      c.push(u * u * x0 + 2 * u * t * cx + t * t * x, u * u * y0 + 2 * u * t * cy + t * t * y);
+    }
+  }
+  arc(x: number, y: number, r: number, a0: number, a1: number) {
+    if (Math.abs(a1 - a0) >= Math.PI * 2 - 1e-3) this.circles.push(x, y, r);
+    const n = Math.max(6, Math.min(48, Math.ceil((Math.abs(a1 - a0) * Math.max(r, 1)) / 5)));
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + ((a1 - a0) * i) / n;
+      if (i === 0 && !this.cur) this.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      else this.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    }
+  }
+  rect(x: number, y: number, w0: number, h0: number) {
+    this.rects.push(x, y, w0, h0);
+    this.moveTo(x, y);
+    this.lineTo(x + w0, y);
+    this.lineTo(x + w0, y + h0);
+    this.lineTo(x, y + h0);
+    this.closePath();
+  }
+  closePath() {
+    if (this.cur && this.cur.length > 2) this.cur.push(this.cur[0], this.cur[1]);
+    this.cur = null;
+  }
+  stroke() {
+    const G = glr!;
+    const img = glSprite('white', 0);
+    const lw = this.lineWidth;
+    const a = this.sc[1] * this.globalAlpha;
+    if (a <= 0) return;
+    const ext = this.lineCap === 'round' ? lw * 0.5 : 0;
+    for (const p of this.paths)
+      for (let i = 2; i < p.length; i += 2) {
+        const dx = p[i] - p[i - 2];
+        const dy = p[i + 1] - p[i - 1];
+        const len = Math.hypot(dx, dy);
+        if (len < 0.01) continue;
+        G.pushR(img, (p[i] + p[i - 2]) / 2, (p[i + 1] + p[i - 1]) / 2, len + ext, lw, Math.atan2(dy, dx), a, this.sc[0]);
+      }
+  }
+  fill() {
+    const G = glr!;
+    const a = this.fc[1] * this.globalAlpha;
+    if (a <= 0) return;
+    const disc = glSprite('wdisc', 0);
+    const sq = glSprite('white', 0);
+    const C = this.circles;
+    for (let i = 0; i < C.length; i += 3) G.pushR(disc, C[i], C[i + 1], C[i + 2] * 2, C[i + 2] * 2, 0, a, this.fc[0]);
+    const R = this.rects;
+    for (let i = 0; i < R.length; i += 4) G.pushR(sq, R[i] + R[i + 2] / 2, R[i + 1] + R[i + 3] / 2, Math.abs(R[i + 2]), Math.abs(R[i + 3]), 0, a, this.fc[0]);
+  }
+}
+const glPen = new GlPen();
+// The pen for path drawing: the GPU one with WebGL (gpu: only when the GPU
+// picture is on, for things drawn after the particles are flushed).
+function penFor(late = false): Pen {
+  if (glr && (!late || glOnly)) {
+    glPen.globalAlpha = ctx.globalAlpha;
+    return glPen;
+  }
+  return ctx;
+}
+
+function glShape(style: Render, list: number[], k: number, s: number) {
+  const G = glr!;
+  const A = ctx.globalAlpha;
+  const sz = (i: number) => s * (uniformSize ? 1 : psz[i]);
+  if (style === 'dots') {
+    const img = glSprite('square', k);
+    for (const i of list) {
+      const d = sz(i);
+      G.pushR(img, px[i], py[i], d, d, 0, A);
+    }
+  } else if (style === 'arrows') {
+    const img = glSprite('tri', k);
+    for (const i of list) {
+      const L = s * 2.2 * (uniformSize ? 1 : psz[i]);
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      G.pushR(img, px[i] + (vx[i] / v) * L * 0.2, py[i] + (vy[i] / v) * L * 0.2, L * 1.6, L * 1.1, Math.atan2(vy[i], vx[i]), A);
+    }
+  } else if (style === 'streaks' || style === 'comets') {
+    // A stretched disc along the velocity (comets: a thin tail and a glow head).
+    const img = glSprite('disc', k);
+    const back = style === 'streaks' ? 3 : 9;
+    const lw = style === 'streaks' ? s : Math.max(0.5, s * 0.5);
+    const a = style === 'streaks' ? A : A * 0.55;
+    for (const i of list) {
+      const v = Math.hypot(vx[i], vy[i]);
+      G.pushR(img, px[i] - vx[i] * back * 0.5, py[i] - vy[i] * back * 0.5, v * back + lw, lw, Math.atan2(vy[i], vx[i]), a);
+    }
+    if (style === 'comets') {
+      const head = spriteFor('glow', k);
+      for (const i of list) {
+        const d = s * 3 * (uniformSize ? 1 : psz[i]);
+        G.pushR(head, px[i], py[i], d, d, 0, A);
+      }
+    }
+  } else if (style === 'embers') {
+    const img = spriteFor('glow', k);
+    const core = glSprite('ember', k);
+    for (const i of list) {
+      const fl = 0.7 + 0.3 * Math.sin(t * 9 + gl[i] * 40) * Math.sin(t * 3.1 + rnd[i] * 20);
+      const d = s * 4.5 * (uniformSize ? 1 : psz[i]) * fl;
+      G.pushR(img, px[i], py[i], d, d, 0, A * (0.55 + 0.45 * fl));
+      const lt = span[i] > 0 ? Math.min(1, age[i] / span[i]) : 0.2;
+      if (lt > 0.5) continue;
+      const r = s * 0.9 * (1 - lt * 2);
+      G.pushR(core, px[i], py[i], r, r, 0, A);
+    }
+  } else if (style === 'hair') {
+    const img = glSprite('strand', k);
+    for (const i of list) {
+      const L = s * 5 * (uniformSize ? 1 : psz[i]);
+      G.pushR(img, px[i], py[i], L * 1.1, L * 0.3, Math.atan2(vy[i], vx[i]), A);
+    }
+  } else if (style === 'squares') {
+    const img = glSprite('square', k);
+    for (const i of list) {
+      const a = t * (1 + rnd[i] * 3) * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+      const h2 = sz(i) * 2.6;
+      const sq = Math.abs(Math.cos(t * (0.8 + rnd[i]) + gl[i] * 9));
+      G.pushR(img, px[i], py[i], h2, h2 * sq, a, A);
+    }
+  } else if (style === 'crosses') {
+    const img = glSprite('cross', k);
+    for (const i of list) {
+      const d = sz(i) * 3.2;
+      G.pushR(img, px[i], py[i], d, d, 0, A);
+    }
+  } else if (style === 'shards') {
+    const img = glSprite('shard', k);
+    for (const i of list) {
+      const z = sz(i);
+      const v = Math.hypot(vx[i], vy[i]) + 1e-6;
+      const ux = vx[i] / v;
+      const uy = vy[i] / v;
+      const L = z * (2.4 + rnd[i] * 2);
+      const W = z * (0.25 + gl[i] * 0.4);
+      G.pushR(img, px[i] + ux * L * 0.1 - uy * W * 0.3, py[i] + uy * L * 0.1 + ux * W * 0.3, L * 1.8, W * 1.4, Math.atan2(uy, ux), A);
+    }
+  } else if (style === 'petals') {
+    const img = glSprite('disc', k);
+    for (const i of list) {
+      const a = t * 0.6 * (gl[i] < 0.5 ? -1 : 1) + gl[i] * 6.28;
+      const r = sz(i) * 1.6;
+      G.pushR(img, px[i], py[i], r * 2, r * 0.9, a, A);
+    }
+  } else if (style === 'threads' || style === 'lightning') drawPairs(style, list, k, s);
+  else if (style === 'ribbons') drawRibbons(list, k, s);
+  else if (style === 'glyphs') drawGlyphsGL(list, k, s);
+  else return false;
+  return true;
+}
 function drawStyle(style: Render, list: number[], k: number, s: number) {
+  if (style === 'sprite') return drawUserSprites(list, k, s);
+  if (!(style in SPRITES)) {
+    if (glr && glShape(style, list, k, s)) return;
+    if (glOnly) glDirty2d = true;
+  }
   const sprite = SPRITES[style as SpriteStyle];
   if (sprite) {
     // Pre-rendered shapes, stamped with drawImage: much faster than a path
@@ -4511,7 +5655,7 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
       for (const i of list) {
         const tw = 0.55 + 0.45 * Math.sin(t * (2 + rnd[i] * 4) + gl[i] * 6.28);
         const d = d0 * (uniformSize ? 1 : psz[i]) * (0.6 + 0.5 * tw);
-        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+        stamp(img, px[i], py[i], d);
       }
     } else if (style === 'bubbles' && settings.lifespan > 0) {
       // Bubbles grow a little with age and pop (vanish) at the end.
@@ -4519,9 +5663,9 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
         const lt = span[i] > 0 ? Math.min(1, age[i] / span[i]) : 0.5;
         if (lt > 0.97) continue;
         const d = d0 * (uniformSize ? 1 : psz[i]) * (0.7 + 0.5 * lt);
-        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+        stamp(img, px[i], py[i], d);
       }
-    } else if (uniformSize) {
+    } else if (uniformSize && !glr) {
       // Same size for all: stamp a copy pre-scaled to the exact device size,
       // so the browser copies pixels 1:1 instead of resampling each stamp.
       const pre = scaledSprite(img, `${style}:${k}`, d0);
@@ -4532,8 +5676,8 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     }
     else
       for (const i of list) {
-        const d = d0 * psz[i];
-        ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+        const d = uniformSize ? d0 : d0 * psz[i];
+        stamp(img, px[i], py[i], d);
       }
     ctx.globalAlpha = 1;
   } else if (style === 'arrows') {
@@ -4567,7 +5711,7 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     const img = spriteFor('glow', k);
     for (const i of list) {
       const d = s * 3 * (uniformSize ? 1 : psz[i]);
-      ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      stamp(img, px[i], py[i], d);
     }
   } else if (style === 'glyphs') {
     drawGlyphs(list, k, s);
@@ -4582,7 +5726,7 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
       const fl = 0.7 + 0.3 * Math.sin(t * 9 + gl[i] * 40) * Math.sin(t * 3.1 + rnd[i] * 20);
       const d = s * 4.5 * (uniformSize ? 1 : psz[i]) * fl;
       ctx.globalAlpha = 0.55 + 0.45 * fl;
-      ctx.drawImage(img, px[i] - d / 2, py[i] - d / 2, d, d);
+      stamp(img, px[i], py[i], d);
     }
     ctx.globalAlpha = 1;
     ctx.fillStyle = 'rgba(255,240,220,0.9)';
@@ -4702,12 +5846,13 @@ function buildPairs(style: string, bks: number[][], s: number) {
     }
 }
 function drawPairs(style: string, list: number[], k: number, s: number) {
+  const P = penFor();
   const maxD = pairMaxD;
   const cell = maxD;
-  ctx.strokeStyle = shades[k];
-  ctx.lineCap = 'round';
-  ctx.lineWidth = style === 'threads' ? Math.max(0.5, s * 0.3) : Math.max(0.7, s * 0.45);
-  ctx.beginPath();
+  P.strokeStyle = shades[k];
+  P.lineCap = 'round';
+  P.lineWidth = style === 'threads' ? Math.max(0.5, s * 0.3) : Math.max(0.7, s * 0.45);
+  P.beginPath();
   const per = style === 'threads' ? 2 : 1;
   for (const i of list) {
     const cx = (px[i] / cell) | 0;
@@ -4726,33 +5871,33 @@ function drawPairs(style: string, list: number[], k: number, s: number) {
           if (style === 'threads') {
             // Sags more the looser it is.
             const sag = (1 - d / maxD) * d * 0.35;
-            ctx.moveTo(px[i], py[i]);
-            ctx.quadraticCurveTo(px[i] + ex / 2, py[i] + ey / 2 + sag, px[j], py[j]);
+            P.moveTo(px[i], py[i]);
+            P.quadraticCurveTo(px[i] + ex / 2, py[i] + ey / 2 + sag, px[j], py[j]);
           } else {
             if (Math.random() < 0.45) continue;
             const nx = -ey / d;
             const ny = ex / d;
-            ctx.moveTo(px[i], py[i]);
+            P.moveTo(px[i], py[i]);
             for (let q = 1; q < 4; q++) {
               const j0 = (Math.random() - 0.5) * d * 0.35;
-              ctx.lineTo(px[i] + (ex * q) / 4 + nx * j0, py[i] + (ey * q) / 4 + ny * j0);
+              P.lineTo(px[i] + (ex * q) / 4 + nx * j0, py[i] + (ey * q) / 4 + ny * j0);
             }
-            ctx.lineTo(px[j], py[j]);
+            P.lineTo(px[j], py[j]);
           }
           if (++made >= per) break;
         }
       }
   }
   if (style === 'lightning') {
-    ctx.globalAlpha = 0.9;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    P.globalAlpha = 0.9;
+    P.stroke();
+    P.globalAlpha = 1;
     // A bright dot at each particle.
-    ctx.fillStyle = shades[k];
-    ctx.beginPath();
-    for (const i of list) ctx.rect(px[i] - s * 0.4, py[i] - s * 0.4, s * 0.8, s * 0.8);
-    ctx.fill();
-  } else ctx.stroke();
+    P.fillStyle = shades[k];
+    P.beginPath();
+    for (const i of list) P.rect(px[i] - s * 0.4, py[i] - s * 0.4, s * 0.8, s * 0.8);
+    P.fill();
+  } else P.stroke();
 }
 
 // Halftone (dots on a fixed grid, bigger where more particles are) and big
@@ -4782,31 +5927,32 @@ function drawGrid(style: string, bks: number[][], s: number) {
         gridShade.set(key, k);
       }
   }
+  const P = penFor();
   for (let k = 0; k < bks.length; k++) {
     let any = false;
     for (const [key, c] of gridCount) {
       if (gridShade.get(key) !== k) continue;
       if (!any) {
-        ctx.fillStyle = shades[k];
-        ctx.beginPath();
+        P.fillStyle = shades[k];
+        P.beginPath();
         any = true;
       }
       const gx = Math.floor(key / 8192) * cell;
       const gy = (key - Math.floor(key / 8192) * 8192) * cell;
       if (style === 'halftone') {
         const r = Math.min(cell * 0.6, cell * 0.2 * Math.sqrt(c) + cell * 0.08);
-        ctx.moveTo(gx + cell / 2 + r, gy + cell / 2);
-        ctx.arc(gx + cell / 2, gy + cell / 2, r, 0, Math.PI * 2);
-      } else ctx.rect(gx + 0.5, gy + 0.5, cell - 1, cell - 1);
+        P.moveTo(gx + cell / 2 + r, gy + cell / 2);
+        P.arc(gx + cell / 2, gy + cell / 2, r, 0, Math.PI * 2);
+      } else P.rect(gx + 0.5, gy + 0.5, cell - 1, cell - 1);
     }
-    if (any) ctx.fill();
+    if (any) P.fill();
   }
 }
 
 const MIXABLE: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
-  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'], ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'], ['hair', 'Hair'], ['ink', 'Ink'], ['bubbles', 'Bubbles'],
+  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'], ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'], ['hair', 'Hair'], ['ink', 'Ink'], ['bubbles', 'Bubbles'], ['sprite', 'Your sprite'],
 ];
 
 function mixStyles(): Render[] {
@@ -4828,7 +5974,9 @@ function updateSizes() {
   const ls = settings.lifespan > 0 ? settings.lifeSize : 'none';
   const dp = settings.depth;
   const bands = reacting() ? settings.audioBands : 0;
-  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0;
+  const kids = kidTo > kidFrom;
+  const ks = settings.spawnSize;
+  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0 && !kids;
   if (uniformSize) return;
   const L = audio.levels;
   // Bass particles are big and swell with the bass, highs small and bright.
@@ -4842,6 +5990,11 @@ function updateSizes() {
     }
     if (dp > 0) z *= depthK(0.3 + pz[i] * 1.4, dp);
     if (bands > 0) z *= bandSize[i % 3];
+    // Children shrink away over their short life; grandchildren (smoke) swell.
+    if (kids && kid[i] && span[i] > 0 && i >= kidFrom && i < kidTo) {
+      const lt = Math.min(1, age[i] / span[i]);
+      if (kid[i] < 3) z *= kid[i] === 2 ? ks * (1 + lt * 1.5) : ks * (1 - lt * 0.6);
+    }
     psz[i] = z;
   }
 }
@@ -4880,28 +6033,29 @@ function drawBuckets(bks: number[][], s: number) {
 }
 
 function drawWellMarkers(light: boolean) {
+  const P = penFor(true);
   const list = wellList();
   if (!list.length) return;
-  ctx.strokeStyle = light ? 'rgb(0 0 0 / 0.35)' : 'rgb(255 255 255 / 0.35)';
-  ctx.lineWidth = 1.2;
+  P.strokeStyle = light ? 'rgb(0 0 0 / 0.35)' : 'rgb(255 255 255 / 0.35)';
+  P.lineWidth = 1.2;
   for (const p of list) {
     const x = p.x * w;
     const y = p.y * h;
-    ctx.beginPath();
-    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    P.beginPath();
+    P.arc(x, y, 9, 0, Math.PI * 2);
     // Attractor: arrows in. Repeller: arrows out. Vortex: a curl.
     if (p.kind === 'vortex') {
-      ctx.moveTo(x + 4, y);
-      ctx.arc(x, y, 4, 0, Math.PI * 1.5);
+      P.moveTo(x + 4, y);
+      P.arc(x, y, 4, 0, Math.PI * 1.5);
     } else {
       const [a, b2] = p.kind === 'attract' ? [3, 7] : [7, 3];
       for (let k = 0; k < 4; k++) {
         const an = (k * Math.PI) / 2 + Math.PI / 4;
-        ctx.moveTo(x + Math.cos(an) * b2 * 1.4, y + Math.sin(an) * b2 * 1.4);
-        ctx.lineTo(x + Math.cos(an) * a * 1.4, y + Math.sin(an) * a * 1.4);
+        P.moveTo(x + Math.cos(an) * b2 * 1.4, y + Math.sin(an) * b2 * 1.4);
+        P.lineTo(x + Math.cos(an) * a * 1.4, y + Math.sin(an) * a * 1.4);
       }
     }
-    ctx.stroke();
+    P.stroke();
   }
 }
 
@@ -4986,7 +6140,7 @@ const lensCtx = lensCanvas.getContext('2d')!;
 // A clip of what's on the field (V, the Actions bar or the Record card).
 const recUi: (() => void)[] = [];
 const recorder = new Recorder({
-  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  source: () => (glOnly && glr ? glr.canvas : lensCanvas.hidden ? canvas : lensCanvas),
   size: () => [w, h],
   screen: () => { const r = Math.min(window.devicePixelRatio || 1, 2); return [w * r, h * r]; },
   filter: () => canvas.style.filter,
@@ -5002,7 +6156,7 @@ const recorder = new Recorder({
 // The field on a second window (projector), with no menus.
 const projectUi: (() => void)[] = [];
 const projector = new Projector({
-  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  source: () => (glOnly && glr ? glr.canvas : lensCanvas.hidden ? canvas : lensCanvas),
   size: () => [w, h],
   filter: () => canvas.style.filter,
   transform: () => canvas.style.transform,
@@ -5167,6 +6321,163 @@ let shards: { dx: number; dy: number; r: number }[] = [];
 let crtPat: { dpr: number; pat: CanvasPattern } | null = null;
 const glowBuf = document.createElement('canvas');
 const glowCtx = glowBuf.getContext('2d')!;
+// Glitch bands: new ones on a beat (or now and then), old ones expire.
+function glitchTick(now: number, ch: number) {
+  const S = settings;
+  const L = audio.levels;
+  const music = reacting();
+  const fire = music && S.lensMusic > 0 ? L.beat && Math.random() < (0.35 + S.lensGlitch * 0.5) * Math.min(1, S.lensMusic * 1.5) : now > glitchNext;
+  if (fire || (music && S.lensMusic > 0 && L.drop)) {
+    glitchNext = now + 300 + Math.random() * (1800 - S.lensGlitch * 1400);
+    const k = 1 + Math.round(Math.random() * S.lensGlitch * 7);
+    for (let j = 0; j < k; j++)
+      glitchBands.push({ y: Math.random() * ch, h: (4 + Math.random() * 60) * dpr, dx: (Math.random() - 0.5) * 160 * S.lensGlitch * dpr, until: now + 60 + Math.random() * 180 });
+  }
+  glitchBands = glitchBands.filter((b) => b.until > now);
+}
+
+// The lenses on the GPU (WebGL renderer): the same steps as lensFrame, each
+// reading the picture so far and writing the next one; the last is shown.
+let sliceGl = 0;
+function lensFrameGL(now: number, pic: Target): Target {
+  if (!lensOn()) return pic;
+  const S = settings;
+  const F = glfx!;
+  const cw = pic.w;
+  const ch = pic.h;
+  const [br, bgG, bb] = bgNow();
+  const BG = [br, bgG, bb, 1];
+  const L = audio.levels;
+  const mus = reacting() ? S.lensMusic : 0;
+  const R = Math.hypot(cw, ch) / 2;
+  let cur = pic;
+  const next = () => F.target(cur === glA ? 'lensB' : 'lensA', cw, ch);
+  let glA: Target | null = null;
+  const step = (fn: (src: Target, dst: Target) => void) => {
+    const dst = next();
+    if (!glA) glA = F.target('lensA', cw, ch);
+    fn(cur, dst);
+    cur = dst;
+  };
+  const mirror = mirrorNow();
+  if (mirror !== 'off') step((a, b) => F.pass('mirror', a, b, { hx: mirror !== 'tb' ? 1 : 0, hy: mirror !== 'lr' ? 1 : 0 }));
+  if (S.lensTiles >= 2) step((a, b) => F.pass('tiles', a, b, { k: tilesNow() }));
+  if (S.lensTwirl > 0) step((a, b) => F.pass('twirl', a, b, { R, N: 14, tw: S.lensTwirl * (2.4 + lm.kick * mus * 1.2), spin: lm.twirl * S.lensTwirl }, BG));
+  if (S.lensFan > 0) step((a, b) => F.pass('fan', a, b, { N: 12, swing: S.lensFan * 0.35 * Math.sin(lm.fan) + lm.kick * mus * S.lensFan * 0.15 }, BG));
+  if (S.lensWave > 0)
+    step((a, b) =>
+      F.pass('wave', a, b, { rowH: Math.max(2, Math.round(3 * dpr)), amp: S.lensWave * (40 + mus * (L.bass * 50 + lm.kick * 30)) * dpr, freq: (Math.PI * 2) / (180 * dpr), ph: lm.wave }, BG),
+    );
+  if (S.lensRipple > 0 && lm.ripples.length) {
+    const speed = R / 1800;
+    const rip: number[] = [];
+    for (const t0 of lm.ripples.slice(-8)) rip.push((now - t0) * speed, 1 - (now - t0) / 2600);
+    while (rip.length < 16) rip.push(0, 0);
+    step((a, b) => F.pass('ripple', a, b, { R, N: 26, n: Math.min(8, lm.ripples.length), str: S.lensRipple * 70 * dpr, rip }, BG));
+  }
+  if (S.lensShatter > 0)
+    step((a, b) => {
+      const cols = 8;
+      const rows = 5;
+      if (shards.length !== cols * rows) shards = Array.from({ length: cols * rows }, () => ({ dx: Math.random() - 0.5, dy: Math.random() - 0.5, r: Math.random() - 0.5 }));
+      const sw = cw / cols;
+      const sh = ch / rows;
+      const spread = S.lensShatter * (0.12 + 0.05 * Math.sin(now / 900) + lm.burst * 0.9);
+      F.fill(b, br, bgG, bb, 1, 'copy');
+      for (let yy = 0; yy < rows; yy++)
+        for (let xx = 0; xx < cols; xx++) {
+          const s = shards[yy * cols + xx];
+          const cx = (xx + 0.5) * sw;
+          const cy = (yy + 0.5) * sh;
+          const ox = (cx - cw / 2) * spread * 0.6 + s.dx * sw * spread * 2;
+          const oy = (cy - ch / 2) * spread * 0.6 + s.dy * sh * spread * 2;
+          F.draw(a, b, affine(cx + ox, cy + oy, s.r * spread * 1.5, 1 - spread * 0.15, 1 - spread * 0.15, cx, cy), { rect: [xx * sw, yy * sh, sw, sh] });
+        }
+    });
+  if (S.lensZoom > 0) {
+    const zs: number[] = [];
+    const rs: number[] = [];
+    for (let k = 0; k < 9; k++) {
+      const z = Math.pow(0.6, k - lm.zoom);
+      if (z * cw < 4) break;
+      zs.push(z);
+      rs.push((k - lm.zoom) * 0.08 * S.lensZoom);
+    }
+    const n = zs.length;
+    while (zs.length < 9) zs.push(1), rs.push(0);
+    step((a, b) => F.pass('zoom', a, b, { n, zs, rs }, BG));
+  }
+  if (S.lensSlices > 0)
+    step((a, b) => {
+      const sc = 3;
+      const hw = Math.ceil(cw / sc);
+      const hh = Math.ceil(ch / sc);
+      const every = 1 + Math.round(S.lensSlices * 5);
+      if (sliceTick++ % every === 0) {
+        F.draw(a, F.target(`slice${sliceAt % SLICE_FRAMES}`, hw, hh), affine(0, 0, 0, 1 / sc), { blend: 'copy' });
+        sliceAt++;
+        sliceGl = Math.min(SLICE_FRAMES, sliceGl + 1);
+      }
+      const N = 20;
+      const stripW = cw / N;
+      const maxLag = Math.min(sliceGl - 1, Math.round(S.lensSlices * (SLICE_FRAMES - 1)));
+      F.fill(b, br, bgG, bb, 1, 'copy');
+      for (let i = 0; i < N; i++) {
+        const v = Math.abs(i + 0.5 - N / 2) / (N / 2);
+        const lag = Math.min(maxLag, Math.round(maxLag * (0.15 + 0.85 * v) * (i % 2 ? 1 : 0.6)));
+        const x = i * stripW;
+        if (lag <= 0) F.draw(a, b, affine(0, 0), { rect: [x, 0, stripW + 1, ch] });
+        else F.draw(F.target(`slice${(sliceAt - 1 - lag + SLICE_FRAMES * 8) % SLICE_FRAMES}`, hw, hh), b, affine(0, 0, 0, sc), { rect: [x / sc, 0, stripW / sc + 0.5, hh] });
+      }
+      for (let i = 1; i < N; i++) F.fill(b, 0, 0, 0, 0.25 + S.lensSlices * 0.35, 'over', [Math.round(i * stripW) - dpr, 0, dpr * 2, ch]);
+    });
+  if (S.lensDots > 0) {
+    const cell = Math.max(3, Math.round(S.lensDots * dpr));
+    const swell = Math.round(lm.kick * S.lensMusic * 4);
+    step((a, b) => F.pass('dots', a, b, { cell, rad: cell * (0.38 + swell * 0.035), clear: seeThrough ? 1 : 0 }, BG));
+  }
+  if (S.lensEcho > 0)
+    step((a, b) => {
+      F.draw(a, b, affine(0, 0), { blend: 'copy' });
+      for (let k = 1; k <= 4; k++) {
+        const sc = 1 + k * (0.05 + S.lensEcho * 0.06 + lm.kick * mus * 0.05);
+        F.draw(a, b, affine(cw / 2, ch / 2, 0, sc, sc, cw / 2, ch / 2), { alpha: (S.lensEcho * 0.45) / k, blend: 'add' });
+      }
+    });
+  if (S.lensGlow > 0)
+    step((a, b) => {
+      const gw = Math.ceil(cw / 4);
+      const gh = Math.ceil(ch / 4);
+      const q1 = F.target('glow1', gw, gh);
+      const q2 = F.target('glow2', gw, gh);
+      F.draw(a, q1, affine(0, 0, 0, gw / cw, gh / ch), { blend: 'copy' });
+      const sigma = 3 + S.lensGlow * 5;
+      F.pass('blur', q1, q2, { dir: [1, 0], sigma });
+      F.pass('blur', q2, q1, { dir: [0, 1], sigma });
+      F.draw(a, b, affine(0, 0), { blend: 'copy' });
+      F.draw(q1, b, affine(0, 0, 0, cw / gw, ch / gh), { alpha: Math.min(1, S.lensGlow * (0.7 + lm.glow * 1.5)), blend: 'add' });
+    });
+  if (S.lensSplit > 0) step((a, b) => F.pass('split', a, b, { d: S.lensSplit * (6 + 24 * S.lensMusic * lensJolt) * dpr }, seeThrough ? [0, 0, 0, 0] : [0, 0, 0, 1]));
+  if (S.lensGlitch > 0) {
+    glitchTick(now, ch);
+    if (glitchBands.length)
+      step((a, b) => {
+        F.draw(a, b, affine(0, 0), { blend: 'copy' });
+        for (const g of glitchBands) {
+          const clip = [0, g.y, cw, g.h];
+          F.draw(a, b, affine(g.dx, 0), { blend: 'copy', clip });
+          F.draw(a, b, affine(g.dx - Math.sign(g.dx) * cw, 0), { blend: 'copy', clip });
+        }
+      });
+  }
+  if (S.lensCrt > 0) {
+    const stp = Math.max(2, Math.round(3 * dpr));
+    const flick = 0.04 + (mus && L.snare ? 0.12 : 0) + Math.random() * 0.03;
+    step((a, b) => F.pass('crt', a, b, { stp, lineH: Math.max(1, Math.round(stp / 2.5)), lineA: 0.55 * S.lensCrt, R, vig: S.lensCrt, flick: S.lensCrt * flick }));
+  }
+  return cur;
+}
+
 function lensFrame(now: number) {
   const on = lensOn();
   if (lensCanvas.hidden === on) {
@@ -5508,14 +6819,7 @@ function lensFrame(now: number) {
 
   // Glitch: bands of the picture jump sideways for a moment.
   if (S.lensGlitch > 0) {
-    const fire = music && S.lensMusic > 0 ? L.beat && Math.random() < (0.35 + S.lensGlitch * 0.5) * Math.min(1, S.lensMusic * 1.5) : now > glitchNext;
-    if (fire || (music && S.lensMusic > 0 && L.drop)) {
-      glitchNext = now + 300 + Math.random() * (1800 - S.lensGlitch * 1400);
-      const k = 1 + Math.round(Math.random() * S.lensGlitch * 7);
-      for (let j = 0; j < k; j++)
-        glitchBands.push({ y: Math.random() * ch, h: (4 + Math.random() * 60) * dpr, dx: (Math.random() - 0.5) * 160 * S.lensGlitch * dpr, until: now + 60 + Math.random() * 180 });
-    }
-    glitchBands = glitchBands.filter((b) => b.until > now);
+    glitchTick(now, ch);
     if (glitchBands.length) {
       const src = input();
       if (src === canvas) {
@@ -5585,15 +6889,40 @@ function draw() {
   let fadeA = 1 - trailNow * 0.97;
   // Feedback tunnel: last frame drawn back slightly bigger (and turned), so
   // everything streams out of the centre. Needs some trail to show.
+  const only = glOnlyWanted();
+  if (only !== glOnly) glSetOnly(only);
   if (settings.audioTunnel > 0) {
-    viewWarp(tunnelZ, tunnelR, 1);
+    if (only) {
+      const pic = glPic();
+      const tmp = glfx!.target('fb', pic.w, pic.h);
+      glfx!.draw(pic, tmp, affine(0, 0), { blend: 'copy' });
+      glfx!.clear(pic);
+      glfx!.draw(tmp, pic, affine(pic.w / 2, pic.h / 2, tunnelR, tunnelZ, tunnelZ, pic.w / 2, pic.h / 2), { blend: 'copy' });
+    } else viewWarp(tunnelZ, tunnelR, 1);
     fadeA = Math.min(fadeA, 0.3 - 0.2 * settings.audioTunnel);
   }
-  ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
-  ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${fadeA.toFixed(3)})` : `rgb(${r} ${g} ${b} / ${fadeA.toFixed(3)})`;
-  ctx.fillRect(0, 0, w, h);
+  if (only) {
+    // The GPU keeps the picture and fades it for the trails.
+    glr!.fill(canvas.width, canvas.height, r, g, b, fadeA);
+  } else {
+    ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
+    ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${fadeA.toFixed(3)})` : `rgb(${r} ${g} ${b} / ${fadeA.toFixed(3)})`;
+    ctx.fillRect(0, 0, w, h);
+  }
   ctx.globalCompositeOperation = 'source-over';
   // View echo: a copy of the frame from the last kick, growing and fading.
+  if (glOnly) {
+    const pic = glPic();
+    if (echoSnap) {
+      echoSnap = false;
+      glfx!.draw(pic, glfx!.target('echo', pic.w, pic.h), affine(0, 0), { blend: 'copy' });
+    }
+    if (echoA > 0.01) {
+      const cw = pic.w;
+      const ch = pic.h;
+      glfx!.draw(glfx!.target('echo', cw, ch), pic, affine(cw / 2, ch / 2, 0, echoZ, echoZ, cw / 2, ch / 2), { alpha: echoA, blend: light ? 'over' : 'add' });
+    }
+  }
   if (echoSnap) {
     echoSnap = false;
     if (echoBuf.width !== canvas.width || echoBuf.height !== canvas.height) {
@@ -5603,7 +6932,7 @@ function draw() {
     echoCtx.globalCompositeOperation = 'copy';
     echoCtx.drawImage(canvas, 0, 0);
   }
-  if (echoA > 0.01 && echoBuf.width === canvas.width) {
+  if (echoA > 0.01 && echoBuf.width === canvas.width && !glOnly) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = echoA;
@@ -5615,11 +6944,13 @@ function draw() {
   }
   // Background flash on the kick.
   const flashNow = Math.max(flashA, linkFlash);
-  if (flashNow > 0.004 && !seeThrough && !light) {
+  if (flashNow > 0.004 && !seeThrough && !light && glOnly) glr!.fill(canvas.width, canvas.height, 255, 255, 255, flashNow);
+  else if (flashNow > 0.004 && !seeThrough && !light) {
     ctx.fillStyle = `rgb(255 255 255 / ${flashNow.toFixed(3)})`;
     ctx.fillRect(0, 0, w, h);
   }
   drawObstacles(fadeA, light);
+  glTake2d('over');
   ctx.globalCompositeOperation = settings.glow ? (light ? 'multiply' : 'lighter') : 'source-over';
 
   if (settings.colorBy === 'speed' || (settings.render === 'glyphs' && settings.glyphPick === 'speed')) {
@@ -5683,6 +7014,11 @@ function draw() {
     drawBuckets(fadeBuckets[L], s);
   }
   ctx.globalAlpha = 1;
+  if (glr?.pending) {
+    glr.blend = glBlend();
+    glr.flush(ctx, w, h);
+  }
+  glTake2d(glBlend());
   if (spin) {
     px.set(spinX.subarray(0, n));
     py.set(spinY.subarray(0, n));
@@ -5696,60 +7032,67 @@ function draw() {
 
   // Wave rings.
   ctx.globalCompositeOperation = 'source-over';
+  // Markers: on the GPU picture with WebGL only (flushed below), else 2D.
+  const P = penFor(true);
+  P.globalAlpha = 1;
   if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
   // Fingertips and pinches, faintly, so you can see where your hands are.
   if (markPts.length) {
-    ctx.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
-    ctx.beginPath();
+    P.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
+    P.beginPath();
     for (const hp of markPts) {
-      ctx.moveTo(hp.x + 3, hp.y);
-      ctx.arc(hp.x, hp.y, 3, 0, Math.PI * 2);
+      P.moveTo(hp.x + 3, hp.y);
+      P.arc(hp.x, hp.y, 3, 0, Math.PI * 2);
     }
-    ctx.fill();
-    ctx.strokeStyle = ctx.fillStyle;
+    P.fill();
+    P.strokeStyle = P.fillStyle;
     for (const pp of [...pinchPts, ...penPts]) {
-      ctx.beginPath();
-      ctx.arc(pp.x, pp.y, penPts.includes(pp) ? 6 : 14, 0, Math.PI * 2);
-      ctx.stroke();
+      P.beginPath();
+      P.arc(pp.x, pp.y, penPts.includes(pp) ? 6 : 14, 0, Math.PI * 2);
+      P.stroke();
     }
     for (const e of erasePts) {
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
-      ctx.stroke();
+      P.beginPath();
+      P.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+      P.stroke();
     }
     if (twoLine) {
-      ctx.setLineDash([4, 6]);
-      ctx.beginPath();
-      ctx.moveTo(twoLine[0].x, twoLine[0].y);
-      ctx.lineTo(twoLine[1].x, twoLine[1].y);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      P.setLineDash([4, 6]);
+      P.beginPath();
+      P.moveTo(twoLine[0].x, twoLine[0].y);
+      P.lineTo(twoLine[1].x, twoLine[1].y);
+      P.stroke();
+      P.setLineDash([]);
     }
   }
   for (const wv of waves) {
     if (wv.life <= 0 || !wv.ring) continue;
     const a = Math.min(1, wv.life) * (wv.kind === 'ripple' || wv.kind === 'twist' ? 0.12 : 0.22);
-    ctx.strokeStyle = `rgb(255 255 255 / ${a.toFixed(3)})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
+    P.strokeStyle = `rgb(255 255 255 / ${a.toFixed(3)})`;
+    P.lineWidth = 1;
+    P.beginPath();
     if (wv.kind === 'sweep') {
       if (wv.angle === 0) {
-        ctx.moveTo(wv.r, 0);
-        ctx.lineTo(wv.r, h);
+        P.moveTo(wv.r, 0);
+        P.lineTo(wv.r, h);
       } else {
-        ctx.moveTo(0, wv.r);
-        ctx.lineTo(w, wv.r);
+        P.moveTo(0, wv.r);
+        P.lineTo(w, wv.r);
       }
     } else if (wv.kind === 'star') {
       for (let k = 0; k < 6; k++) {
         const an = wv.angle + (k * Math.PI) / 3;
-        ctx.moveTo(wv.x + Math.cos(an) * Math.max(0, wv.r - 30), wv.y + Math.sin(an) * Math.max(0, wv.r - 30));
-        ctx.lineTo(wv.x + Math.cos(an) * wv.r, wv.y + Math.sin(an) * wv.r);
+        P.moveTo(wv.x + Math.cos(an) * Math.max(0, wv.r - 30), wv.y + Math.sin(an) * Math.max(0, wv.r - 30));
+        P.lineTo(wv.x + Math.cos(an) * wv.r, wv.y + Math.sin(an) * wv.r);
       }
     } else {
-      ctx.arc(wv.x, wv.y, Math.max(0, wv.r), 0, Math.PI * 2);
+      P.arc(wv.x, wv.y, Math.max(0, wv.r), 0, Math.PI * 2);
     }
-    ctx.stroke();
+    P.stroke();
+  }
+  if (glOnly && glr!.pending) {
+    glr!.blend = 'over';
+    glr!.flush(ctx, w, h);
   }
 }
 
@@ -5830,18 +7173,19 @@ function drawLinks() {
 
   const stops = pal().stops;
   const [hh, ss, ll] = stops[Math.floor(stops.length / 2)];
-  ctx.lineWidth = 0.8;
+  const P = penFor();
+  P.lineWidth = 0.8;
   for (let l = 0; l < LINK_LEVELS; l++) {
     const m = segN[l];
     if (!m) continue;
     const sg = segs[l];
-    ctx.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / ${(((l + 1) / LINK_LEVELS) * 0.4).toFixed(3)})`;
-    ctx.beginPath();
+    P.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / ${(((l + 1) / LINK_LEVELS) * 0.4).toFixed(3)})`;
+    P.beginPath();
     for (let k = 0; k < m * 4; k += 4) {
-      ctx.moveTo(sg[k], sg[k + 1]);
-      ctx.lineTo(sg[k + 2], sg[k + 3]);
+      P.moveTo(sg[k], sg[k + 1]);
+      P.lineTo(sg[k + 2], sg[k + 3]);
     }
-    ctx.stroke();
+    P.stroke();
   }
 }
 
@@ -6112,6 +7456,7 @@ function frame(now: number) {
   if (!frozen) {
     updateGlyphs();
     cameraTick(now);
+    mediaTick(now);
     animTick(rawMs);
     runLinks(now);
     animateShape(now);
@@ -6125,13 +7470,32 @@ function frame(now: number) {
     const bare = arranging && outlineOnly && settings.shape !== 'none';
     if (!held && !bare && !linkRun.out.freeze) step(dt);
     const t1 = performance.now();
-    if (bare) drawOutline();
+    if (bare) {
+      glSetOnly(false);
+      drawOutline();
+    }
     else if (!held) {
       draw();
       lensMusicTick(now);
-      if (kaleidoNow >= 2) kaleidoscope(kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0));
-      if (settings.mirrorWorld) mirrorHalf();
-      lensFrame(now);
+      const seg = kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0);
+      glTake2d('over');
+      if (glOnly && glWhy()) glSetOnly(false);
+      if (glOnly && glr) {
+        if (kaleidoNow >= 2) {
+          const sl = (Math.PI * 2) / seg;
+          glFeedback('kaleido', { seg, base: (canvas.height > canvas.width ? Math.PI / 2 : 0) - sl / 2 + lm.turn });
+        }
+        if (settings.mirrorWorld) glFeedback('mirrorWorld', { half_: Math.floor(canvas.width / 2), hue: hueMatrix(150) });
+        glShown = lensFrameGL(now, glPic());
+        glShow();
+        const st = glr.canvas.style;
+        if (st.filter !== canvas.style.filter) st.filter = canvas.style.filter;
+        if (st.transform !== canvas.style.transform) st.transform = canvas.style.transform;
+      } else {
+        if (kaleidoNow >= 2) kaleidoscope(seg);
+        if (settings.mirrorWorld) mirrorHalf();
+        lensFrame(now);
+      }
     }
     const t2 = performance.now();
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
@@ -6151,9 +7515,22 @@ function frame(now: number) {
 // climb back up.
 let renderScale = 1;
 // Counted in time, not frames: a slow phone at 8 fps steps down in about a
-// second and a half, not the 8 seconds sixty slow frames would take.
+// second, not the 8 seconds sixty slow frames would take.
 let slowMs = 0;
 let fastMs = 0;
+const SCALE_STEPS = [1, 5 / 6, 2 / 3, 1 / 2];
+let upWait = 3000;
+let lastUpAt = -1e9;
+// A new scene may be lighter: if the resolution was lowered, try going back
+// up after one smooth second, and forget the longer waits.
+function qualityRetry() {
+  if (renderScale >= 1) return;
+  upWait = 1000;
+  lastUpAt = -1e9;
+  fastMs = 0;
+  slowMs = 0;
+  setTimeout(() => (upWait = Math.max(upWait, 3000)), 3000);
+}
 
 function adaptQuality(dt: number, ms: number) {
   if (!autoQuality) return;
@@ -6161,20 +7538,28 @@ function adaptQuality(dt: number, ms: number) {
     if (dt > 1.3) linkBudget = Math.max(400, linkBudget * 0.92);
     else if (dt < 1.1) linkBudget = Math.min(6000, linkBudget * 1.02);
   }
-  if (dt > 1.4) {
+  if (dt > 1.25) {
     slowMs += ms;
     fastMs = 0;
   } else if (dt < 1.1) {
     fastMs += ms;
     slowMs = Math.max(0, slowMs - ms);
   }
-  // ~1.5 s mostly slow → drop resolution a step; ~6 s smooth → raise it.
-  if (slowMs > 1500 && renderScale > 0.5) {
-    renderScale = Math.max(0.5, renderScale - 0.25);
+  // ~0.8 s mostly slow (under ~48 fps) → drop resolution a step; smooth for a while → raise
+  // it. Small steps (3× → 2.5× → 2× → 1.5× on a phone), and if a step up
+  // soon drops again, the next try waits longer, so it settles instead of
+  // flipping back and forth.
+  const now = performance.now();
+  if (slowMs > 800 && renderScale > SCALE_STEPS[SCALE_STEPS.length - 1]) {
+    renderScale = SCALE_STEPS[Math.min(SCALE_STEPS.length - 1, SCALE_STEPS.findIndex((v) => v < renderScale - 1e-3))];
+    if (now - lastUpAt < 6000) upWait = Math.min(12000, upWait * 1.5);
     slowMs = 0;
+    fastMs = 0;
     resize();
-  } else if (fastMs > 6000 && renderScale < 1) {
-    renderScale = Math.min(1, renderScale + 0.25);
+  } else if (fastMs > upWait && renderScale < 1) {
+    const i = SCALE_STEPS.findIndex((v) => v <= renderScale + 1e-3);
+    renderScale = SCALE_STEPS[Math.max(0, i - 1)];
+    lastUpAt = now;
     fastMs = 0;
     resize();
   }
@@ -6296,9 +7681,10 @@ const RENDERS: [string, string][] = [
   ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'],
   ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'],
+  ['sprite', 'Your sprite (image or sheet)'],
   ['mixed', 'Mixed'],
 ];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Picture colours (camera or image)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
@@ -6872,10 +8258,14 @@ const CAM_MODES: [string, string][] = [
   ['face', 'Face mesh (follows your face)'], ['features', 'Face features (eyes, brows, lips)'], ['mixed', 'Features + a light mesh'],
   ['hands', 'Your hands (skeleton)'], ['pose', 'Your body (skeleton)'], ['body', 'Body cut-out'], ['edges', 'Outlines'], ['bright', 'Bright parts'], ['dark', 'Dark parts'],
 ];
-const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'Geometric shape'], ['pattern', 'Pattern (fills an area)'], ['solid', '3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image or SVG logo'], ['camera', 'Your camera']];
+const SHAPES: [string, string][] = [['none', 'Nothing (free)'], ['text', 'Text'], ['icon', 'An icon'], ['geo', 'Geometric shape'], ['pattern', 'Pattern (fills an area)'], ['solid', '3D shape'], ['sequence', 'A sequence (changes with the music)'], ['live', 'The music, a clock or the tempo'], ['drawing', 'Your drawing'], ['image', 'An image, video or GIF'], ['camera', 'Your camera']];
 const PATTERNS: [string, string][] = [['sunflower', 'Sunflower disc'], ['grid', 'Grid'], ...FILL_PATTERNS];
 const EMITTERS: [string, string][] = [['none', 'The whole screen'], ['point', 'A point'], ['line', 'A line'], ['circle', 'A disc'], ['ring', 'A ring'], ['edges', 'The screen edges'], ['pointer', 'Your pointer / finger']];
 const EMIT_MODES: [string, string][] = [['steady', 'Steady stream'], ['burst', 'Bursts'], ['beat', 'Burst on the beat']];
+const SPAWN_ON: [string, string][] = [['none', 'Off'], ['death', 'Burst when they die'], ['hit', 'Splash when they hit'], ['trail', 'A trail as they move'], ['beat', 'Bursts on the beat']];
+const HIT_WALLS: [string, string][] = [['none', 'Nothing (obstacles only)'], ['floor', 'A floor'], ['box', 'A floor and walls'], ['bowl', 'A bowl']];
+const HIT_DO: [string, string][] = [['bounce', 'Bounce'], ['slide', 'Slide'], ['stick', 'Stick'], ['pile', 'Pile up']];
+const hitOn = () => settings.hitWalls !== 'none' || (settings.hitObstacles && settings.obstacles !== 'none');
 const hasPointer = () => settings.pointerMode !== 'none';
 const hasClick = () => settings.click !== 'none';
 
@@ -7079,10 +8469,19 @@ const CONTROLS: Control[] = [
   { kind: 'record' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
-    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
+    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
     summary: () => label(RENDERS, settings.render) },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
+  { kind: 'buttons', buttons: [['Choose a sprite, sheet or GIF…', () => spriteInput.click()], ['Use the butterfly', () => spriteUse(null)]], show: isSprite },
+  { kind: 'range', key: 'spriteScale', label: 'Sprite size', min: 1, max: 12, step: 0.5, format: (v) => `${v.toFixed(1)}×`, show: isSprite },
+  { kind: 'select', key: 'spriteTurn', label: 'Turning', options: [['none', 'Upright'], ['heading', 'Face where it goes'], ['spin', 'Spin']], show: isSprite },
+  { kind: 'toggle', key: 'spriteTint', label: 'Take the palette’s colours', show: isSprite },
+  { kind: 'range', key: 'spriteFps', label: 'Frames per second', min: 0, max: 30, step: 1, format: (v) => (v === 0 ? 'by age' : `${v}`), show: () => isSprite() && spriteFramesNow().length > 1 },
+  { kind: 'range', key: 'spriteCols', label: 'Sheet columns', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[0]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'range', key: 'spriteRows', label: 'Sheet rows', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[1]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'range', key: 'spriteRow', label: 'Animation (row)', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? 'each its own' : `row ${Math.min(v, spriteRowsIdx.length)}`), show: () => isSprite() && !!spriteSheet && spriteRowsIdx.length > 1 },
+  { kind: 'note', text: 'A single image, a sprite sheet or an animated GIF. A sheet’s grid is found by the clear gaps between frames (set columns and rows if not); with one animation per row, play one row or let each particle play its own. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
@@ -7140,7 +8539,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'modelClip', 'modelSpeed', 'modelBeat', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -7155,6 +8554,13 @@ const CONTROLS: Control[] = [
   ...FILL_PATTERNS.map(([p]): Control => ({ kind: 'range', key: 'patVary', label: PATTERN_VARY[p], min: 0, max: 1, step: 0.02, format: pct, show: () => settings.shape === 'pattern' && settings.shapePattern === p })),
   { kind: 'buttons', buttons: [['New seed', () => set('patSeed', settings.patSeed + 1)]], show: () => settings.shape === 'pattern' && isFillPattern(settings.shapePattern) },
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
+  { kind: 'buttons', buttons: [['Load a 3D model…', () => modelInput.click()]], show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
+  { kind: 'range', key: 'modelClip', label: 'Animation', min: 0, max: 32, step: 1, format: (v) => { const c = shownClips(); return v === 0 ? 'still' : c[Math.min(v, c.length) - 1]?.name ?? '—'; }, show: () => shownClips().length > 0 },
+  { kind: 'range', key: 'modelSpeed', label: 'Animation speed', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => shownClips().length > 0 && settings.modelClip > 0 },
+  { kind: 'toggle', key: 'modelBeat', label: 'Speed follows the music', show: () => shownClips().length > 0 && settings.modelClip > 0 },
+  { kind: 'note', text: 'OBJ, STL or GLB files. A GLB with animations (bones or blend shapes) plays them; FBX can be turned into GLB in Blender. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
+  { kind: 'note', text: 'Fox model by PixelMannen (CC0), rigging and animation by tomkranis (CC BY 4.0), glTF by AsoboStudio and scurest (CC BY 4.0), from Khronos’s glTF sample models.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'fox' },
+  { kind: 'note', text: 'Cesium Man by Cesium (CC BY 4.0), from Khronos’s glTF sample models.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'walker' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
   { kind: 'note', text: '3D shapes look best with 3D depth on (Look tab); it turns on with them.', show: () => settings.shape === 'solid' },
@@ -7165,7 +8571,8 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
   { kind: 'toggle', key: 'drawOutline', label: 'Show the outline', show: () => settings.shape === 'drawing' },
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
-  { kind: 'buttons', buttons: [['Choose an image or SVG…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'buttons', buttons: [['Choose an image, video or GIF…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
@@ -7208,9 +8615,28 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
+  { kind: 'section', about: 'Particles that make particles: bursts when they die or hit something, trails, bursts on the beat.', id: 'spawning', label: 'Spawning', tab: 'shape',
+    lock: ['spawnOn', 'spawnFrom', 'spawnCount', 'spawnSpeed', 'spawnLife', 'spawnSize', 'spawnTone', 'spawnShare', 'spawnChain'],
+    power: { on: spawnOn, off: { spawnOn: 'none' }, start: { spawnOn: 'death', lifespan: 2.5, lifeFade: 'edges' } },
+    summary: () => (spawnOn() ? `${label(SPAWN_ON, settings.spawnOn).toLowerCase()} · ${settings.spawnCount}` : 'off') },
+  { kind: 'select', key: 'spawnOn', label: 'New particles', options: SPAWN_ON },
+  { kind: 'note', text: 'Bursts come when a particle\'s life ends: switch on a Lifespan (Birth & lifespan) or an emitter.', show: () => settings.spawnOn === 'death' && settings.lifespan <= 0 },
+  { kind: 'note', text: 'Hits come from Collisions: switch on a floor, walls or solid obstacles.', show: () => settings.spawnOn === 'hit' && settings.hitWalls === 'none' && !(settings.hitObstacles && settings.obstacles !== 'none') },
+  { kind: 'note', text: 'Bursts on each kick drum; turn on Audio first.', show: () => settings.spawnOn === 'beat' && audio.source === 'off' },
+  { kind: 'select', key: 'spawnFrom', label: 'Trails from', options: [['moving', 'Moving particles'], ['bottom', 'The bottom (exhaust)']], show: () => settings.spawnOn === 'trail' },
+  { kind: 'range', key: 'spawnCount', label: 'How many', min: 1, max: 30, step: 1, format: (v) => (settings.spawnOn === 'trail' ? `${v} / s each` : `${v} each`), show: spawnOn },
+  { kind: 'range', key: 'spawnSpeed', label: 'Burst speed', min: 0, max: 8, step: 0.1, format: (v) => v.toFixed(1), show: spawnOn },
+  { kind: 'range', key: 'spawnLife', label: 'Child life', min: 0.2, max: 5, step: 0.1, format: (v) => `~${v.toFixed(1)}s`, show: spawnOn },
+  { kind: 'more', label: 'More spawning settings' },
+  { kind: 'range', key: 'spawnSize', label: 'Child size', min: 0.2, max: 2, step: 0.05, format: pct, show: spawnOn },
+  { kind: 'range', key: 'spawnTone', label: 'Child colour shift', min: 0, max: 0.5, step: 0.01, format: (v) => (v === 0 ? 'same' : `+${Math.round(v * 100)}%`), show: spawnOn },
+  { kind: 'toggle', key: 'spawnChain', label: 'Children leave smoke when they die', show: spawnOn },
+  { kind: 'range', key: 'spawnShare', label: 'Share kept for children', min: 0.1, max: 0.8, step: 0.05, format: pct, show: spawnOn },
+  { kind: 'note', text: 'Children use their own share of the particles. If bursts look thin, raise the share or the Count; if the parents look thin, lower it.', show: spawnOn },
+
   { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges', 'renew'],
     summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
-  { kind: 'range', key: 'count', label: 'Count', min: 1, max: 8000, step: 1 },
+  { kind: 'range', key: 'count', label: 'Count', min: 1, max: MAX_COUNT, step: 1 },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'more', label: 'More settings' },
@@ -7266,6 +8692,18 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
+
+  { kind: 'section', about: 'A floor, walls or a bowl, and what particles do when they hit: bounce, slide, stick or pile up.', id: 'collide', label: 'Collisions', tab: 'motion',
+    lock: ['hitWalls', 'hitDo', 'hitBounce', 'hitFriction', 'hitFloor', 'hitObstacles'],
+    power: { on: hitOn, off: { hitWalls: 'none', hitObstacles: false }, start: { hitWalls: 'floor', hitDo: 'bounce', gravity: 0.5 } },
+    summary: () => (hitOn() ? [settings.hitWalls !== 'none' ? label(HIT_WALLS, settings.hitWalls).toLowerCase() : '', settings.hitObstacles ? 'obstacles' : '', label(HIT_DO, settings.hitDo).toLowerCase()].filter(Boolean).join(', ') : 'off') },
+  { kind: 'select', key: 'hitWalls', label: 'Solid', options: HIT_WALLS },
+  { kind: 'choice', key: 'hitDo', label: 'On a hit', options: HIT_DO, show: hitOn },
+  { kind: 'range', key: 'hitBounce', label: 'Bounciness', min: 0, max: 1, step: 0.05, format: pct, show: () => hitOn() && settings.hitDo === 'bounce' },
+  { kind: 'range', key: 'hitFriction', label: 'Grip', min: 0, max: 1, step: 0.05, format: pct, show: () => hitOn() && (settings.hitDo === 'bounce' || settings.hitDo === 'slide') },
+  { kind: 'range', key: 'hitFloor', label: 'Floor height', min: 0.4, max: 1, step: 0.01, format: (v) => `${Math.round((1 - v) * 100)}% up`, show: () => settings.hitWalls !== 'none' },
+  { kind: 'toggle', key: 'hitObstacles', label: 'Obstacles are solid too (Obstacles card)' },
+  { kind: 'note', text: 'Needs something pulling: Gravity (Forces), wind, a launch or an emitter. Pile up heaps on the floor; on obstacles it sticks.', show: () => hitOn() && settings.gravity <= 0 && settings.wind <= 0 && settings.launchSpeed <= 0 && settings.emitter === 'none' },
 
   { kind: 'section', id: 'audio', label: 'Listening', tab: 'music', summary: listenSummary },
   { kind: 'audio' },
@@ -7563,9 +9001,9 @@ function playPreset(name: string, p: Partial<Settings>) {
   apply(p);
   lastSceneName = name;
   // The image pattern needs a picture: ask for one (this runs in the click).
-  if (p.shape === 'image' && !shapeImage) {
+  if (p.shape === 'image' && !shapeImage && !shapeMedia) {
     imageInput.click();
-    showToast('Pick an image for the particles to draw');
+    showToast('Pick an image, video or GIF for the particles to draw');
   } else if (p.shape === 'drawing' && !drawStrokes.length && !drawMode) toggleDraw();
   else showToast(name);
 }
@@ -7629,6 +9067,7 @@ const playSettings = (): Partial<Settings> => ({
 function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
   const blank = p === BLANK_SCENE;
   p = upgradeShape(p);
+  qualityRetry();
   // The scene playing until now: what it switched on goes when it does.
   const prev = currentMine?.settings ?? PRESETS.find(([n]) => n === lastSceneName)?.[1] ?? null;
   lastSceneName = '';
@@ -8545,7 +9984,7 @@ type Shard = { pts: number[]; cx: number; cy: number; vx: number; vy: number; va
 let tlFx: { how: TlHow; start: number; dur: number; switchAt: number; go: (() => void) | null; shards?: Shard[] } | null = null;
 
 function tlSnapshot() {
-  const src = lensCanvas.hidden ? canvas : lensCanvas;
+  const src = picture();
   fxSnap.width = src.width;
   fxSnap.height = src.height;
   const g = fxSnap.getContext('2d')!;
@@ -9100,7 +10539,7 @@ perfHud.setAttribute('aria-hidden', 'true');
     t0 = now;
     perfNow.frameMs = 1000 / Math.max(perfNow.real, 0.1);
     perfNow.cpu = stepMs + drawMs;
-    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height}`;
+    if (perfHudOn) perfHud.textContent = `${perfNow.real.toFixed(0)} fps · ${n.toLocaleString()} particles · script ${perfNow.cpu.toFixed(1)} · paint+wait ${Math.max(0, perfNow.frameMs - perfNow.cpu).toFixed(1)} ms · ${canvas.width}×${canvas.height} · ${+dpr.toFixed(2)}×${renderScale < 1 ? ' (lowered)' : ''}${halfHalos && glOnly ? ' · halos ½' : ''}${glr ? (glOnly ? ' · WebGL only' : RENDERER === 'only' ? ` · WebGL copy (${glWhyNot})` : ' · WebGL copy') : ' · 2D'}`;
   }, 1000);
 }
 function setPerfHud(on: boolean) {
@@ -9157,7 +10596,41 @@ function renderQuality(): HTMLElement {
   const note = document.createElement('p');
   note.className = 'q-note';
   note.textContent = `This screen is ${native}× natively. Turn "lower by itself" off while you compare, so the numbers stay put.`;
-  box.append(chips, auto, out, note);
+  // Renderer: WebGL or the plain 2D canvas (a reload with ?renderer=2d;
+  // ?renderer=copy keeps the 2D picture with GPU particles, for testing).
+  const rend = document.createElement('div');
+  rend.className = 'anim-chips q-rend';
+  const active = glr ? 'only' : '2d';
+  for (const [v, lbl] of [['only', 'WebGL'], ['2d', '2D']] as const) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = lbl;
+    const on = v === active;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    if (v !== '2d' && !glr && RENDERER !== '2d') b.disabled = true;
+    b.addEventListener('click', () => {
+      if (on) return;
+      const u = new URL(location.href);
+      // Keep the current look (it is saved) rather than the scene the link opened with.
+      u.searchParams.delete('preset');
+      if (u.hash.startsWith('#preset=')) u.hash = '';
+      if (v === 'only') u.searchParams.delete('renderer');
+      else u.searchParams.set('renderer', v);
+      location.href = u.toString();
+    });
+    rend.append(b);
+  }
+  const rendLbl = document.createElement('p');
+  rendLbl.className = 'q-note';
+  rendLbl.textContent = !glr
+    ? RENDERER === '2d'
+      ? 'Renderer: everything on the 2D canvas. Switching reloads the page.'
+      : 'Renderer: this browser has no WebGL2, so the 2D canvas is used.'
+    : RENDERER === 'only'
+      ? 'Renderer: the picture stays on the GPU. While a lens, tunnel, kaleidoscope, mirror, echo, recording or the projector is on, particles are drawn by the GPU and copied onto the 2D canvas (the Stage readout says WebGL copy). Switching reloads the page.'
+      : 'Renderer: WebGL copy (from the link): particles are drawn by the GPU and copied onto the 2D canvas. Switching reloads the page.';
+  box.append(rend, rendLbl, chips, auto, out, note);
   // Real frames counted over each second (the old meter averaged per-frame
   // rates and could not show less than 20). CPU is the script's own time per
   // frame; the rest of a frame is the browser and GPU painting, or waiting
@@ -9177,12 +10650,22 @@ function renderQuality(): HTMLElement {
     document.body.classList.toggle('no-glass', !gcb.checked);
     try { localStorage.setItem('pf-noglass', gcb.checked ? '' : '1'); } catch {}
   });
+  const halos = document.createElement('label');
+  halos.className = 'q-auto';
+  halos.innerHTML = '<input type="checkbox"> <span>Soft halos at half resolution (WebGL: faster, looks the same)</span>';
+  const hacb = halos.querySelector('input')!;
+  hacb.checked = halfHalos;
+  hacb.addEventListener('change', () => {
+    halfHalos = hacb.checked;
+    try { localStorage.setItem('pf-halfhalo', halfHalos ? '' : '0'); } catch {}
+  });
   box.append(hud, glass);
+  if (glr) box.append(halos);
   const timer = window.setInterval(() => {
     if (!box.isConnected) return clearInterval(timer);
     if (!box.offsetParent) return;
     const { real, frameMs, cpu } = perfNow;
-    out.innerHTML = `<b>${real.toFixed(0)} fps</b> · ${frameMs.toFixed(1)} ms a frame · ${canvas.width}×${canvas.height} px${renderScale < 1 ? ` · lowered to ${Math.round(renderScale * 100)}%` : ''}<br>script ${cpu.toFixed(1)} ms (sim ${stepMs.toFixed(1)}, draw ${drawMs.toFixed(1)}) · painting and waiting ${Math.max(0, frameMs - cpu).toFixed(1)} ms`;
+    out.innerHTML = `<b>${real.toFixed(0)} fps</b> · ${frameMs.toFixed(1)} ms a frame · ${canvas.width}×${canvas.height} px${renderScale < 1 ? ` · lowered to ${+dpr.toFixed(2)}×` : ''}<br>script ${cpu.toFixed(1)} ms (sim ${stepMs.toFixed(1)}, draw ${drawMs.toFixed(1)}) · painting and waiting ${Math.max(0, frameMs - cpu).toFixed(1)} ms`;
   }, 1000);
   return box;
 }
@@ -9826,7 +11309,7 @@ const afterShow: (() => void)[] = [];
 // Fine-tune. Cards with 4 or fewer settings show everything.
 const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['homeStrength', 'morph'],
-  look: ['render', 'mixStyles', 'size', 'trail', 'glow'],
+  look: ['render', 'mixStyles', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
   colour: ['palette', 'colorBy', 'customColors'],
   shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
@@ -14659,7 +16142,7 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set(['placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
+const REMIX_SKIP = new Set(['modelClip', 'modelSpeed', 'modelBeat', 'spriteCols', 'spriteRows', 'spriteRow', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido']);
 // How often a switchable card is on in a remix.
 const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85 };
 const REMIX_KEY = 'particle-field:remix';
@@ -14830,7 +16313,7 @@ function remixCheck() {
     const g = c.getContext('2d', { willReadFrequently: true });
     if (!g) return;
     try {
-      g.drawImage(canvas, 0, 0, W, H);
+      g.drawImage(picture(), 0, 0, W, H);
     } catch {
       return;
     }

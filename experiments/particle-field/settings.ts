@@ -18,8 +18,13 @@ export type MaskFx = 'none' | 'flames' | 'crown' | 'tears' | 'beard' | 'halo' | 
 export type CamHands = 'off' | 'attract' | 'repel' | 'vortex' | 'draw' | 'spray';
 export type FlowType = 'waves' | 'curl' | 'vortex' | 'wind' | 'cells' | 'rise' | 'tide' | 'spiral';
 export type Edges = 'wrap' | 'enter' | 'bounce';
+// Spawning: when a particle makes new ones.
+export type SpawnOn = 'none' | 'death' | 'hit' | 'trail' | 'beat';
+// Collisions: what is solid, and what a particle does when it hits it.
+export type HitWalls = 'none' | 'floor' | 'box' | 'bowl';
+export type HitDo = 'bounce' | 'slide' | 'stick' | 'pile';
 export type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none' | 'implodeHold' | 'thumb';
-export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links' | 'squares' | 'shards' | 'stars' | 'petals' | 'crosses' | 'neon' | 'flare' | 'embers' | 'hair' | 'threads' | 'ink' | 'lightning' | 'halftone' | 'bigpixels' | 'bubbles';
+export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links' | 'squares' | 'shards' | 'stars' | 'petals' | 'crosses' | 'neon' | 'flare' | 'embers' | 'hair' | 'threads' | 'ink' | 'lightning' | 'halftone' | 'bigpixels' | 'bubbles' | 'sprite';
 export type KickAction = 'pulse' | 'wave' | 'both' | 'pump' | 'tick' | 'spawn' | 'none';
 export type SnareAction = 'swirl' | 'wave' | 'flash' | 'none';
 export type HatAction = 'sparkle' | 'none';
@@ -92,6 +97,10 @@ export interface Settings {
   drawOutline: boolean;
   shapeSpin: number;
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
+  imageRate: number;
+  modelClip: number;
+  modelSpeed: number;
+  modelBeat: boolean;
   camMode: CamMode;
   camMirror: boolean;
   camCentre: boolean;
@@ -202,6 +211,22 @@ export interface Settings {
   obsForce: number;
   obsPlace: boolean;
   obsShow: boolean;
+  spawnOn: SpawnOn;
+  spawnCount: number;
+  spawnSpeed: number;
+  spawnLife: number;
+  spawnSize: number;
+  spawnTone: number;
+  spawnShare: number;
+  spawnChain: boolean;
+  // Trails: from every moving particle, or only the lowest part of the shape (an exhaust).
+  spawnFrom: 'moving' | 'bottom';
+  hitWalls: HitWalls;
+  hitDo: HitDo;
+  hitBounce: number;
+  hitFriction: number;
+  hitFloor: number;
+  hitObstacles: boolean;
   pointerMode: PointerMode;
   click: ClickMode;
   clickForce: number;
@@ -231,6 +256,14 @@ export interface Settings {
   launchDir: number;
   launchSpread: number;
   edges: Edges;
+  spriteCols: number;
+  spriteRows: number;
+  // Which row of a sheet plays: 0 = each particle plays its own row.
+  spriteRow: number;
+  spriteFps: number;
+  spriteTint: boolean;
+  spriteTurn: 'none' | 'heading' | 'spin';
+  spriteScale: number;
   glyphSet: GlyphSet;
   glyphText: string;
   glyphPick: GlyphPick;
@@ -443,6 +476,10 @@ export const DEFAULTS: Settings = {
   drawOutline: false,
   shapeSpin: 0.3,
   imageMode: 'auto',
+  imageRate: 10,
+  modelClip: 1,
+  modelSpeed: 1,
+  modelBeat: false,
   camMode: 'face',
   camMirror: true,
   camCentre: true,
@@ -537,6 +574,21 @@ export const DEFAULTS: Settings = {
   obsForce: 1,
   obsPlace: true,
   obsShow: true,
+  spawnOn: 'none',
+  spawnCount: 8,
+  spawnSpeed: 2.5,
+  spawnLife: 1.2,
+  spawnSize: 0.6,
+  spawnTone: 0.15,
+  spawnShare: 0.4,
+  spawnChain: false,
+  spawnFrom: 'moving',
+  hitWalls: 'none',
+  hitDo: 'bounce',
+  hitBounce: 0.55,
+  hitFriction: 0.2,
+  hitFloor: 0.92,
+  hitObstacles: false,
   flowScale: 0.004,
   flowSpeed: 0.2,
   pointerMode: 'repel',
@@ -568,6 +620,13 @@ export const DEFAULTS: Settings = {
   launchDir: 270,
   launchSpread: 360,
   edges: 'wrap',
+  spriteCols: 0,
+  spriteRows: 0,
+  spriteRow: 0,
+  spriteFps: 10,
+  spriteTint: true,
+  spriteTurn: 'heading',
+  spriteScale: 4,
   glyphSet: 'katakana',
   glyphText: 'HELLO WORLD',
   glyphPick: 'random',
