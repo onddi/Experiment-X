@@ -14414,6 +14414,8 @@ function startFeed() {
   audio.startFeed((onFrame) => xframe.subscribe('audio.spectrum', (d: SpectrumFrame) => onFrame(d)));
 }
 if (xframe.inFrame) {
+  queueMicrotask(shareScenes);
+  xframe.subscribe('scene.select', selectScene);
   xframe.subscribe('play', (d: { playing?: boolean }) => {
     if (typeof d?.playing !== 'boolean') return;
     sharedPlaying = d.playing;
@@ -14937,6 +14939,27 @@ function writeJson(key: string, v: unknown) {
   } catch {
     /* storage unavailable */
   }
+  if (key === MY_PRESETS_KEY) shareScenes();
+}
+// On the X-Frame bus: 'scenes' lists what can be played (My scenes, then the
+// built-in ones; a My scene on a number key has that key, the rest use their
+// name as key), and 'scene.select' { key?, name? } plays one like a key press.
+let scenesShared = '';
+function shareScenes() {
+  if (!xframe.inFrame) return;
+  const list = [...myPresets.map((m) => ({ key: m.key || m.name, name: m.name })), ...PRESETS.filter(([n]) => !myPresets.some((m) => m.name === n)).map(([n]) => ({ key: n, name: n }))];
+  const sig = JSON.stringify(list);
+  if (sig === scenesShared) return;
+  scenesShared = sig;
+  xframe.publish('scenes', { scenes: list });
+}
+function selectScene(d: { key?: string; name?: string }) {
+  const k = d?.key != null ? String(d.key) : '';
+  const nm = d?.name != null ? String(d.name) : '';
+  const mine = (k && myPresets.find((m) => m.key === k)) || myPresets.find((m) => m.name === (k || nm)) || (nm ? myPresets.find((m) => m.name === nm) : undefined);
+  if (mine) return playMine(mine);
+  const p = PRESETS.find(([n]) => n === k) ?? PRESETS.find(([n]) => n === nm);
+  if (p) playPreset(p[0], p[1]);
 }
 
 // Saved presets store the whole look and motion plus the audio reaction.

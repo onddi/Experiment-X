@@ -9,6 +9,10 @@
     "audio"
   ],
   "accepts": [
-    "audio.spectrum"
+    "audio.spectrum",
+    "scene.select"
+  ],
+  "provides": [
+    "scenes"
   ]
 }
