@@ -305,11 +305,48 @@ story(
 );
 
 
+// --- FX: scenes built around the GPU looks (the FX folder) ---
+const FX: [string, Partial<Settings>][] = [
+  ['Starburst bloom', { ...CLEAN, count: 4500, size: 1.3, render: 'sparkles', wells: '0.5,0.5,repel', wellForce: 0.8, wellRange: 420, showWells: false, flow: 0.4, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.3, speed: 1.4, trail: 0.7, friction: 0.02, jitter: 0.03, palette: 'infra', colorBy: 'radial', glow: true, click: 'shockwave',
+    gfxBloom: 1.3, gfxSpread: 0.7, gfxRays: 0.75, gfxVignette: 0.5, gfxKick: 0.8 }],
+  ['Hyperspace', { ...CLEAN, count: 3500, size: 1.2, render: 'streaks', flow: 1, flowType: 'vortex', flowScale: 0.003, flowSpeed: 0.5, speed: 1.6, friction: 0.03, jitter: 0.02, palette: 'ice', colorBy: 'radial', trail: 0.6, glow: true, pointerMode: 'vortex', radius: 220, force: 0.8,
+    gfxFeedback: 'tunnel', gfxZoom: 0.6, gfxSpin: 0.25, gfxLength: 0.9, gfxBloom: 0.7, gfxSplit: 0.5, gfxKick: 0.8,
+    anim: anim({ gfxSpin: { m: 'wave', s: 'sine', b: 16, d: 0.6 } }) }],
+  ['Liquid dream', { ...CLEAN, count: 200, size: 4.5, sizeVar: 0.6, render: 'bokeh', flow: 0.4, flowType: 'curl', flowScale: 0.002, flowSpeed: 0.08, speed: 0.5, friction: 0.04, jitter: 0.02, palette: 'candy', colorBy: 'palette', trail: 0.2, glow: true, depth: 0.8, depthParallax: 0.5,
+    gfxLens: 'liquid', gfxShock: 1.1, gfxBloom: 0.5, gfxGrade: 'sunset', gfxGradeAmt: 0.4, gfxGrain: 0.3, gfxVignette: 0.5 }],
+  ['Retro arcade', { ...CLEAN, count: 1800, size: 2.6, render: 'squares', flow: 0.9, flowType: 'cells', flowScale: 0.004, flowSpeed: 0.4, speed: 1.1, trail: 0.5, friction: 0.04, jitter: 0.02, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 160, force: 0.9,
+    gfxSurface: 'crt', gfxCell: 8, gfxBloom: 0.7, gfxSplit: 0.5, gfxKick: 0.7 }],
+  ['Green screen', { ...CLEAN, count: 2200, size: 2.2, render: 'glow', gravity: 0.6, flow: 0.15, flowType: 'rise', speed: 0.9, trail: 0.85, friction: 0.03, jitter: 0, palette: 'forest', colorBy: 'vertical', glow: true, pointerMode: 'repel', radius: 140,
+    gfxSurface: 'ascii', gfxCell: 12, gfxGrade: 'acid', gfxGradeAmt: 0.85, gfxBloom: 0.5, gfxVignette: 0.5 }],
+  ['Heat signature', { ...CLEAN, count: 700, size: 2.4, sizeVar: 0.4, render: 'glow', flow: 0.6, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, speed: 0.8, trail: 0.5, friction: 0.04, jitter: 0.03, palette: 'ice', colorBy: 'speed', glow: true, pointerMode: 'attract', radius: 200, force: 0.6, click: 'implode',
+    gfxSurface: 'thermal', gfxGrain: 0.25 }],
+  ['Rose window', { ...CLEAN, count: 1400, size: 5, sizeVar: 0.5, render: 'glow', flow: 0.5, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.15, speed: 0.7, trail: 0.7, friction: 0.04, jitter: 0.02, palette: 'rainbow', colorBy: 'radial', glow: true,
+    gfxLens: 'kaleido', gfxSlices: 8, gfxLensMix: 0.85, gfxSurface: 'mosaic', gfxCell: 10, gfxBloom: 0.5, gfxVignette: 0.6 }],
+  ['Mirror dimension', { ...CLEAN, count: 1200, size: 1.6, render: 'ribbons', ribbonLen: 16, flock: 0.7, flockAlign: 1, flockCohesion: 0.8, flockSep: 0.8, flockRange: 40, flow: 0.6, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.25, speed: 1.1, trail: 0, friction: 0.03, palette: 'vapor', colorBy: 'direction', glow: true,
+    gfxFeedback: 'mirror', gfxZoom: 0.55, gfxSpin: 0.5, gfxLength: 0.92, gfxBloom: 0.7, gfxVignette: 0.45,
+    anim: anim({ gfxSpin: { m: 'wave', s: 'sine', b: 16, d: 1 } }) }],
+  ['Candle melt', { ...CLEAN, count: 800, size: 2, render: 'embers', gravity: -0.25, flow: 0.5, flowType: 'rise', flowScale: 0.004, flowSpeed: 0.4, speed: 0.8, trail: 0.5, friction: 0.03, jitter: 0.12, palette: 'ember', colorBy: 'speed', glow: true, pointerMode: 'repel', radius: 150, click: 'emit',
+    gfxFeedback: 'melt', gfxFlow: 1.2, gfxLength: 0.9, gfxBloom: 0.6, gfxGrain: 0.4, gfxVignette: 0.65 }],
+  ['Pixel rain', { ...CLEAN, count: 2400, size: 1.6, render: 'sparkles', gravity: 0.3, flow: 0.3, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, speed: 0.8, trail: 0.6, friction: 0.03, jitter: 0.02, palette: 'cosmic', colorBy: 'horizontal', glow: true,
+    gfxLens: 'sort', gfxShock: 1.6, gfxBloom: 0.6, gfxGrade: 'ocean', gfxGradeAmt: 0.35 }],
+  ['Magnifiers', { ...CLEAN, count: 500, size: 2, render: 'links', linkDist: 90, flow: 0.15, flowType: 'curl', flowSpeed: 0.1, speed: 0.6, trail: 0, friction: 0.02, jitter: 0.04, palette: 'blueprint', colorBy: 'palette', pointerMode: 'attract', radius: 200, force: 0.3, click: 'ripple',
+    gfxLens: 'glass', gfxCount: 3, gfxFollow: 'wander', gfxLensSize: 0.9, gfxBend: 0.85, gfxBloom: 0.45 }],
+  ['Peephole rave', { ...CLEAN, count: 4000, size: 1.3, render: 'streaks', flow: 1.4, flowType: 'vortex', flowScale: 0.004, flowSpeed: 0.8, speed: 1.6, trail: 0.7, friction: 0.04, jitter: 0.04, palette: 'neon', colorBy: 'speed', glow: true, pointerMode: 'vortex', radius: 220, force: 1.1,
+    gfxLens: 'fisheye', gfxShock: 1.4, gfxSurface: 'led', gfxCell: 7, gfxSurfMix: 0.55, gfxSplit: 0.6, gfxBloom: 0.7, gfxKick: 1 }],
+  ['Silent film', { ...CLEAN, count: 2000, size: 1.6, render: 'ink', flow: 0.8, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.12, speed: 0.7, trail: 0.9, friction: 0.06, jitter: 0.01, palette: 'ice', colorBy: 'speed', glow: false, pointerMode: 'vortex', radius: 180, force: 0.5,
+    gfxFeedback: 'smear', gfxFlow: 0.6, gfxLength: 0.9, gfxGrade: 'mono', gfxGradeAmt: 1, gfxGrain: 0.7, gfxVignette: 0.85 }],
+  ['Pop art', { ...CLEAN, count: 1600, size: 3.2, render: 'petals', flow: 0.5, flowType: 'curl', flowScale: 0.003, flowSpeed: 0.2, speed: 0.8, trail: 0.5, friction: 0.04, jitter: 0.03, palette: 'candy', colorBy: 'radial', glow: true, pointerMode: 'vortex', radius: 200, force: 0.7,
+    gfxSurface: 'halftone', gfxCell: 11, gfxBloom: 0.35 }],
+  ['Bass drop', { ...CLEAN, count: 4500, size: 1.3, render: 'comets', wells: '0.5,0.5,vortex', wellForce: 1, wellRange: 500, showWells: false, flow: 0.5, flowType: 'curl', speed: 1.4, trail: 0.75, friction: 0.03, palette: 'crimson', colorBy: 'speed', glow: true, click: 'shockwave',
+    gfxLens: 'shock', gfxShock: 1.5, gfxBloom: 1, gfxRays: 0.45, gfxSplit: 0.4, gfxKick: 1 }],
+];
+PRESETS.push(...FX);
+
 // Preset families: each built around one engine feature (see the proposal doc).
-export type Family = 'all' | 'lenses' | 'animated' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
+export type Family = 'all' | 'fx' | 'lenses' | 'animated' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 export const FAMILIES: [Family, string][] = [
   ['all', 'All'], ['animated', 'Animated'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
-  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['lenses', 'Lenses'], ['shapes', 'Shapes'], ['growth', 'Growth'], ['stories', 'Stories'],
+  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['fx', 'FX'], ['lenses', 'Lenses'], ['shapes', 'Shapes'], ['growth', 'Growth'], ['stories', 'Stories'],
 ];
 export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
@@ -327,6 +364,7 @@ for (const [fam, names] of [
   ['shapes', 'Heartbeat, Spirograph, DNA, Globe, Equalizer, Midnight clock, Oscilloscope, Hive, Shapeshift, Doodle, Triangle, Hexagram, Rose curve, Atom, Saturn, Snowflake, Möbius, Flower of life, Crystal, Torus knot, Jellyfish, Tornado, Klein bottle, Sound ring, Metronome'],
   ['growth', 'Seed, Sprout, Bud, Roots, Branches, Canopy, Blossom, Extravaganza'],
   ['lenses', 'Shattered glass, Time slices, Tunnel, Hall of mirrors, Fan dance, LED wall'],
+  ['fx', 'Starburst bloom, Hyperspace, Liquid dream, Retro arcade, Green screen, Heat signature, Rose window, Mirror dimension, Candle melt, Pixel rain, Magnifiers, Peephole rave, Silent film, Pop art, Bass drop'],
   ['stories', 'Singularity, Big bang, Primordial gas, First stars, Galaxies, Event horizon, Dawn, Morning, Midday, Golden hour, Dusk embers, Firefly night, Starry night, Still pond, Wind rises, Rain, Lightning, Full storm, Clearing, Raindrop, Ripples, Streams, River, Falls, Open ocean, Star cloud, Collapse, Young star, Red giant, Supernova, Remnant, A few birds, Flock, Murmuration, The split, Sky shapes, Scatter'],
 ] as [Family, string][]) for (const n of names.split(', ')) FAMILY_OF[n] = fam;
 
@@ -655,4 +693,19 @@ export const ADDED: Record<string, string> = {
   "The split": '2026-11-10T09:33',
   "Sky shapes": '2026-11-10T09:33',
   "Scatter": '2026-11-07T23:37',
+  "Starburst bloom": '2026-11-14T23:30',
+  "Hyperspace": '2026-11-14T23:30',
+  "Liquid dream": '2026-11-14T23:30',
+  "Retro arcade": '2026-11-14T23:30',
+  "Green screen": '2026-11-14T23:30',
+  "Heat signature": '2026-11-14T23:30',
+  "Rose window": '2026-11-14T23:30',
+  "Mirror dimension": '2026-11-14T23:30',
+  "Candle melt": '2026-11-14T23:30',
+  "Pixel rain": '2026-11-14T23:30',
+  "Magnifiers": '2026-11-14T23:30',
+  "Peephole rave": '2026-11-14T23:30',
+  "Silent film": '2026-11-14T23:30',
+  "Pop art": '2026-11-14T23:30',
+  "Bass drop": '2026-11-14T23:30',
 };

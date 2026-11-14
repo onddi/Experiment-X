@@ -13549,7 +13549,7 @@ function animPanel(c: Extract<Control, { kind: 'range' }>): HTMLElement {
       }, 'anim-shapes')));
       const depth = document.createElement('input');
       depth.type = 'range';
-      Object.assign(depth, { min: 0.02, max: 0.5, step: 0.01, value: String(a.d) });
+      Object.assign(depth, { min: 0.02, max: 1, step: 0.01, value: String(a.d) });
       depth.setAttribute('aria-label', 'How far it swings');
       const out = document.createElement('output');
       const say = () => (out.textContent = `± ${c.format ? c.format(+(a.d * span).toFixed(3)).replace(/^[+−-]/, '') : +(a.d * span).toFixed(2)}`);
