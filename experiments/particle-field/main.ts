@@ -4,7 +4,7 @@ import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
-import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
+import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
@@ -6379,6 +6379,8 @@ function railPicker(o: {
   items: () => RailItem[];
   pick: (name: string) => void;
   fav: (name: string) => void;
+  // Optional A–Z / Newest switch shown at the top of the list.
+  sort?: { now: () => string; set: (s: string) => void; show: () => boolean };
 }) {
   const el = document.createElement('div');
   el.className = 'rail-picker';
@@ -6388,7 +6390,7 @@ function railPicker(o: {
   const draw = () => {
     const rail = o.rail();
     const items = o.items();
-    const next = o.now() + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}`).join('|');
+    const next = o.now() + (o.sort?.show() ? o.sort.now() : '') + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}`).join('|');
     if (next === sig) return;
     sig = next;
     railEl.innerHTML = '';
@@ -6409,6 +6411,24 @@ function railPicker(o: {
       railEl.append(b);
     }
     listEl.innerHTML = '';
+    if (o.sort?.show()) {
+      const bar = document.createElement('div');
+      bar.className = 'rp-sort';
+      for (const [id, label] of [['az', 'A–Z'], ['new', 'Newest']]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.classList.toggle('on', o.sort.now() === id);
+        b.setAttribute('aria-pressed', String(o.sort.now() === id));
+        b.addEventListener('click', () => {
+          o.sort!.set(id);
+          draw();
+          listEl.scrollTop = 0;
+        });
+        bar.append(b);
+      }
+      listEl.append(bar);
+    }
     for (const it of items) {
       const row = document.createElement('div');
       row.className = 'rp-item';
@@ -6441,7 +6461,7 @@ function railPicker(o: {
       });
       listEl.append(row);
     }
-    if (!items.length) listEl.innerHTML = '<p class="rp-none">Nothing here yet. Tap ☆ on one to keep it here.</p>';
+    if (!items.length) listEl.insertAdjacentHTML('beforeend', '<p class="rp-none">Nothing here yet. Tap ☆ on one to keep it here.</p>');
   };
   draw();
   return { el, draw };
@@ -6459,29 +6479,50 @@ const sceneDot = (p: Partial<Settings>) => {
   const st = pal?.stops[Math.floor(pal.stops.length / 2)];
   return st ? `hsl(${st[0]} ${st[1]}% ${st[2]}%)` : '#3a3a44';
 };
+// When a scene was added. Undated ones (just written) count as newest.
+const addedAt = (n: string) => ADDED[n] ?? '9999';
+const NEWEST = Object.values(ADDED).sort().pop() ?? '';
+// The New list: scenes from the last two days of additions.
+const NEW_SINCE = new Date(new Date(NEWEST).getTime() - 2 * 864e5).toISOString().slice(0, 16);
+const isNew = (n: string) => addedAt(n) >= NEW_SINCE;
+const addedLabel = (n: string) => {
+  const d = ADDED[n];
+  return d ? `Added ${new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : 'Just added';
+};
+const SCENE_SORT_KEY = 'particle-field:scene-sort';
+let sceneSort = readJson<string>(SCENE_SORT_KEY, 'az');
 function scenePicker() {
   let railNow: string = currentMine ? 'mine' : favScenes.size ? 'saved' : (lastSceneName && FAMILY_OF[lastSceneName]) || presetFamily;
   const known = (n: string) => PRESETS.some(([p]) => p === n) || myPresets.some((m) => m.name === n);
   const item = (n: string): RailItem => {
     const mine = !PRESETS.some(([p]) => p === n);
     const p = PRESETS.find(([x]) => x === n)?.[1] ?? myPresets.find((m) => m.name === n)?.settings ?? {};
-    return { name: n, on: mine ? currentMine?.name === n : !currentMine && lastSceneName === n, fav: favScenes.has(n), dot: sceneDot(p as Partial<Settings>) };
+    const newest = !mine && (railNow === 'new' || (sceneSort === 'new' && railNow !== 'recent'));
+    return { name: n, sub: newest ? addedLabel(n) : undefined, on: mine ? currentMine?.name === n : !currentMine && lastSceneName === n, fav: favScenes.has(n), dot: sceneDot(p as Partial<Settings>) };
   };
+  const order = (names: string[]) => (sceneSort === 'new' ? names.sort((a, b) => addedAt(b).localeCompare(addedAt(a)) || a.localeCompare(b)) : names.sort((a, b) => a.localeCompare(b)));
   return railPicker({
     rail: () => [
       ['saved', '★ Saved', [...favScenes].filter(known).length],
       ['recent', 'Recent', recentScenes().filter(known).length],
+      ['new', 'New', PRESETS.filter(([n]) => isNew(n)).length],
       ...(myPresets.length ? [['mine', 'My scenes', myPresets.length] as [string, string, number]] : []),
       ...FAMILIES.filter(([f]) => f !== 'all').map(([f, l]): [string, string, number] => [f, l, PRESETS.filter(([n]) => FAMILY_OF[n] === f).length]),
       ['all', 'All', PRESETS.length + 1],
     ],
     now: () => railNow,
     setRail: (id) => (railNow = id),
+    sort: {
+      now: () => sceneSort,
+      set: (v) => writeJson(SCENE_SORT_KEY, (sceneSort = v)),
+      show: () => !['recent', 'mine', 'new'].includes(railNow),
+    },
     items: () => {
-      if (railNow === 'saved') return [...favScenes].filter(known).sort((a, b) => a.localeCompare(b)).map(item);
+      if (railNow === 'new') return PRESETS.map(([n]) => n).filter(isNew).sort((a, b) => addedAt(b).localeCompare(addedAt(a)) || a.localeCompare(b)).map(item);
+      if (railNow === 'saved') return order([...favScenes].filter(known)).map(item);
       if (railNow === 'recent') return recentScenes().filter(known).map(item);
       if (railNow === 'mine') return myPresets.map((m) => item(m.name));
-      const names = PRESETS.filter(([n]) => railNow === 'all' || FAMILY_OF[n] === railNow).map(([n]) => n).sort((a, b) => a.localeCompare(b));
+      const names = order(PRESETS.filter(([n]) => railNow === 'all' || FAMILY_OF[n] === railNow).map(([n]) => n));
       const blank: RailItem[] = railNow === 'all' ? [{ name: 'Blank', sub: 'A clean, minimal start', on: !currentMine && lastSceneName === 'Blank' }] : [];
       return [...blank, ...names.map(item)];
     },
