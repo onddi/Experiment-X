@@ -15,6 +15,8 @@ interface Settings {
   cols: number;
   aspect: number;
   fill: boolean;
+  /** Page background: 'auto' is see-through only when stacked over another layer in X-Frame. */
+  backdrop: 'auto' | 'solid' | 'transparent';
   hero: boolean;
   heroRows: number;
   openWith: OpenTransition | 'off';
@@ -75,6 +77,7 @@ const DEFAULTS: Settings = {
   cols: 4,
   aspect: 1,
   fill: false,
+  backdrop: 'auto',
   hero: false,
   heroRows: 1,
   openWith: 'zoom',
@@ -132,6 +135,8 @@ const DEFAULTS: Settings = {
 
 const STORAGE_KEY = 'carousel-grid:settings';
 const settings: Settings = { ...DEFAULTS, ...load() };
+/** Whether X-Frame shows the grid stacked over another experiment (see updateBackdrop). */
+let stackedLayer = false;
 // Older saves may name a transition that has since been retired.
 if (!OPEN_TRANSITIONS.some(([k]) => k === settings.openWith)) settings.openWith = 'zoom';
 if (settings.openCurve !== 'custom' && !(settings.openCurve in CURVES)) settings.openCurve = 'smooth';
@@ -497,6 +502,7 @@ function applyStyle() {
   s.setProperty('--grade', `oklch(62% 0.13 ${settings.gradeHue})`);
   s.setProperty('--vignette', String(settings.vignette));
   s.setProperty('--element-tint', String(settings.elementTint));
+  updateBackdrop();
   // Effects set to 0 are removed outright: even fully transparent, blend-mode
   // layers and filters still cost Safari work on every frame.
   app.classList.toggle('no-harmony', !settings.harmony);
@@ -601,6 +607,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gap', label: 'Gap', min: 0, max: 60, step: 1, format: (v) => `${v}px` },
   { kind: 'range', key: 'padding', label: 'Padding', min: 0, max: 120, step: 1, format: (v) => `${v}px` },
   { kind: 'range', key: 'radius', label: 'Corner radius', min: 0, max: 80, step: 1, format: (v) => `${v}px` },
+  { kind: 'select', key: 'backdrop', label: 'Background', options: [['auto', 'Auto'], ['solid', 'Solid'], ['transparent', 'Transparent']] },
 
   { kind: 'section', id: 'carousels', label: 'Carousels', open: true,
     summary: () => `${settings.items} items, ${label(EFFECTS, settings.effect)}` },
@@ -1108,6 +1115,18 @@ toggle.addEventListener('click', () => {
 });
 if (window.innerWidth < 720) toggle.click();
 // In X-Frame, only one layer's options panel is open at a time.
+// See-through background: always when set to Transparent; with Auto, only
+// while X-Frame stacks the grid over another experiment, so the layers below
+// show between and around the cells.
+function updateBackdrop() {
+  const clear = settings.backdrop === 'transparent' || (settings.backdrop === 'auto' && stackedLayer);
+  document.body.classList.toggle('see-through', clear);
+}
+xframe.onLayer((layer) => {
+  stackedLayer = layer.role === 'stacked';
+  updateBackdrop();
+});
+
 xframe.panel({ element: panel, isOpen: () => !panel.classList.contains('collapsed'), close: () => toggle.click(), open: () => toggle.click() });
 
 renderControls();

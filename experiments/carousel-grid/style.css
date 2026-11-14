@@ -17,6 +17,12 @@ html, body { height: 100%; }
    shows. Give that the grid's own background instead of the frame's white. */
 html { background: var(--bg); }
 ::view-transition { background: var(--bg); }
+/* See-through (Background setting, or stacked in X-Frame): no page background,
+   so whatever is beneath shows between and around the cells. A dark colour
+   scheme would make the browser paint the iframe opaque, hence "normal". */
+html:has(body.see-through) { background: transparent; color-scheme: normal; }
+body.see-through { background: transparent; }
+html:has(body.see-through)::view-transition { background: transparent; }
 
 body {
   margin: 0;
