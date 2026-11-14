@@ -255,6 +255,22 @@ react to taps, e.g. the audio timeline's fading controls.
 { action: 'play' | 'pause' | 'toggle' } | { action: 'seek', time: number }
 ```
 
+**`carousel.change`**: published by the carousel grid when a carousel comes to rest
+on a different item (once per landing, not while it's being dragged):
+
+```ts
+{
+  cell: 'main' | number, // reading-order cell index, 0 = top-left; 'main' = the main row
+  row: number | null, col: number | null, // null for the main row
+  index: number,          // item the carousel rests on, 0..count-1
+  count: number,
+  word?: string,          // the item's word (Latin words surface)
+  group?: number, groupName?: string, // image surfaces: the theme group, e.g. 'Fire'
+}
+```
+
+When the main row drives the grid, every cell that turns sends its own message.
+
 **Browser note.** Browsers slow down or pause animation in iframes that aren't visible,
 so a publisher should be on screen (base, stacked or docked) for its feed to run
 smoothly.

@@ -462,10 +462,51 @@ function build() {
       cells.push({ r, c, carousel });
     }
   }
+  for (const cell of cells) announceChanges(cell);
   applyStyle();
   layout();
   updateStats();
   syncToHero();
+}
+
+/**
+ * X-Frame data bus: when a carousel comes to rest on a different item, tell
+ * the other layers ('carousel.change'), e.g. so the particle field can switch
+ * scene. Waits until the carousel has stopped, so a drag or flick across
+ * several items sends one message, for where it lands.
+ *   { cell: 'main' | 0.., row, col, index, count, word, group, groupName }
+ * cell is the reading-order index (0 = top-left grid cell, 'main' = the main
+ * row), the same numbering a hand-over uses; index is the item (0..count-1).
+ */
+const SETTLE_MS = 180;
+function announceChanges(cell: { r: number; c: number; carousel: Carousel }) {
+  const { carousel } = cell;
+  const before = carousel.onMove;
+  let last = carousel.index;
+  let timer = 0;
+  carousel.onMove = (c) => {
+    before?.(c);
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      const index = c.index;
+      if (index === last) return;
+      last = index;
+      const item = c.currentItem;
+      const isMain = cell.r === HERO;
+      const group = item?.group;
+      const groupName = settings.surface !== 'colors' && group !== undefined ? theme().groups[group]?.name : undefined;
+      xframe.publish('carousel.change', {
+        cell: isMain ? 'main' : cell.r * settings.cols + cell.c,
+        row: isMain ? null : cell.r,
+        col: isMain ? null : cell.c,
+        index,
+        count: c.count,
+        word: item?.word,
+        group,
+        groupName,
+      });
+    }, SETTLE_MS);
+  };
 }
 
 function linkedTo(r: number, c: number) {
