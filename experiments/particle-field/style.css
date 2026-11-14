@@ -2545,3 +2545,50 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 #controls.searching .ftabs { display: none; }
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }
+
+/* The combo slider: Stage knobs and the big slider share it. A slim glass
+   track with a big handle that shows the value; while you drag, the value
+   lifts into a bubble above your finger and the row above fades. */
+.cmb { --p: 0; position: relative; flex: 1; min-width: 0; height: 36px; touch-action: none; cursor: pointer; }
+.cmb::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: rgb(255 255 255 / 0.16); }
+.cmb-fill { position: absolute; left: 0; top: 50%; width: calc(var(--p) * 100%); height: 4px; margin-top: -2px; border-radius: 2px; background: rgb(255 255 255 / 0.75); }
+.cmb-home { position: absolute; top: 50%; width: 2px; height: 16px; margin: -8px 0 0 -1px; border-radius: 1px; background: #fff; opacity: 0.45; text-decoration: none; }
+.cmb-h { position: absolute; top: 50%; left: calc(var(--p) * 100%); box-sizing: border-box; min-width: 58px; height: 30px; padding: 0 10px; border-radius: 15px; display: grid; place-items: center; background: var(--accent); color: #0b0b14; font-family: inherit; font-size: 13px; font-weight: 700; line-height: 1; font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; transform: translate(calc(var(--p) * -100%), -50%); box-shadow: 0 0 0 3px rgb(10 10 12 / 0.9), 0 0 0 4px var(--accent), 0 2px 10px rgb(0 0 0 / 0.5); transition: min-width 0.15s, height 0.15s, border-radius 0.15s; }
+.cmb-bub { position: absolute; left: 50%; bottom: calc(100% + 20px); transform: translate(-50%, 6px); padding: 7px 12px 7px; border-radius: 12px; background: var(--accent); color: #0b0b14; font-family: inherit; font-size: 17px; font-weight: 700; line-height: 1; font-style: normal; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; box-shadow: 0 6px 18px rgb(0 0 0 / 0.5); opacity: 0; pointer-events: none; transition: opacity 0.12s, transform 0.12s; }
+.cmb-bub small { display: block; margin-bottom: 3px; font-size: 10px; font-weight: 600; line-height: 1.1; opacity: 0.65; }
+.cmb-bub::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: var(--accent); }
+.cmb-drag .cmb-bub { opacity: 1; transform: translate(-50%, 0); }
+.cmb-drag .cmb-h { height: 34px; border-radius: 17px; }
+.cmb-drag .cmb-h > span { display: none; }
+@media (prefers-reduced-motion: reduce) { .cmb-h, .cmb-bub { transition: none; } }
+
+/* Stage knobs: the bar is the combo slider (choice knobs keep ‹ name ›). */
+.m-bar.knobbing .swipe-pill:not(.choice):not(.empty) .sp-body { display: flex; align-items: center; margin-left: 0; }
+.m-bar.knobbing .swipe-pill:not(.choice):not(.empty) .sp-body > :not(.cmb) { display: none !important; }
+.m-bar.knobbing .swipe-pill:not(.choice):not(.empty) { padding-left: 16px; }
+.swipe-pill .cmb { display: none; }
+.m-bar.knobbing .swipe-pill:not(.choice):not(.empty) .cmb { display: block; pointer-events: none; }
+.m-bar .sp-chips { transition: opacity 0.15s; }
+.m-bar.cmb-drag .sp-chips { opacity: 0; }
+
+/* The big slider, the same way: the field stays in view; the name and Scene
+   value as chips, then the bar with Animate and ✕ on its right. */
+.tuner.cmbo { background: none; border: 0; box-shadow: none; border-radius: 0; gap: 8px; padding: 0 12px calc(14px + env(safe-area-inset-bottom)); pointer-events: none; overflow: visible; }
+.tuner.cmbo > * { pointer-events: auto; }
+.tuner.cmbo .tuner-about { margin: 0; padding: 0 4px; color: rgb(255 255 255 / 0.72); text-shadow: 0 1px 6px #000, 0 0 2px #000; pointer-events: none; }
+.tuner.cmbo .tuner-head { gap: 6px; flex-wrap: wrap; }
+.tuner.cmbo .tuner-head b, .tuner.cmbo .tuner-head button { height: 34px; display: inline-flex; align-items: center; padding: 0 13px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(10 10 12 / 0.7); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: rgb(255 255 255 / 0.75); font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; box-sizing: border-box; }
+.tuner.cmbo .tuner-head b { background: rgb(255 255 255 / 0.92); color: #111; border-color: transparent; }
+.tuner.cmbo .tuner-head output { display: none; }
+.tuner.cmbo .tuner-head .kn-type { width: 90px; height: 34px; margin: 0; border-radius: 999px; padding: 0 12px; }
+.tuner.cmbo .tuner-bar { display: flex; align-items: center; gap: 8px; padding: 9px 9px 9px 14px; border-radius: 22px; background: rgb(10 10 12 / 0.62); border: 1px solid rgb(255 255 255 / 0.1); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.tuner.cmbo .tuner-track { flex: 1; min-width: 0; height: auto; display: flex; }
+.tuner.cmbo input.cmb-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.tuner.cmbo .tuner-bar button { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: rgb(255 255 255 / 0.08); color: rgb(255 255 255 / 0.85); font: inherit; font-size: 15px; }
+.tuner.cmbo .tuner-bar .tuner-animate span { display: none; }
+.tuner.cmbo .tuner-bar .tuner-animate svg { width: 20px; height: 12px; }
+.tuner.cmbo .tuner-bar .tuner-animate.on { background: rgb(147 169 255 / 0.24); color: #c8d2ff; }
+.tuner.cmbo .anim-panel { padding: 12px 14px; border: 1px solid rgb(255 255 255 / 0.1); border-radius: 18px; background: rgb(10 10 12 / 0.72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.tuner.cmbo :is(.tuner-about, .tuner-head) { transition: opacity 0.15s; }
+.tuner.cmbo.cmb-drag :is(.tuner-about, .tuner-head) { opacity: 0; }
+@media (min-width: 721px) { .tuner.cmbo { border: 0; padding: 0; } }

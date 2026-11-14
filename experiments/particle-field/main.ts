@@ -13498,72 +13498,122 @@ function renderAnimList(): HTMLElement {
 }
 
 const KEYS_ICON = '<svg viewBox="0 0 20 10" fill="currentColor" aria-hidden="true"><path d="M3 2 L6 5 L3 8 L0 5Z M10 2 L13 5 L10 8 L7 5Z M17 2 L20 5 L17 8 L14 5Z"/></svg>';
+// The combo slider (Stage knobs and the big slider): a slim track with a big
+// handle that shows the value. While you drag, the value lifts into a bubble
+// above the handle, clear of your finger. The drag is relative (the handle
+// follows your finger's travel, 1:1 with the track), a tap jumps there.
+function comboTrack() {
+  const el = document.createElement('div');
+  el.className = 'cmb';
+  el.innerHTML = '<span class="cmb-fill"></span><s class="cmb-home" hidden></s><b class="cmb-h"><span></span><em class="cmb-bub"><small></small><span></span></em></b>';
+  const h = el.querySelector<HTMLElement>('.cmb-h')!;
+  const paint = (p: number, text: string, name: string, home: number | null = null) => {
+    p = Math.min(1, Math.max(0, p));
+    el.style.setProperty('--p', String(p));
+    h.querySelector('span')!.textContent = text;
+    el.querySelector('.cmb-bub span')!.textContent = text;
+    el.querySelector('.cmb-bub small')!.textContent = name;
+    const hm = el.querySelector<HTMLElement>('.cmb-home')!;
+    hm.hidden = home === null;
+    if (home !== null) hm.style.left = `${Math.min(1, Math.max(0, home)) * 100}%`;
+  };
+  return { el, paint };
+}
+function comboDrag(track: HTMLElement, host: HTMLElement, get: () => number, set: (p: number) => void, tapHandle?: () => void) {
+  let st: { x: number; p: number; t: number; moved: boolean; onHandle: boolean } | null = null;
+  track.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    e.preventDefault();
+    track.setPointerCapture(e.pointerId);
+    st = { x: e.clientX, p: get(), t: performance.now(), moved: false, onHandle: !!(e.target as HTMLElement).closest('.cmb-h') };
+  });
+  track.addEventListener('pointermove', (e) => {
+    if (!st) return;
+    const dx = e.clientX - st.x;
+    if (!st.moved && Math.abs(dx) < 4) return;
+    st.moved = true;
+    host.classList.add('cmb-drag');
+    set(st.p + dx / Math.max(80, track.clientWidth));
+  });
+  const end = (e: PointerEvent) => {
+    if (!st) return;
+    const s = st;
+    st = null;
+    host.classList.remove('cmb-drag');
+    if (s.moved || e.type !== 'pointerup' || performance.now() - s.t > 500) return;
+    if (s.onHandle && tapHandle) return tapHandle();
+    const r = track.getBoundingClientRect();
+    set((e.clientX - r.left) / r.width);
+  };
+  track.addEventListener('pointerup', end);
+  track.addEventListener('pointercancel', end);
+}
 function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc, update: () => void, knob: HTMLElement, animOpen: boolean | 'closed' = false) {
   const again = tunerKnob === knob;
   closeTuner();
   if (again) return;
   tipHide();
   const el = document.createElement('div');
-  el.className = 'tuner';
-  el.innerHTML = `<div class="tuner-head"><b></b><output></output><button type="button" class="tuner-home">Scene value</button><button type="button" class="tuner-close" aria-label="Done">✕</button></div><div class="tuner-track"><input type="range"><i aria-hidden="true"></i></div>`;
-  el.querySelector('b')!.textContent = c.label.replace(/ \(.*\)$/, '');
-  el.querySelector('.tuner-close')!.before(fieldKnobButton(c.key));
+  el.className = 'tuner cmbo';
+  el.innerHTML = `<div class="tuner-head"><b></b><output></output><button type="button" class="tuner-home">Scene value</button></div><div class="tuner-bar"><div class="tuner-track"><input type="range" class="cmb-input"></div><button type="button" class="tuner-close" aria-label="Done">✕</button></div>`;
+  const name = c.label.replace(/ \(.*\)$/, '');
+  el.querySelector('b')!.textContent = name;
+  el.querySelector('.tuner-head')!.append(fieldKnobButton(c.key));
+  const combo = comboTrack();
+  el.querySelector('.tuner-track')!.prepend(combo.el);
   if (canAnimate(c.key)) {
     const ab = document.createElement('button');
     ab.type = 'button';
     ab.className = 'tuner-animate';
     ab.innerHTML = `${waveIcon('sine')}<span>Animate</span>`;
     ab.title = 'Move this setting by itself, in time with the music';
+    ab.setAttribute('aria-label', 'Animate');
     let panel: HTMLElement | null = null;
     const show = (on: boolean) => {
       panel?.remove();
       panel = on ? animPanel(c) : null;
-      if (panel) el.append(panel);
+      if (panel) el.querySelector('.tuner-head')!.before(panel);
       ab.classList.toggle('on', on);
       ab.setAttribute('aria-expanded', String(on));
     };
     ab.addEventListener('click', () => show(!panel));
-    el.querySelector('.tuner-fk, .tuner-close')!.before(ab);
+    el.querySelector('.tuner-close')!.before(ab);
     queueMicrotask(() => show(animOpen === true || (animOpen !== 'closed' && !!animMap()[c.key])));
   }
   if (ABOUT[c.key]) {
     const about = document.createElement('p');
     about.className = 'tuner-about';
     about.textContent = ABOUT[c.key];
-    el.querySelector('.tuner-head')!.after(about);
+    el.prepend(about);
   }
   const out = el.querySelector('output')!;
   const input = el.querySelector('input')!;
-  const mark = el.querySelector<HTMLElement>('.tuner-track i')!;
   Object.assign(input, { min: c.min, max: c.max, step: c.step });
   input.setAttribute('aria-label', c.label);
   const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
+  const text = (v: number) => (c.format ? c.format(v) : String(+v.toFixed(3)));
   const sync = () => {
     const v = src.get(c.key) as number;
-    if (document.activeElement !== input || !el.contains(document.activeElement)) input.value = String(v);
-    out.textContent = c.format ? c.format(v) : String(+v.toFixed(3));
-    mark.style.left = `calc(14px + (100% - 28px) * ${pos(home())})`;
+    if (document.activeElement !== input) input.value = String(v);
+    out.textContent = text(v);
+    combo.paint(pos(v), text(v), name, pos(home()));
     el.querySelector('.tuner-home')!.toggleAttribute('disabled', Math.abs(v - home()) <= c.step / 2);
   };
-  input.addEventListener('input', () => {
-    src.put(c.key, Number(input.value));
-    update();
-    sync();
-  });
-  el.querySelector('.tuner-home')!.addEventListener('click', () => {
-    src.put(c.key, home());
-    input.value = String(home());
-    update();
-    sync();
-  });
-  el.querySelector('.tuner-close')!.addEventListener('click', closeTuner);
-  out.title = 'Tap to type a value';
-  out.addEventListener('click', () => typeValue(c, out, () => src.get(c.key) as number, (v) => {
+  const put = (v: number) => {
+    v = Math.min(c.max, Math.max(c.min, v));
     src.put(c.key, +(Math.round((v - c.min) / c.step) * c.step + c.min).toFixed(6));
     update();
-  }, sync));
+    sync();
+  };
+  input.addEventListener('input', () => put(Number(input.value)));
+  const typeIt = () => typeValue(c, out, () => src.get(c.key) as number, put, sync);
+  comboDrag(combo.el, el, () => pos(src.get(c.key) as number), (p) => put(c.min + p * (c.max - c.min)), typeIt);
+  el.querySelector('.tuner-home')!.addEventListener('click', () => put(home()));
+  el.querySelector('.tuner-close')!.addEventListener('click', closeTuner);
+  out.title = 'Tap to type a value';
+  out.addEventListener('click', typeIt);
   sync();
-  const timer = window.setInterval(() => (el.isConnected ? (document.activeElement === input ? null : sync()) : clearInterval(timer)), 200);
+  const timer = window.setInterval(() => (el.isConnected ? (document.activeElement === input || el.classList.contains('cmb-drag') ? null : sync()) : clearInterval(timer)), 200);
   document.body.append(el);
   tunerEl = el;
   tunerKnob = knob;
@@ -15349,6 +15399,9 @@ mbar.innerHTML = `<button type="button" class="mb-btn mb-ov" aria-label="Deck" t
 stage.append(mbar);
 const pill = mbar.querySelector<HTMLElement>('.swipe-pill')!;
 const chips = mbar.querySelector<HTMLElement>('.sp-chips')!;
+// The knob's slider: the same combo track as the big slider (value in the handle).
+const pillCombo = comboTrack();
+pill.querySelector('.sp-body')!.append(pillCombo.el);
 // Phones: one bottom bar for Stage, Deck and Studio. The view switch on the
 // left never moves; the tray on the right holds what the view you're in needs.
 type UView = 'stage' | 'deck' | 'studio';
@@ -16184,6 +16237,11 @@ function pillPaint(wake = false) {
   pill.querySelector('.sp-name')!.textContent = r.label;
   pill.querySelector('.sp-val')!.textContent = r.text(v);
   pill.querySelector<HTMLElement>('.sp-bar u')!.style.width = `${((v - r.min) / (r.max - r.min)) * 100}%`;
+  {
+    const c = rangeCtl(r.key as string);
+    const home = c ? ((sceneBase ?? DEFAULTS)[c.key] as number) : null;
+    pillCombo.paint((v - r.min) / (r.max - r.min), r.text(v), r.label.replace(/ \(.*\)$/, ''), home === null || home === undefined ? null : (home - r.min) / (r.max - r.min));
+  }
   // The knobs' names as a row of tabs above the pill: tap one to play it.
   const chipSig = keys.join();
   if (chips.dataset.sig !== chipSig) {
@@ -16271,7 +16329,8 @@ mbar.querySelector('.mb-close')!.addEventListener('click', (e) => {
       else return;
     }
     if (st.mode === 'turn') {
-      playNudge(pillKeys()[pillIdx], st.v, dx / Math.max(220, body.clientWidth));
+      mbar.classList.add('cmb-drag');
+      playNudge(pillKeys()[pillIdx], st.v, dx / Math.max(120, pill.classList.contains('choice') ? body.clientWidth : pillCombo.el.clientWidth));
       pillPaint(true);
     } else if (Math.abs(dy) > 24) {
       pillStep(dy < 0 ? 1 : -1);
@@ -16279,6 +16338,7 @@ mbar.querySelector('.mb-close')!.addEventListener('click', (e) => {
     }
   });
   const end = (e: PointerEvent) => {
+    mbar.classList.remove('cmb-drag');
     const tap = st && !st.mode && e.type === 'pointerup' && performance.now() - st.t < 450;
     st = null;
     if (!tap) return;
@@ -16294,10 +16354,13 @@ mbar.querySelector('.mb-close')!.addEventListener('click', (e) => {
         const n = spec.max + 1;
         if (side) playSet(key, (Math.round(spec.get()) + side + n) % n);
         else knobMenu(body, spec);
-      } else if (side) {
-        // Twenty steps across the range, on the setting's own step grid.
-        const by = Math.max(spec.step, Math.round((spec.max - spec.min) / 20 / spec.step) * spec.step);
-        playSet(key, playBase(key) + side * by);
+      } else {
+        // A tap on the track jumps there.
+        const t = pillCombo.el.getBoundingClientRect();
+        if (e.clientX >= t.left - 8 && e.clientX <= t.right + 8) {
+          const p = Math.min(1, Math.max(0, (e.clientX - t.left) / t.width));
+          playSet(key, spec.min + p * (spec.max - spec.min));
+        }
       }
     }
     pillPaint(true);
