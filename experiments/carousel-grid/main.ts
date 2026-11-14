@@ -15,6 +15,11 @@ interface Settings {
   cols: number;
   aspect: number;
   fill: boolean;
+  /** Share of the screen the grid may use, 0.1..1. */
+  size: number;
+  /** Where the grid sits in the leftover space: 0 = left/top, 0.5 = centre, 1 = right/bottom. */
+  posX: number;
+  posY: number;
   /** Page background: 'auto' is see-through only when stacked over another layer in X-Frame. */
   backdrop: 'auto' | 'solid' | 'transparent';
   hero: boolean;
@@ -77,6 +82,9 @@ const DEFAULTS: Settings = {
   cols: 4,
   aspect: 1,
   fill: false,
+  size: 1,
+  posX: 0.5,
+  posY: 0.5,
   backdrop: 'auto',
   hero: false,
   heroRows: 1,
@@ -598,8 +606,11 @@ function layout() {
   const left = settings.hero && settings.heroPlace === 'left';
   const rows = gridRows + (top ? settings.heroRows : 0);
   const cols = gridCols + (left ? settings.heroCols : 0);
-  const availW = Math.max(0, stage.clientWidth - padding * 2 - gap * (cols - 1));
-  const availH = Math.max(0, stage.clientHeight - padding * 2 - gap * (rows - 1));
+  // The grid fits into a box that is `size` of the screen (inside the padding).
+  const roomW = Math.max(0, stage.clientWidth - padding * 2);
+  const roomH = Math.max(0, stage.clientHeight - padding * 2);
+  const availW = Math.max(0, roomW * settings.size - gap * (cols - 1));
+  const availH = Math.max(0, roomH * settings.size - gap * (rows - 1));
   let w = availW / cols;
   let h = settings.fill ? availH / rows : w / aspect;
   if (!settings.fill && h * rows > availH) {
@@ -608,6 +619,11 @@ function layout() {
   }
   grid.style.gridTemplateColumns = `repeat(${cols}, ${w}px)`;
   grid.style.gridTemplateRows = `repeat(${rows}, ${h}px)`;
+  // Place it in whatever space is left over: posX/posY of the way across.
+  const gridW = w * cols + gap * (cols - 1);
+  const gridH = h * rows + gap * (rows - 1);
+  grid.style.marginLeft = `${Math.max(0, roomW - gridW) * settings.posX}px`;
+  grid.style.marginTop = `${Math.max(0, roomH - gridH) * settings.posY}px`;
   grid.style.setProperty('--cell', `${Math.min(w, h)}px`);
   grid.style.setProperty('--half-w', `${w / 2}px`);
   grid.style.setProperty('--half-h', `${h / 2}px`);
@@ -660,6 +676,10 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gap', label: 'Gap', min: 0, max: 60, step: 1, format: (v) => `${v}px` },
   { kind: 'range', key: 'padding', label: 'Padding', min: 0, max: 120, step: 1, format: (v) => `${v}px` },
   { kind: 'range', key: 'radius', label: 'Corner radius', min: 0, max: 80, step: 1, format: (v) => `${v}px` },
+  { kind: 'sub', label: 'Size and position' },
+  { kind: 'range', key: 'size', label: 'Size', min: 0.1, max: 1, step: 0.01, format: (v) => `${Math.round(v * 100)}%` },
+  { kind: 'range', key: 'posX', label: 'Horizontal', min: 0, max: 1, step: 0.01, format: (v) => (v <= 0.02 ? 'left' : v >= 0.98 ? 'right' : Math.abs(v - 0.5) < 0.02 ? 'centre' : `${Math.round(v * 100)}%`) },
+  { kind: 'range', key: 'posY', label: 'Vertical', min: 0, max: 1, step: 0.01, format: (v) => (v <= 0.02 ? 'top' : v >= 0.98 ? 'bottom' : Math.abs(v - 0.5) < 0.02 ? 'centre' : `${Math.round(v * 100)}%`) },
   { kind: 'select', key: 'backdrop', label: 'Background', options: [['auto', 'Auto'], ['solid', 'Solid'], ['transparent', 'Transparent']] },
 
   { kind: 'section', id: 'carousels', label: 'Carousels', open: true,

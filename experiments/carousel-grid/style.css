@@ -44,7 +44,8 @@ body {
   min-width: 0;
   position: relative;
   display: grid;
-  place-items: center;
+  /* Placed by layout() (Size and position): margins within the padding. */
+  place-items: start;
   padding: var(--pad, 24px);
   overflow: hidden;
 }
