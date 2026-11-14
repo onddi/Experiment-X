@@ -142,6 +142,7 @@ export interface Settings {
   twistTwo: string;
   holdTwo: 'freeze' | 'none';
   swipeThree: 'vibe' | 'scene' | 'none';
+  swipeOne: 'scenes' | 'none';
   tapThree: 'tempo' | 'drop' | 'shuffle' | 'none';
   thumbWall: boolean;
   playWheel3: string;
@@ -512,6 +513,7 @@ export const DEFAULTS: Settings = {
   twistTwo: 'lensTwirl',
   holdTwo: 'freeze',
   swipeThree: 'vibe',
+  swipeOne: 'none',
   tapThree: 'tempo',
   thumbWall: true,
   playWheel3: 'mOrder',

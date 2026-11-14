@@ -7106,9 +7106,11 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'playPinch', label: 'Pinch', options: PLAYABLE },
   { kind: 'select', key: 'twistTwo', label: 'Twist', options: PLAYABLE },
   { kind: 'select', key: 'holdTwo', label: 'Hold still', options: [['freeze', 'Freeze'], ['none', 'Nothing']] },
-  { kind: 'note', text: 'A quick sideways swipe plays the previous or next scene, a quick swipe up shuffles. Tap near the bottom edge for the bar.' },
+  { kind: 'note', text: 'Tap near the bottom edge for the bar.' },
   { kind: 'sub', label: 'Taps & three fingers' },
   { kind: 'select', key: 'tapTwice', label: 'Double-tap', options: [['drop', 'The drop'], ['burst', 'Burst'], ['shuffle', 'Shuffle'], ['freeze', 'Freeze'], ['none', 'Nothing']] },
+  { kind: 'select', key: 'swipeOne', label: 'One-finger swipe', options: [['scenes', 'Scenes (sideways: previous / next, up: shuffle)'], ['none', 'Nothing']] },
+  { kind: 'note', text: 'Phone, with the menu closed. Off by default so a stray swipe can’t switch scenes; every gesture that changes the scene shows Undo.', show: () => settings.swipeOne === 'scenes' },
   { kind: 'select', key: 'swipeThree', label: 'Three-finger swipe', options: [['vibe', 'Next vibe'], ['scene', 'Next scene'], ['none', 'Nothing']] },
   { kind: 'select', key: 'tapThree', label: 'Three-finger tap', options: [['tempo', 'Tap tempo'], ['drop', 'The drop'], ['shuffle', 'Shuffle'], ['none', 'Nothing']] },
   { kind: 'toggle', key: 'thumbWall', label: 'Thumb stone leaves a wall', show: () => settings.click === 'thumb' },
@@ -7779,7 +7781,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 // you play, your on-screen knobs and locked cards.
 function blankTarget(): Settings {
   const S0 = settings as unknown as Record<string, unknown>;
-  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'tapThree', 'thumbWall'];
+  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'];
   const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
   for (const k of lockedKeys()) target[k] = S0[k];
   return target as unknown as Settings;
@@ -7800,7 +7802,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'tapThree', 'thumbWall'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -9961,7 +9963,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   forces: ['gravity', 'wind', 'windDir'],
   swarm: ['flock', 'space'],
   obstacles: ['obstacles', 'obsText', 'obsShow', 'obsForce'],
-  pointer: ['pointerMode', 'click', 'radius', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'tapThree', 'thumbWall'],
+  pointer: ['pointerMode', 'click', 'radius', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'],
   drums: ['audioKick', 'audioPulse', 'audioSpeed'],
   mcolour: ['audioHue', 'audioHueAmt', 'audioBright'],
   camera: ['audioCam', 'audioSpin', 'audioCuts'],
@@ -12876,7 +12878,7 @@ function stopWatching() {
     // The field showing on its own (menu and overview closed), on a phone.
     const bare = sheetMode() && panel.classList.contains('collapsed') && !ovEl && !document.body.classList.contains('solo');
     // A second finger makes it a multi-finger gesture, not a scene swipe.
-    sw = bare && !playTouch.size ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
+    sw = bare && !playTouch.size && settings.swipeOne === 'scenes' ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
   });
   canvas.addEventListener('pointerup', (e) => {
     if (!sw) return;
@@ -12889,13 +12891,13 @@ function stopWatching() {
     // A quick swipe up: shuffle. Not from the very bottom, where the
     // phone's own home swipe and the bar's tap zone are.
     if (-dy > 80 && Math.abs(dx) < -dy * 0.6 && sw0y < window.innerHeight - 60) {
-      shuffle();
+      undoable(() => shuffle());
       return;
     }
     if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
     const r = watchSceneAfter(dx < 0 ? 1 : -1);
     const p = PRESETS.find(([nm]) => nm === r.name);
-    if (p) playPreset(p[0], p[1]);
+    if (p) undoable(() => playPreset(p[0], p[1]));
     setTimeout(() => (watchBar.querySelector('b')!.textContent = document.querySelector('#scene-now b')?.textContent || r.name), 50);
   });
 }
@@ -14170,6 +14172,27 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
 
 // Previous / next scene from the overview: the scene playing's family, A–Z as
 // in the library, wrapping round. Then the rack redraws for the new scene.
+// A gesture that changes the scene (easy to do by accident) says which
+// scene it went to, with Undo back to exactly what you had, tweaks and all.
+function undoable(go: () => void) {
+  const snap = { ...settings };
+  const base = sceneBase;
+  const name = lastSceneName;
+  const mine = currentMine;
+  go();
+  const now = currentMine?.name ?? (lastSceneName || 'Shuffled');
+  setTimeout(() => {
+    showToast(now, ['Undo', () => {
+      apply(snap, true, { now: true });
+      sceneBase = base;
+      lastSceneName = name;
+      currentMine = mine;
+      redrawMine();
+      markLibrary();
+      syncSceneNow();
+    }]);
+  }, 60);
+}
 function stepScene(d: number) {
   const r = sceneAfter(lastSceneName ? { name: lastSceneName } : null, lastSceneName ? d : 0);
   const p = PRESETS.find(([n]) => n === r.name);
@@ -16861,7 +16884,7 @@ function fireDrop(x: number, y: number) {
 function tapAction(a: string, x: number, y: number) {
   if (a === 'drop') fireDrop(x, y);
   else if (a === 'burst') fieldBurst(x, y);
-  else if (a === 'shuffle') shuffle();
+  else if (a === 'shuffle') undoable(() => shuffle());
   else if (a === 'freeze') {
     togglePause();
     showToast(paused ? 'Frozen · double-tap to go on' : 'Going on');
@@ -16925,7 +16948,7 @@ const fingerUp = (e: PointerEvent) => {
         stepVibe(dx < 0 ? 1 : -1);
         showToast(`Vibe: ${vibeIsOff() ? 'Off' : vibeLabel() || 'None'}`);
         refresh();
-      } else if (settings.swipeThree === 'scene') stepScene(dx < 0 ? 1 : -1);
+      } else if (settings.swipeThree === 'scene') undoable(() => stepScene(dx < 0 ? 1 : -1));
     } else if (gest.moved < 20 && dur < 400) tapAction(settings.tapThree, e.offsetX, e.offsetY);
   } else if (gest.most === 1 && gest.moved < 12 && dur < 260) {
     const now = performance.now();
