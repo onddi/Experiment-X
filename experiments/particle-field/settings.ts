@@ -301,6 +301,23 @@ export interface Settings {
   lensEcho: number;
   lensGlow: number;
   lensCrt: number;
+  // FX (GPU looks over the finished frame).
+  gfxBloom: number;
+  gfxSpread: number;
+  gfxSplit: number;
+  gfxFeedback: 'off' | 'tunnel' | 'smear';
+  gfxZoom: number;
+  gfxSpin: number;
+  gfxFlow: number;
+  gfxLength: number;
+  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido';
+  gfxLensSize: number;
+  gfxBend: number;
+  gfxShock: number;
+  gfxSlices: number;
+  gfxSurface: 'off' | 'led' | 'halftone';
+  gfxCell: number;
+  gfxKick: number;
   audioKaleidoDrop: boolean;
   audioEcho: number;
   audioPalEvery: number;
@@ -637,6 +654,22 @@ export const DEFAULTS: Settings = {
   lensEcho: 0,
   lensGlow: 0,
   lensCrt: 0,
+  gfxBloom: 0,
+  gfxSpread: 0.55,
+  gfxSplit: 0,
+  gfxFeedback: 'off',
+  gfxZoom: 0.5,
+  gfxSpin: 0.35,
+  gfxFlow: 1,
+  gfxLength: 0.94,
+  gfxLens: 'off',
+  gfxLensSize: 0.8,
+  gfxBend: 0.6,
+  gfxShock: 1,
+  gfxSlices: 6,
+  gfxSurface: 'off',
+  gfxCell: 9,
+  gfxKick: 0.6,
   audioKaleidoDrop: false,
   audioEcho: 0,
   audioPalEvery: 0,

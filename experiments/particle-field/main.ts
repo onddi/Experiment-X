@@ -9,6 +9,7 @@ import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
+import { GpuFx } from './gpufx.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
@@ -4981,12 +4982,63 @@ lensCanvas.setAttribute('aria-hidden', 'true');
 lensCanvas.hidden = true;
 canvas.after(lensCanvas);
 const lensCtx = lensCanvas.getContext('2d')!;
+// FX folder: GPU looks over the finished frame, on their own canvas.
+const gpuFx = new GpuFx();
+lensCanvas.after(gpuFx.canvas);
+const gfxOn = () => gpuFx.ok && (settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxFeedback !== 'off' || settings.gfxLens !== 'off' || settings.gfxSurface !== 'off');
+// What the field shows right now: the GPU looks, the lens pass or the plain canvas.
+const shownCanvas = () => (!gpuFx.canvas.hidden ? gpuFx.canvas : lensCanvas.hidden ? canvas : lensCanvas);
+let gfxWave: [number, number, number] = [0.5, 0.5, -10];
+let gfxNextWave = 0;
+let gfxKickEnv = 0;
+function gpuFrame(now: number) {
+  const on = gfxOn();
+  const under = lensCanvas.hidden ? canvas : lensCanvas;
+  if (gpuFx.canvas.hidden === on) {
+    gpuFx.canvas.hidden = !on;
+    if (!on) {
+      canvas.style.opacity = lensCanvas.hidden ? '' : '0';
+      lensCanvas.style.opacity = '';
+      gpuFx.reset();
+    }
+  }
+  if (!on) return;
+  if (under.style.opacity !== '0') under.style.opacity = '0';
+  if (under === lensCanvas && canvas.style.opacity !== '0') canvas.style.opacity = '0';
+  const g = gpuFx.canvas;
+  if (g.style.filter !== canvas.style.filter) g.style.filter = canvas.style.filter;
+  if (g.style.transform !== canvas.style.transform) g.style.transform = canvas.style.transform;
+  const S = settings;
+  const t = now / 1000;
+  const L = audio.levels;
+  const music = reacting();
+  gfxKickEnv = Math.max(gfxKickEnv * 0.88, music ? clamp01(L.pulse) * S.gfxKick : 0);
+  const ptrIn = pointer.x > -1000;
+  const px = ptrIn ? pointer.x / w : 0.5 + Math.sin(t * 0.5) * 0.28;
+  const py = ptrIn ? 1 - pointer.y / h : 0.5 + Math.sin(t * 0.37) * 0.2;
+  if (S.gfxLens === 'shock' && ((music && L.beat && S.gfxKick > 0) || (!music && t > gfxNextWave))) {
+    gfxWave = ptrIn ? [px, py, t] : [0.5 + Math.sin(t * 1.3) * 0.2, 0.5 + Math.cos(t) * 0.15, t];
+    gfxNextWave = t + 2;
+  }
+  gpuFx.render(under, {
+    bloom: S.gfxBloom, spread: S.gfxSpread, split: S.gfxSplit,
+    feedback: S.gfxFeedback, zoom: S.gfxZoom, spin: S.gfxSpin, flow: S.gfxFlow, length: S.gfxLength,
+    lens: S.gfxLens, lensSize: S.gfxLensSize, bend: S.gfxBend, shock: S.gfxShock, slices: S.gfxSlices,
+    surface: S.gfxSurface, cell: S.gfxCell * (under.width / Math.max(1, w)),
+  }, { t, kick: gfxKickEnv, ptr: [px, py], wave: gfxWave });
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!gfxOn() || settings.gfxLens !== 'shock') return;
+  const [x, y] = unspin(e.offsetX, e.offsetY);
+  gfxWave = [x / w, 1 - y / h, performance.now() / 1000];
+  gfxNextWave = gfxWave[2] + 2;
+});
 
 // --- recording ---------------------------------------------------------------------
 // A clip of what's on the field (V, the Actions bar or the Record card).
 const recUi: (() => void)[] = [];
 const recorder = new Recorder({
-  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  source: shownCanvas,
   size: () => [w, h],
   screen: () => { const r = Math.min(window.devicePixelRatio || 1, 2); return [w * r, h * r]; },
   filter: () => canvas.style.filter,
@@ -5002,7 +5054,7 @@ const recorder = new Recorder({
 // The field on a second window (projector), with no menus.
 const projectUi: (() => void)[] = [];
 const projector = new Projector({
-  source: () => (lensCanvas.hidden ? canvas : lensCanvas),
+  source: shownCanvas,
   size: () => [w, h],
   filter: () => canvas.style.filter,
   transform: () => canvas.style.transform,
@@ -6132,6 +6184,7 @@ function frame(now: number) {
       if (kaleidoNow >= 2) kaleidoscope(kaleidoNow + (now < lm.sidesUntil && settings.audioKaleido > 0 ? 2 : 0));
       if (settings.mirrorWorld) mirrorHalf();
       lensFrame(now);
+      gpuFrame(now);
     }
     const t2 = performance.now();
     stepMs = stepMs * 0.9 + (t1 - t0) * 0.1;
@@ -6185,16 +6238,17 @@ function adaptQuality(dt: number, ms: number) {
 type Control = ControlBody & { show?: () => boolean };
 // Cards live on a page; pages are grouped by what you're trying to do:
 // Create the look, Perform with it, or make it React to music and camera.
-type Tab = 'presets' | 'look' | 'shape' | 'motion' | 'music' | 'camera' | 'timeline' | 'xfader' | 'knobs' | 'record' | 'links';
+type Tab = 'presets' | 'look' | 'fx' | 'shape' | 'motion' | 'music' | 'camera' | 'timeline' | 'xfader' | 'knobs' | 'record' | 'links';
 type Intent = 'create' | 'perform' | 'react';
 const TABS: [Tab, string][] = [
-  ['look', 'Look'], ['shape', 'Shape'], ['motion', 'Motion'],
+  ['look', 'Look'], ['fx', 'FX'], ['shape', 'Shape'], ['motion', 'Motion'],
   ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'On-screen controls'], ['record', 'Record'],
   ['music', 'Music'], ['camera', 'Camera'], ['links', 'Connections'],
 ];
 // Desktop tab icons: one row of every page, the open one also named.
 const TAB_ICONS: Record<Tab, string> = {
   look: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
+  fx: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
   shape: '<path d="M12 3.5l2.5 5.5 6 .6-4.5 4 1.3 5.9L12 16.6l-5.3 2.9L8 13.6l-4.5-4 6-.6z"/>',
   motion: '<path d="M3 9c3-3 6 3 9 0s6 3 9 0M3 15c3-3 6 3 9 0s6 3 9 0"/>',
   presets: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
@@ -6207,7 +6261,7 @@ const TAB_ICONS: Record<Tab, string> = {
   links: '<path d="M10.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1M13.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/>',
 };
 const INTENTS: [Intent, string, Tab[]][] = [
-  ['create', 'Edit', ['shape', 'motion', 'look']],
+  ['create', 'Edit', ['shape', 'motion', 'look', 'fx']],
   ['react', 'React', ['music', 'camera', 'links']],
   ['perform', 'Play', ['presets', 'timeline', 'knobs', 'record']],
 ];
@@ -6232,6 +6286,7 @@ const FOLDERS: Folder[] = [
   { id: 'shape', label: 'Shape', tabs: ['shape'], icon: TAB_ICONS.shape },
   { id: 'motion', label: 'Motion', tabs: ['motion'], icon: TAB_ICONS.motion },
   { id: 'look', label: 'Look', tabs: ['look'], icon: TAB_ICONS.look },
+  { id: 'fx', label: 'FX', tabs: ['fx'], icon: TAB_ICONS.fx },
   { id: 'music', label: 'Music', tabs: ['music'], icon: TAB_ICONS.music },
   { id: 'camera', label: 'Camera', tabs: ['camera'], icon: TAB_ICONS.camera },
   { id: 'links', label: 'Connections', tabs: ['links'], icon: TAB_ICONS.links },
@@ -7132,6 +7187,52 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: 'Music' },
   { kind: 'range', key: 'lensMusic', label: 'Moves with the music', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. The twirl spins and winds tighter on kicks, waves swell with the bass, a ripple goes out on each kick, shards burst at a drop, echoes flash and the glow breathes. Without music they drift by themselves. Every one can go on a knob (Field knobs & gestures).' },
+
+  // FX: GPU looks over the finished frame (gpufx.ts).
+  { kind: 'section', id: 'gfxlight', label: 'Light', tab: 'fx',
+    about: 'Bloom lets bright particles glow into their neighbours and add up to light instead of flat white. Colour split pulls red, green and blue apart toward the edges. Runs on the graphics chip.',
+    lock: ['gfxBloom', 'gfxSpread', 'gfxSplit'],
+    power: { on: () => settings.gfxBloom > 0 || settings.gfxSplit > 0, off: { gfxBloom: 0, gfxSplit: 0 }, start: { gfxBloom: 1.1 } },
+    summary: () => [settings.gfxBloom > 0 ? 'bloom' : '', settings.gfxSplit > 0 ? 'colour split' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'note', text: 'FX need WebGL 2, which this browser has turned off.', show: () => !gpuFx.ok },
+  { kind: 'range', key: 'gfxBloom', label: 'Bloom', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v / 2)) },
+  { kind: 'range', key: 'gfxSpread', label: 'Bloom spread', min: 0.1, max: 1, step: 0.05, format: pct, show: () => settings.gfxBloom > 0 },
+  { kind: 'range', key: 'gfxSplit', label: 'Colour split', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v / 2)) },
+  { kind: 'section', id: 'gfxfeed', label: 'Feedback', tab: 'fx',
+    about: 'The last frame is drawn back into the next one. Tunnel zooms and turns it into an endless spiral; Smear pushes trails along a slow current.',
+    lock: ['gfxFeedback', 'gfxZoom', 'gfxSpin', 'gfxFlow', 'gfxLength'],
+    power: { on: () => settings.gfxFeedback !== 'off', off: { gfxFeedback: 'off' }, start: { gfxFeedback: 'tunnel' } },
+    summary: () => (settings.gfxFeedback === 'off' ? 'off' : settings.gfxFeedback) },
+  { kind: 'select', key: 'gfxFeedback', label: 'Feedback', options: [['off', 'Off'], ['tunnel', 'Tunnel'], ['smear', 'Smear']] },
+  { kind: 'range', key: 'gfxZoom', label: 'Zoom', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxFeedback === 'tunnel' },
+  { kind: 'range', key: 'gfxSpin', label: 'Spin', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'none' : `${v > 0 ? '↻' : '↺'} ${pct(Math.abs(v))}`), show: () => settings.gfxFeedback === 'tunnel' },
+  { kind: 'range', key: 'gfxFlow', label: 'Flow', min: 0, max: 2, step: 0.05, format: (v) => pct(v / 2), show: () => settings.gfxFeedback === 'smear' },
+  { kind: 'range', key: 'gfxLength', label: 'Trail length', min: 0.5, max: 0.99, step: 0.01, format: (v) => pct((v - 0.5) / 0.49), show: () => settings.gfxFeedback === 'smear' },
+  { kind: 'section', id: 'gfxlens', label: 'Lenses', tab: 'fx',
+    about: 'Bend the finished picture: a glass lens that follows your finger, a shockwave ring on each kick, or mirrored kaleidoscope slices.',
+    lock: ['gfxLens', 'gfxLensSize', 'gfxBend', 'gfxShock', 'gfxSlices'],
+    power: { on: () => settings.gfxLens !== 'off', off: { gfxLens: 'off' }, start: { gfxLens: 'glass' } },
+    summary: () => ({ off: 'off', glass: 'glass', shock: 'shockwave', kaleido: 'kaleido' })[settings.gfxLens] },
+  { kind: 'select', key: 'gfxLens', label: 'Lens', options: [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido']] },
+  { kind: 'range', key: 'gfxLensSize', label: 'Size', min: 0.3, max: 1.5, step: 0.05, format: (v) => pct(v / 1.5), show: () => settings.gfxLens === 'glass' },
+  { kind: 'range', key: 'gfxBend', label: 'Bend', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxLens === 'glass' },
+  { kind: 'note', text: 'The glass follows your finger or mouse, and drifts on its own when you’re not touching.', show: () => settings.gfxLens === 'glass' },
+  { kind: 'range', key: 'gfxShock', label: 'Strength', min: 0, max: 2, step: 0.05, format: (v) => pct(v / 2), show: () => settings.gfxLens === 'shock' },
+  { kind: 'note', text: 'A ring fires on each kick with music on, every two seconds without, and wherever you tap.', show: () => settings.gfxLens === 'shock' },
+  { kind: 'range', key: 'gfxSlices', label: 'Slices', min: 3, max: 12, step: 1, format: (v) => `${v}`, show: () => settings.gfxLens === 'kaleido' },
+  { kind: 'section', id: 'gfxsurface', label: 'Surface', tab: 'fx',
+    about: 'Show the picture as a grid of round LEDs, like a stage screen up close, or as printed halftone dots sized by brightness.',
+    lock: ['gfxSurface', 'gfxCell'],
+    power: { on: () => settings.gfxSurface !== 'off', off: { gfxSurface: 'off' }, start: { gfxSurface: 'led' } },
+    summary: () => ({ off: 'off', led: 'LED wall', halftone: 'halftone' })[settings.gfxSurface] },
+  { kind: 'select', key: 'gfxSurface', label: 'Surface', options: [['off', 'Off'], ['led', 'LED wall'], ['halftone', 'Halftone']] },
+  { kind: 'range', key: 'gfxCell', label: 'Dot size', min: 4, max: 24, step: 1, format: (v) => `${v}px`, show: () => settings.gfxSurface !== 'off' },
+  { kind: 'section', id: 'gfxmusic', label: 'FX on the kick', tab: 'fx',
+    about: 'With music on, each kick pushes the FX: brighter bloom, wider colour split, a tunnel surge, a shockwave ring.',
+    lock: ['gfxKick'],
+    summary: () => (settings.gfxKick > 0 ? pct(settings.gfxKick) : 'off') },
+  { kind: 'range', key: 'gfxKick', label: 'Kick amount', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'note', text: 'Needs a sound source (Music).', show: () => audio.source === 'off' },
 
   { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
@@ -8537,7 +8638,7 @@ fxCanvas.setAttribute('aria-hidden', 'true');
 fxCanvas.hidden = true;
 const fxCtx = fxCanvas.getContext('2d')!;
 const fxSnap = document.createElement('canvas');
-lensCanvas.after(fxCanvas);
+gpuFx.canvas.after(fxCanvas);
 inkSync();
 let tlGatherNow = false;
 let whirlNow = 0;
@@ -8545,7 +8646,7 @@ type Shard = { pts: number[]; cx: number; cy: number; vx: number; vy: number; va
 let tlFx: { how: TlHow; start: number; dur: number; switchAt: number; go: (() => void) | null; shards?: Shard[] } | null = null;
 
 function tlSnapshot() {
-  const src = lensCanvas.hidden ? canvas : lensCanvas;
+  const src = shownCanvas();
   fxSnap.width = src.width;
   fxSnap.height = src.height;
   const g = fxSnap.getContext('2d')!;
