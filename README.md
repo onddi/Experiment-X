@@ -129,7 +129,7 @@ is unchanged. Per layer you can set:
   or the browser paints its iframe opaque.
 - **Gets the mouse**: only one stacked layer (or the base) gets pointer input;
   docked strips always do. While the layer with the mouse has its options panel
-  open, stacked layers above it fade back to 20% so the panel stays readable. The chip in the toolbar names the layer
+  open, it rises to the top of the stack and the stacked layers it passed fade back to 20%, so nothing sits over its menu (Safari would otherwise send scrolling to the layer on top). The chip in the toolbar names the layer
   with the mouse; tap it (or press **L**) to pass the mouse to the next one.
 
 A shared link opens ready to start: with several experiments on screen, only the

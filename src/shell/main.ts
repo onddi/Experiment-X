@@ -163,7 +163,7 @@ function applyView() {
       top: `${r.top}%`,
       width: `${r.width}%`,
       height: `${r.height}%`,
-      zIndex: String(i + (docked ? 100 : 0)),
+      zIndex: layerZ(i),
       mixBlendMode: i === 0 ? '' : l.blend,
       opacity: layerOpacity(i),
       pointerEvents: docked || i === input ? '' : 'none',
@@ -193,8 +193,29 @@ let panelOpenSlug: string | null = null;
 function refreshOpacities() {
   view.layers.forEach((l, i) => {
     const f = frames.get(l.slug);
-    if (f) f.style.opacity = layerOpacity(i);
+    if (!f) return;
+    f.style.opacity = layerOpacity(i);
+    f.style.zIndex = layerZ(i);
   });
+}
+
+/** True while the layer with the mouse has its options panel open. */
+function inputPanelOpen() {
+  return panelOpenSlug !== null && panelOpenSlug === view.layers[inputLayer(view)]?.slug;
+}
+
+/**
+ * Stacking order. While the layer with the mouse has its options panel open,
+ * it rises above the other stacked layers (which fade back anyway), so nothing
+ * lies over its menu. Some browsers (Safari) send scrolling to a layer on top
+ * even when it ignores the pointer, which left a lower layer's menu unscrollable.
+ */
+function layerZ(i: number): string {
+  const l = view.layers[i];
+  const docked = i > 0 && l.placement !== 'full';
+  if (docked) return String(100 + i);
+  if (i === inputLayer(view) && inputPanelOpen()) return '99';
+  return String(i);
 }
 
 /** How much stacked layers above the one with the mouse fade back while its options panel is open. */
