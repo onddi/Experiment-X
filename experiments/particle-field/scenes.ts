@@ -672,3 +672,10 @@ export const ADDED: Record<string, string> = {
   "Sky shapes": '2026-11-10T09:33',
   "Scatter": '2026-11-07T23:37',
 };
+
+// Dates for the Physics and Media scenes, which arrived on their own branch.
+Object.assign(ADDED, {
+  'Chain fireworks': '2026-11-12T13:19', 'Rain splash': '2026-11-12T13:19', 'Sand heap': '2026-11-12T13:19', 'Snow on words': '2026-11-12T13:19',
+  'Pinball': '2026-11-12T13:19', 'Comet trails': '2026-11-12T13:19', 'Marble bowl': '2026-11-12T13:19', 'Butterflies': '2026-11-12T13:19',
+  'Rocket launch': '2026-11-12T13:19', 'Your video': '2026-11-12T13:19', 'Running fox': '2026-11-12T20:13', 'Night walker': '2026-11-12T20:24',
+});
