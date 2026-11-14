@@ -305,18 +305,27 @@ export interface Settings {
   gfxBloom: number;
   gfxSpread: number;
   gfxSplit: number;
-  gfxFeedback: 'off' | 'tunnel' | 'smear';
+  gfxRays: number;
+  gfxFeedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt';
   gfxZoom: number;
   gfxSpin: number;
   gfxFlow: number;
   gfxLength: number;
-  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido';
+  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort';
   gfxLensSize: number;
   gfxBend: number;
   gfxShock: number;
   gfxSlices: number;
-  gfxSurface: 'off' | 'led' | 'halftone';
+  gfxLensMix: number;
+  gfxFollow: 'finger' | 'wander' | 'centre';
+  gfxCount: number;
+  gfxSurface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic';
   gfxCell: number;
+  gfxSurfMix: number;
+  gfxGrade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono';
+  gfxGradeAmt: number;
+  gfxGrain: number;
+  gfxVignette: number;
   gfxKick: number;
   audioKaleidoDrop: boolean;
   audioEcho: number;
@@ -657,6 +666,7 @@ export const DEFAULTS: Settings = {
   gfxBloom: 0,
   gfxSpread: 0.55,
   gfxSplit: 0,
+  gfxRays: 0,
   gfxFeedback: 'off',
   gfxZoom: 0.5,
   gfxSpin: 0.35,
@@ -667,8 +677,16 @@ export const DEFAULTS: Settings = {
   gfxBend: 0.6,
   gfxShock: 1,
   gfxSlices: 6,
+  gfxLensMix: 1,
+  gfxFollow: 'finger',
+  gfxCount: 1,
   gfxSurface: 'off',
   gfxCell: 9,
+  gfxSurfMix: 1,
+  gfxGrade: 'off',
+  gfxGradeAmt: 0.8,
+  gfxGrain: 0,
+  gfxVignette: 0,
   gfxKick: 0.6,
   audioKaleidoDrop: false,
   audioEcho: 0,
