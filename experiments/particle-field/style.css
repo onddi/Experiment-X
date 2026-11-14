@@ -1973,7 +1973,7 @@ body.watching .play-row { bottom: calc(86px + env(safe-area-inset-bottom)); }
   .m-bar:not(.knobbing) { display: none !important; }
   .ov-foot { display: none !important; }
   .panel .actionbar { display: none; }
-  .overview .ov-body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .overview .ov-body { padding-bottom: calc(84px + env(safe-area-inset-bottom)) !important; }
   .panel .panel-body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 
   .u-bar { display: flex; position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; align-items: center; gap: 8px; padding: 6px; border-radius: 26px; background: rgb(10 10 12 / 0.88); border: 1px solid rgb(255 255 255 / 0.12); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: opacity 0.4s; }
