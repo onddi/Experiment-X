@@ -15432,8 +15432,12 @@ function uPaint(force = false) {
     }
     const on = ubar.querySelector<HTMLElement>(`.u-seg button[data-v="${v}"]`)!;
     const thumb = ubar.querySelector<HTMLElement>('.u-thumb')!;
+    // While the Stage button is still growing or shrinking, the buttons after
+    // it aren't in their final place yet: aim for where they will be.
+    const sb = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]')!;
+    const shift = sb.dataset.tw && on !== sb ? Number(sb.dataset.tw) - sb.offsetWidth : 0;
     thumb.style.width = `${Number(on.dataset.tw) || on.offsetWidth}px`;
-    thumb.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+    thumb.style.transform = `translateX(${on.offsetLeft + shift - 3}px)`;
   };
   ubar.querySelectorAll<HTMLButtonElement>('.u-seg button').forEach((b) => {
     b.classList.toggle('on', b.dataset.v === v);
@@ -15787,6 +15791,7 @@ function stageLabel() {
       b.style.removeProperty('width');
       b.style.removeProperty('transition');
       delete b.dataset.tw;
+      uPaint(true);
     }, 300);
   }
   return true;
