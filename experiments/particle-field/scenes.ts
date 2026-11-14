@@ -309,7 +309,7 @@ story(
 export type Family = 'all' | 'lenses' | 'animated' | 'shapes' | 'growth' | 'stories' | 'camera' | 'words' | 'patterns' | 'currents' | 'weather' | 'swarms' | 'fountains' | 'forces' | 'space' | 'symbols';
 export const FAMILIES: [Family, string][] = [
   ['all', 'All'], ['animated', 'Animated'], ['camera', 'Camera'], ['words', 'Words'], ['patterns', 'Patterns'], ['currents', 'Currents'], ['weather', 'Weather'],
-  ['swarms', 'Swarms, Reef'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['lenses', 'Lenses'], ['shapes', 'Shapes'], ['growth', 'Growth'], ['stories', 'Stories'],
+  ['swarms', 'Swarms'], ['fountains', 'Fountains'], ['forces', 'Forces'], ['space', 'Space'], ['symbols', 'Symbols'], ['lenses', 'Lenses'], ['shapes', 'Shapes'], ['growth', 'Growth'], ['stories', 'Stories'],
 ];
 export const FAMILY_OF: Record<string, Family> = {};
 for (const [fam, names] of [
@@ -319,7 +319,7 @@ for (const [fam, names] of [
   ['camera', 'Face mesh, Glow face, Live sketch, Two faces, Silhouette, Portrait colours, Deep face, Breath, Hand play, Hand swirl, Light painting, Smoke drawing, Neon graffiti, Finger sparks, Hand magnets, Force field, Gesture DJ, Stretch, Hand skeleton, Throw, Finger paint, Flame head, Crying rainbow, Laser eyes, Wizard beard, Angel halo, Crown, Singer, Eye contact, Dancer, Arm sweep, Rain on me, Twins'],
   ['currents', 'Drift, Silk, Dusk, Ink, Prism, Neon storm, Silk ribbons, Heat, Marbled paper, Northern lights, Sumi ink'],
   ['weather', 'Snowfall, Embers, Fireflies, Bubbles, Rainstorm, Sandstorm, Pollen'],
-  ['swarms', 'Starlings, Marbles, School of fish, Midges, Crowd'],
+  ['swarms', 'Starlings, Marbles, School of fish, Midges, Crowd, Reef'],
   ['fountains', 'Campfire, Pulse rings, Waterfall, Sparkler, Confetti, Fireworks, Geyser, Fountain ring, Edge light'],
   ['forces', 'Riverstones, Windbreak, Orbit, Black hole, Slalom, Wind tunnel, Tesla coil'],
   ['space', 'Deep space, Galaxy, Comet shower, Bokeh, Constellation, Warp speed, Nebula'],
