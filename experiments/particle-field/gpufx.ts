@@ -30,7 +30,7 @@ uniform sampler2D uSrc, uPrev; uniform int uMode; uniform float uZoom, uSpin, uF
 void main(){
   vec4 now = texture(uSrc, vUv);
   vec4 prev;
-  if (uMode == 1) prev = texture(uPrev, turn(vUv, uSpin * .05, 1. + (uZoom + uKick * .5) * .05)) * .955;
+  if (uMode == 1) prev = texture(uPrev, turn(vUv, uSpin * .05, 1. + (uZoom + uKick * .5) * .05)) * uLen;
   else {
     vec2 v = vec2(sin(vUv.y * 7. + uT * .4), cos(vUv.x * 6. - uT * .3)) * .0035 * (uFlow + uKick);
     prev = texture(uPrev, vUv - v) * uLen;
@@ -55,19 +55,19 @@ vec2 warp(vec2 uv, out vec2 fringe, out float rim){
   }
   if (uLens == 1) {
     vec2 d = uv - uPtr; d.x *= asp(); float r = uSize * .22 * (1. + uKick * .15), l = length(d);
-    if (l >= r) { rim = -.25 * exp(-(l - r) * 30.); return uv; }
+    if (l >= r) { rim = -.25 * uBend * exp(-(l - r) * 30.); return uv; }
     float k = l / r, m = mix(1., .35 + .65 * k * k, uBend);
     vec2 q = d * m; q.x /= asp();
     vec2 n = normalize(d + 1e-5); n.x /= asp();
     fringe = n * smoothstep(.7, 1., k) * .012 * uBend;
-    rim = smoothstep(.9, 1., k) * .35 + pow(max(0., 1. - length(d / r - vec2(-.35, .35))), 6.) * .25;
+    rim = (smoothstep(.9, 1., k) * .35 + pow(max(0., 1. - length(d / r - vec2(-.35, .35))), 6.) * .25) * uBend;
     return uPtr + q;
   }
   if (uLens == 2) {
     vec2 d = uv - uWave.xy; d.x *= asp(); float t = uT - uWave.z, l = length(d), R = t * .7;
     float w = exp(-pow((l - R) * 22., 2.)) * exp(-t * 1.6);
     vec2 n = normalize(d + 1e-5); n.x /= asp();
-    fringe = n * w * .006; rim = w * .25 * uShock;
+    fringe = n * w * .006 * min(uShock, 1.); rim = w * .25 * uShock;
     return uv - n * w * .05 * uShock;
   }
   return uv;
@@ -88,7 +88,9 @@ vec4 shade(vec2 uv){
     }
     vec3 x = (c.rgb * 1.15 + acc / 28. * uBloom * (9. + uKick * 6.)) * 1.1;
     vec3 tm = clamp((x * (2.51 * x + .03)) / (x * (2.43 * x + .59) + .14), 0., 1.);
-    c = vec4(tm, max(c.a, max(tm.r, max(tm.g, tm.b))));
+    // Ease in: a little bloom is a little glow, not the whole look at once.
+    float amt = min(uBloom, 1.);
+    c = vec4(mix(c.rgb, tm, amt), max(c.a, amt * max(tm.r, max(tm.g, tm.b))));
   }
   c.rgb += rim; c.a = max(c.a, rim);
   return c;

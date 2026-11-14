@@ -7207,7 +7207,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gfxZoom', label: 'Zoom', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxFeedback === 'tunnel' },
   { kind: 'range', key: 'gfxSpin', label: 'Spin', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'none' : `${v > 0 ? '↻' : '↺'} ${pct(Math.abs(v))}`), show: () => settings.gfxFeedback === 'tunnel' },
   { kind: 'range', key: 'gfxFlow', label: 'Flow', min: 0, max: 2, step: 0.05, format: (v) => pct(v / 2), show: () => settings.gfxFeedback === 'smear' },
-  { kind: 'range', key: 'gfxLength', label: 'Trail length', min: 0.5, max: 0.99, step: 0.01, format: (v) => pct((v - 0.5) / 0.49), show: () => settings.gfxFeedback === 'smear' },
+  { kind: 'range', key: 'gfxLength', label: 'Trail length', min: 0.5, max: 0.99, step: 0.01, format: (v) => pct((v - 0.5) / 0.49), show: () => settings.gfxFeedback !== 'off' },
   { kind: 'section', id: 'gfxlens', label: 'Lenses', tab: 'fx',
     about: 'Bend the finished picture: a glass lens that follows your finger, a shockwave ring on each kick, or mirrored kaleidoscope slices.',
     lock: ['gfxLens', 'gfxLensSize', 'gfxBend', 'gfxShock', 'gfxSlices'],
