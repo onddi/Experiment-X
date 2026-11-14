@@ -16196,6 +16196,10 @@ function pillPaint(wake = false) {
       b.textContent = (knobSpec(k)?.label ?? k).replace(/ \(.*\)$/, '');
       b.addEventListener('click', (e) => {
         e.stopPropagation();
+        // Tapping the knob that's already selected opens its big slider with
+        // Animate open (the keyframe lane, recorded takes included); a choice
+        // knob opens its list.
+        if (i === pillIdx && pillOpen()) return knobDetail(pillKeys()[i], b);
         pillIdx = i;
         navigator.vibrate?.(6);
         pillPaint(true);
@@ -16225,6 +16229,15 @@ function pillPaint(wake = false) {
   }
 }
 refreshers.push(() => pillPaint());
+function knobDetail(key: string | undefined, anchor: HTMLElement) {
+  const spec = key ? knobSpec(key) : null;
+  if (!spec) return;
+  if (spec.options) return knobMenu(anchor, spec);
+  const c = rangeCtl(spec.key as string);
+  if (!c) return showToast('A combined knob: turn it on the pill');
+  navigator.vibrate?.(8);
+  openTuner(c, () => (sceneBase ?? DEFAULTS)[c.key] as number, RACK_LIVE, () => pillPaint(), anchor, canAnimate(c.key as string) ? true : 'closed');
+}
 function pillStep(by: number) {
   const n = pillKeys().length;
   if (n < 2) return;
