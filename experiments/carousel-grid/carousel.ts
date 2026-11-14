@@ -119,6 +119,12 @@ export class Carousel {
     return this.itemEls[this.index];
   }
 
+  /** Item the carousel is snapping to (0..count-1), or null while it's dragged or at rest. */
+  get landing(): number | null {
+    if (this.target === null) return null;
+    return this.loop ? mod(this.target, this.count) : clamp(this.target, 0, this.count - 1);
+  }
+
   get index() {
     const i = Math.round(this.pos);
     return this.loop ? mod(i, this.count) : clamp(i, 0, this.count - 1);

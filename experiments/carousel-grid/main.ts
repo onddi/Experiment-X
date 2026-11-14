@@ -475,8 +475,9 @@ function build() {
  *   'items'       { sources: [{ source, name, items: [label, ...] }] }
  *                 what can be picked: one source per carousel, sent on every rebuild
  *   'item.change' { source, index, count, label? }
- *                 a carousel came to rest on a different item; sent once it has
- *                 stopped, so a drag or flick across several items sends one message
+ *                 a carousel is heading to a different item: sent the moment it's
+ *                 let go (or sent there), not while it's dragged, so a drag or
+ *                 flick across several items sends one message, for where it lands
  * source is 'main' for the main row, or the cell's reading-order number ('0' =
  * top-left), the same numbering a hand-over uses.
  */
@@ -502,15 +503,20 @@ function announceChanges(cell: Cell) {
   const before = carousel.onMove;
   let last = carousel.index;
   let timer = 0;
+  const announce = (c: Carousel, index: number) => {
+    if (index === last || !cells.includes(cell)) return;
+    last = index;
+    xframe.publish('item.change', { source: sourceOf(cell), index, count: c.count, label: itemLabel(c.itemList[index]) });
+  };
   carousel.onMove = (c) => {
     before?.(c);
+    // Announce as soon as the carousel knows where it will land (on release, or
+    // when it's sent somewhere), not after the snap; a re-target sends again.
+    const landing = c.landing;
+    if (landing !== null) announce(c, landing);
+    // Moves without a snap (e.g. a jump) are announced once they've stopped.
     clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      const index = c.index;
-      if (index === last || !cells.includes(cell)) return;
-      last = index;
-      xframe.publish('item.change', { source: sourceOf(cell), index, count: c.count, label: itemLabel(c.currentItem) });
-    }, SETTLE_MS);
+    timer = window.setTimeout(() => announce(c, c.index), SETTLE_MS);
   };
 }
 

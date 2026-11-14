@@ -261,7 +261,8 @@ grid) lists them and says when one comes up. Generic, so it doesn't know who lis
 ```ts
 // items: what can be picked, one source per carousel; sent again when it changes
 { sources: [{ source: string, name?: string, items: string[] }] }   // items = labels
-// item.change: a source came to rest on a different item (once per landing)
+// item.change: a source is heading to a different item: sent when it's let go
+// (where it will land), not while it's dragged
 { source: string, index: number, count: number, label?: string }
 ```
 
