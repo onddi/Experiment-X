@@ -14114,6 +14114,8 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
 // (Volume and how it fits with music are yours, so presets leave them.)
 const SND_LOOK_KEYS = SND_KEYS.filter((k) => k !== 'sndVol' && k !== 'sndMusic' && k !== 'sndShow');
 const SND_OFF: Partial<Settings> = { sndStrings: 0, sndDrone: 0, sndSeq: 0, sndHits: 0, sndGrain: 0, sndScan: 0, sndTouch: 0.6, sndAccents: 0.6 };
+// A beat grid from four 16-step rows (kick, snare, hat, bass): '+' forces a hit, '.' leaves it to the field.
+const beat = (...rows: string[]) => rows.join('');
 const SOUND_PRESETS: [string, Partial<Settings>][] = [
   ['Lounge', { sndBassSound: 'round', sndBass: 0.45, sndSwing: 0.35, sndChorus: 0.35, sndEcho: 0.15, sndTimbre: 'lounge', sndScale: 'dorian', sndProg: 'pop', sndTempo: 92, sndStrings: 0.6, sndStringCount: 6, sndDrone: 0.4, sndSeq: 0.3, sndReverb: 0.5 }],
   ['Music box night', { sndTimbre: 'musicbox', sndScale: 'pentatonic', sndProg: 'calm', sndTempo: 70, sndStrings: 0.6, sndStringCount: 7, sndDrone: 0.3, sndReverb: 0.7 }],
@@ -14131,6 +14133,34 @@ const SOUND_PRESETS: [string, Partial<Settings>][] = [
   ['Cathedral', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndChordBars: 4, sndTempo: 60, sndDrone: 0.7, sndPadSound: 'choir', sndStrings: 0.35, sndAttack: 0.8, sndLength: 2.2, sndReverb: 1 }],
   ['Fuzz garage', { sndTimbre: 'synth', sndScale: 'blues', sndProg: 'pop', sndTempo: 122, sndStrings: 0.4, sndSeq: 0.5, sndBass: 0.6, sndBassSound: 'picked', sndDrums: 0.6, sndKit: 'punchy', sndDrive: 0.7, sndBright: 0.2, sndReverb: 0.25 }],
   ['Scanner', { sndTimbre: 'marimba', sndScale: 'pentatonic', sndProg: 'drift', sndTempo: 96, sndScan: 0.7, sndScanSecs: 3, sndStrings: 0.2, sndReverb: 0.4 }],
+  ['Trap haze', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 70, sndStrings: 0.35, sndDrone: 0.35, sndPadSound: 'strings', sndBass: 0.7, sndBassSound: 'sub', sndDrums: 0.55, sndKit: '808', sndDrive: 0.2, sndEcho: 0.25, sndReverb: 0.4,
+    sndGrid: beat('+.....+...+.....', '........+.......', '+.+.+.+.+.++++.+', '+.....+...+.....') }],
+  ['Dub techno', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'still', sndChordBars: 4, sndTempo: 124, sndStrings: 0.45, sndLength: 0.5, sndDrone: 0.3, sndPadSound: 'soft', sndBass: 0.75, sndBassSound: 'sub', sndDrums: 0.6, sndKit: '808', sndEcho: 0.6, sndChorus: 0.3, sndSweep: 0.4, sndReverb: 0.5,
+    sndGrid: beat('+...+...+...+...', '----------------', '..+...+...+...+.', '..+...+...+...+.') }],
+  ['Acid techno', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'still', sndChordBars: 4, sndTempo: 132, sndStrings: 0.25, sndLength: 0.4, sndBass: 0.75, sndBassSound: 'acid', sndBassTone: 0.4, sndDrums: 0.65, sndKit: 'punchy', sndDrive: 0.45, sndSweep: 0.8, sndEcho: 0.2, sndReverb: 0.25,
+    sndGrid: beat('+...+...+...+...', '....+.......+...', '..+...+...+...+.', '+.++.++.+.++.+++') }],
+  ['House', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'custom', sndProgText: '6 4 1 5', sndTempo: 122, sndStrings: 0.45, sndLength: 0.6, sndPadSound: 'organ', sndDrone: 0.25, sndBass: 0.7, sndBassSound: 'round', sndDrums: 0.6, sndKit: 'punchy', sndSwing: 0.15, sndChorus: 0.2, sndSweep: 0.3, sndReverb: 0.3,
+    sndGrid: beat('+...+...+...+...', '....+.......+...', '..+...+...+...+.', '+..+..+...+..+..') }],
+  ['Drum and bass', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndChordBars: 4, sndTempo: 160, sndStrings: 0.3, sndDrone: 0.45, sndPadSound: 'strings', sndAttack: 0.5, sndBass: 0.8, sndBassSound: 'sub', sndDrums: 0.65, sndKit: 'punchy', sndDrive: 0.15, sndEcho: 0.25, sndReverb: 0.45,
+    sndGrid: beat('+.........+.....', '....+.......+...', '+.+.+.+.+.+.+.+.', '+.........+..+..') }],
+  ['Reggae one drop', { sndTimbre: 'pluck', sndScale: 'major', sndProg: 'custom', sndProgText: '1 4 5 4', sndTempo: 76, sndStrings: 0.5, sndLength: 0.4, sndPadSound: 'organ', sndDrone: 0.3, sndBass: 0.8, sndBassSound: 'round', sndBassTone: -0.3, sndDrums: 0.5, sndKit: 'soft', sndSwing: 0.35, sndEcho: 0.3, sndReverb: 0.4,
+    sndGrid: beat('--------+-------', '--------+-------', '..+...+...+...+.', '+..+.+....+.+...') }],
+  ['Dancehall', { sndTimbre: 'steel', sndScale: 'minor', sndProg: 'custom', sndProgText: '1 6 4 5', sndTempo: 96, sndStrings: 0.4, sndLength: 0.5, sndBass: 0.8, sndBassSound: 'sub', sndDrums: 0.6, sndKit: '808', sndDrive: 0.15, sndEcho: 0.2, sndReverb: 0.3,
+    sndGrid: beat('+.......+.......', '...+..+....+..+.', '+.+.+.+.+.+.+.+.', '+..+..+.+..+..+.') }],
+  ['Boom bap', { sndTimbre: 'epiano', sndScale: 'dorian', sndProg: 'custom', sndProgText: '1 4', sndTempo: 88, sndStrings: 0.45, sndDrone: 0.2, sndPadSound: 'strings', sndBass: 0.75, sndBassSound: 'round', sndBassTone: -0.2, sndDrums: 0.65, sndKit: 'punchy', sndSwing: 0.45, sndLofi: 0.35, sndBright: -0.2, sndReverb: 0.25,
+    sndGrid: beat('+......+.+......', '....+.......+...', '+.+.+.+.+.+.+.+.', '+......+.+......') }],
+  ['Synthwave', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'custom', sndProgText: '6 4 1 5', sndTempo: 100, sndStrings: 0.5, sndArp: 0.8, sndDrone: 0.4, sndPadSound: 'strings', sndBass: 0.55, sndBassSound: 'synth', sndDrums: 0.5, sndKit: '808', sndChorus: 0.6, sndEcho: 0.3, sndSweep: 0.5, sndReverb: 0.45,
+    sndGrid: beat('+.......+.......', '....+.......+...', '+.+.+.+.+.+.+.+.', '+.+.+.+.+.+.+.+.') }],
+  ['Chiptune', { sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 140, sndStrings: 0.8, sndArp: 1, sndLength: 0.5, sndSeq: 0.7, sndBass: 0.5, sndBassSound: 'acid', sndDrums: 0.5, sndKit: 'punchy', sndLofi: 0.6, sndBright: 0.4, sndReverb: 0.1 }],
+  ['Bossa nova', { sndTimbre: 'pluck', sndScale: 'major', sndProg: 'custom', sndProgText: '2 5 1 6', sndTempo: 104, sndStrings: 0.6, sndDyn: 0.5, sndPadSound: 'soft', sndDrone: 0.2, sndBass: 0.45, sndBassSound: 'upright', sndDrums: 0.35, sndKit: 'brush', sndSwing: 0.25, sndChorus: 0.2, sndReverb: 0.35,
+    sndGrid: beat('+..+....+..+....', '...+..+...+..+..', '+.+.+.+.+.+.+.+.', '+..+....+..+....') }],
+  ['Vibes café', { sndTimbre: 'vibes', sndScale: 'dorian', sndProg: 'custom', sndProgText: '2 5 1 4', sndTempo: 96, sndStrings: 0.55, sndDyn: 0.5, sndDrone: 0.2, sndPadSound: 'organ', sndBass: 0.45, sndBassSound: 'upright', sndDrums: 0.3, sndKit: 'brush', sndSwing: 0.5, sndChorus: 0.25, sndReverb: 0.4 }],
+  ['Gospel organ', { sndTimbre: 'epiano', sndScale: 'major', sndProg: 'custom', sndProgText: '1 4 1 5 6 4 1 5', sndTempo: 76, sndStrings: 0.5, sndDyn: 0.5, sndDrone: 0.5, sndPadSound: 'organ', sndBass: 0.5, sndBassSound: 'round', sndDrums: 0.35, sndKit: 'soft', sndSwing: 0.4, sndReverb: 0.5 }],
+  ['Kalimba campfire', { sndTimbre: 'kalimba', sndScale: 'pentatonic', sndProg: 'calm', sndTempo: 88, sndStrings: 0.65, sndStringCount: 8, sndDyn: 0.4, sndBass: 0.35, sndBassSound: 'round', sndDrums: 0.35, sndKit: 'hand', sndSwing: 0.3, sndReverb: 0.3 }],
+  ['Koto temple', { sndTimbre: 'koto', sndScale: 'japanese', sndProg: 'still', sndTempo: 66, sndStrings: 1, sndStringCount: 7, sndBend: 0.35, sndDyn: 0.5, sndDrone: 0.4, sndPadSound: 'choir', sndDrums: 0.2, sndKit: 'hand', sndReverb: 0.7 }],
+  ['Flute forest', { sndTimbre: 'flute', sndScale: 'dorian', sndProg: 'drift', sndTempo: 72, sndStrings: 0.9, sndAttack: 0.4, sndBend: 0.3, sndDrone: 0.3, sndPadSound: 'strings', sndGrain: 0.3, sndDrums: 0.2, sndKit: 'hand', sndEcho: 0.2, sndReverb: 0.6 }],
+  ['Northern lights', { sndTimbre: 'glass', sndScale: 'pentatonic', sndProg: 'still', sndChordBars: 8, sndTempo: 56, sndStrings: 0.35, sndLength: 2.5, sndAttack: 1, sndDrone: 0.9, sndPadSound: 'shimmer', sndEcho: 0.4, sndChorus: 0.4, sndSweep: 0.3, sndReverb: 0.9 }],
+  ['Marimba party', { sndTimbre: 'marimba', sndScale: 'major', sndProg: 'pop', sndChordMove: 'burst', sndTempo: 118, sndStrings: 0.5, sndSeq: 0.5, sndHits: 0.7, sndBass: 0.5, sndBassSound: 'round', sndDrums: 0.5, sndKit: 'punchy', sndSwing: 0.15, sndReverb: 0.25 }],
 ];
 const SND_PRESETS_KEY = 'particle-field:sound-presets';
 const mySoundPresets = () => readJson<[string, Partial<Settings>][]>(SND_PRESETS_KEY, []);
