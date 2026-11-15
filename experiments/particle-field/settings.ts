@@ -159,7 +159,7 @@ export interface Settings {
   sndVol: number;
   sndScale: 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
   sndKey: 'auto' | 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
-  sndTimbre: 'colour' | 'bell' | 'pluck' | 'marimba' | 'glass';
+  sndTimbre: 'colour' | 'lounge' | 'world' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
   sndProg: 'still' | 'calm' | 'pop' | 'drift' | 'mystic';
   sndTempo: number;
   sndStrings: number;

@@ -16,7 +16,8 @@
 // notes is capped so thousands of particles can't turn into noise.
 
 export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
-export type SndTimbre = 'colour' | 'bell' | 'pluck' | 'marimba' | 'glass';
+export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
+export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic';
 
@@ -37,8 +38,44 @@ const PROGS: Record<SndProg, number[]> = {
   drift: [0, 5, 3, 4],
   mystic: [0, 1, 0, 6],
 };
-const TIMBRES = ['marimba', 'bell', 'pluck', 'glass'] as const;
-type Voice = (typeof TIMBRES)[number];
+// By colour: the palette's colours are split between the four instruments of a band.
+const BANDS: Record<'colour' | 'lounge' | 'world', Voice[]> = {
+  colour: ['marimba', 'bell', 'pluck', 'glass'],
+  lounge: ['epiano', 'vibes', 'harp', 'flute'],
+  world: ['kalimba', 'steel', 'koto', 'musicbox'],
+};
+// Each instrument is two oscillators, sometimes with FM, a filter sweep or a
+// wobble: cheap enough to play dozens at once.
+interface VoiceDef {
+  type: OscillatorType; // the body
+  ratio: number; // the second partial (a multiple of the note)
+  level: number; // how loud that partial starts
+  fade: number; // how soon it fades, as a share of the decay
+  decay: number; // seconds, for a middle note
+  attack?: number;
+  octave?: number; // play this many octaves up
+  fm?: [number, number]; // modulator ratio, depth (× the note), fading fast
+  sweep?: [number, number]; // low-pass from, to (Hz)
+  wobble?: [number, number]; // tremolo rate (Hz), depth
+  vibrato?: number; // cents
+  bend?: number; // starts this many cents sharp and drops into tune
+  gain?: number;
+}
+const VOICES: Record<Voice, VoiceDef> = {
+  marimba: { type: 'sine', ratio: 3.9, level: 0.5, fade: 0.08, decay: 0.7 },
+  bell: { type: 'sine', ratio: 2.76, level: 0.35, fade: 0.3, decay: 1.5 },
+  pluck: { type: 'triangle', ratio: 2, level: 0.15, fade: 0.3, decay: 0.55 },
+  glass: { type: 'sine', ratio: 4.07, level: 0.35, fade: 0.3, decay: 2, attack: 0.02 },
+  kalimba: { type: 'sine', ratio: 6.2, level: 0.45, fade: 0.05, decay: 0.9, fm: [1, 0.4] },
+  epiano: { type: 'sine', ratio: 14, level: 0.06, fade: 0.05, decay: 1.7, fm: [1, 1.6] },
+  vibes: { type: 'sine', ratio: 4, level: 0.15, fade: 0.2, decay: 2.2, wobble: [5.5, 0.35] },
+  musicbox: { type: 'sine', ratio: 3, level: 0.3, fade: 0.25, decay: 1.2, octave: 1, gain: 0.8 },
+  harp: { type: 'triangle', ratio: 2, level: 0.3, fade: 0.2, decay: 1.4, sweep: [5000, 600] },
+  steel: { type: 'sine', ratio: 1.99, level: 0.55, fade: 0.4, decay: 0.9, fm: [3, 0.5] },
+  flute: { type: 'sine', ratio: 2, level: 0.12, fade: 1, decay: 0.9, attack: 0.07, vibrato: 12, octave: 1, gain: 0.8 },
+  synth: { type: 'sawtooth', ratio: 1.006, level: 0.6, fade: 1, decay: 0.6, sweep: [3200, 350], gain: 0.95 },
+  koto: { type: 'sawtooth', ratio: 2, level: 0.2, fade: 0.15, decay: 1.1, sweep: [2600, 500], bend: 40, gain: 1 },
+};
 
 export interface SoundParams {
   vol: number;
@@ -297,44 +334,93 @@ export class ParticleSound {
 
   private voiceFor(tone: number): Voice {
     const tb = this.p.timbre;
-    if (tb !== 'colour') return tb;
-    return TIMBRES[Math.min(3, Math.floor(tone * 4))];
+    if (tb === 'colour' || tb === 'lounge' || tb === 'world') return BANDS[tb][Math.min(3, Math.floor(tone * 4))];
+    return tb;
   }
 
   private note(deg: number, vel: number, pan: number, voice: Voice, when = 0) {
     if (this.voices >= MAX_VOICES || this.tokens < 1 || vel < 0.02) return;
     this.tokens--;
     this.voices++;
+    const V = VOICES[voice];
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
-    const f = this.freq(deg);
+    const f = this.freq(deg) * 2 ** (V.octave ?? 0);
     // Low notes ring longer, like real bars and strings.
-    const decay = (voice === 'pluck' ? 0.55 : voice === 'marimba' ? 0.7 : voice === 'glass' ? 2 : 1.5) * (1.3 - Math.min(1, f / 1600) * 0.6);
-    const ratio = voice === 'bell' ? 2.76 : voice === 'glass' ? 4.07 : voice === 'marimba' ? 3.9 : 2;
+    const decay = V.decay * (1.3 - Math.min(1, f / 1600) * 0.6);
+    const end = t + decay + 0.05;
     const o1 = ctx.createOscillator();
     const o2 = ctx.createOscillator();
-    o1.type = voice === 'pluck' ? 'triangle' : 'sine';
+    o1.type = V.type;
     o1.frequency.value = f;
-    o2.frequency.value = f * ratio;
+    o2.type = V.type === 'sawtooth' ? 'square' : 'sine';
+    o2.frequency.value = f * V.ratio;
+    if (V.bend) {
+      o1.detune.setValueAtTime(V.bend, t);
+      o1.detune.exponentialRampToValueAtTime(1, t + 0.08);
+    }
     const g = ctx.createGain();
     const g2 = ctx.createGain();
-    const peak = vel * 0.22;
+    const peak = vel * 0.22 * (V.gain ?? 1);
+    const atk = V.attack ?? 0.004;
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(peak, t + (voice === 'glass' ? 0.02 : 0.004));
+    g.gain.linearRampToValueAtTime(peak, t + atk);
     g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
     // The overtone dies first, so the strike is bright and the tail pure.
-    g2.gain.setValueAtTime(voice === 'pluck' ? 0.15 : voice === 'marimba' ? 0.5 : 0.35, t);
-    g2.gain.exponentialRampToValueAtTime(0.001, t + decay * (voice === 'marimba' ? 0.08 : 0.3));
+    g2.gain.setValueAtTime(V.level, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + Math.max(0.02, decay * V.fade));
+    const nodes: AudioScheduledSourceNode[] = [o1, o2];
+    if (V.fm) {
+      // FM: a modulator bends the body's pitch; its depth falls fast, so the
+      // strike is metallic and the tail clean (electric piano, kalimba, steel).
+      const m = ctx.createOscillator();
+      m.frequency.value = f * V.fm[0];
+      const mg = ctx.createGain();
+      mg.gain.setValueAtTime(f * V.fm[1], t);
+      mg.gain.exponentialRampToValueAtTime(f * V.fm[1] * 0.05 + 0.01, t + decay * 0.35);
+      m.connect(mg).connect(o1.frequency);
+      nodes.push(m);
+    }
+    if (V.vibrato) {
+      const l = ctx.createOscillator();
+      l.frequency.value = 5;
+      const lg = ctx.createGain();
+      lg.gain.value = V.vibrato;
+      l.connect(lg).connect(o1.detune);
+      nodes.push(l);
+    }
+    let out: AudioNode = g;
+    if (V.sweep) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.Q.value = 1.2;
+      lp.frequency.setValueAtTime(V.sweep[0], t);
+      lp.frequency.exponentialRampToValueAtTime(V.sweep[1], t + decay * 0.6);
+      g.connect(lp);
+      out = lp;
+    }
+    if (V.wobble) {
+      const tr = ctx.createGain();
+      tr.gain.value = 1 - V.wobble[1];
+      const l = ctx.createOscillator();
+      l.frequency.value = V.wobble[0];
+      const lg = ctx.createGain();
+      lg.gain.value = V.wobble[1];
+      l.connect(lg).connect(tr.gain);
+      out.connect(tr);
+      out = tr;
+      nodes.push(l);
+    }
     const pn = ctx.createStereoPanner();
     pn.pan.value = Math.max(-1, Math.min(1, pan));
     o1.connect(g);
     o2.connect(g2).connect(g);
-    g.connect(pn);
+    out.connect(pn);
     this.send(pn);
-    o1.start(t);
-    o2.start(t);
-    o1.stop(t + decay + 0.05);
-    o2.stop(t + decay + 0.05);
+    for (const nd of nodes) {
+      nd.start(t);
+      nd.stop(end);
+    }
     o1.onended = () => {
       this.voices--;
       pn.disconnect();
@@ -525,7 +611,7 @@ export class ParticleSound {
           for (let r = 0; r < ROWS && played < 2; r++) {
             if (this.grid[r] < mean * 1.8 || this.grid[r] < 2) continue;
             const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * 2.5)));
-            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room, (s / STEPS) * 1.6 - 0.8, P.timbre === 'colour' ? 'marimba' : P.timbre);
+            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room, (s / STEPS) * 1.6 - 0.8, this.voiceFor(0));
             played++;
           }
         }

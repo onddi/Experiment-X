@@ -7567,7 +7567,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndVol', label: 'Volume', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndScale', label: 'Scale', options: [['pentatonic', 'Pentatonic'], ['major', 'Major'], ['minor', 'Minor'], ['dorian', 'Dorian'], ['blues', 'Blues'], ['japanese', 'Japanese'], ['whole', 'Whole tone (dreamy)']] },
   { kind: 'select', key: 'sndKey', label: 'Key', options: [['auto', 'Auto (palette, or the song)'], ...SND_NOTES.map((k): [string, string] => [k, k])] },
-  { kind: 'select', key: 'sndTimbre', label: 'Instrument', options: [['colour', 'By colour (a band)'], ['bell', 'Bell'], ['pluck', 'Pluck'], ['marimba', 'Marimba'], ['glass', 'Glass']] },
+  { kind: 'select', key: 'sndTimbre', label: 'Instrument', options: [['colour', 'By colour: chimes band'], ['lounge', 'By colour: lounge band'], ['world', 'By colour: world band'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth']] },
   { kind: 'select', key: 'sndProg', label: 'Chords', options: [['drift', 'Drift'], ['pop', 'Pop'], ['calm', 'Calm (two chords)'], ['mystic', 'Mystic'], ['still', 'One chord']] },
   { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
   { kind: 'sub', label: 'Layers' },
