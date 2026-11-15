@@ -19,7 +19,8 @@ export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | '
 export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
 export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
-export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic';
+export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
+export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 
 const SCALES: Record<SndScale, number[]> = {
   pentatonic: [0, 2, 4, 7, 9],
@@ -31,7 +32,7 @@ const SCALES: Record<SndScale, number[]> = {
   whole: [0, 2, 4, 6, 8, 10],
 };
 // Chord roots as scale steps; each chord stacks every other step on its root.
-const PROGS: Record<SndProg, number[]> = {
+const PROGS: Record<Exclude<SndProg, 'custom'>, number[]> = {
   still: [0],
   calm: [0, 3],
   pop: [0, 4, 5, 3],
@@ -98,6 +99,24 @@ export interface SoundParams {
   accents: number;
   reverb: number;
   music: SndMusic;
+  // Steering the chords.
+  progList: number[]; // Your chords, as scale degrees (0 = the key's chord)
+  chordMove: SndChordMove;
+  chordBars: number;
+  // Expression.
+  length: number; // note length multiplier
+  dyn: number; // loudness from particle speed
+  bend: number; // pitch bends in from the particle's motion
+  swing: number;
+  arp: number; // strings sometimes roll the chord
+  // Effects.
+  echo: number;
+  sweep: number; // a low-pass that opens with the energy
+  chorus: number;
+  depth: number; // near particles louder and wider, far ones quieter and roomier
+  // Rhythm section.
+  bass: number;
+  drums: number;
 }
 
 export interface SoundFrame {
@@ -122,6 +141,15 @@ export interface SoundFrame {
   pulse: number; // the music's kick envelope (0 without music)
   bpm: number;
   musicOn: boolean;
+  pz: Float32Array; // depth, 0 far … 1 near
+  depthOn: boolean;
+  drop: boolean; // the music just dropped
+  chroma: Float32Array | null; // which notes the song plays now (for following its chords)
+}
+
+interface NoteOpts {
+  bend?: number; // cents to slide in from
+  z?: number; // depth, 0 far … 1 near
 }
 
 const MAX_VOICES = 32;
@@ -147,6 +175,20 @@ export class ParticleSound {
   private energy = 0; // smoothed field speed
   private phraseOn = true;
   private phraseLeft = 8; // beats left in this phrase or rest
+  private chordPos = 0; // progress to the next chord (With the energy)
+  private lastChange = 0; // beat of the last chord change
+  private eSlow = 0; // energy, slower: a jump above it is a surge
+  private songRoot = -1; // the chord heard in the song (Follow the song)
+  private songLive = false;
+  private moveAvg = 1; // how far a crossing particle usually moves a frame
+  private depthOn = false;
+  // Effects, built the first time they're turned up.
+  private tone: BiquadFilterNode;
+  private comp: DynamicsCompressorNode;
+  private echoIn: GainNode | null = null;
+  private echoDelay: DelayNode | null = null;
+  private echoFb: GainNode | null = null;
+  private chorusOut: GainNode | null = null;
   // Pad.
   private padOsc: OscillatorNode[] = [];
   private padGain: GainNode;
@@ -184,9 +226,14 @@ export class ParticleSound {
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     comp.connect(ctx.destination);
+    this.comp = comp;
     this.master = ctx.createGain();
     this.master.gain.value = 0;
-    this.master.connect(comp);
+    // Filter sweep: a low-pass over everything, wide open unless Sweep is up.
+    this.tone = ctx.createBiquadFilter();
+    this.tone.type = 'lowpass';
+    this.tone.frequency.value = 20000;
+    this.master.connect(this.tone).connect(comp);
     this.dry = ctx.createGain();
     this.dry.connect(this.master);
     const verb = ctx.createConvolver();
@@ -254,6 +301,70 @@ export class ParticleSound {
     this.master.gain.setTargetAtTime(p.vol * 0.9, t, 0.08);
     this.wet.gain.setTargetAtTime(p.reverb * 0.8, t, 0.1);
     this.dry.gain.setTargetAtTime(1 - p.reverb * 0.35, t, 0.1);
+    if (p.echo > 0) this.ensureEcho();
+    if (this.echoIn && this.echoFb) {
+      this.echoIn.gain.setTargetAtTime(p.echo * 0.55, t, 0.1);
+      this.echoFb.gain.setTargetAtTime(0.25 + p.echo * 0.35, t, 0.1);
+    }
+    if (p.chorus > 0) this.ensureChorus();
+    if (this.chorusOut) this.chorusOut.gain.setTargetAtTime(p.chorus * 0.8, t, 0.1);
+    if (p.sweep === 0) {
+      this.tone.frequency.setTargetAtTime(20000, t, 0.2);
+      this.tone.Q.value = 0.7;
+    }
+  }
+
+  /** Jump to the next chord now (the Next chord button). */
+  nextChord() {
+    this.chord++;
+    this.lastChange = this.beat;
+    this.chordPos = 0;
+    this.songRoot = -1;
+  }
+
+  // Echo: a delay in time with the beat (a dotted eighth), each repeat darker.
+  private ensureEcho() {
+    if (this.echoIn) return;
+    const ctx = this.ctx;
+    this.echoIn = ctx.createGain();
+    this.echoIn.gain.value = 0;
+    const d = (this.echoDelay = ctx.createDelay(2));
+    d.delayTime.value = 0.5;
+    const fb = (this.echoFb = ctx.createGain());
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2600;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 220;
+    this.echoIn.connect(d).connect(lp).connect(hp);
+    hp.connect(fb).connect(d);
+    hp.connect(this.master);
+    const w = ctx.createGain();
+    w.gain.value = 0.4;
+    hp.connect(w).connect(this.wet);
+  }
+
+  // Chorus: two slowly wobbling copies, a few milliseconds late, left and right.
+  private ensureChorus() {
+    if (this.chorusOut) return;
+    const ctx = this.ctx;
+    this.chorusOut = ctx.createGain();
+    this.chorusOut.gain.value = 0;
+    this.chorusOut.connect(this.comp);
+    for (const side of [-1, 1]) {
+      const d = ctx.createDelay(0.05);
+      d.delayTime.value = side < 0 ? 0.017 : 0.023;
+      const l = ctx.createOscillator();
+      l.frequency.value = side < 0 ? 0.6 : 0.77;
+      const lg = ctx.createGain();
+      lg.gain.value = 0.0035;
+      l.connect(lg).connect(d.delayTime);
+      const pn = ctx.createStereoPanner();
+      pn.pan.value = side * 0.85;
+      this.tone.connect(d).connect(pn).connect(this.chorusOut);
+      l.start();
+    }
   }
 
   /** Fade out and stop using the CPU (Pause, a hidden tab, Sound off). */
@@ -284,8 +395,9 @@ export class ParticleSound {
     return b;
   }
 
-  private send(node: AudioNode, wet = 1) {
+  private send(node: AudioNode, wet = 1, echo = true) {
     node.connect(this.dry);
+    if (echo && this.echoIn && this.p.echo > 0) node.connect(this.echoIn);
     if (wet === 1) node.connect(this.wet);
     else {
       const g = this.ctx.createGain();
@@ -309,7 +421,8 @@ export class ParticleSound {
 
   // The current chord's root as a scale degree.
   private chordRoot() {
-    const prog = PROGS[this.p.prog];
+    if (this.p.chordMove === 'song' && this.songLive && this.songRoot >= 0) return this.songRoot;
+    const prog = this.p.prog === 'custom' ? (this.p.progList.length ? this.p.progList : [0]) : PROGS[this.p.prog];
     return prog[this.chord % prog.length];
   }
 
@@ -342,7 +455,16 @@ export class ParticleSound {
     return tb;
   }
 
-  private note(deg: number, vel: number, pan: number, voice: Voice, when = 0) {
+  private note(deg: number, vel: number, pan: number, voice: Voice, when = 0, o?: NoteOpts) {
+    const P = this.p;
+    // Depth: near particles louder and wider, far ones quieter and further into the room.
+    let wetMore = 0;
+    if (o?.z !== undefined && this.depthOn && P.depth > 0) {
+      const z = o.z;
+      vel *= 1 + P.depth * (0.4 + 0.8 * z - 1);
+      pan *= 1 + P.depth * (0.35 + 0.9 * z - 1);
+      wetMore = P.depth * (1 - z) * 0.9;
+    }
     if (this.voices >= MAX_VOICES || this.tokens < 1 || vel < 0.02) return;
     this.tokens--;
     this.voices++;
@@ -351,7 +473,7 @@ export class ParticleSound {
     const t = ctx.currentTime + when;
     const f = this.freq(deg) * 2 ** (V.octave ?? 0);
     // Low notes ring longer, like real bars and strings.
-    const decay = V.decay * (1.3 - Math.min(1, f / 1600) * 0.6);
+    const decay = V.decay * (1.3 - Math.min(1, f / 1600) * 0.6) * P.length;
     const end = t + decay + 0.05;
     const o1 = ctx.createOscillator();
     const o2 = ctx.createOscillator();
@@ -359,9 +481,14 @@ export class ParticleSound {
     o1.frequency.value = f;
     o2.type = V.type === 'sawtooth' ? 'square' : 'sine';
     o2.frequency.value = f * V.ratio;
-    if (V.bend) {
-      o1.detune.setValueAtTime(V.bend, t);
-      o1.detune.exponentialRampToValueAtTime(1, t + 0.08);
+    const bend = (V.bend ?? 0) + (o?.bend ?? 0);
+    if (bend) {
+      // Slide into the note: a koto's pluck, or the particle's motion.
+      const glide = o?.bend ? 0.16 : 0.08;
+      for (const os of [o1, o2]) {
+        os.detune.setValueAtTime(bend, t);
+        os.detune.linearRampToValueAtTime(0, t + glide);
+      }
     }
     const g = ctx.createGain();
     const g2 = ctx.createGain();
@@ -420,7 +547,7 @@ export class ParticleSound {
     o1.connect(g);
     o2.connect(g2).connect(g);
     out.connect(pn);
-    this.send(pn);
+    this.send(pn, 1 + wetMore);
     for (const nd of nodes) {
       nd.start(t);
       nd.stop(end);
@@ -500,6 +627,164 @@ export class ParticleSound {
     this.tokens = save;
   }
 
+  // Velocity from speed: a fast particle plays louder than a drifting one.
+  private dynOf(vrel: number) {
+    return 1 + this.p.dyn * (Math.min(1.5, 0.3 + 0.7 * vrel) - 1);
+  }
+
+  // Pitch bend from motion: fast movers slide into the note, from above when
+  // moving right, from below when moving left (up to a whole tone).
+  private bendOf(vrel: number, dir: number) {
+    return this.p.bend > 0 ? this.p.bend * dir * Math.min(1, vrel * 0.5) * 200 : 0;
+  }
+
+  // How the chords move on (Chord change).
+  private steerChords(F: SoundFrame, before: number, beats: number) {
+    const P = this.p;
+    const per = 4 * Math.max(1, P.chordBars);
+    const since = this.beat - this.lastChange;
+    this.eSlow += (this.energy - this.eSlow) * Math.min(1, F.dt * 0.25);
+    let move = false;
+    if (P.chordMove === 'song' && F.musicOn) {
+      // Follow the song: once a beat, the scale chord that best matches the notes heard.
+      if (F.chroma && Math.floor(this.beat) !== Math.floor(before)) {
+        const sc = SCALES[P.scale];
+        const L = sc.length;
+        let tot = 0;
+        for (let k = 0; k < 12; k++) tot += F.chroma[k];
+        let best = -1, bv = 0;
+        for (let d = 0; d < L; d++) {
+          const pc = (j: number) => (P.root + sc[(d + j) % L]) % 12;
+          const v = F.chroma[pc(0)] + F.chroma[pc(2)] * 0.7 + F.chroma[pc(4)] * 0.8;
+          if (v > bv) (bv = v), (best = d);
+        }
+        if (tot > 0.5 && best >= 0 && bv / tot > 0.35) this.songRoot = best;
+      }
+      return;
+    }
+    if (P.chordMove === 'energy') {
+      // Faster when busy, slower when calm; a sudden surge moves on at once.
+      this.chordPos += (beats / per) * (0.35 + this.energy * 2.5);
+      if (this.chordPos >= 1) (this.chordPos -= 1), (move = true);
+      if (this.energy - this.eSlow > 0.12 && since > 2) move = true;
+    } else if (P.chordMove === 'burst') {
+      // On a burst, a puff of new particles or a drop in the music (or after a long wait).
+      if ((F.thump > 0.3 || F.drop || F.scene || F.born > Math.max(40, F.n * 0.04)) && since > 1) move = true;
+      else if (since >= per * 2) move = true;
+    } else if (Math.floor(this.beat / per) !== Math.floor(before / per)) move = true;
+    if (move) {
+      this.chord++;
+      this.lastChange = this.beat;
+    }
+  }
+
+  // Bass: a saw through a closing low-pass with a sine underneath.
+  private bassNote(deg: number, vel: number, len: number, when: number) {
+    if (this.voices >= MAX_VOICES) return;
+    this.voices++;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + when;
+    let f = this.freq(deg, 36);
+    while (f < 38) f *= 2;
+    while (f > 200) f /= 2;
+    const end = t + len + 0.08;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = f;
+    const sub = ctx.createOscillator();
+    sub.frequency.value = f;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 3;
+    const cut = 250 + this.energy * 700;
+    lp.frequency.setValueAtTime(cut * 4, t);
+    lp.frequency.exponentialRampToValueAtTime(cut, t + 0.12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vel * 0.24, t + 0.008);
+    g.gain.setTargetAtTime(vel * 0.15, t + 0.05, 0.15);
+    g.gain.setTargetAtTime(0.0001, t + len, 0.04);
+    const sg = ctx.createGain();
+    sg.gain.value = 0.9;
+    o.connect(lp).connect(g);
+    sub.connect(sg).connect(g);
+    this.send(g, 0.12, false);
+    for (const nd of [o, sub]) {
+      nd.start(t);
+      nd.stop(end);
+    }
+    o.onended = () => {
+      this.voices--;
+      g.disconnect();
+    };
+  }
+
+  private kick(k: number, when: number) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime + when;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.75 * k, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g);
+    this.send(g, 0.1, false);
+    o.start(t);
+    o.stop(t + 0.4);
+    o.onended = () => g.disconnect();
+  }
+
+  private snare(k: number, when: number) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime + when;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'highpass';
+    bp.frequency.value = 1200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35 * k, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(220, t);
+    o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.3 * k, t);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+    src.connect(bp).connect(g);
+    o.connect(og).connect(g);
+    this.send(g, 0.35, false);
+    src.start(t, Math.random() * 0.7, 0.22);
+    o.start(t);
+    o.stop(t + 0.12);
+    src.onended = () => g.disconnect();
+  }
+
+  private hat(k: number, when: number, open: boolean) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime + when;
+    const len = open ? 0.22 : 0.045;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 7000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22 * k, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    const pn = ctx.createStereoPanner();
+    pn.pan.value = 0.3;
+    src.connect(hp).connect(g).connect(pn);
+    this.send(pn, 0.15, false);
+    src.start(t, Math.random() * 0.8, len + 0.02);
+    src.onended = () => pn.disconnect();
+  }
+
   frame(F: SoundFrame) {
     const P = this.p;
     if (this.ctx.state !== 'running') return;
@@ -518,8 +803,20 @@ export class ParticleSound {
     const beats = F.dt * (bpm / 60);
     const before = this.beat;
     this.beat += beats;
-    // A new chord every two bars.
-    if (Math.floor(this.beat / 8) !== Math.floor(before / 8)) this.chord++;
+    this.songLive = F.musicOn;
+    this.depthOn = F.depthOn;
+    this.steerChords(F, before, beats);
+    // Echo in time: a dotted eighth.
+    if (this.echoDelay && P.echo > 0) {
+      const d = Math.min(1.9, (60 / bpm) * 0.75);
+      if (Math.abs(this.echoDelay.delayTime.value - d) > 0.002) this.echoDelay.delayTime.setTargetAtTime(d, t, 0.2);
+    }
+    // Filter sweep: closed and dark when calm, opening as the field speeds up.
+    if (P.sweep > 0) {
+      const fE = 280 * Math.pow(45, Math.min(1, this.energy * 2.2 + (fit ? F.pulse * 0.25 : 0)));
+      this.tone.frequency.setTargetAtTime(Math.exp(Math.log(20000) * (1 - P.sweep) + Math.log(fE) * P.sweep), t, 0.25);
+      this.tone.Q.value = 0.7 + P.sweep * 3.5;
+    }
     // Phrases and rests: a busier field plays longer and rests less.
     this.phraseLeft -= beats;
     if (this.phraseLeft <= 0) {
@@ -560,7 +857,8 @@ export class ParticleSound {
     if (P.strings > 0 && F.n > 0) {
       const N = Math.max(2, Math.round(P.stringCount));
       const count = new Uint16Array(N);
-      const where = new Float32Array(N * 2);
+      const where = new Float32Array(N * 5);
+      let mvSum = 0, mvN = 0;
       const stride = Math.max(1, Math.floor(F.n / 2500));
       for (let i = (Math.random() * stride) | 0; i < F.n; i += stride) {
         if (F.dead && F.dead[i]) continue;
@@ -572,13 +870,19 @@ export class ParticleSound {
         if (s < 1 || s > N) continue;
         const k = s - 1;
         if (count[k]++ === 0) {
-          where[k * 2] = F.py[i];
-          where[k * 2 + 1] = F.tone[i] ?? 0.5;
+          where[k * 5] = F.py[i];
+          where[k * 5 + 1] = F.tone[i] ?? 0.5;
+          where[k * 5 + 2] = Math.abs(b - a);
+          where[k * 5 + 3] = b > a ? 1 : -1;
+          where[k * 5 + 4] = F.pz[i] ?? 0.5;
+          mvSum += Math.abs(b - a);
+          mvN++;
         }
       }
       // Each string rings about rate times a second (more when the field is
       // busy), and more often while more particles than usual cross it.
       const rate = 0.6 + this.energy * 2;
+      if (mvN) this.moveAvg = this.moveAvg * 0.95 + (mvSum / mvN) * 0.05;
       for (let k = 0; k < N; k++) {
         const c = count[k] * stride;
         const avg = (this.stringAvg[k] = (this.stringAvg[k] ?? c) * 0.97 + c * 0.03);
@@ -587,40 +891,84 @@ export class ParticleSound {
         this.stringAt[k] = now;
         // Left to right climbs the chord across the Range; the top half of the screen sits higher.
         const span = Math.max(2, this.p.range * 3 - 1);
-        const idx = Math.round(((k / Math.max(1, N - 1)) * 0.75 + (where[k * 2] < h * 0.5 ? 0.25 : 0)) * span);
-        const vel = P.strings * Math.min(1, 0.35 + Math.log2(1 + count[k] * stride) * 0.12) * room;
-        this.note(this.chordTone(idx), vel, ((k + 1) / (N + 1)) * 1.6 - 0.8, this.voiceFor(where[k * 2 + 1]));
+        const idx = Math.round(((k / Math.max(1, N - 1)) * 0.75 + (where[k * 5] < h * 0.5 ? 0.25 : 0)) * span);
+        const vrel = where[k * 5 + 2] / Math.max(1e-3, this.moveAvg);
+        const vel = P.strings * Math.min(1, 0.35 + Math.log2(1 + count[k] * stride) * 0.12) * room * this.dynOf(vrel);
+        const pan = ((k + 1) / (N + 1)) * 1.6 - 0.8;
+        const opts: NoteOpts = { z: where[k * 5 + 4], bend: this.bendOf(vrel, where[k * 5 + 3]) };
+        const voice = this.voiceFor(where[k * 5 + 1]);
+        if (P.arp > 0 && Math.random() < P.arp) {
+          // Arpeggio: roll up (or down) the chord from this string, in sixteenths.
+          const dir = Math.random() < 0.6 ? 1 : -1;
+          const gap = (60 / bpm) / (P.arp > 0.6 ? 8 : 4);
+          const save = this.tokens;
+          this.tokens = Math.max(this.tokens, 4);
+          for (let j = 0; j < 4; j++) this.note(this.chordTone(idx + j * dir), vel * (1 - j * 0.15), pan, voice, j * gap, j ? { z: opts.z } : opts);
+          this.tokens = Math.min(save, this.tokens);
+        } else this.note(this.chordTone(idx), vel, pan, voice, 0, opts);
       }
     }
 
-    // Steps: sixteen columns played in time; where particles crowd in a
-    // column, that row plays (a chord tone), with a soft tick for the pulse.
-    if (P.seq > 0 && F.n > 0) {
-      const s = Math.floor(this.beat * 4) % STEPS;
-      if (s !== this.step) {
-        this.step = s;
-        const x0 = (s / STEPS) * w, x1 = ((s + 1) / STEPS) * w;
-        this.grid.fill(0);
-        let tot = 0;
-        const stride = Math.max(1, Math.floor(F.n / 3000));
-        for (let i = 0; i < F.n; i += stride) {
-          if (F.dead && F.dead[i]) continue;
-          const x = F.px[i];
-          if (x < x0 || x >= x1) continue;
-          this.grid[Math.min(ROWS - 1, Math.max(0, Math.floor((F.py[i] / h) * ROWS)))]++;
-          tot++;
-        }
-        const mean = (F.n / stride / STEPS) / ROWS;
+    // The sixteenth-note clock: Steps, bass and drums play on it. Swing
+    // pushes every second sixteenth late.
+    const s16 = Math.floor(this.beat * 4) % STEPS;
+    if (s16 !== this.step && F.n > 0 && (P.seq > 0 || P.bass > 0 || P.drums > 0)) {
+      const s = (this.step = s16);
+      const stepDur = 60 / bpm / 4;
+      const sw = s % 2 ? P.swing * 0.5 * stepDur : 0;
+      const x0 = (s / STEPS) * w, x1 = ((s + 1) / STEPS) * w;
+      this.grid.fill(0);
+      let tot = 0;
+      const stride = Math.max(1, Math.floor(F.n / 3000));
+      for (let i = 0; i < F.n; i += stride) {
+        if (F.dead && F.dead[i]) continue;
+        const x = F.px[i];
+        if (x < x0 || x >= x1) continue;
+        this.grid[Math.min(ROWS - 1, Math.max(0, Math.floor((F.py[i] / h) * ROWS)))]++;
+        tot++;
+      }
+      const mean = (F.n / stride / STEPS) / ROWS;
+
+      // Steps: where particles crowd in this column, that row plays (a chord
+      // tone), with a soft tick for the pulse.
+      if (P.seq > 0) {
         if (s % 2 === 0 && !onKick) this.grain(x0, h * 0.15, w, h, P.seq * (s % 4 === 0 ? 0.35 : 0.18), 0.9, 0.012, 0.1);
         let played = 0;
         if (tot && gate()) {
+          const dyn = 1 + P.dyn * (0.4 + this.energy * 1.4 - 1);
           for (let r = 0; r < ROWS && played < 2; r++) {
             if (this.grid[r] < mean * 1.8 || this.grid[r] < 2) continue;
             const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * this.p.range * 0.85)));
-            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room, (s / STEPS) * 1.6 - 0.8, this.voiceFor(0));
+            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room * dyn, (s / STEPS) * 1.6 - 0.8, this.voiceFor(0), sw);
             played++;
           }
         }
+      }
+
+      const e = this.energy;
+      // Bass: the chord's root, low. Calm fields hold one long note a bar;
+      // busier ones walk root and fifth, then eighths with pickups.
+      if (P.bass > 0 && e > 0.03) {
+        let deg = -999, len = stepDur * 2;
+        if (s === 0) (deg = this.chordRoot()), (len = e < 0.15 ? stepDur * 14 : stepDur * 3.5);
+        else if (e >= 0.15 && s === 8) (deg = e < 0.4 ? this.chordTone(2) : this.chordRoot()), (len = stepDur * 3);
+        else if (e >= 0.4 && (s === 4 || s === 12)) (deg = s === 12 ? this.chordTone(3) : this.chordRoot()), (len = stepDur * 1.6);
+        else if (e >= 0.65 && s % 4 === 2) (deg = this.chordTone(s === 14 ? 1 : 0)), (len = stepDur * 0.9);
+        if (deg > -999) this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * (s % 8 === 0 ? 1 : 0.8), len * P.length, sw);
+      }
+
+      // Drums: the beat comes from the field. Particles low in this column
+      // add kicks, in the middle snares, high up hi-hats; busier plays more.
+      if (P.drums > 0 && e > 0.03) {
+        const k = P.drums * (fit ? 0.4 : 1);
+        const m2 = Math.max(1, mean * 2);
+        const low = this.grid[6] + this.grid[7], mid = this.grid[3] + this.grid[4], top = this.grid[0] + this.grid[1];
+        const kick = s === 0 || (s === 8 && e > 0.12) || (s % 2 === 0 && e > 0.25 && low > m2 * 1.6);
+        const snare = (s === 4 || s === 12) && (e > 0.18 || mid > m2 * 1.2);
+        const hat = s % 2 === 0 ? e > 0.08 || top > m2 : e > 0.45 && top > m2 * 0.8;
+        if (kick && !onKick) this.kick(k * (s === 0 ? 1 : 0.8), sw);
+        if (snare) this.snare(k * (0.6 + Math.min(0.4, mid / (m2 * 4))), sw);
+        if (hat) this.hat(k * (s % 4 === 0 ? 0.5 : 0.32) * (0.6 + e * 0.6), sw, s === 14 && e > 0.5);
       }
     }
 
@@ -668,7 +1016,11 @@ export class ParticleSound {
           if (seen.has(d)) continue;
           seen.add(d);
           found++;
-          if (gate()) this.note(d, P.scan * 0.45, (x / w) * 1.6 - 0.8, this.voiceFor(F.tone[i] ?? 0.5));
+          if (gate()) {
+            const mv = F.px[i] - F.ox[i];
+            const vrel = Math.abs(mv) / Math.max(1e-3, this.moveAvg);
+            this.note(d, P.scan * 0.45 * this.dynOf(vrel), (x / w) * 1.6 - 0.8, this.voiceFor(F.tone[i] ?? 0.5), 0, { z: F.pz[i], bend: this.bendOf(vrel, mv >= 0 ? 1 : -1) });
+          }
         }
       }
     }

@@ -160,7 +160,21 @@ export interface Settings {
   sndScale: 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
   sndKey: 'auto' | 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
   sndTimbre: 'colour' | 'lounge' | 'world' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
-  sndProg: 'still' | 'calm' | 'pop' | 'drift' | 'mystic';
+  sndProg: 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
+  sndProgText: string;
+  sndChordMove: 'bars' | 'energy' | 'burst' | 'song';
+  sndChordBars: number;
+  sndLength: number;
+  sndDyn: number;
+  sndBend: number;
+  sndSwing: number;
+  sndArp: number;
+  sndEcho: number;
+  sndSweep: number;
+  sndChorus: number;
+  sndDepth: number;
+  sndBass: number;
+  sndDrums: number;
   sndTempo: number;
   sndStrings: number;
   sndStringCount: number;
@@ -590,6 +604,20 @@ export const DEFAULTS: Settings = {
   sndKey: 'auto',
   sndTimbre: 'colour',
   sndProg: 'drift',
+  sndProgText: '1 5 6 4',
+  sndChordMove: 'bars',
+  sndChordBars: 2,
+  sndLength: 1,
+  sndDyn: 0,
+  sndBend: 0,
+  sndSwing: 0,
+  sndArp: 0,
+  sndEcho: 0,
+  sndSweep: 0,
+  sndChorus: 0,
+  sndDepth: 0.6,
+  sndBass: 0,
+  sndDrums: 0,
   sndTempo: 90,
   sndStrings: 0.7,
   sndStringCount: 6,
@@ -622,7 +650,7 @@ export const DEFAULTS: Settings = {
   shapeAngle: 0,
   shapeTilt: 0,
   shapeDrag: true,
-  solidLight: 0,
+  solidLight: 0.6,
   shapeFacing: 0,
   viewX: 0,
   viewY: 0,

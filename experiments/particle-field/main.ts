@@ -359,7 +359,7 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
-const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow'] as const;
+const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndDrums'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -7632,7 +7632,7 @@ const CONTROLS: Control[] = [
     about: 'The field plays back: particles pluck invisible strings, a soft pad breathes with the motion, crowds become rhythm and your finger is an instrument. It all follows one slow chord progression, in phrases with rests.',
     lock: [...SND_KEYS],
     power: { on: () => settings.sndVol > 0, off: { sndVol: 0 }, start: { sndVol: 0.7 } },
-    summary: () => (settings.sndVol > 0 ? [settings.sndStrings > 0 && 'strings', settings.sndDrone > 0 && 'pad', settings.sndSeq > 0 && 'steps', settings.sndHits > 0 && 'chimes', settings.sndGrain > 0 && 'grains', settings.sndScan > 0 && 'scan', settings.sndTouch > 0 && 'touch'].filter(Boolean).join(', ') || 'on' : 'off') },
+    summary: () => (settings.sndVol > 0 ? [settings.sndStrings > 0 && 'strings', settings.sndDrone > 0 && 'pad', settings.sndSeq > 0 && 'steps', settings.sndHits > 0 && 'chimes', settings.sndGrain > 0 && 'grains', settings.sndScan > 0 && 'scan', settings.sndBass > 0 && 'bass', settings.sndDrums > 0 && 'drums', settings.sndTouch > 0 && 'touch'].filter(Boolean).join(', ') || 'on' : 'off') },
   { kind: 'sndpresets' },
   { kind: 'range', key: 'sndVol', label: 'Volume', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndScale', label: 'Scale', options: [['pentatonic', 'Pentatonic'], ['major', 'Major'], ['minor', 'Minor'], ['dorian', 'Dorian'], ['blues', 'Blues'], ['japanese', 'Japanese'], ['whole', 'Whole tone (dreamy)']] },
@@ -7640,7 +7640,12 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'sndTimbre', label: 'Instrument', options: [['colour', 'By colour: chimes band'], ['lounge', 'By colour: lounge band'], ['world', 'By colour: world band'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth']] },
   { kind: 'range', key: 'sndOctave', label: 'Pitch', min: -3, max: 2, step: 1, format: (v) => (v === 0 ? 'middle' : `${v > 0 ? '+' : ''}${v} octave${Math.abs(v) > 1 ? 's' : ''}`) },
   { kind: 'range', key: 'sndRange', label: 'Range', min: 1, max: 4, step: 1, format: (v) => `${v} octave${v > 1 ? 's' : ''}` },
-  { kind: 'select', key: 'sndProg', label: 'Chords', options: [['drift', 'Drift'], ['pop', 'Pop'], ['calm', 'Calm (two chords)'], ['mystic', 'Mystic'], ['still', 'One chord']] },
+  { kind: 'select', key: 'sndProg', label: 'Chords', options: [['drift', 'Drift'], ['pop', 'Pop'], ['calm', 'Calm (two chords)'], ['mystic', 'Mystic'], ['still', 'One chord'], ['custom', 'Your own…']] },
+  { kind: 'text', key: 'sndProgText', label: 'Your chords', placeholder: '1 5 6 4', show: () => settings.sndProg === 'custom' },
+  { kind: 'select', key: 'sndChordMove', label: 'Chord change', options: [['bars', 'Every few bars'], ['energy', 'With the energy'], ['burst', 'On a burst or drop'], ['song', 'Follow the song']] },
+  { kind: 'range', key: 'sndChordBars', label: 'Bars each', min: 1, max: 8, step: 1, format: (v) => `${v} bar${v > 1 ? 's' : ''}`, show: () => settings.sndChordMove !== 'song' },
+  { kind: 'note', text: 'Following the song needs music playing; without it the chords change every few bars.', show: () => settings.sndChordMove === 'song' && audio.source === 'off' },
+  { kind: 'buttons', buttons: [['Next chord ▸', () => snd?.nextChord()]] },
   { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
   { kind: 'sub', label: 'Layers' },
   { kind: 'range', key: 'sndStrings', label: 'Strings', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -7654,7 +7659,22 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndScan', label: 'Scanline', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndScanSecs', label: 'Sweep time', min: 1, max: 16, step: 0.5, format: (v) => `${v} s`, show: () => settings.sndScan > 0 && settings.sndMusic !== 'along' },
   { kind: 'range', key: 'sndTouch', label: 'Touch instrument', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'sub', label: 'Rhythm section' },
+  { kind: 'range', key: 'sndBass', label: 'Bass line', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndSwing', label: 'Swing', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'straight' : pct(v)) },
+  { kind: 'sub', label: 'Expression' },
+  { kind: 'range', key: 'sndLength', label: 'Note length', min: 0.3, max: 3, step: 0.1, format: (v) => (v === 1 ? 'normal' : `×${v.toFixed(1)}`) },
+  { kind: 'range', key: 'sndDyn', label: 'Dynamics', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndBend', label: 'Bend', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndArp', label: 'Arpeggio', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndStrings > 0 },
+  { kind: 'sub', label: 'Effects' },
   { kind: 'range', key: 'sndReverb', label: 'Reverb', min: 0, max: 1, step: 0.05, format: pct },
+  { kind: 'range', key: 'sndEcho', label: 'Echo (in time)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndSweep', label: 'Filter sweep', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndChorus', label: 'Chorus', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndDepth', label: 'Depth (3D)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'sub', label: 'Show and music' },
   { kind: 'toggle', key: 'sndShow', label: 'Show the instruments on screen' },
   { kind: 'select', key: 'sndMusic', label: 'With music playing', options: [['free', 'Ignore it'], ['room', 'Leave room for the beat'], ['along', 'Play along (key and tempo)']] },
 
@@ -10127,6 +10147,7 @@ function bgNow(): Rgb {
 }
 
 let prevEmitter: Emitter = settings.emitter;
+let dragHinted = false;
 function changed(keys: Set<keyof Settings>, morphing = false) {
   save();
   if (keys.has('count')) setCount(countNow());
@@ -10134,6 +10155,11 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
   if (keys.has('shape') && settings.shape === 'solid' && settings.depth === 0) {
     settings.depth = 0.7;
     refresh();
+  }
+  // The first 3D shape this visit: say it can be turned.
+  if (keys.has('shape') && settings.shape === 'solid' && settings.shapeDrag && !dragHinted) {
+    dragHinted = true;
+    setTimeout(() => showToast('Drag on the field to turn it. Flick it to spin.'), 400);
   }
   if (keys.has('shapeSeq')) seqIdx = 0;
   if (keys.has('shape') && settings.shape !== 'drawing') drawMode = false;
@@ -14025,15 +14051,18 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
 const SND_LOOK_KEYS = SND_KEYS.filter((k) => k !== 'sndVol' && k !== 'sndMusic' && k !== 'sndShow');
 const SND_OFF: Partial<Settings> = { sndStrings: 0, sndDrone: 0, sndSeq: 0, sndHits: 0, sndGrain: 0, sndScan: 0, sndTouch: 0.6, sndAccents: 0.6 };
 const SOUND_PRESETS: [string, Partial<Settings>][] = [
-  ['Lounge', { sndTimbre: 'lounge', sndScale: 'dorian', sndProg: 'pop', sndTempo: 92, sndStrings: 0.6, sndStringCount: 6, sndDrone: 0.4, sndSeq: 0.3, sndReverb: 0.5 }],
+  ['Lounge', { sndBass: 0.45, sndSwing: 0.35, sndChorus: 0.35, sndEcho: 0.15, sndTimbre: 'lounge', sndScale: 'dorian', sndProg: 'pop', sndTempo: 92, sndStrings: 0.6, sndStringCount: 6, sndDrone: 0.4, sndSeq: 0.3, sndReverb: 0.5 }],
   ['Music box night', { sndTimbre: 'musicbox', sndScale: 'pentatonic', sndProg: 'calm', sndTempo: 70, sndStrings: 0.6, sndStringCount: 7, sndDrone: 0.3, sndReverb: 0.7 }],
   ['Gamelan', { sndTimbre: 'world', sndScale: 'japanese', sndProg: 'still', sndTempo: 108, sndStrings: 0.4, sndSeq: 0.6, sndReverb: 0.45 }],
-  ['Rain on glass', { sndTimbre: 'glass', sndScale: 'whole', sndProg: 'drift', sndTempo: 60, sndStrings: 0.35, sndGrain: 0.5, sndDrone: 0.3, sndReverb: 0.85 }],
-  ['Arcade', { sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 128, sndSeq: 0.8, sndHits: 0.6, sndStrings: 0.3, sndReverb: 0.2 }],
-  ['Deep space', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 60, sndOctave: -1, sndRange: 3, sndDrone: 0.8, sndStrings: 0.3, sndReverb: 1 }],
-  ['Harp garden', { sndTimbre: 'harp', sndScale: 'major', sndProg: 'drift', sndTempo: 80, sndStrings: 0.9, sndStringCount: 9, sndRange: 3, sndDrone: 0.2, sndReverb: 0.55 }],
-  ['Blues bar', { sndTimbre: 'epiano', sndScale: 'blues', sndProg: 'calm', sndTempo: 84, sndStrings: 0.5, sndSeq: 0.4, sndDrone: 0.25, sndReverb: 0.35 }],
-  ['Steel band', { sndTimbre: 'steel', sndScale: 'major', sndProg: 'pop', sndTempo: 116, sndSeq: 0.6, sndStrings: 0.4, sndReverb: 0.3 }],
+  ['Rain on glass', { sndEcho: 0.3, sndChorus: 0.4, sndBend: 0.4, sndTimbre: 'glass', sndScale: 'whole', sndProg: 'drift', sndTempo: 60, sndStrings: 0.35, sndGrain: 0.5, sndDrone: 0.3, sndReverb: 0.85 }],
+  ['Arcade', { sndDrums: 0.6, sndBass: 0.5, sndSweep: 0.5, sndLength: 0.6, sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 128, sndSeq: 0.8, sndHits: 0.6, sndStrings: 0.3, sndReverb: 0.2 }],
+  ['Deep space', { sndEcho: 0.45, sndSweep: 0.4, sndLength: 1.8, sndChordBars: 4, sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 60, sndOctave: -1, sndRange: 3, sndDrone: 0.8, sndStrings: 0.3, sndReverb: 1 }],
+  ['Harp garden', { sndArp: 0.5, sndDyn: 0.5, sndTimbre: 'harp', sndScale: 'major', sndProg: 'drift', sndTempo: 80, sndStrings: 0.9, sndStringCount: 9, sndRange: 3, sndDrone: 0.2, sndReverb: 0.55 }],
+  ['Blues bar', { sndSwing: 0.6, sndBass: 0.5, sndDrums: 0.3, sndDyn: 0.6, sndTimbre: 'epiano', sndScale: 'blues', sndProg: 'calm', sndTempo: 84, sndStrings: 0.5, sndSeq: 0.4, sndDrone: 0.25, sndReverb: 0.35 }],
+  ['Steel band', { sndDrums: 0.45, sndBass: 0.4, sndSwing: 0.2, sndTimbre: 'steel', sndScale: 'major', sndProg: 'pop', sndTempo: 116, sndSeq: 0.6, sndStrings: 0.4, sndReverb: 0.3 }],
+  ['Night drive', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'drift', sndChordMove: 'energy', sndTempo: 104, sndStrings: 0.4, sndArp: 0.6, sndBass: 0.6, sndDrums: 0.5, sndEcho: 0.35, sndSweep: 0.7, sndChorus: 0.4, sndDrone: 0.3, sndReverb: 0.4 }],
+  ['Dub echoes', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'calm', sndTempo: 76, sndSeq: 0.4, sndStrings: 0.3, sndBass: 0.7, sndDrums: 0.35, sndSwing: 0.25, sndEcho: 0.7, sndSweep: 0.3, sndReverb: 0.5 }],
+  ['Wind chimes', { sndTimbre: 'glass', sndScale: 'pentatonic', sndProg: 'still', sndTempo: 70, sndStrings: 0.6, sndStringCount: 10, sndDyn: 0.8, sndBend: 0.5, sndLength: 2, sndChorus: 0.5, sndReverb: 0.8 }],
   ['Scanner', { sndTimbre: 'marimba', sndScale: 'pentatonic', sndProg: 'drift', sndTempo: 96, sndScan: 0.7, sndScanSecs: 3, sndStrings: 0.2, sndReverb: 0.4 }],
 ];
 const SND_PRESETS_KEY = 'particle-field:sound-presets';
@@ -14071,6 +14100,18 @@ function shuffleSound() {
     sndScan: Math.random() < 0.2 ? r(0.3, 0.7) : 0,
     sndHits: Math.random() < 0.3 ? r(0.3, 0.8) : 0,
     sndReverb: r(0.2, 0.85),
+    sndChordMove: pick(['bars', 'bars', 'energy', 'burst'] as const),
+    sndChordBars: pick([1, 2, 2, 4]),
+    sndLength: pick([0.6, 1, 1, 1.5, 2]),
+    sndDyn: Math.random() < 0.5 ? r(0.3, 0.8) : 0,
+    sndBend: Math.random() < 0.25 ? r(0.2, 0.6) : 0,
+    sndSwing: Math.random() < 0.35 ? r(0.2, 0.6) : 0,
+    sndArp: Math.random() < 0.3 ? r(0.3, 0.7) : 0,
+    sndEcho: Math.random() < 0.4 ? r(0.15, 0.55) : 0,
+    sndSweep: Math.random() < 0.35 ? r(0.3, 0.7) : 0,
+    sndChorus: Math.random() < 0.35 ? r(0.2, 0.6) : 0,
+    sndBass: Math.random() < 0.4 ? r(0.3, 0.7) : 0,
+    sndDrums: Math.random() < 0.3 ? r(0.25, 0.6) : 0,
   };
   if (!look.sndStrings && !look.sndSeq && !look.sndScan) look.sndStrings = 0.6;
   useSound(look);
@@ -15205,6 +15246,8 @@ let sndSceneSig = '';
 let sndShapeSig = '';
 // Which notes the song plays most, for playing along in its key.
 const songPc = new Float32Array(12);
+// The notes heard in the last beat or two, for following the song's chords.
+const songNow = new Float32Array(12);
 function sndRoot(): number {
   if (settings.sndKey !== 'auto') return SND_NOTES.indexOf(settings.sndKey);
   if (settings.sndMusic === 'along' && audio.source !== 'off') {
@@ -15219,7 +15262,15 @@ function sndRoot(): number {
 }
 function sndParams(): SoundParams {
   const S = settings;
-  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic };
+  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic,
+    progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
+    length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
+    echo: S.sndEcho, sweep: S.sndSweep, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, drums: S.sndDrums };
+}
+// Your chords: "1 5 6 4" (or 1-5-6-4, I V vi IV) to scale degrees from 0.
+const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };
+function sndProgList(t: string): number[] {
+  return t.toLowerCase().split(/[^0-9ivx]+/).map((w) => (ROMAN[w] ?? parseInt(w, 10)) - 1).filter((d) => d >= 0 && d < 12).slice(0, 16);
 }
 function drawSoundGuides(S: ParticleSound) {
   if (!sndGuides) {
@@ -15282,6 +15333,11 @@ function soundTick(dt: number) {
     for (let k = 0; k < 12; k++) songPc[k] *= 0.97;
     songPc[L.notePc] += 1;
   }
+  const follow = musicOn && settings.sndChordMove === 'song';
+  if (follow) {
+    for (let k = 0; k < 12; k++) songNow[k] *= 0.95;
+    if (L.note) songNow[L.notePc] += 1;
+  }
   const P = sndParams();
   const sig = Object.values(P).join();
   if (sig !== sndSig) {
@@ -15319,6 +15375,10 @@ function soundTick(dt: number) {
     pulse: musicOn ? L.pulse : 0,
     bpm: L.bpm,
     musicOn,
+    pz,
+    depthOn: settings.depth > 0,
+    drop: musicOn && !!L.drop,
+    chroma: follow ? songNow : null,
   });
   sndHitQ.length = 0;
   sndThump = 0;
