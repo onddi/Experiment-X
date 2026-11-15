@@ -15283,7 +15283,7 @@ function drawSoundGuides(S: ParticleSound) {
     sndGuides = document.createElement('div');
     sndGuides.className = 'snd-guides';
     sndGuides.innerHTML = '<div class="snd-step"></div>';
-    canvas.after(sndGuides);
+    canvas.parentElement!.append(sndGuides);
   }
   const N = settings.sndStrings > 0 ? Math.max(2, Math.round(settings.sndStringCount)) : 0;
   const lines = sndGuides.querySelectorAll<HTMLElement>('.snd-string');
@@ -15394,7 +15394,7 @@ function soundTick(dt: number) {
     if (!sndScanEl) {
       sndScanEl = document.createElement('div');
       sndScanEl.className = 'snd-scan';
-      canvas.after(sndScanEl);
+      canvas.parentElement!.append(sndScanEl);
     }
     sndScanEl.style.transform = `translateX(${(snd.scanX * canvas.clientWidth).toFixed(1)}px)`;
   }
