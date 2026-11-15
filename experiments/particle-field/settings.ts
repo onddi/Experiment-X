@@ -174,6 +174,7 @@ export interface Settings {
   sndChorus: number;
   sndDepth: number;
   sndBass: number;
+  sndBassSound: 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked';
   sndDrums: number;
   sndTempo: number;
   sndStrings: number;
@@ -617,6 +618,7 @@ export const DEFAULTS: Settings = {
   sndChorus: 0,
   sndDepth: 0.6,
   sndBass: 0,
+  sndBassSound: 'synth',
   sndDrums: 0,
   sndTempo: 90,
   sndStrings: 0.7,

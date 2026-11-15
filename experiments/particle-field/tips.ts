@@ -71,6 +71,7 @@ export const TIPS: Record<string, string> = {
   sndChordMove: 'What moves the chords on. Every few bars: steady, like a song. With the energy: faster when the field is busy, and a sudden surge jumps ahead. On a burst or drop: your bursts, a puff of new particles or a drop in the music move it. Follow the song: listens to the music and plays its chords.',
   sndChordBars: 'How many bars each chord lasts (four beats a bar). With the energy it is the pace at medium energy; on a burst it is the longest wait.',
   sndBass: 'A bass line on the chord’s root. Calm fields hold one long note per bar; busier ones walk between root and fifth, then play eighths with pickups.',
+  sndBassSound: 'The bass instrument. Synth: classic saw. Sub: pure and deep, felt more than heard. Round: soft and warm. Upright: woody, plucked, dies away. Acid: squelchy and resonant, opens up with the energy. Picked: bright electric bass.',
   sndDrums: 'Drums driven by the field. The beat runs left to right like Steps: particles low in the column add kicks, in the middle snares, high up hi-hats. A busier field plays a fuller beat; a still one goes quiet.',
   sndSwing: 'Pushes every second sixteenth note late, for a shuffle or groove. Affects Steps, bass and drums.',
   sndLength: 'How long notes ring. Short is plucky and dry, long lets them overlap into a wash.',

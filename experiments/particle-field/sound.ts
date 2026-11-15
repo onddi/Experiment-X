@@ -20,6 +20,7 @@ export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano
 export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
+export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 
 const SCALES: Record<SndScale, number[]> = {
@@ -78,6 +79,32 @@ const VOICES: Record<Voice, VoiceDef> = {
   koto: { type: 'sawtooth', ratio: 2, level: 0.2, fade: 0.15, decay: 1.1, sweep: [2600, 500], bend: 40, gain: 1 },
 };
 
+// Bass sounds: the body wave, how its low-pass sweeps (from × cut down to
+// cut Hz, opening with the energy), how much sine underneath, and how it rings.
+interface BassDef {
+  type: OscillatorType;
+  cut: number;
+  from: number;
+  sweep: number;
+  open: number;
+  q: number;
+  sub: number;
+  attack: number;
+  hold: number; // level after the attack, as a share of the peak
+  ring?: number; // the longest a note rings (plucked strings die away)
+  click?: number; // pick noise, band Hz
+  drop?: number; // cents the note starts sharp
+  gain: number;
+}
+const BASSES: Record<BassSound, BassDef> = {
+  synth: { type: 'sawtooth', cut: 250, from: 4, sweep: 0.12, open: 2.8, q: 3, sub: 0.9, attack: 0.008, hold: 0.62, gain: 1 },
+  sub: { type: 'sine', cut: 400, from: 1, sweep: 0.05, open: 0, q: 0.5, sub: 0, attack: 0.012, hold: 0.85, gain: 1.35 },
+  round: { type: 'triangle', cut: 500, from: 1.6, sweep: 0.2, open: 1, q: 0.7, sub: 0.7, attack: 0.02, hold: 0.8, gain: 0.95 },
+  upright: { type: 'triangle', cut: 900, from: 2.5, sweep: 0.08, open: 0.6, q: 1, sub: 0.6, attack: 0.004, hold: 0.35, ring: 0.9, click: 900, drop: 25, gain: 1.3 },
+  acid: { type: 'sawtooth', cut: 220, from: 12, sweep: 0.18, open: 4, q: 14, sub: 0.4, attack: 0.004, hold: 0.7, gain: 1.15 },
+  picked: { type: 'square', cut: 700, from: 3.5, sweep: 0.1, open: 1.5, q: 2, sub: 0.6, attack: 0.003, hold: 0.45, ring: 1.4, click: 2500, gain: 0.8 },
+};
+
 export interface SoundParams {
   vol: number;
   scale: SndScale;
@@ -116,6 +143,7 @@ export interface SoundParams {
   depth: number; // near particles louder and wider, far ones quieter and roomier
   // Rhythm section.
   bass: number;
+  bassSound: BassSound;
   drums: number;
 }
 
@@ -678,38 +706,60 @@ export class ParticleSound {
     }
   }
 
-  // Bass: a saw through a closing low-pass with a sine underneath.
+  // Bass: one body oscillator through a low-pass (its sweep makes the
+  // character) with a sine underneath for weight.
   private bassNote(deg: number, vel: number, len: number, when: number) {
     if (this.voices >= MAX_VOICES) return;
     this.voices++;
+    const B = BASSES[this.p.bassSound] ?? BASSES.synth;
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
     let f = this.freq(deg, 36);
     while (f < 38) f *= 2;
     while (f > 200) f /= 2;
-    const end = t + len + 0.08;
+    if (B.ring) len = Math.min(len, B.ring);
+    const end = t + len + 0.1;
     const o = ctx.createOscillator();
-    o.type = 'sawtooth';
+    o.type = B.type;
     o.frequency.value = f;
+    if (B.drop) {
+      o.detune.setValueAtTime(B.drop, t);
+      o.detune.linearRampToValueAtTime(0, t + 0.05);
+    }
     const sub = ctx.createOscillator();
     sub.frequency.value = f;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.Q.value = 3;
-    const cut = 250 + this.energy * 700;
-    lp.frequency.setValueAtTime(cut * 4, t);
-    lp.frequency.exponentialRampToValueAtTime(cut, t + 0.12);
+    lp.Q.value = B.q;
+    const cut = B.cut * (1 + this.energy * B.open);
+    lp.frequency.setValueAtTime(Math.min(15000, cut * B.from), t);
+    lp.frequency.exponentialRampToValueAtTime(cut, t + B.sweep);
     const g = ctx.createGain();
+    const lvl = vel * B.gain;
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(vel * 0.24, t + 0.008);
-    g.gain.setTargetAtTime(vel * 0.15, t + 0.05, 0.15);
+    g.gain.linearRampToValueAtTime(lvl * 0.24, t + B.attack);
+    g.gain.setTargetAtTime(lvl * B.hold * 0.24, t + B.attack + 0.02, B.ring ? B.ring * 0.35 : 0.15);
     g.gain.setTargetAtTime(0.0001, t + len, 0.04);
     const sg = ctx.createGain();
-    sg.gain.value = 0.9;
+    sg.gain.value = B.sub;
     o.connect(lp).connect(g);
     sub.connect(sg).connect(g);
     this.send(g, 0.12, false);
-    for (const nd of [o, sub]) {
+    const nodes: AudioScheduledSourceNode[] = [o, sub];
+    if (B.click) {
+      // A finger or pick on the string: a tiny burst of filtered noise.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = B.click;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(lvl * 0.25, t);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+      src.connect(bp).connect(cg).connect(g);
+      src.start(t, Math.random() * 0.8, 0.04);
+    }
+    for (const nd of nodes) {
       nd.start(t);
       nd.stop(end);
     }
