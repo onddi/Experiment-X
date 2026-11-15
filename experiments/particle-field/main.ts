@@ -14266,6 +14266,22 @@ const FX_LOOKS: [string, Partial<Settings>][] = [
   ['Miniature', { gfxLens: 'tilt', gfxShock: 1.2, gfxBloom: 0.3 }],
   ['Neon sign', { gfxSurface: 'neon', gfxBloom: 1, gfxSpread: 0.7, gfxTint: 'pink' }],
   ['Underwater', { gfxDisplace: 0.5, gfxHaze: 0.6, gfxGrade: 'ocean', gfxGradeAmt: 0.6, gfxBloom: 0.4, gfxVignette: 0.5 }],
+  ['Warp tunnel', { gfxFeedback: 'tunnel', gfxZoom: 0.7, gfxSpin: 0.4, gfxLength: 0.93, gfxBloom: 0.7, gfxSpread: 0.6, gfxVignette: 0.5 }],
+  ['Liquid dream', { gfxFeedback: 'melt', gfxLength: 0.92, gfxLens: 'liquid', gfxBend: 0.5, gfxBloom: 0.6, gfxGrade: 'sunset', gfxGradeAmt: 0.3 }],
+  ['Kaleidoscope', { gfxLens: 'kaleido', gfxSlices: 8, gfxBloom: 0.7, gfxSpread: 0.7, gfxHueCycle: 0.2, gfxVignette: 0.4 }],
+  ['Acid trip', { gfxGrade: 'acid', gfxGradeAmt: 0.9, gfxHueCycle: 0.6, gfxFeedback: 'spiral', gfxLength: 0.9, gfxBloom: 0.6, gfxDisplace: 0.3 }],
+  ['Newspaper', { gfxSurface: 'halftone', gfxCell: 7, gfxGrade: 'mono', gfxGradeAmt: 1, gfxGrain: 0.35 }],
+  ['Terminal', { gfxSurface: 'ascii', gfxCell: 9, gfxTint: 'green', gfxBloom: 0.5, gfxVignette: 0.6, gfxGrain: 0.2 }],
+  ['Stadium screen', { gfxSurface: 'led', gfxCell: 7, gfxBloom: 0.9, gfxSpread: 0.6, gfxFlare: 0.2 }],
+  ['Cross-stitch', { gfxSurface: 'stitch', gfxCell: 10, gfxGrade: 'sunset', gfxGradeAmt: 0.25, gfxVignette: 0.3 }],
+  ['Toy bricks', { gfxSurface: 'lego', gfxCell: 14, gfxBloom: 0.2, gfxVignette: 0.25 }],
+  ['Pop poster', { gfxPoster: 4, gfxGrade: 'acid', gfxGradeAmt: 0.5, gfxSplit: 0.3, gfxGrain: 0.15 }],
+  ['Ghost trails', { gfxEcho: 4, gfxEchoDelay: 6, gfxEchoSpread: 0.8, gfxHaze: 0.4, gfxGrade: 'ocean', gfxGradeAmt: 0.4, gfxBloom: 0.4 }],
+  ['God rays', { gfxRays: 0.9, gfxBloom: 0.8, gfxSpread: 0.8, gfxFlare: 0.4, gfxTint: 'warm', gfxHaze: 0.3, gfxVignette: 0.5 }],
+  ['Fisheye club', { gfxLens: 'fisheye', gfxBend: 0.7, gfxBloom: 0.8, gfxSplit: 0.5, gfxInvertDrop: true, gfxVignette: 0.6 }],
+  ['Mirror world', { gfxLens: 'quad', gfxBloom: 0.5, gfxGrade: 'scene', gfxGradeAmt: 0.4, gfxVignette: 0.3 }],
+  ['Pixel sort', { gfxLens: 'sort', gfxBloom: 0.4, gfxGlitch: 0.3, gfxGlitchOn: 'kick', gfxGrain: 0.2 }],
+  ['Heat haze', { gfxDisplace: 0.6, gfxHaze: 0.5, gfxGrade: 'sunset', gfxGradeAmt: 0.6, gfxTint: 'warm', gfxBloom: 0.5 }],
 ];
 const FX_LOOKS_KEY = 'particle-field:fx-looks';
 const myFxLooks = () => readJson<[string, Partial<Settings>][]>(FX_LOOKS_KEY, []);
