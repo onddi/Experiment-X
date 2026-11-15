@@ -164,6 +164,8 @@ export interface Settings {
   sndTempo: number;
   sndStrings: number;
   sndStringCount: number;
+  sndOctave: number;
+  sndRange: number;
   sndSeq: number;
   sndAccents: number;
   sndHits: number;
@@ -579,6 +581,8 @@ export const DEFAULTS: Settings = {
   sndTempo: 90,
   sndStrings: 0.7,
   sndStringCount: 6,
+  sndOctave: 0,
+  sndRange: 2,
   sndSeq: 0,
   sndAccents: 0.6,
   sndHits: 0.5,

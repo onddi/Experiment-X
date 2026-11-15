@@ -86,6 +86,8 @@ export interface SoundParams {
   tempo: number;
   strings: number;
   stringCount: number;
+  octave: number; // shifts every note by octaves
+  range: number; // how many octaves the notes spread over
   pad: number;
   seq: number;
   hits: number;
@@ -300,7 +302,7 @@ export class ParticleSound {
     const L = sc.length;
     const oct = Math.floor(deg / L);
     const semi = sc[((deg % L) + L) % L] + 12 * oct;
-    return 440 * Math.pow(2, (base + this.p.root + semi - 69) / 12);
+    return 440 * Math.pow(2, (base + 12 * this.p.octave + this.p.root + semi - 69) / 12);
   }
 
   // The current chord's root as a scale degree.
@@ -329,7 +331,7 @@ export class ParticleSound {
 
   // Height on screen to a degree across three octaves (top = high).
   private degAt(y: number, h: number) {
-    return Math.round((1 - Math.min(1, Math.max(0, y / h))) * (this.L * 3 - 1));
+    return Math.round((1 - Math.min(1, Math.max(0, y / h))) * (this.L * this.p.range - 1));
   }
 
   private voiceFor(tone: number): Voice {
@@ -543,7 +545,7 @@ export class ParticleSound {
     const chordKey = `${P.scale}${P.root}${this.chordRoot()}`;
     if (chordKey !== this.padChord) {
       this.padChord = chordKey;
-      [0, 1, 2, 3].forEach((k) => this.padOsc[k].frequency.setTargetAtTime(this.freq(this.chordTone(k), 36), t, 0.5));
+      [0, 1, 2, 3].forEach((k) => this.padOsc[k].frequency.setTargetAtTime(this.freq(this.chordTone(k), 48), t, 0.5));
     }
     this.padLfo += F.dt * 0.6;
     const breath = 0.65 + 0.35 * Math.sin(this.padLfo);
@@ -581,9 +583,11 @@ export class ParticleSound {
         if (!count[k] || now - (this.stringAt[k] ?? 0) < 160) continue;
         if (Math.random() > rate * F.dt * Math.min(4, c / Math.max(0.5, avg)) || !gate()) continue;
         this.stringAt[k] = now;
-        const high = where[k * 2] < h * 0.5 ? 3 : 0;
+        // Left to right climbs the chord across the Range; the top half of the screen sits higher.
+        const span = Math.max(2, this.p.range * 3 - 1);
+        const idx = Math.round(((k / Math.max(1, N - 1)) * 0.75 + (where[k * 2] < h * 0.5 ? 0.25 : 0)) * span);
         const vel = P.strings * Math.min(1, 0.35 + Math.log2(1 + count[k] * stride) * 0.12) * room;
-        this.note(this.chordTone(k + high), vel, ((k + 1) / (N + 1)) * 1.6 - 0.8, this.voiceFor(where[k * 2 + 1]));
+        this.note(this.chordTone(idx), vel, ((k + 1) / (N + 1)) * 1.6 - 0.8, this.voiceFor(where[k * 2 + 1]));
       }
     }
 
@@ -610,7 +614,7 @@ export class ParticleSound {
         if (tot && gate()) {
           for (let r = 0; r < ROWS && played < 2; r++) {
             if (this.grid[r] < mean * 1.8 || this.grid[r] < 2) continue;
-            const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * 2.5)));
+            const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * this.p.range * 0.85)));
             this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room, (s / STEPS) * 1.6 - 0.8, this.voiceFor(0));
             played++;
           }

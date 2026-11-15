@@ -46,6 +46,8 @@ export const TIPS: Record<string, string> = {
   sndScale: 'Every note snaps to this scale, so nothing sounds wrong. Pentatonic is the safest; Whole tone is dreamy, Blues and Japanese have more flavour.',
   sndKey: 'The home note. Auto takes it from the palette (its middle colour round the circle of notes), or from the song when playing along with music.',
   sndTimbre: 'The instrument that plays the notes. The By colour bands split the palette into four parts and give each its own instrument, so a two-tone scene sounds like two players.',
+  sndOctave: 'Moves every note up or down by whole octaves. Lower is warmer and calmer; higher is brighter and more sparkly.',
+  sndRange: 'How wide the notes spread from lowest to highest (bottom of the screen to the top, left string to right). One octave keeps everything close together; four spans the whole keyboard.',
   sndProg: 'The chord progression everything follows. The chord changes every two bars and every layer plays notes from the current chord, so the sound moves somewhere instead of sitting still.',
   sndTempo: 'Beats per minute for chords, phrases and Steps. When playing along with music, the song’s tempo is used instead.',
   sndStrings: 'Invisible vertical strings spread evenly across the screen. When particles move across one it rings a note from the chord: higher if they cross in the top half. A sudden crowd crossing rings it more. Works in every scene.',
