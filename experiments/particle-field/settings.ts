@@ -29,13 +29,13 @@ export type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' |
 export type ColorBy = 'face' | 'camera' | 'image' | 'band' | 'depth' | 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
 export type Palette = keyof typeof PALETTES | 'custom';
 export type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
-export type GlyphPick = 'random' | 'speed' | 'heading' | 'sequence';
+export type GlyphPick = 'random' | 'speed' | 'heading' | 'size' | 'sequence';
 export type GlyphChange = 'fixed' | 'flicker' | 'beat';
 export type GlyphFont = 'mono' | 'serif' | 'sans' | 'bold';
 export type GlyphRotate = 'none' | 'heading' | 'spin';
 
 // Glyph sets. 'density' runs light → heavy so picking by speed reads as
-// ASCII-art shading; 'arrows' is ordered by angle so picking by heading
+// ASCII-art shading ('rings' too, and both suit picking by size); 'arrows' is ordered by angle so picking by heading
 // points each arrow where its particle is going.
 export const GLYPH_SETS = {
   katakana: { label: 'Katakana & digits', chars: '01アイウエオカキクケコサシスセソタチツテトナニヌネノ' },
@@ -51,6 +51,18 @@ export const GLYPH_SETS = {
   arrows: { label: 'Arrows', chars: '→↘↓↙←↖↑↗' },
   shapes: { label: 'Shapes', chars: '●○◆◇■□▲△★☆✦✧' },
   notes: { label: 'Music notes', chars: '♩♪♫♬♭♮♯' },
+  greek: { label: 'Greek', chars: 'αβγδεζηθλμξπσφψω' },
+  hiragana: { label: 'Hiragana', chars: 'あいうえおかきくけこさしすせそ' },
+  hangul: { label: 'Hangul', chars: '가나다라마바사아자차카타파하' },
+  tifinagh: { label: 'Ancient signs', chars: 'ⵀⵁⵂⵃⵄⵅⵉⵊⵋⵌⵍ' },
+  zodiac: { label: 'Zodiac', chars: '♈♉♊♋♌♍♎♏♐♑♒♓' },
+  planets: { label: 'Planets', chars: '☉☽☿♀♁♂♃♄♅♆' },
+  cards: { label: 'Cards & dice', chars: '♠♥♦♣⚀⚁⚂⚃⚄⚅' },
+  chess: { label: 'Chess', chars: '♔♕♖♗♘♙♚♛♜♝♞♟' },
+  weather: { label: 'Weather', chars: '☀☁☂☃☄★☾❄⚡☔' },
+  flowers: { label: 'Hearts & flowers', chars: '♡♥❣❦❧✿❀❁✾✽' },
+  tech: { label: 'Circuit', chars: '⌁⌂⌘⏚⎔⌬⍟⏻⏦⎍' },
+  rings: { label: 'Dots & rings', chars: '·∘○◎◉●' },
 } as const;
 
 export interface Settings {

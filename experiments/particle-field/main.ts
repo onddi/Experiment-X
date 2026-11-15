@@ -4414,6 +4414,9 @@ function buildGlyphs() {
   const src = settings.glyphSet === 'custom' ? settings.glyphText || '?' : GLYPH_SETS[settings.glyphSet]?.chars ?? '?';
   // Array.from keeps multi-byte characters (and emoji) whole.
   glyphChars = Array.from(src).filter((c) => settings.glyphSet !== 'custom' || c.trim() !== '' || src.trim() === '');
+  // Zodiac signs, ⚡ and ☔ show as colour emoji on phones by default; the text-style
+  // selector keeps them as plain glyphs that take the particle's colour.
+  if (settings.glyphSet !== 'custom') glyphChars = glyphChars.map((c) => (/\p{Emoji_Presentation}/u.test(c) ? c + '\uFE0E' : c));
   if (!glyphChars.length) glyphChars = ['?'];
 }
 
@@ -4443,6 +4446,12 @@ function glyphFor(i: number) {
     case 'heading': {
       const a = (Math.atan2(vy[i], vx[i]) + Math.PI * 2) % (Math.PI * 2);
       g = Math.round((a / (Math.PI * 2)) * L) % L;
+      break;
+    }
+    case 'size': {
+      // Small particles get the light glyphs, big ones the heavy end of the set.
+      const z = uniformSize ? Math.exp((rnd[i] * 2 - 1) * 0.8) : psz[i];
+      g = Math.max(0, Math.min(L - 1, Math.floor(((Math.log(z) / Math.log(3) + 1) / 2) * L)));
       break;
     }
     case 'sequence':
@@ -7207,7 +7216,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'glyphSet', label: 'Characters', options: [...Object.entries(GLYPH_SETS).map(([k, g]) => [k, g.label] as [string, string]), ['custom', 'Your own text']], show: isGlyphs },
   { kind: 'text', key: 'glyphText', label: 'Text', placeholder: 'Type characters or a word', show: () => isGlyphs() && settings.glyphSet === 'custom' },
   { kind: 'range', key: 'sizeVar', label: 'Size variety', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'all same' : pct(v)) },
-  { kind: 'select', key: 'glyphPick', label: 'Each particle shows', options: [['random', 'A random glyph'], ['speed', 'By speed'], ['heading', 'By direction'], ['sequence', 'In order (spells it)']], show: isGlyphs },
+  { kind: 'select', key: 'glyphPick', label: 'Each particle shows', options: [['random', 'A random glyph'], ['speed', 'By speed'], ['heading', 'By direction'], ['size', 'By size'], ['sequence', 'In order (spells it)']], show: isGlyphs },
   { kind: 'select', key: 'glyphChange', label: 'Glyphs change', options: [['fixed', 'Never'], ['flicker', 'Flicker'], ['beat', 'On the beat']], show: () => isGlyphs() && (settings.glyphPick === 'random') },
   { kind: 'range', key: 'glyphRate', label: 'Flicker rate', min: 0, max: 0.2, step: 0.005, format: pct, show: () => isGlyphs() && settings.glyphPick === 'random' && settings.glyphChange === 'flicker' },
   { kind: 'select', key: 'glyphFont', label: 'Font', options: [['mono', 'Monospace'], ['serif', 'Serif'], ['sans', 'Sans'], ['bold', 'Heavy']], show: isGlyphs },
