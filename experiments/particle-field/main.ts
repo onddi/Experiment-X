@@ -359,7 +359,7 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
-const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic'] as const;
+const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -6451,6 +6451,7 @@ type ControlBody =
   | { kind: 'knobsmore' }
   | { kind: 'animlist' }
   | { kind: 'fxlooks' }
+  | { kind: 'sndpresets' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'rapmeters' }
@@ -6625,10 +6626,11 @@ let vibeBrowse = false;
 let setVibeBrowse: (on: boolean) => void = (on) => (vibeBrowse = on);
 // The Music page is three tabs under Listening: Vibes (the full vibe picker),
 // Mix (the vibe and its faders) and Reactions (the list, and Rap flow).
-type MusicTab = 'mix' | 'reactions' | 'vibes';
+type MusicTab = 'mix' | 'reactions' | 'vibes' | 'sound';
 const MUSIC_TAB_KEY = 'particle-field:music-tab';
-const MUSIC_TABS: [MusicTab, string][] = [['vibes', 'Vibes'], ['mix', 'Mix'], ['reactions', 'Reactions']];
-const MT_OF: Record<string, string> = { vibe: 'mix vibes', mgmusic: 'reactions', rapflow: 'reactions' };
+const MUSIC_TABS: [MusicTab, string][] = [['vibes', 'Vibes'], ['mix', 'Mix'], ['reactions', 'Reactions'], ['sound', 'Sound']];
+// Sections on one music tab only; the rest show under Mix and Reactions.
+const MT_OF: Record<string, string> = { vibe: 'mix vibes', mgmusic: 'reactions', rapflow: 'reactions', sound: 'sound' };
 let musicTab: MusicTab = (() => {
   try {
     const t = localStorage.getItem(MUSIC_TAB_KEY);
@@ -6637,6 +6639,12 @@ let musicTab: MusicTab = (() => {
     return 'vibes';
   }
 })();
+// Music cards after the Vibes / Mix / Reactions / Sound bar (it sits above Vibe).
+const afterMusicBar = (ctl: Control) => {
+  const i = CONTROLS.indexOf(ctl);
+  const v = CONTROLS.findIndex((c) => c.kind === 'section' && c.id === 'vibe');
+  return v >= 0 && i > v;
+};
 function musicTabs() {
   const bar = document.createElement('div');
   bar.className = 'mtabs';
@@ -7625,6 +7633,7 @@ const CONTROLS: Control[] = [
     lock: [...SND_KEYS],
     power: { on: () => settings.sndVol > 0, off: { sndVol: 0 }, start: { sndVol: 0.7 } },
     summary: () => (settings.sndVol > 0 ? [settings.sndStrings > 0 && 'strings', settings.sndDrone > 0 && 'pad', settings.sndSeq > 0 && 'steps', settings.sndHits > 0 && 'chimes', settings.sndGrain > 0 && 'grains', settings.sndScan > 0 && 'scan', settings.sndTouch > 0 && 'touch'].filter(Boolean).join(', ') || 'on' : 'off') },
+  { kind: 'sndpresets' },
   { kind: 'range', key: 'sndVol', label: 'Volume', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndScale', label: 'Scale', options: [['pentatonic', 'Pentatonic'], ['major', 'Major'], ['minor', 'Minor'], ['dorian', 'Dorian'], ['blues', 'Blues'], ['japanese', 'Japanese'], ['whole', 'Whole tone (dreamy)']] },
   { kind: 'select', key: 'sndKey', label: 'Key', options: [['auto', 'Auto (palette, or the song)'], ...SND_NOTES.map((k): [string, string] => [k, k])] },
@@ -7646,6 +7655,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndScanSecs', label: 'Sweep time', min: 1, max: 16, step: 0.5, format: (v) => `${v} s`, show: () => settings.sndScan > 0 && settings.sndMusic !== 'along' },
   { kind: 'range', key: 'sndTouch', label: 'Touch instrument', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndReverb', label: 'Reverb', min: 0, max: 1, step: 0.05, format: pct },
+  { kind: 'toggle', key: 'sndShow', label: 'Show the instruments on screen' },
   { kind: 'select', key: 'sndMusic', label: 'With music playing', options: [['free', 'Ignore it'], ['room', 'Leave room for the beat'], ['along', 'Play along (key and tempo)']] },
 
   { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'music', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
@@ -8027,7 +8037,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   const fromScene = (k: string) => !!P && k in P && P[k] !== D[k] && S0[k] === P[k];
   // Your own presets bring their whole Sound setup back too (the music cards
   // included), all but Auto VJ, so a VJ stepping through them keeps going.
-  const own = keepAudio ? {} : Object.fromEntries(MUSIC_KEYS.filter((k) => k in p && !k.startsWith('audioVj')).map((k) => [k, p[k]]));
+  const own = keepAudio ? {} : Object.fromEntries([...MUSIC_KEYS.filter((k) => k in p && !k.startsWith('audioVj')), ...SND_KEYS.filter((k) => k in p)].map((k) => [k, p[k]]));
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
@@ -12391,6 +12401,7 @@ function renderControls() {
       h.className = 'tab-heading';
       h.textContent = ctl.label;
       if (CLASSIC_HEADINGS.has(`${ctl.tab}:${ctl.label}`)) h.classList.add('classic');
+      if (ctl.tab === 'music' && afterMusicBar(ctl)) h.dataset.mt = 'mix reactions vibes';
       controls.append(h);
       sectionTabs.push([h, ctl.tab]);
       continue;
@@ -12526,7 +12537,9 @@ function renderControls() {
       }
       controls.append(section);
       section.dataset.sec = ctl.id;
+      // Music sections below the tab bar that belong to no one tab show on all but Sound.
       if (MT_OF[ctl.id]) section.dataset.mt = MT_OF[ctl.id];
+      else if (ctl.tab === 'music' && afterMusicBar(ctl)) section.dataset.mt = 'mix reactions vibes';
       if (CLASSIC_SECS.has(ctl.id)) section.classList.add('classic');
       sectionTabs.push([section, pageOf(ctl)]);
       {
@@ -12661,6 +12674,10 @@ function renderControls() {
 
     if (ctl.kind === 'xfader') {
       searchItem(body, renderXfader());
+      continue;
+    }
+    if (ctl.kind === 'sndpresets') {
+      searchItem(body, renderSoundPresets(), 'sound presets shuffle random lounge harp arcade');
       continue;
     }
     if (ctl.kind === 'fxlooks') {
@@ -14003,6 +14020,122 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
 
 // What's moving: the Play folder's card. The clock, each moving setting
 // (tap to open its slider), Freeze and Stop all.
+// --- Sound presets: the whole Particle sound setup at once ---------------------
+// (Volume and how it fits with music are yours, so presets leave them.)
+const SND_LOOK_KEYS = SND_KEYS.filter((k) => k !== 'sndVol' && k !== 'sndMusic' && k !== 'sndShow');
+const SND_OFF: Partial<Settings> = { sndStrings: 0, sndDrone: 0, sndSeq: 0, sndHits: 0, sndGrain: 0, sndScan: 0, sndTouch: 0.6, sndAccents: 0.6 };
+const SOUND_PRESETS: [string, Partial<Settings>][] = [
+  ['Lounge', { sndTimbre: 'lounge', sndScale: 'dorian', sndProg: 'pop', sndTempo: 92, sndStrings: 0.6, sndStringCount: 6, sndDrone: 0.4, sndSeq: 0.3, sndReverb: 0.5 }],
+  ['Music box night', { sndTimbre: 'musicbox', sndScale: 'pentatonic', sndProg: 'calm', sndTempo: 70, sndStrings: 0.6, sndStringCount: 7, sndDrone: 0.3, sndReverb: 0.7 }],
+  ['Gamelan', { sndTimbre: 'world', sndScale: 'japanese', sndProg: 'still', sndTempo: 108, sndStrings: 0.4, sndSeq: 0.6, sndReverb: 0.45 }],
+  ['Rain on glass', { sndTimbre: 'glass', sndScale: 'whole', sndProg: 'drift', sndTempo: 60, sndStrings: 0.35, sndGrain: 0.5, sndDrone: 0.3, sndReverb: 0.85 }],
+  ['Arcade', { sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 128, sndSeq: 0.8, sndHits: 0.6, sndStrings: 0.3, sndReverb: 0.2 }],
+  ['Deep space', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 60, sndOctave: -1, sndRange: 3, sndDrone: 0.8, sndStrings: 0.3, sndReverb: 1 }],
+  ['Harp garden', { sndTimbre: 'harp', sndScale: 'major', sndProg: 'drift', sndTempo: 80, sndStrings: 0.9, sndStringCount: 9, sndRange: 3, sndDrone: 0.2, sndReverb: 0.55 }],
+  ['Blues bar', { sndTimbre: 'epiano', sndScale: 'blues', sndProg: 'calm', sndTempo: 84, sndStrings: 0.5, sndSeq: 0.4, sndDrone: 0.25, sndReverb: 0.35 }],
+  ['Steel band', { sndTimbre: 'steel', sndScale: 'major', sndProg: 'pop', sndTempo: 116, sndSeq: 0.6, sndStrings: 0.4, sndReverb: 0.3 }],
+  ['Scanner', { sndTimbre: 'marimba', sndScale: 'pentatonic', sndProg: 'drift', sndTempo: 96, sndScan: 0.7, sndScanSecs: 3, sndStrings: 0.2, sndReverb: 0.4 }],
+];
+const SND_PRESETS_KEY = 'particle-field:sound-presets';
+const mySoundPresets = () => readJson<[string, Partial<Settings>][]>(SND_PRESETS_KEY, []);
+const soundOf = (look: Partial<Settings>) => ({ ...Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, DEFAULTS[k]])), ...SND_OFF, ...look }) as Partial<Settings>;
+function soundPresetName(): string | null {
+  const S = settings as unknown as Record<string, unknown>;
+  for (const [name, look] of [...mySoundPresets(), ...SOUND_PRESETS]) {
+    const L = soundOf(look) as Record<string, unknown>;
+    if (SND_LOOK_KEYS.every((k) => S[k] === L[k])) return name;
+  }
+  return null;
+}
+function useSound(look: Partial<Settings>) {
+  Object.assign(settings, soundOf(look));
+  if (settings.sndVol === 0) settings.sndVol = 0.7;
+  changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
+}
+// Shuffle sound: a random but musical setup (one or two main layers, the rest quiet).
+function shuffleSound() {
+  const pick = <T,>(a: readonly T[]) => a[(Math.random() * a.length) | 0];
+  const r = (lo: number, hi: number, st = 0.05) => Math.round((lo + Math.random() * (hi - lo)) / st) * st;
+  const look: Partial<Settings> = {
+    sndTimbre: pick(['colour', 'lounge', 'world', 'marimba', 'bell', 'glass', 'pluck', 'harp', 'koto', 'kalimba', 'steel', 'epiano', 'vibes', 'musicbox', 'flute', 'synth'] as const),
+    sndScale: pick(['pentatonic', 'pentatonic', 'major', 'minor', 'dorian', 'blues', 'japanese', 'whole'] as const),
+    sndProg: pick(['drift', 'pop', 'calm', 'mystic', 'still'] as const),
+    sndTempo: Math.round(r(60, 130, 1)),
+    sndOctave: pick([-1, 0, 0, 0, 1]),
+    sndRange: pick([1, 2, 2, 3]),
+    sndStrings: Math.random() < 0.75 ? r(0.3, 0.9) : 0,
+    sndStringCount: Math.round(r(4, 10, 1)),
+    sndDrone: Math.random() < 0.5 ? r(0.15, 0.6) : 0,
+    sndSeq: Math.random() < 0.4 ? r(0.3, 0.8) : 0,
+    sndGrain: Math.random() < 0.2 ? r(0.2, 0.5) : 0,
+    sndScan: Math.random() < 0.2 ? r(0.3, 0.7) : 0,
+    sndHits: Math.random() < 0.3 ? r(0.3, 0.8) : 0,
+    sndReverb: r(0.2, 0.85),
+  };
+  if (!look.sndStrings && !look.sndSeq && !look.sndScan) look.sndStrings = 0.6;
+  useSound(look);
+  showToast(`Sound: ${look.sndTimbre === 'colour' ? 'chimes band' : look.sndTimbre}, ${look.sndScale}`);
+}
+function renderSoundPresets(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'fx-looks';
+  let sig = '';
+  const draw = () => {
+    const mine = mySoundPresets();
+    const cur = soundPresetName();
+    const next = `${cur}|${JSON.stringify(mine.map(([n]) => n))}`;
+    if (next === sig && box.childElementCount) return;
+    sig = next;
+    box.innerHTML = '';
+    const chips = document.createElement('div');
+    chips.className = 'fx-look-chips';
+    const add = (name: string, look: Partial<Settings>, own: boolean) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fx-look';
+      b.classList.toggle('on', cur === name);
+      b.textContent = name;
+      b.addEventListener('click', () => useSound(look));
+      if (own) {
+        const x = document.createElement('i');
+        x.textContent = '×';
+        x.title = `Delete ${name}`;
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          writeJson(SND_PRESETS_KEY, mySoundPresets().filter(([n]) => n !== name));
+          draw();
+        });
+        b.append(x);
+      }
+      chips.append(b);
+    };
+    for (const [n, l] of mine) add(n, l, true);
+    for (const [n, l] of SOUND_PRESETS) add(n, l, false);
+    const acts = document.createElement('div');
+    acts.className = 'fx-look-acts';
+    const shuf = document.createElement('button');
+    shuf.type = 'button';
+    shuf.textContent = '⚄ Shuffle sound';
+    shuf.addEventListener('click', shuffleSound);
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.textContent = '+ Save this sound';
+    save.addEventListener('click', () => {
+      const name = prompt('Name this sound', `My sound ${mine.length + 1}`)?.trim();
+      if (!name) return;
+      const S = settings as unknown as Record<string, unknown>;
+      const look = Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, S[k]])) as Partial<Settings>;
+      writeJson(SND_PRESETS_KEY, [[name, look], ...mySoundPresets().filter(([n]) => n !== name)]);
+      draw();
+    });
+    acts.append(shuf, save);
+    box.append(chips, acts);
+  };
+  refreshers.push(() => box.isConnected && draw());
+  draw();
+  return box;
+}
+
 // --- FX looks: the whole FX folder at once --------------------------------------
 // (How much the music moves the FX is yours, so looks leave it as it is.)
 const GFX_KEYS = (Object.keys(DEFAULTS) as (keyof Settings)[]).filter((k) => k.startsWith('gfx') && !['gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt'].includes(k));
@@ -15066,6 +15199,8 @@ let sndLoading = false;
 let sndAsleep = false;
 let sndSig = '';
 let sndScanEl: HTMLElement | null = null;
+// The instruments, drawn faintly: a line per string (flashing as it rings) and the step column.
+let sndGuides: HTMLElement | null = null;
 let sndSceneSig = '';
 let sndShapeSig = '';
 // Which notes the song plays most, for playing along in its key.
@@ -15086,10 +15221,39 @@ function sndParams(): SoundParams {
   const S = settings;
   return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic };
 }
+function drawSoundGuides(S: ParticleSound) {
+  if (!sndGuides) {
+    sndGuides = document.createElement('div');
+    sndGuides.className = 'snd-guides';
+    sndGuides.innerHTML = '<div class="snd-step"></div>';
+    canvas.after(sndGuides);
+  }
+  const N = settings.sndStrings > 0 ? Math.max(2, Math.round(settings.sndStringCount)) : 0;
+  const lines = sndGuides.querySelectorAll<HTMLElement>('.snd-string');
+  if (lines.length !== N) {
+    lines.forEach((l) => l.remove());
+    for (let k = 0; k < N; k++) {
+      const l = document.createElement('div');
+      l.className = 'snd-string';
+      l.style.left = `${((k + 0.5) / N) * 100}%`;
+      sndGuides.append(l);
+    }
+  }
+  const now = performance.now();
+  sndGuides.querySelectorAll<HTMLElement>('.snd-string').forEach((l, k) => {
+    const f = Math.max(0, 1 - (now - (S.stringAt[k] ?? 0)) / 450);
+    l.style.opacity = (0.16 + f * 0.6).toFixed(2);
+  });
+  const st = sndGuides.firstElementChild as HTMLElement;
+  st.hidden = !(settings.sndSeq > 0 && S.step >= 0);
+  if (!st.hidden) st.style.left = `${(S.step / 16) * 100}%`;
+}
 function soundTick(dt: number) {
   sndOn = settings.sndVol > 0;
-  const scanOn = sndOn && !!snd && settings.sndScan > 0;
+  const scanOn = sndOn && !!snd && settings.sndScan > 0 && settings.sndShow;
   if (sndScanEl) sndScanEl.hidden = !scanOn;
+  const guidesOn = sndOn && !!snd && settings.sndShow && (settings.sndStrings > 0 || settings.sndSeq > 0) && !paused;
+  if (sndGuides) sndGuides.hidden = !guidesOn;
   if (!sndOn || !snd || paused || document.hidden) {
     sndHitQ.length = 0;
     sndThump = 0;
@@ -15159,6 +15323,7 @@ function soundTick(dt: number) {
   sndHitQ.length = 0;
   sndThump = 0;
   sndBorn = 0;
+  if (guidesOn) drawSoundGuides(snd);
   if (scanOn) {
     if (!sndScanEl) {
       sndScanEl = document.createElement('div');

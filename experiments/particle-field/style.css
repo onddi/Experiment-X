@@ -2530,6 +2530,9 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 #controls[data-mtab='mix']:not(.searching) .group[data-mt]:not([data-mt~='mix']),
 #controls[data-mtab='reactions']:not(.searching) .group[data-mt]:not([data-mt~='reactions']),
 #controls[data-mtab='vibes']:not(.searching) .group[data-mt]:not([data-mt~='vibes']) { display: none; }
+#controls[data-mtab='sound']:not(.searching) .group[data-mt]:not([data-mt~='sound']),
+#controls[data-mtab]:not(.searching) .tab-heading[data-mt]:not([data-mt~='mix']) { display: none; }
+#controls[data-mtab='sound']:not(.searching) .tab-heading[data-mt] { display: none; }
 #controls[data-mtab='vibes']:not(.searching) .group[data-sec='vibe'] > .group-body > :not(.rail-picker) { display: none !important; }
 #controls[data-mtab='mix']:not(.searching) .group[data-sec='vibe'] .vibe-browse { display: none; }
 /* The tab names the card, so its own header goes. */
@@ -2654,6 +2657,9 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .fx-look-acts button { flex: 1; height: 34px; border-radius: 10px; border: 1px dashed var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
 .fx-look-acts button:disabled { opacity: 0.4; cursor: default; }
 /* Particle sound: the scanline sweeping across the field. */
+.snd-guides { position: fixed; inset: 0; pointer-events: none; }
+.snd-string { position: absolute; top: 8%; bottom: 8%; width: 1px; background: linear-gradient(transparent, rgb(255 255 255 / .5) 30%, rgb(255 255 255 / .5) 70%, transparent); }
+.snd-step { position: absolute; top: 0; bottom: 0; width: 6.25%; background: rgb(255 255 255 / .05); }
 .snd-scan { position: fixed; top: 0; left: 0; width: 1px; height: 100%; background: linear-gradient(transparent, rgb(255 255 255 / .28) 20%, rgb(255 255 255 / .28) 80%, transparent); pointer-events: none; will-change: transform; }
 
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */

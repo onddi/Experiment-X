@@ -176,6 +176,8 @@ export interface Settings {
   sndTouch: number;
   sndReverb: number;
   sndMusic: 'free' | 'room' | 'along';
+  /** Draw the strings, the step column and the scanline faintly. */
+  sndShow: boolean;
   tapThree: 'tempo' | 'drop' | 'shuffle' | 'none';
   thumbWall: boolean;
   playWheel3: string;
@@ -603,6 +605,7 @@ export const DEFAULTS: Settings = {
   sndTouch: 0.6,
   sndReverb: 0.45,
   sndMusic: 'room',
+  sndShow: true,
   tapThree: 'tempo',
   thumbWall: true,
   playWheel3: 'mOrder',

@@ -154,11 +154,13 @@ export class ParticleSound {
   private padLfo = 0;
   private padChord = '';
   // Strings: when each last rang (ms).
-  private stringAt: number[] = [];
+  /** When each string last rang (ms), for drawing them. */
+  stringAt: number[] = [];
   // How many crossings each string usually gets a frame, so a sudden crowd rings it.
   private stringAvg: number[] = [];
   // Step sequencer.
-  private step = -1;
+  /** The step column playing now (0-15), for drawing it. */
+  step = -1;
   private grid = new Float32Array(ROWS);
   // Touch.
   private touchOsc: OscillatorNode;

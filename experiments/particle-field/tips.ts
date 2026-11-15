@@ -66,6 +66,7 @@ export const TIPS: Record<string, string> = {
   sndScanSecs: 'How long the scanline takes to cross the screen.',
   sndTouch: 'Your finger is an instrument: drag to play a gliding tone (height = pitch, left/right = brightness, faster = louder). Bursts and shockwaves add a drum hit.',
   sndReverb: 'How much room sound: from dry and close to a big hall.',
+  sndShow: 'Draws the instruments faintly over the field: a line for each string (it flashes when it rings), the step column moving across, and the scanline. Helps to see what makes each sound.',
   sndMusic: 'With a song playing. Ignore it: play freely. Leave room for the beat: notes duck under the kick. Play along: the song’s key and tempo, scanline in time with the bar.',
   glyphFont: 'The typeface of the characters.',
   glyphScale: 'How big the characters are.',
