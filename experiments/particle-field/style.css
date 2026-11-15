@@ -2736,6 +2736,11 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .sst-pad span { font-size: 10px; opacity: .7; }
 .sst-pad.on { background: #c7b8ff; color: #14102a !important; border-color: #c7b8ff; }
 .sst-pad.next { border-color: #c7b8ff; box-shadow: 0 0 12px rgb(199 184 255 / .35); }
+.sst-sheet.wide .sst-beat { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); grid-template-rows: auto auto 1fr; grid-template-areas: 'grid label' 'grid pads' 'foot pads'; column-gap: 20px; row-gap: 6px; align-content: start; overflow: hidden; }
+.sst-sheet.wide .sst-grid { grid-area: grid; }
+.sst-sheet.wide .sst-beat-foot { grid-area: foot; }
+.sst-sheet.wide .sst-pad-label { grid-area: label; }
+.sst-sheet.wide .sst-pads { grid-area: pads; align-content: start; }
 
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }
