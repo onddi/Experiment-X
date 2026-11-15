@@ -374,6 +374,13 @@ export class AudioInput {
     }
   }
 
+  /** Pause or resume a played file. Mic and shared-tab sound play elsewhere, so they are left alone. */
+  setPaused(on: boolean) {
+    if (!this.element) return;
+    if (on) this.element.pause();
+    else void this.element.play().catch(() => {});
+  }
+
   stop() {
     const wasOn = this.source !== 'off';
     this.stream?.getTracks().forEach((t) => t.stop());

@@ -14952,6 +14952,7 @@ function renderAudio() {
 
 function togglePause() {
   paused = !paused;
+  audio.setPaused(paused);
   if (sharedPlaying !== !paused) {
     sharedPlaying = !paused;
     xframe.publish('play', { playing: !paused });
