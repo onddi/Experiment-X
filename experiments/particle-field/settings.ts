@@ -155,6 +155,19 @@ export interface Settings {
   holdTwo: 'freeze' | 'none';
   swipeThree: 'vibe' | 'scene' | 'none';
   swipeOne: 'scenes' | 'none';
+  /** Particle sound: the field plays notes (0 = off). */
+  sndVol: number;
+  sndScale: 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
+  sndKey: 'auto' | 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
+  sndTimbre: 'bell' | 'pluck' | 'marimba' | 'glass';
+  sndHits: number;
+  sndDrone: number;
+  sndGrain: number;
+  sndScan: number;
+  sndScanSecs: number;
+  sndTouch: number;
+  sndReverb: number;
+  sndMusic: 'free' | 'room' | 'along';
   tapThree: 'tempo' | 'drop' | 'shuffle' | 'none';
   thumbWall: boolean;
   playWheel3: string;
@@ -552,6 +565,18 @@ export const DEFAULTS: Settings = {
   holdTwo: 'freeze',
   swipeThree: 'vibe',
   swipeOne: 'none',
+  sndVol: 0,
+  sndScale: 'pentatonic',
+  sndKey: 'auto',
+  sndTimbre: 'bell',
+  sndHits: 0.7,
+  sndDrone: 0.3,
+  sndGrain: 0,
+  sndScan: 0,
+  sndScanSecs: 4,
+  sndTouch: 0.6,
+  sndReverb: 0.45,
+  sndMusic: 'room',
   tapThree: 'tempo',
   thumbWall: true,
   playWheel3: 'mOrder',

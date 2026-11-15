@@ -2653,5 +2653,8 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .fx-look-acts { display: flex; gap: 6px; }
 .fx-look-acts button { flex: 1; height: 34px; border-radius: 10px; border: 1px dashed var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
 .fx-look-acts button:disabled { opacity: 0.4; cursor: default; }
+/* Particle sound: the scanline sweeping across the field. */
+.snd-scan { position: fixed; top: 0; left: 0; width: 1px; height: 100%; background: linear-gradient(transparent, rgb(255 255 255 / .28) 20%, rgb(255 255 255 / .28) 80%, transparent); pointer-events: none; will-change: transform; }
+
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }
