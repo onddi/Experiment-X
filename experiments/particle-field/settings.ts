@@ -343,6 +343,14 @@ export interface Settings {
   gfxGlitchBlock: number;
   gfxLightBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
   gfxFeedBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
+  /** How hard the music moves light and grade (0–1). */
+  gfxLightAmt: number;
+  /** How hard the music moves feedback and echoes (0–1). */
+  gfxFeedAmt: number;
+  /** How hard the music moves lenses and displace (0–1). */
+  gfxLensAmt: number;
+  /** How hard the music moves the surface (0–1). */
+  gfxSurfAmt: number;
   gfxLensBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
   gfxSurfBy: 'kick' | 'snare' | 'bass' | 'voice' | 'off';
   gfxKick: number;
@@ -723,6 +731,10 @@ export const DEFAULTS: Settings = {
   gfxGlitchBlock: 0.5,
   gfxLightBy: 'kick',
   gfxFeedBy: 'kick',
+  gfxLightAmt: 1,
+  gfxFeedAmt: 1,
+  gfxLensAmt: 1,
+  gfxSurfAmt: 1,
   gfxLensBy: 'kick',
   gfxSurfBy: 'kick',
   gfxKick: 0.6,
