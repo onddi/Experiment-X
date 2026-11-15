@@ -183,6 +183,7 @@ export interface Settings {
   sndBright: number;
   sndDrive: number;
   sndLofi: number;
+  sndGrid: string;
   sndTempo: number;
   sndStrings: number;
   sndStringCount: number;
@@ -634,6 +635,7 @@ export const DEFAULTS: Settings = {
   sndBright: 0,
   sndDrive: 0,
   sndLofi: 0,
+  sndGrid: '',
   sndTempo: 90,
   sndStrings: 0.7,
   sndStringCount: 6,

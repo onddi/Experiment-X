@@ -10,7 +10,8 @@ import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
 import { Projector } from './projector.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { GpuFx } from './gpufx.ts';
-import type { ParticleSound, SoundParams } from './sound.ts';
+import type { ParticleSound, SoundParams, Layer } from './sound.ts';
+import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
@@ -363,7 +364,7 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
-const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi'] as const;
+const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -7688,6 +7689,7 @@ const CONTROLS: Control[] = [
     power: { on: () => settings.sndVol > 0, off: { sndVol: 0 }, start: { sndVol: 0.7 } },
     summary: () => (settings.sndVol > 0 ? [settings.sndStrings > 0 && 'strings', settings.sndDrone > 0 && 'pad', settings.sndSeq > 0 && 'steps', settings.sndHits > 0 && 'chimes', settings.sndGrain > 0 && 'grains', settings.sndScan > 0 && 'scan', settings.sndBass > 0 && 'bass', settings.sndDrums > 0 && 'drums', settings.sndTouch > 0 && 'touch'].filter(Boolean).join(', ') || 'on' : 'off') },
   { kind: 'sndpresets' },
+  { kind: 'buttons', buttons: [['Open the sound studio (M)', () => openStudioFromMenu()]], show: () => settings.sndVol > 0 },
   { kind: 'range', key: 'sndVol', label: 'Volume', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndScale', label: 'Scale', options: [['pentatonic', 'Pentatonic'], ['major', 'Major'], ['minor', 'Minor'], ['dorian', 'Dorian'], ['blues', 'Blues'], ['japanese', 'Japanese'], ['whole', 'Whole tone (dreamy)']] },
   { kind: 'select', key: 'sndKey', label: 'Key', options: [['auto', 'Auto (palette, or the song)'], ...SND_NOTES.map((k): [string, string] => [k, k])] },
@@ -15338,7 +15340,7 @@ function sndParams(): SoundParams {
   return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
-    echo: S.sndEcho, sweep: S.sndSweep, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi };
+    echo: S.sndEcho, sweep: S.sndSweep, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };
 }
 // Your chords: "1 5 6 4" (or 1-5-6-4, I V vi IV) to scale degrees from 0.
 const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };
@@ -15372,8 +15374,93 @@ function drawSoundGuides(S: ParticleSound) {
   st.hidden = !(settings.sndSeq > 0 && S.step >= 0);
   if (!st.hidden) st.style.left = `${(S.step / 16) * 100}%`;
 }
+// --- The sound studio (soundview.ts, loaded the first time it is shown) ---
+const STUDIO_KEY = 'particle-field:sound-view';
+let studio: SoundStudio | null = null;
+let studioLoading = false;
+let studioPref: StudioMode = (() => {
+  try {
+    const v = localStorage.getItem(STUDIO_KEY);
+    return v === 'mini' || v === 'open' ? v : 'off';
+  } catch {
+    return 'off';
+  }
+})();
+const LAYER_KEY: Partial<Record<Layer, keyof Settings>> = { bass: 'sndBass', drums: 'sndDrums', strings: 'sndStrings', steps: 'sndSeq', pad: 'sndDrone', chimes: 'sndHits', scan: 'sndScan', grains: 'sndGrain', touch: 'sndTouch', accents: 'sndAccents' };
+function setStudio(m: StudioMode) {
+  studioPref = m;
+  try {
+    localStorage.setItem(STUDIO_KEY, m);
+  } catch {
+    // Private mode: it just isn't remembered.
+  }
+  syncStudio();
+  uPaint(true);
+}
+// Show what the preference says, while Particle sound is on.
+function syncStudio() {
+  const want: StudioMode = sndOn && snd ? studioPref : 'off';
+  if (studio) {
+    if (studio.mode !== want) studio.setMode(want);
+    return;
+  }
+  if (want === 'off' || studioLoading) return;
+  studioLoading = true;
+  void import('./soundview.ts').then((m) => {
+    let tab: StudioTab = 'lanes';
+    try {
+      const t = localStorage.getItem('particle-field:sound-tab');
+      if (t === 'mixer' || t === 'roll' || t === 'beat') tab = t;
+    } catch {
+      // Private mode.
+    }
+    const stage = canvas.parentElement!;
+    studio = new m.SoundStudio({
+      stage,
+      snd: () => snd,
+      layersOn: () => (Object.keys(LAYER_KEY) as Layer[]).filter((l) => (settings[LAYER_KEY[l]!] as number) > 0),
+      levelKey: (l) => LAYER_KEY[l] ?? null,
+      get: (k) => settings[k as keyof Settings] as number,
+      set: (k, v) => {
+        (settings as unknown as Record<string, number>)[k] = v;
+        changed(new Set([k as keyof Settings]));
+        refresh();
+      },
+      grid: () => settings.sndGrid,
+      setGrid: (g) => {
+        settings.sndGrid = g;
+        changed(new Set(['sndGrid']));
+      },
+      editChord: (i) => {
+        if (!snd) return;
+        const pr = snd.progression().slice();
+        pr[i] = (pr[i] + 1) % 7;
+        settings.sndProg = 'custom';
+        settings.sndProgText = pr.map((d) => d + 1).join(' ');
+        changed(new Set(['sndProg', 'sndProgText']));
+        refresh();
+        showToast(`Chord ${i + 1} is now ${snd.chordName(pr[i])}`);
+      },
+      wide: () => stage.clientWidth >= 720,
+      onMode: (mm) => setStudio(mm),
+    }, tab);
+    studio.setMode('off');
+    syncStudio();
+  }).finally(() => (studioLoading = false));
+}
+// The dock's ♪: off → the mini bar → the studio → off.
+function cycleStudio() {
+  setStudio(studioPref === 'off' ? 'mini' : studioPref === 'mini' ? 'open' : 'off');
+}
+function openStudioFromMenu() {
+  setStudio('open');
+  // On a phone the menu covers the field: go to the Stage to see it.
+  if (sheetMode()) uGo('stage');
+}
+
 function soundTick(dt: number) {
   sndOn = settings.sndVol > 0;
+  if ((studio?.mode ?? 'off') !== (sndOn && snd ? studioPref : 'off')) syncStudio();
   const scanOn = sndOn && !!snd && settings.sndScan > 0 && settings.sndShow;
   if (sndScanEl) sndScanEl.hidden = !scanOn;
   const guidesOn = sndOn && !!snd && settings.sndShow && (settings.sndStrings > 0 || settings.sndSeq > 0) && !paused;
@@ -15457,6 +15544,7 @@ function soundTick(dt: number) {
   sndThump = 0;
   sndBorn = 0;
   if (guidesOn) drawSoundGuides(snd);
+  if (studio && studio.mode !== 'off') studio.frame(performance.now());
   if (scanOn) {
     if (!sndScanEl) {
       sndScanEl = document.createElement('div');
@@ -16681,8 +16769,11 @@ function uCrossfade() {
   uPaint(true);
 }
 const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
+// The sound studio's ♪, while Particle sound is on.
+const NOTE_ICON = svg('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>');
+const uStudio = (): [string, string, () => void, string?][] => (settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M)' : studioPref === 'mini' ? 'Open the sound studio (M)' : 'Close the sound studio (M)', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'on' : '']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...(recorder.on ? [uRec()] : []), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : []), uMore()],
+  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : []), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -16708,7 +16799,7 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
   studio: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
 };
@@ -16717,7 +16808,7 @@ function uPaint(force = false) {
   const v = uView();
   const desk = !sheetMode();
   if (desk) uPlace();
-  const sig = `${v}|${xf.on}|${ovPickKnobs}|${ovDensity}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
+  const sig = `${settings.sndVol > 0}|${studioPref}|${v}|${xf.on}|${ovPickKnobs}|${ovDensity}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
   if (sig === uSig && !force) return;
   uSig = sig;
   ubar.classList.remove('stage', 'deck', 'studio');
@@ -18116,6 +18207,8 @@ window.addEventListener('keydown', (e) => {
     else xfNudge(right ? 0.05 : -0.05);
   }
   else if (k === 'i') toggleDebug();
+  else if (k === 'm' && settings.sndVol > 0) setStudio(studioPref === 'open' ? 'off' : 'open');
+  else if (k === 'n' && sndOn) snd?.nextChord();
 });
 
 // Number keys as knob keys: hold 1–8 and scroll, swipe (trackpad), move the

@@ -79,6 +79,7 @@ export const TIPS: Record<string, string> = {
   sndBright: 'A tilt over everything: darker and softer, or brighter and crisper.',
   sndDrive: 'Warm saturation over the whole mix: a little rounds it out like tape, a lot gets fuzzy and gritty.',
   sndLofi: 'Fewer bits, the top rolled off, tape hiss and the odd crackle, like an old cassette.',
+  sndGrid: 'Your edits on the sound studio’s Beat grid: steps where you forced a hit or silenced one. They save with the scene.',
   sndDrums: 'Drums driven by the field. The beat runs left to right like Steps: particles low in the column add kicks, in the middle snares, high up hi-hats. A busier field plays a fuller beat; a still one goes quiet.',
   sndSwing: 'Pushes every second sixteenth note late, for a shuffle or groove. Affects Steps, bass and drums.',
   sndLength: 'How long notes ring. Short is plucky and dry, long lets them overlap into a wash.',

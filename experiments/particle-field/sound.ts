@@ -25,6 +25,7 @@ export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand';
 export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const SCALES: Record<SndScale, number[]> = {
   pentatonic: [0, 2, 4, 7, 9],
   major: [0, 2, 4, 5, 7, 9, 11],
@@ -156,6 +157,7 @@ export interface SoundParams {
   bright: number; // -1 dark … 1 bright, over everything
   drive: number; // warm saturation over everything
   lofi: number; // fewer bits, less top, tape hiss and crackle
+  grid: string; // Beat grid edits: 64 chars, 4 rows (kick, snare, hat, bass) × 16 steps; '+' forces a hit, '-' silences one
 }
 
 export interface SoundFrame {
@@ -190,6 +192,12 @@ interface NoteOpts {
   bend?: number; // cents to slide in from
   z?: number; // depth, 0 far … 1 near
 }
+
+/** The layers, in the order the sound studio lists them. */
+export const LAYERS = ['chords', 'bass', 'drums', 'strings', 'steps', 'pad', 'chimes', 'scan', 'grains', 'touch', 'accents'] as const;
+export type Layer = (typeof LAYERS)[number];
+const LI = Object.fromEntries(LAYERS.map((l, i) => [l, i])) as Record<Layer, number>;
+const LOG = 1024;
 
 const MAX_VOICES = 32;
 // Token bucket: at most this many melodic notes a second.
@@ -239,6 +247,30 @@ export class ParticleSound {
   private lofiHiss: GainNode | null = null;
   private lofiBits = -1;
   private padKind = '';
+  // --- For the sound studio (only filled while it is open) ---
+  /** Mute and solo, for listening (not saved). */
+  muted = new Set<Layer>();
+  solo: Layer | null = null;
+  /** Note log: a ring of the last notes (layer, beat, loudness, pitch 0..1, length in beats). */
+  logOn = false;
+  logN = 0;
+  evL = new Uint8Array(LOG);
+  evB = new Float64Array(LOG);
+  evV = new Float32Array(LOG);
+  evP = new Float32Array(LOG);
+  evD = new Float32Array(LOG);
+  /** Level per layer, jumping with each note and falling back. */
+  levels = new Float32Array(LAYERS.length);
+  /** Beat grid: what played this bar and last (kick, snare, hat, bass × 16 steps). */
+  gridNow = new Uint8Array(64);
+  gridLast = new Uint8Array(64);
+  /** Beats since start and the tempo, for drawing. */
+  get beatNow() {
+    return this.beat;
+  }
+  bpmNow = 90;
+  private cur: Layer = 'strings';
+  private lastRootLogged = -999;
   // Pad.
   private padOsc: OscillatorNode[] = [];
   private padGain: GainNode;
@@ -399,6 +431,63 @@ export class ParticleSound {
       this.tone.frequency.setTargetAtTime(20000, t, 0.2);
       this.tone.Q.value = 0.7;
     }
+  }
+
+  audible(l: Layer) {
+    return this.solo ? this.solo === l : !this.muted.has(l);
+  }
+
+  private log(l: Layer, v: number, pitch: number, dur: number, when = 0) {
+    this.levels[LI[l]] = Math.min(1, Math.max(this.levels[LI[l]], v * 1.4));
+    if (!this.logOn) return;
+    const k = this.logN++ % LOG;
+    this.evL[k] = LI[l];
+    this.evB[k] = this.beat + when * (this.bpmNow / 60);
+    this.evV[k] = v;
+    this.evP[k] = pitch;
+    this.evD[k] = dur;
+  }
+
+  /** The progression as scale degrees (Follow the song: just the chord heard). */
+  progression(): number[] {
+    if (this.p.chordMove === 'song' && this.songLive && this.songRoot >= 0) return [this.songRoot];
+    return this.p.prog === 'custom' ? (this.p.progList.length ? this.p.progList : [0]) : PROGS[this.p.prog];
+  }
+  /** Which entry of the progression plays now. */
+  progIndex() {
+    return this.chord % this.progression().length;
+  }
+  /** A chord's name from its scale degree: "Am", "F", "B°". */
+  chordName(deg: number) {
+    const sc = SCALES[this.p.scale];
+    const L = sc.length;
+    const at = (j: number) => sc[(((deg + j) % L) + L) % L] + 12 * Math.floor((deg + j) / L);
+    const root = (this.p.root + at(0) + 120) % 12;
+    const third = at(2) - at(0), fifth = at(4) - at(0);
+    const q = fifth === 6 ? '°' : fifth === 8 ? '+' : third === 3 ? 'm' : third === 4 ? '' : 'sus';
+    return NOTE_NAMES[root] + q;
+  }
+  chordNow() {
+    return this.chordName(this.chordRoot());
+  }
+  /** The next chord, or '' when it can't be known (following the song). */
+  chordNext() {
+    if (this.p.chordMove === 'song' && this.songLive) return '';
+    const pr = this.progression();
+    return this.chordName(pr[(this.chord + 1) % pr.length]);
+  }
+  /** Beats until the chord changes, when that is known. */
+  beatsToChange() {
+    if (this.p.chordMove !== 'bars') return -1;
+    const per = 4 * Math.max(1, this.p.chordBars);
+    return per - (this.beat % per);
+  }
+  /** Jump straight to entry i of the progression (a chord pad). */
+  jumpChord(i: number) {
+    const n = this.progression().length;
+    this.chord = this.chord - (this.chord % n) + (((i % n) + n) % n);
+    this.lastChange = this.beat;
+    this.chordPos = 0;
   }
 
   /** Jump to the next chord now (the Next chord button). */
@@ -614,6 +703,10 @@ export class ParticleSound {
     }
     if (this.voices >= MAX_VOICES || this.tokens < 1 || vel < 0.02) return;
     this.tokens--;
+    const Vd = VOICES[voice];
+    const fl = this.freq(deg) * 2 ** (Vd.octave ?? 0);
+    this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * (this.bpmNow / 60), when);
+    if (!this.audible(this.cur)) return;
     this.voices++;
     const V = VOICES[voice];
     const ctx = this.ctx;
@@ -769,6 +862,7 @@ export class ParticleSound {
 
   // The chord, rolled upwards like a harp.
   private strum(k: number) {
+    this.cur = 'accents';
     const save = this.tokens;
     this.tokens = 99;
     for (let j = 0; j < 5; j++) this.note(this.chordTone(j + 1), 0.55 * k, -0.6 + j * 0.3, 'bell', j * 0.07);
@@ -830,6 +924,13 @@ export class ParticleSound {
   // character) with a sine underneath for weight.
   private bassNote(deg: number, vel: number, len: number, when: number) {
     if (this.voices >= MAX_VOICES) return;
+    {
+      let f0 = this.freq(deg, 36);
+      while (f0 < 38) f0 *= 2;
+      while (f0 > 200) f0 /= 2;
+      this.log('bass', vel, Math.log2(f0 / 55) / 6, len * (this.bpmNow / 60), when);
+    }
+    if (!this.audible('bass')) return;
     this.voices++;
     const B = BASSES[this.p.bassSound] ?? BASSES.synth;
     const ctx = this.ctx;
@@ -931,6 +1032,8 @@ export class ParticleSound {
   }
 
   private kick(k: number, when: number) {
+    this.log('drums', k, 0.02, 0.25, when);
+    if (!this.audible('drums')) return;
     switch (this.p.kit) {
       case '808': return this.body(when, 120, 46, 0.06, 0.9, 0.8 * k);
       case 'punchy':
@@ -943,6 +1046,8 @@ export class ParticleSound {
   }
 
   private snare(k: number, when: number) {
+    this.log('drums', k, 0.12, 0.25, when);
+    if (!this.audible('drums')) return;
     switch (this.p.kit) {
       case '808': // a clap: three quick bursts and a tail
         for (let j = 0; j < 3; j++) this.hiss(when + j * 0.011, 'bandpass', 1400, 1.2, 0.001, 0.02, 0.4 * k, 0, 0.3);
@@ -961,6 +1066,8 @@ export class ParticleSound {
   }
 
   private hat(k: number, when: number, open: boolean) {
+    this.log('drums', k * 0.6, 0.22, 0.1, when);
+    if (!this.audible('drums')) return;
     switch (this.p.kit) {
       case '808': return this.hiss(when, 'highpass', 8500, 0.7, 0.001, open ? 0.35 : 0.035, 0.22 * k, 0.3, 0.1);
       case 'punchy': return this.hiss(when, 'bandpass', 10000, 1.5, 0.001, open ? 0.25 : 0.03, 0.3 * k, 0.3, 0.1);
@@ -987,12 +1094,22 @@ export class ParticleSound {
 
     // Clock: the song's tempo when playing along, else the Tempo setting.
     const bpm = P.music === 'along' && F.musicOn && F.bpm > 40 ? F.bpm : P.tempo;
+    this.bpmNow = bpm;
+    // Levels fall back between notes.
+    const fall = Math.exp(-F.dt * 5);
+    for (let k = 0; k < this.levels.length; k++) this.levels[k] *= fall;
     const beats = F.dt * (bpm / 60);
     const before = this.beat;
     this.beat += beats;
     this.songLive = F.musicOn;
     this.depthOn = F.depthOn;
     this.steerChords(F, before, beats);
+    const rootNow = this.chordRoot();
+    if (rootNow !== this.lastRootLogged) {
+      this.lastRootLogged = rootNow;
+      this.cur = 'chords';
+      this.log('chords', 1, rootNow, 0);
+    }
     // Echo in time: a dotted eighth.
     if (this.echoDelay && P.echo > 0) {
       const d = Math.min(1.9, (60 / bpm) * 0.75);
@@ -1020,6 +1137,7 @@ export class ParticleSound {
       if (F.shape) this.whoosh(P.accents);
       if (F.born > Math.max(24, F.n * 0.02) && now - this.lastSparkle > 250) {
         this.lastSparkle = now;
+        this.cur = 'accents';
         const save = this.tokens;
         this.tokens = 99;
         for (let j = 0; j < 3; j++) this.note(this.chordTone(6 + ((Math.random() * 4) | 0)), 0.35 * P.accents, Math.random() * 1.6 - 0.8, 'glass', j * 0.05);
@@ -1036,7 +1154,9 @@ export class ParticleSound {
     this.padLfo += F.dt * 0.6;
     const breath = 0.65 + 0.35 * Math.sin(this.padLfo);
     const lively = Math.max(0, Math.min(1, (this.energy - 0.04) * 3));
-    this.padGain.gain.setTargetAtTime(P.pad * 0.3 * PAD_GAIN[P.padSound] * lively * breath * (0.4 + 0.6 * room), t, 0.4);
+    const padLvl = P.pad * lively * breath * (0.4 + 0.6 * room);
+    this.levels[LI.pad] = Math.max(this.levels[LI.pad], padLvl * 0.8);
+    this.padGain.gain.setTargetAtTime(this.audible('pad') ? padLvl * 0.3 * PAD_GAIN[P.padSound] : 0, t, 0.4);
     if (P.pad > 0) {
       const pk = P.padSound;
       const f = pk === 'choir' ? 650 + this.energy * 500 + Math.sin(this.padLfo * 0.37) * 180 : (400 + this.energy * 1800 + F.spread * 400) * (pk === 'organ' ? 2.2 : pk === 'shimmer' ? 3 : pk === 'strings' ? 1.3 : 1);
@@ -1047,6 +1167,7 @@ export class ParticleSound {
 
     // Strings: vertical lines across the screen; a particle crossing one
     // plucks it (a chord tone, higher in the upper half of the screen).
+    this.cur = 'strings';
     if (P.strings > 0 && F.n > 0) {
       const N = Math.max(2, Math.round(P.stringCount));
       const count = new Uint16Array(N);
@@ -1125,7 +1246,8 @@ export class ParticleSound {
       // Steps: where particles crowd in this column, that row plays (a chord
       // tone), with a soft tick for the pulse.
       if (P.seq > 0) {
-        if (s % 2 === 0 && !onKick) this.grain(x0, h * 0.15, w, h, P.seq * (s % 4 === 0 ? 0.35 : 0.18), 0.9, 0.012, 0.1);
+        this.cur = 'steps';
+        if (s % 2 === 0 && !onKick && this.audible('steps')) this.grain(x0, h * 0.15, w, h, P.seq * (s % 4 === 0 ? 0.35 : 0.18), 0.9, 0.012, 0.1);
         let played = 0;
         if (tot && gate()) {
           const dyn = 1 + P.dyn * (0.4 + this.energy * 1.4 - 1);
@@ -1139,33 +1261,52 @@ export class ParticleSound {
       }
 
       const e = this.energy;
+      // The bar starts over: this bar's hits become last bar's.
+      if (s === 0) {
+        this.gridLast.set(this.gridNow);
+        this.gridNow.fill(0);
+      }
+      // Beat grid edits: '+' forces a hit on that step, '-' silences it.
+      const ed = (row: number, nat: boolean) => {
+        const c = P.grid.charCodeAt(row * 16 + s);
+        return c === 43 ? true : c === 45 ? false : nat;
+      };
       // Bass: the chord's root, low. Calm fields hold one long note a bar;
       // busier ones walk root and fifth, then eighths with pickups.
-      if (P.bass > 0 && e > 0.03) {
+      if (P.bass > 0) {
         let deg = -999, len = stepDur * 2;
-        if (s === 0) (deg = this.chordRoot()), (len = e < 0.15 ? stepDur * 14 : stepDur * 3.5);
-        else if (e >= 0.15 && s === 8) (deg = e < 0.4 ? this.chordTone(2) : this.chordRoot()), (len = stepDur * 3);
-        else if (e >= 0.4 && (s === 4 || s === 12)) (deg = s === 12 ? this.chordTone(3) : this.chordRoot()), (len = stepDur * 1.6);
-        else if (e >= 0.65 && s % 4 === 2) (deg = this.chordTone(s === 14 ? 1 : 0)), (len = stepDur * 0.9);
-        if (deg > -999) this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * (s % 8 === 0 ? 1 : 0.8), len * P.length, sw);
+        if (e > 0.03) {
+          if (s === 0) (deg = this.chordRoot()), (len = e < 0.15 ? stepDur * 14 : stepDur * 3.5);
+          else if (e >= 0.15 && s === 8) (deg = e < 0.4 ? this.chordTone(2) : this.chordRoot()), (len = stepDur * 3);
+          else if (e >= 0.4 && (s === 4 || s === 12)) (deg = s === 12 ? this.chordTone(3) : this.chordRoot()), (len = stepDur * 1.6);
+          else if (e >= 0.65 && s % 4 === 2) (deg = this.chordTone(s === 14 ? 1 : 0)), (len = stepDur * 0.9);
+        }
+        const play = ed(3, deg > -999);
+        if (play && deg === -999) (deg = this.chordRoot()), (len = stepDur * 1.5);
+        if (play) {
+          this.gridNow[48 + s] = 1;
+          this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * (s % 8 === 0 ? 1 : 0.8), len * P.length, sw);
+        }
       }
 
       // Drums: the beat comes from the field. Particles low in this column
       // add kicks, in the middle snares, high up hi-hats; busier plays more.
-      if (P.drums > 0 && e > 0.03) {
+      if (P.drums > 0) {
         const k = P.drums * (fit ? 0.4 : 1);
         const m2 = Math.max(1, mean * 2);
         const low = this.grid[6] + this.grid[7], mid = this.grid[3] + this.grid[4], top = this.grid[0] + this.grid[1];
-        const kick = s === 0 || (s === 8 && e > 0.12) || (s % 2 === 0 && e > 0.25 && low > m2 * 1.6);
-        const snare = (s === 4 || s === 12) && (e > 0.18 || mid > m2 * 1.2);
-        const hat = s % 2 === 0 ? e > 0.08 || top > m2 : e > 0.45 && top > m2 * 0.8;
-        if (kick && !onKick) this.kick(k * (s === 0 ? 1 : 0.8), sw);
-        if (snare) this.snare(k * (0.6 + Math.min(0.4, mid / (m2 * 4))), sw);
-        if (hat) this.hat(k * (s % 4 === 0 ? 0.5 : 0.32) * (0.6 + e * 0.6), sw, s === 14 && e > 0.5);
+        const live = e > 0.03;
+        const kick = ed(0, live && !onKick && (s === 0 || (s === 8 && e > 0.12) || (s % 2 === 0 && e > 0.25 && low > m2 * 1.6)));
+        const snare = ed(1, live && (s === 4 || s === 12) && (e > 0.18 || mid > m2 * 1.2));
+        const hat = ed(2, live && (s % 2 === 0 ? e > 0.08 || top > m2 : e > 0.45 && top > m2 * 0.8));
+        if (kick) (this.gridNow[s] = 1), this.kick(k * (s === 0 ? 1 : 0.8), sw);
+        if (snare) (this.gridNow[16 + s] = 1), this.snare(k * (0.6 + Math.min(0.4, mid / (m2 * 4))), sw);
+        if (hat) (this.gridNow[32 + s] = 1), this.hat(k * (s % 4 === 0 ? 0.5 : 0.32) * (0.6 + e * 0.6), sw, s === 14 && e > 0.5);
       }
     }
 
     // Chimes: the hardest few bounces of this frame.
+    this.cur = 'chimes';
     if (P.hits > 0 && F.hits.length && gate()) {
       const H = F.hits;
       const m = H.length / 4;
@@ -1185,12 +1326,14 @@ export class ParticleSound {
       while (g-- > 0) {
         const i = (Math.random() * F.n) | 0;
         if (F.dead && F.dead[i]) continue;
-        this.grain(F.px[i], F.py[i], w, h, P.grain, F.speed);
+        this.levels[LI.grains] = Math.max(this.levels[LI.grains], P.grain * 0.6);
+        if (this.audible('grains')) this.grain(F.px[i], F.py[i], w, h, P.grain, F.speed);
       }
     } else this.grainDebt = 0;
 
     // Scanline: one sweep per bar (or every Sweep time seconds), playing a
     // few of the particles it passes.
+    this.cur = 'scan';
     if (P.scan > 0 && F.n > 0) {
       const secs = P.music === 'along' && F.musicOn && F.bpm > 40 ? (4 * 60) / F.bpm : P.scanSecs;
       const before = this.scanX;
@@ -1229,7 +1372,9 @@ export class ParticleSound {
         this.touchOsc2.frequency.setTargetAtTime(f * 2, t, 0.035);
         this.touchFilter.frequency.setTargetAtTime(500 + (T.x / w) * 4500, t, 0.05);
         this.touchPan.pan.setTargetAtTime((T.x / w) * 1.2 - 0.6, t, 0.05);
-        this.touchGain.gain.setTargetAtTime(P.touch * 0.3 * (0.4 + this.touchSpeed * 0.6), t, 0.03);
+        const tl = P.touch * (0.4 + this.touchSpeed * 0.6);
+        this.levels[LI.touch] = Math.max(this.levels[LI.touch], tl);
+        this.touchGain.gain.setTargetAtTime(this.audible('touch') ? tl * 0.3 : 0, t, 0.03);
       } else this.touchGain.gain.setTargetAtTime(0, t, 0.12);
       this.lastTouch.x = T.x;
       this.lastTouch.y = T.y;
