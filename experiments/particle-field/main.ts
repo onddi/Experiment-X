@@ -289,7 +289,11 @@ function fadeOf(i: number) {
     // Fog: the far half fades into the background. Soft: far ones are drawn
     // bigger (see updateSizes) and fainter, like out-of-focus light.
     const far = 1 - pz[i];
-    if (settings.depthFog > 0) a *= 1 - settings.depthFog * Math.min(1, far * far * 1.4);
+    if (settings.depthFog > 0) {
+      // Fog: the back half sinks into the background (smoothstep from just behind the middle).
+      const f = Math.max(0, Math.min(1, (far - 0.2) / 0.55));
+      a *= 1 - settings.depthFog * 0.95 * f * f * (3 - 2 * f);
+    }
     if (settings.depthSoft > 0) a /= 1 + settings.depthSoft * Math.max(0, far - 0.35) * 5;
   }
   return lightOn ? a * shadeLit[i] : a;
@@ -3445,7 +3449,7 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
         const f = back ? -1 : 1;
         const d = (n1x * -0.45 + n2y * -0.55 + n2z * -0.7) * f;
         const lam = Math.max(0, d);
-        out[3] = (0.1 + 0.9 * lam + 0.6 * lam ** 24) * (back ? 0.3 : 1);
+        out[3] = (0.04 + 0.96 * lam ** 1.4 + 0.6 * lam ** 24) * (back ? 0.15 : 1);
       }
     }
   } else if (kind === 'bars') {
@@ -4907,7 +4911,7 @@ function updateSizes() {
   const dp = settings.depth;
   const soft = dp > 0 ? settings.depthSoft : 0;
   const bands = reacting() ? settings.audioBands : 0;
-  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0;
+  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0 && !lightOn;
   if (uniformSize) return;
   const L = audio.levels;
   // Bass particles are big and swell with the bass, highs small and bright.
@@ -4924,6 +4928,8 @@ function updateSizes() {
       if (soft > 0) z *= 1 + soft * Math.max(0, 0.65 - pz[i]) * 3;
     }
     if (bands > 0) z *= bandSize[i % 3];
+    // Light on a solid: lit points a little bigger, shaded ones smaller, so it reads as round.
+    if (lightOn) z *= 1 + (Math.min(1.3, shadeLit[i]) * 0.9 - 0.55) * settings.solidLight;
     psz[i] = z;
   }
 }
