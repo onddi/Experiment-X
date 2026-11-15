@@ -3001,33 +3001,81 @@ function camShade(i: number) {
 }
 
 // Image colours: like camera colours, for an uploaded image. Sampled once
-// when the shape is built: the image's colours ranked by brightness become
-// the shades, and each particle takes the shade of its home spot.
+// when the shape is built: the image is reduced to its 64 most representative
+// colours (median cut, like a GIF), which become the shades, and each
+// particle takes the nearest of them to the pixel at its home spot. Hues stay
+// true; the shades stay batched, so it costs nothing per frame.
 let imgShades: Rgb[] | null = null;
 let imgCol: { rank: Float32Array; iw: number; ih: number; ix: number; iy: number; step: number } | null = null;
 function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, iy: number, step: number) {
   const N = iw * ih;
-  const lum = new Float32Array(N);
-  for (let k = 0; k < N; k++) lum[k] = d[k * 4] * 0.299 + d[k * 4 + 1] * 0.587 + d[k * 4 + 2] * 0.114 + (d[k * 4 + 3] < 60 ? -999 : 0);
   // Fully see-through pixels don't count (a logo's empty background).
-  const order = Array.from({ length: N }, (_, k) => k).filter((k) => lum[k] > -500).sort((a, b) => lum[a] - lum[b]);
+  const px0: number[] = [];
+  for (let k = 0; k < N; k++) if (d[k * 4 + 3] >= 60) px0.push(k);
   const rank = new Float32Array(N).fill(-1);
-  const shades: Rgb[] = [];
-  const per = Math.max(1, order.length / SHADES);
-  for (let s = 0; s < SHADES; s++) {
-    let r = 0, g = 0, bl = 0, c = 0;
-    for (let q = Math.floor(s * per); q < Math.min(order.length, Math.floor((s + 1) * per)); q++) {
-      const k = order[q];
+  if (!px0.length) {
+    imgShades = null;
+    imgCol = { rank, iw, ih, ix, iy, step };
+    if (settings.colorBy === 'image') buildShades();
+    return;
+  }
+  // Median cut: keep splitting the box with the widest colour spread at its
+  // median, until there are as many boxes as shades.
+  // On a sample of at most 20k pixels, so a big screen stays quick.
+  const every = Math.max(1, Math.ceil(px0.length / 20000));
+  const boxes: number[][] = [every > 1 ? px0.filter((_, j) => j % every === 0) : px0];
+  const spread = (bx: number[]) => {
+    let best = 0, ch = 0;
+    for (let c = 0; c < 3; c++) {
+      let lo = 255, hi = 0;
+      for (const k of bx) {
+        const v = d[k * 4 + c];
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      if (hi - lo > best) (best = hi - lo), (ch = c);
+    }
+    return [best, ch];
+  };
+  const info = [spread(boxes[0])];
+  while (boxes.length < SHADES) {
+    let pick = -1, score = 0;
+    for (let j = 0; j < boxes.length; j++) {
+      if (boxes[j].length < 2) continue;
+      const sc = info[j][0] * Math.sqrt(boxes[j].length);
+      if (sc > score) (score = sc), (pick = j);
+    }
+    if (pick < 0) break;
+    const ch = info[pick][1];
+    const bx = boxes[pick].sort((p, q) => d[p * 4 + ch] - d[q * 4 + ch]);
+    const mid = bx.length >> 1;
+    const lo = bx.slice(0, mid), hi = bx.slice(mid);
+    boxes.splice(pick, 1, lo, hi);
+    info.splice(pick, 1, spread(lo), spread(hi));
+  }
+  const pal: Rgb[] = boxes.map((bx) => {
+    let r = 0, g = 0, bl = 0;
+    for (const k of bx) {
       r += d[k * 4];
       g += d[k * 4 + 1];
       bl += d[k * 4 + 2];
-      c++;
-      rank[k] = s / SHADES + 0.5 / SHADES;
     }
-    const lift = 18 * (1 - s / SHADES);
-    shades.push(c ? [r / c + lift, g / c + lift, bl / c + lift] : shades[s - 1] ?? [128, 128, 128]);
+    return [r / bx.length, g / bx.length, bl / bx.length];
+  });
+  // Darkest to brightest, so effects that read the shade as a level still work.
+  pal.sort((p, q) => p[0] * 0.299 + p[1] * 0.587 + p[2] * 0.114 - (q[0] * 0.299 + q[1] * 0.587 + q[2] * 0.114));
+  while (pal.length < SHADES) pal.push(pal[pal.length - 1]);
+  for (const k of px0) {
+    const r = d[k * 4], g = d[k * 4 + 1], bl = d[k * 4 + 2];
+    let best = 0, bd = 1e9;
+    for (let s = 0; s < SHADES; s++) {
+      const p = pal[s];
+      const dd = (p[0] - r) ** 2 * 0.3 + (p[1] - g) ** 2 * 0.59 + (p[2] - bl) ** 2 * 0.11;
+      if (dd < bd) (bd = dd), (best = s);
+    }
+    rank[k] = best / SHADES + 0.5 / SHADES;
   }
-  imgShades = shades;
+  imgShades = pal;
   imgCol = { rank, iw, ih, ix, iy, step };
   if (settings.colorBy === 'image') buildShades();
 }
