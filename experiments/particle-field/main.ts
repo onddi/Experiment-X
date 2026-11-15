@@ -6612,6 +6612,8 @@ function railPicker(o: {
   fav: (name: string) => void;
   // Optional A–Z / Newest switch shown at the top of the list.
   sort?: { now: () => string; set: (s: string) => void; show: () => boolean };
+  // Optional Random button: plays a random one from the list shown, skipping these names.
+  random?: { skip: string[] };
 }) {
   const el = document.createElement('div');
   el.className = 'rail-picker';
@@ -6642,19 +6644,36 @@ function railPicker(o: {
       railEl.append(b);
     }
     listEl.innerHTML = '';
-    if (o.sort?.show()) {
+    const pool = o.random ? items.filter((it) => !o.random!.skip.includes(it.name)) : [];
+    if (o.sort?.show() || pool.length > 1) {
       const bar = document.createElement('div');
       bar.className = 'rp-sort';
-      for (const [id, label] of [['az', 'A–Z'], ['new', 'Newest']]) {
+      for (const [id, label] of o.sort?.show() ? [['az', 'A–Z'], ['new', 'Newest']] : []) {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = label;
-        b.classList.toggle('on', o.sort.now() === id);
-        b.setAttribute('aria-pressed', String(o.sort.now() === id));
+        b.classList.toggle('on', o.sort!.now() === id);
+        b.setAttribute('aria-pressed', String(o.sort!.now() === id));
         b.addEventListener('click', () => {
           o.sort!.set(id);
           draw();
           listEl.scrollTop = 0;
+        });
+        bar.append(b);
+      }
+      if (pool.length > 1) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'rp-random';
+        b.textContent = '⚄ Random';
+        b.title = 'Play a random one from this list';
+        b.addEventListener('click', () => {
+          // Never the one already playing, so every tap changes something.
+          const from = pool.filter((it) => !it.on);
+          const it = from[Math.floor(Math.random() * from.length)] ?? pool[0];
+          o.pick(it.name);
+          draw();
+          listEl.querySelector('.rp-item.on')?.scrollIntoView({ block: 'nearest' });
         });
         bar.append(b);
       }
@@ -6748,6 +6767,7 @@ function scenePicker() {
       set: (v) => writeJson(SCENE_SORT_KEY, (sceneSort = v)),
       show: () => !['recent', 'mine', 'new'].includes(railNow),
     },
+    random: { skip: ['Blank'] },
     items: () => {
       if (railNow === 'new') return PRESETS.map(([n]) => n).filter(isNew).sort((a, b) => addedAt(b).localeCompare(addedAt(a)) || a.localeCompare(b)).map(item);
       if (railNow === 'saved') return order([...favScenes].filter(known)).map(item);
@@ -6786,6 +6806,7 @@ function vibePicker() {
         writeJson(VIBE_FAMILY_KEY, id);
       }
     },
+    random: { skip: ['None'] },
     items: () => {
       const cur = vibeIsOff() ? undefined : currentVibe();
       const list = railNow === 'saved' ? VIBES.filter((v) => favVibes.has(v.name)).sort((a, b) => a.name.localeCompare(b.name)) : vibeList();
