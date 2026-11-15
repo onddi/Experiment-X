@@ -199,6 +199,10 @@ export interface Settings {
   shapeAngle: number;
   /** 3D shapes: tilt towards you and which way they face, in degrees. */
   shapeTilt: number;
+  /** Drag on the field turns a solid shape (it keeps spinning when let go). */
+  shapeDrag: boolean;
+  /** Light and shade on solid shapes (0 = flat). */
+  solidLight: number;
   shapeFacing: number;
   /** The whole picture (projection fit): offset, zoom, rotation and mirroring. Not part of scenes. */
   viewX: number;
@@ -249,6 +253,12 @@ export interface Settings {
   shuffleCards: boolean;
   depth: number;
   depthParallax: number;
+  /** Far particles fade into the background. */
+  depthFog: number;
+  /** Far particles go soft and out of focus. */
+  depthSoft: number;
+  /** Tilting the phone moves the parallax and turns solids. */
+  tiltLook: boolean;
   trail: number;
   glow: boolean;
   palette: Palette;
@@ -608,6 +618,8 @@ export const DEFAULTS: Settings = {
   shapeY: 0,
   shapeAngle: 0,
   shapeTilt: 0,
+  shapeDrag: true,
+  solidLight: 0,
   shapeFacing: 0,
   viewX: 0,
   viewY: 0,
@@ -659,6 +671,9 @@ export const DEFAULTS: Settings = {
   shuffleCards: false,
   depth: 0,
   depthParallax: 0.5,
+  depthFog: 0,
+  depthSoft: 0,
+  tiltLook: false,
   trail: 0.75,
   glow: false,
   palette: 'aurora',

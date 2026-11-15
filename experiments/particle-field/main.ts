@@ -155,6 +155,13 @@ function placed(x: number, y: number): [number, number] {
 }
 let hy = new Float32Array(0);
 let pz = new Float32Array(0); // depth: 0 far, 1 near
+// Light on a solid shape, per particle (1 = fully lit); only read while lightOn.
+let shadeLit = new Float32Array(0);
+let lightOn = false;
+// Turning a solid by hand: the angles you added and how fast they're still going.
+const orbit = { yaw: 0, pitch: 0, vy: 0, vp: 0, drag: false, x: 0, y: 0, t: 0 };
+// Phone tilt, -1..1 each way from how you held it when it started.
+const tilt = { x: 0, y: 0, on: false, asked: false, b0: NaN, g0: NaN };
 let dead = new Float32Array(0); // 1 while waiting for an emitter to (re)launch it
 let free = new Float32Array(0); // 1 for face-effect particles: no home, short life
 let gone = new Float32Array(0); // seconds when it started fading out (count going down), 0 = staying
@@ -276,7 +283,16 @@ function depthK(base: number, d: number) {
 function fadeOf(i: number) {
   if (dead[i]) return 0;
   const out = gone[i] ? Math.max(0, 1 - (fadeClock - gone[i]) / OUT_SEC) : 1;
-  return out * fadeLife(i) * (settings.depth > 0 ? depthK(0.3 + pz[i] * 0.7, settings.depth) : 1);
+  let a = out * fadeLife(i);
+  if (settings.depth > 0) {
+    a *= depthK(0.3 + pz[i] * 0.7, settings.depth);
+    // Fog: the far half fades into the background. Soft: far ones are drawn
+    // bigger (see updateSizes) and fainter, like out-of-focus light.
+    const far = 1 - pz[i];
+    if (settings.depthFog > 0) a *= 1 - settings.depthFog * Math.min(1, far * far * 1.4);
+    if (settings.depthSoft > 0) a /= 1 + settings.depthSoft * Math.max(0, far - 0.35) * 5;
+  }
+  return lightOn ? a * shadeLit[i] : a;
 }
 
 function fadeLife(i: number) {
@@ -3395,8 +3411,8 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
   } else if (kind === 'solid') {
     const [x0, y0, z0] = solidPoint(S.shapeSolid, u, v);
     // Turning at 0 holds it still, facing where you set it.
-    const yaw = (S.shapeSpin > 0 ? shapeT * (0.15 + S.shapeSpin * 0.9) : 0) + (S.shapeFacing * Math.PI) / 180;
-    const pitch = 0.45 + (S.shapeSpin > 0 ? 0.2 * Math.sin(t * 0.3) : 0) + (S.shapeTilt * Math.PI) / 180;
+    const yaw = (S.shapeSpin > 0 ? shapeT * (0.15 + S.shapeSpin * 0.9) : 0) + (S.shapeFacing * Math.PI) / 180 + orbit.yaw + (tilt.on ? tilt.x * 0.9 : 0);
+    const pitch = 0.45 + (S.shapeSpin > 0 ? 0.2 * Math.sin(t * 0.3) : 0) + (S.shapeTilt * Math.PI) / 180 + orbit.pitch + (tilt.on ? tilt.y * 0.6 : 0);
     const cyw = Math.cos(yaw);
     const syw = Math.sin(yaw);
     const x1 = x0 * cyw + z0 * syw;
@@ -3409,6 +3425,29 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
     out[0] = cx + x1 * R * persp;
     out[1] = cy + y2 * R * persp;
     out[2] = Math.max(0, Math.min(1, (1 - z2) / 2));
+    if (lightOn) {
+      // Shade by the surface's facing: its normal from two nearby points,
+      // turned like the shape, against a light from the upper left front.
+      const e = 0.004;
+      const [ax, ay, az] = solidPoint(S.shapeSolid, (u + e) % 1, v);
+      const [bx, by, bz] = solidPoint(S.shapeSolid, u, Math.min(1, v + e));
+      const ux = ax - x0, uy = ay - y0, uz = az - z0, vx2 = bx - x0, vy2 = by - y0, vz2 = bz - z0;
+      let nx = uy * vz2 - uz * vy2, ny = uz * vx2 - ux * vz2, nz = ux * vy2 - uy * vx2;
+      const len = Math.hypot(nx, ny, nz);
+      if (len < 1e-9) out[3] = 1;
+      else {
+        nx /= len; ny /= len; nz /= len;
+        const n1x = nx * cyw + nz * syw, n1z = -nx * syw + nz * cyw;
+        const n2y = ny * cp - n1z * sp, n2z = ny * sp + n1z * cp;
+        // Points facing away are the hidden back (dim them, so the front reads
+        // as a surface); open surfaces still light both sides a little.
+        const back = n2z > 0;
+        const f = back ? -1 : 1;
+        const d = (n1x * -0.45 + n2y * -0.55 + n2z * -0.7) * f;
+        const lam = Math.max(0, d);
+        out[3] = (0.1 + 0.9 * lam + 0.6 * lam ** 24) * (back ? 0.3 : 1);
+      }
+    }
   } else if (kind === 'bars') {
     // Mirrored bars from the middle: bass in the centre, highs at the sides.
     const side = u < 0.5 ? -1 : 1;
@@ -3513,7 +3552,18 @@ function animateShape(now: number) {
   }
   const R = (Math.min(w, h) / 2) * S.shapeSize;
   const t = shapeTime();
-  const o = [0, 0, 0];
+  const o = [0, 0, 0, 1];
+  // Let go of a turned solid and it keeps spinning, slowing over a few seconds.
+  if (!orbit.drag && (orbit.vy || orbit.vp)) {
+    orbit.yaw += orbit.vy;
+    orbit.pitch = Math.max(-1.3, Math.min(1.3, orbit.pitch + orbit.vp));
+    orbit.vy *= 0.985;
+    orbit.vp *= 0.95;
+    if (Math.abs(orbit.vy) < 1e-4 && Math.abs(orbit.vp) < 1e-4) orbit.vy = orbit.vp = 0;
+  }
+  const light = ps.kind === 'solid' && S.solidLight > 0;
+  lightOn = light;
+  if (light && shadeLit.length < n) shadeLit = new Float32Array(px.length);
   const g = paramGlide;
   let e = 1;
   if (g) {
@@ -3532,6 +3582,7 @@ function animateShape(now: number) {
       hy[i] = o[1];
     }
     if (o[2] >= 0) pz[i] = o[2];
+    if (light) shadeLit[i] = 1 + (o[3] - 1) * S.solidLight;
   }
 }
 let seqBars = 0;
@@ -4854,6 +4905,7 @@ function updateSizes() {
   const sv = settings.sizeVar;
   const ls = settings.lifespan > 0 ? settings.lifeSize : 'none';
   const dp = settings.depth;
+  const soft = dp > 0 ? settings.depthSoft : 0;
   const bands = reacting() ? settings.audioBands : 0;
   uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0;
   if (uniformSize) return;
@@ -4867,7 +4919,10 @@ function updateSizes() {
       const lt = Math.min(1, age[i] / span[i]);
       z *= ls === 'grow' ? 0.3 + lt * 1.4 : ls === 'shrink' ? 1.7 - lt * 1.4 : 0.3 + Math.sin(Math.PI * lt) * 1.4;
     }
-    if (dp > 0) z *= depthK(0.3 + pz[i] * 1.4, dp);
+    if (dp > 0) {
+      z *= depthK(0.3 + pz[i] * 1.4, dp);
+      if (soft > 0) z *= 1 + soft * Math.max(0, 0.65 - pz[i]) * 3;
+    }
     if (bands > 0) z *= bandSize[i % 3];
     psz[i] = z;
   }
@@ -5784,8 +5839,9 @@ function draw() {
     spinY.set(py.subarray(0, n));
   }
   if (par) {
-    const tx = pointer.active && pointer.x > -1e3 ? (pointer.x / w - 0.5) * 2 : Math.sin(t * 0.13) * 0.6;
-    const ty = pointer.active && pointer.y > -1e3 ? (pointer.y / h - 0.5) * 2 : Math.cos(t * 0.11) * 0.4;
+    // Phone tilt leads when it's on; else the pointer, else a slow drift.
+    const tx = tilt.on ? tilt.x : pointer.active && pointer.x > -1e3 ? (pointer.x / w - 0.5) * 2 : Math.sin(t * 0.13) * 0.6;
+    const ty = tilt.on ? tilt.y : pointer.active && pointer.y > -1e3 ? (pointer.y / h - 0.5) * 2 : Math.cos(t * 0.11) * 0.4;
     camX += (tx - camX) * 0.05;
     camY += (ty - camY) * 0.05;
     parAmt = 40 * settings.depthParallax * macro.parallax * settings.depth;
@@ -7403,6 +7459,9 @@ const CONTROLS: Control[] = [
     summary: () => (settings.depth > 0 ? `${pct(settings.depth)}${settings.depthParallax > 0 ? ', parallax' : ''}` : 'off') },
   { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
   { kind: 'range', key: 'depthParallax', label: 'Parallax', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'range', key: 'depthFog', label: 'Fog', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'range', key: 'depthSoft', label: 'Soft far away', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
+  { kind: 'toggle', key: 'tiltLook', label: 'Tilt the phone to look around', show: () => tiltSupported },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
 
   { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
@@ -7438,6 +7497,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'shapeY', label: 'Position ↑↓', min: -0.5, max: 0.5, step: 0.01, format: signedPct, show: hasShape },
   { kind: 'range', key: 'shapeAngle', label: 'Angle', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: hasShape },
   { kind: 'range', key: 'shapeTilt', label: 'Tilt', min: -60, max: 60, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
+  { kind: 'toggle', key: 'shapeDrag', label: 'Drag to turn it', show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'solidLight', label: 'Light and shade', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)), show: () => settings.shape === 'solid' },
   { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
   { kind: 'buttons', buttons: [['Arrange on the field', () => toggleArrange()], ['Centre it', resetPlacement]], active: (t) => t === 'Arrange on the field' && arranging, show: hasShape },
   { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
@@ -7918,6 +7979,8 @@ const playSettings = (): Partial<Settings> => ({
   ...Object.fromEntries(MUSIC_KEYS.map((k) => [k, settings[k]])),
   // Particle sound is yours, like the volume knob: scenes don't change it.
   ...Object.fromEntries(SND_KEYS.map((k) => [k, settings[k]])),
+  tiltLook: settings.tiltLook,
+  shapeDrag: settings.shapeDrag,
 });
 
 // Presets go through here: they glide over (Morph) and can wait for the beat.
@@ -7947,7 +8010,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 // you play, your on-screen knobs and locked cards.
 function blankTarget(): Settings {
   const S0 = settings as unknown as Record<string, unknown>;
-  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall', ...SND_KEYS];
+  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall', 'tiltLook', 'shapeDrag', ...SND_KEYS];
   const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
   for (const k of lockedKeys()) target[k] = S0[k];
   return target as unknown as Settings;
@@ -15105,6 +15168,87 @@ function soundTick(dt: number) {
     sndScanEl.style.transform = `translateX(${(snd.scanX * canvas.clientWidth).toFixed(1)}px)`;
   }
 }
+// Drag to turn a solid: one finger (or the mouse) turns it; let go and it
+// keeps spinning. Two-finger gestures and the Arrange overlay are left alone.
+const canTurn = () => settings.shapeDrag && settings.shape === 'solid' && !arranging;
+canvas.addEventListener('pointerdown', (e) => {
+  if (!canTurn() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  orbit.drag = true;
+  orbit.x = e.clientX;
+  orbit.y = e.clientY;
+  orbit.t = performance.now();
+  orbit.vy = orbit.vp = 0;
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!orbit.drag) return;
+  if (!canTurn() || playTouch.size > 1) {
+    orbit.drag = false;
+    return;
+  }
+  const k = 3.2 / Math.min(w, h);
+  const dy = (e.clientX - orbit.x) * k;
+  const dp = (e.clientY - orbit.y) * k;
+  orbit.yaw += dy;
+  orbit.pitch = Math.max(-1.3, Math.min(1.3, orbit.pitch + dp));
+  // Speed per frame (~16 ms), for the spin that carries on after letting go.
+  const ms = Math.max(1, performance.now() - orbit.t);
+  orbit.vy = orbit.vy * 0.5 + (dy * 16) / ms * 0.5;
+  orbit.vp = orbit.vp * 0.5 + (dp * 16) / ms * 0.5;
+  orbit.x = e.clientX;
+  orbit.y = e.clientY;
+  orbit.t = performance.now();
+});
+for (const ev of ['pointerup', 'pointercancel'] as const)
+  canvas.addEventListener(ev, () => {
+    if (!orbit.drag) return;
+    orbit.drag = false;
+    // A drag that stopped before letting go doesn't fling.
+    if (performance.now() - orbit.t > 80) orbit.vy = orbit.vp = 0;
+  });
+
+// Tilt the phone to look around. iPhone asks permission, which has to come
+// from a tap: the click that switches it on is that tap.
+const tiltSupported = typeof DeviceOrientationEvent !== 'undefined' && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
+function onTilt(e: DeviceOrientationEvent) {
+  if (e.beta == null || e.gamma == null) return;
+  if (Number.isNaN(tilt.b0)) {
+    tilt.b0 = e.beta;
+    tilt.g0 = e.gamma;
+  }
+  const cl = (v: number) => Math.max(-1, Math.min(1, v));
+  tilt.x += (cl((e.gamma - tilt.g0) / 25) - tilt.x) * 0.3;
+  tilt.y += (cl((e.beta - tilt.b0) / 25) - tilt.y) * 0.3;
+}
+function tiltSync() {
+  const want = settings.tiltLook && tiltSupported;
+  if (want === tilt.on) return;
+  if (!want) {
+    window.removeEventListener('deviceorientation', onTilt);
+    tilt.on = false;
+    tilt.x = tilt.y = 0;
+    return;
+  }
+  const D = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+  const start = () => {
+    tilt.b0 = tilt.g0 = NaN;
+    window.addEventListener('deviceorientation', onTilt);
+    tilt.on = true;
+  };
+  if (typeof D.requestPermission === 'function') {
+    if (tilt.asked) return;
+    tilt.asked = true;
+    D.requestPermission().then((r) => (r === 'granted' ? start() : (set('tiltLook', false), showToast('Motion access was declined'))), () => showToast('Tap Tilt again to allow motion'));
+  } else start();
+}
+// After a click (the switch's own handler has run), and on load for Android.
+window.addEventListener('click', () => {
+  tilt.asked = false;
+  tiltSync();
+});
+setInterval(() => {
+  if (!settings.tiltLook || !(DeviceOrientationEvent as unknown as { requestPermission?: unknown }).requestPermission) tiltSync();
+}, 1000);
+
 // Browsers keep audio silent until a tap: wake the sound on the next one.
 for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, () => { if (snd && sndOn) snd.resume(); }, true);
 
@@ -15185,7 +15329,7 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look', 'fx'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set([...SND_KEYS, 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxBloomKick', 'gfxInvertDrop', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick']);
+const REMIX_SKIP = new Set([...SND_KEYS, 'tiltLook', 'shapeDrag', 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxBloomKick', 'gfxInvertDrop', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick']);
 // How often a switchable card is on in a remix.
 const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85, gfxlight: 0.35, gfxfeed: 0.15, gfxlens: 0.2, gfxsurface: 0.12, gfxgrade: 0.25, gfxecho: 0.1, gfxdisplace: 0.12, gfxglitch: 0.08 };
 const REMIX_KEY = 'particle-field:remix';
