@@ -159,7 +159,13 @@ export interface Settings {
   sndVol: number;
   sndScale: 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
   sndKey: 'auto' | 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
-  sndTimbre: 'bell' | 'pluck' | 'marimba' | 'glass';
+  sndTimbre: 'colour' | 'bell' | 'pluck' | 'marimba' | 'glass';
+  sndProg: 'still' | 'calm' | 'pop' | 'drift' | 'mystic';
+  sndTempo: number;
+  sndStrings: number;
+  sndStringCount: number;
+  sndSeq: number;
+  sndAccents: number;
   sndHits: number;
   sndDrone: number;
   sndGrain: number;
@@ -568,9 +574,15 @@ export const DEFAULTS: Settings = {
   sndVol: 0,
   sndScale: 'pentatonic',
   sndKey: 'auto',
-  sndTimbre: 'bell',
-  sndHits: 0.7,
-  sndDrone: 0.3,
+  sndTimbre: 'colour',
+  sndProg: 'drift',
+  sndTempo: 90,
+  sndStrings: 0.7,
+  sndStringCount: 6,
+  sndSeq: 0,
+  sndAccents: 0.6,
+  sndHits: 0.5,
+  sndDrone: 0.4,
   sndGrain: 0,
   sndScan: 0,
   sndScanSecs: 4,

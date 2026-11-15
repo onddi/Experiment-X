@@ -237,6 +237,7 @@ function trimGone() {
 let fadeClock = 0;
 
 function spawn(i: number, x: number, y: number) {
+  if (sndOn) sndBorn++;
   px[i] = ox[i] = x;
   py[i] = oy[i] = y;
   tone[i] = Math.random();
@@ -342,13 +343,14 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
-const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic'] as const;
+const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
 let sndThump = 0;
-const sndHit = (x: number, y: number, v: number) => {
-  if (sndHitQ.length < 90) sndHitQ.push(x, y, v);
+let sndBorn = 0;
+const sndHit = (x: number, y: number, v: number, tn: number) => {
+  if (sndHitQ.length < 120) sndHitQ.push(x, y, v, tn);
 };
 
 // Rings travel out (shockwave, ripple) or in (implode) from a click.
@@ -1478,7 +1480,7 @@ function step(dt: number) {
         px[i] = ox[i] = Math.min(w - 1, Math.max(0, px[i]));
         py[i] = oy[i] = Math.min(h - 1, Math.max(0, py[i]));
       } else if (edges === 'bounce') {
-        if (sndOn) sndHit(px[i], py[i], Math.min(1, Math.hypot(vx[i], vy[i]) / (meanSpeed * 2 + 0.5)));
+        if (sndOn) sndHit(px[i], py[i], Math.min(1, Math.hypot(vx[i], vy[i]) / (meanSpeed * 2 + 0.5)), tone[i]);
         if (px[i] < 0 || px[i] >= w) vx[i] = -vx[i];
         if (py[i] < 0 || py[i] >= h) vy[i] = -vy[i];
         px[i] = Math.min(w - 0.5, Math.max(0, px[i]));
@@ -1507,7 +1509,7 @@ function step(dt: number) {
           // Slide: drop the part of the velocity that heads into the edge.
           const vn = vx[i] * nx + vy[i] * ny;
           if (vn < 0) {
-            if (sndOn && vn < -(meanSpeed * 0.6 + 0.05)) sndHit(px[i], py[i], Math.min(1, -vn / (meanSpeed * 2 + 0.5)));
+            if (sndOn && vn < -(meanSpeed * 0.6 + 0.05)) sndHit(px[i], py[i], Math.min(1, -vn / (meanSpeed * 2 + 0.5)), tone[i]);
             const k = Math.min(1, near * obF);
             vx[i] -= vn * nx * k;
             vy[i] -= vn * ny * k;
@@ -1538,7 +1540,7 @@ function step(dt: number) {
         const near = 1 - Math.max(0, d) / OB_MARGIN;
         const vn = vx[i] * nx + vy[i] * ny;
         if (vn < 0) {
-          if (sndOn && vn < -(meanSpeed * 0.6 + 0.05)) sndHit(px[i], py[i], Math.min(1, -vn / (meanSpeed * 2 + 0.5)));
+          if (sndOn && vn < -(meanSpeed * 0.6 + 0.05)) sndHit(px[i], py[i], Math.min(1, -vn / (meanSpeed * 2 + 0.5)), tone[i]);
           const k = Math.min(1, near);
           vx[i] -= vn * nx * k;
           vy[i] -= vn * ny * k;
@@ -7558,18 +7560,24 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'mgmusic', label: 'Reactions', tab: 'music', about: 'What each part of the music does to the field. Tap a cell to step it, slide sideways for exact strength, hold for flavours.' },
   { kind: 'mixgrid', which: 'music' },
   { kind: 'section', id: 'sound', label: 'Particle sound', tab: 'music',
-    about: 'The field plays back: bounces chime, a drone follows the motion, a scanline plays what it crosses and your finger is an instrument. Everything snaps to a scale.',
+    about: 'The field plays back: particles pluck invisible strings, a soft pad breathes with the motion, crowds become rhythm and your finger is an instrument. It all follows one slow chord progression, in phrases with rests.',
     lock: [...SND_KEYS],
     power: { on: () => settings.sndVol > 0, off: { sndVol: 0 }, start: { sndVol: 0.7 } },
-    summary: () => (settings.sndVol > 0 ? [settings.sndHits > 0 && 'chimes', settings.sndDrone > 0 && 'drone', settings.sndGrain > 0 && 'grains', settings.sndScan > 0 && 'scan', settings.sndTouch > 0 && 'touch'].filter(Boolean).join(', ') || 'on' : 'off') },
+    summary: () => (settings.sndVol > 0 ? [settings.sndStrings > 0 && 'strings', settings.sndDrone > 0 && 'pad', settings.sndSeq > 0 && 'steps', settings.sndHits > 0 && 'chimes', settings.sndGrain > 0 && 'grains', settings.sndScan > 0 && 'scan', settings.sndTouch > 0 && 'touch'].filter(Boolean).join(', ') || 'on' : 'off') },
   { kind: 'range', key: 'sndVol', label: 'Volume', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndScale', label: 'Scale', options: [['pentatonic', 'Pentatonic'], ['major', 'Major'], ['minor', 'Minor'], ['dorian', 'Dorian'], ['blues', 'Blues'], ['japanese', 'Japanese'], ['whole', 'Whole tone (dreamy)']] },
   { kind: 'select', key: 'sndKey', label: 'Key', options: [['auto', 'Auto (palette, or the song)'], ...SND_NOTES.map((k): [string, string] => [k, k])] },
-  { kind: 'select', key: 'sndTimbre', label: 'Sound', options: [['bell', 'Bell'], ['pluck', 'Pluck'], ['marimba', 'Marimba'], ['glass', 'Glass']] },
+  { kind: 'select', key: 'sndTimbre', label: 'Instrument', options: [['colour', 'By colour (a band)'], ['bell', 'Bell'], ['pluck', 'Pluck'], ['marimba', 'Marimba'], ['glass', 'Glass']] },
+  { kind: 'select', key: 'sndProg', label: 'Chords', options: [['drift', 'Drift'], ['pop', 'Pop'], ['calm', 'Calm (two chords)'], ['mystic', 'Mystic'], ['still', 'One chord']] },
+  { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
   { kind: 'sub', label: 'Layers' },
+  { kind: 'range', key: 'sndStrings', label: 'Strings', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndStringCount', label: 'How many strings', min: 2, max: 12, step: 1, format: (v) => String(v), show: () => settings.sndStrings > 0 },
+  { kind: 'range', key: 'sndDrone', label: 'Pad', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndSeq', label: 'Steps (rhythm)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndAccents', label: 'Accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndHits', label: 'Bounce chimes', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'note', text: 'Chimes need something to bounce off: Off-screen set to Bounce, or obstacles.', show: () => settings.sndHits > 0 && settings.edges !== 'bounce' && settings.obstacles === 'none' },
-  { kind: 'range', key: 'sndDrone', label: 'Drone', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndGrain', label: 'Grains', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndScan', label: 'Scanline', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndScanSecs', label: 'Sweep time', min: 1, max: 16, step: 0.5, format: (v) => `${v} s`, show: () => settings.sndScan > 0 && settings.sndMusic !== 'along' },
@@ -14993,6 +15001,8 @@ let sndLoading = false;
 let sndAsleep = false;
 let sndSig = '';
 let sndScanEl: HTMLElement | null = null;
+let sndSceneSig = '';
+let sndShapeSig = '';
 // Which notes the song plays most, for playing along in its key.
 const songPc = new Float32Array(12);
 function sndRoot(): number {
@@ -15009,7 +15019,7 @@ function sndRoot(): number {
 }
 function sndParams(): SoundParams {
   const S = settings;
-  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, hits: S.sndHits, drone: S.sndDrone, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic };
+  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic };
 }
 function soundTick(dt: number) {
   sndOn = settings.sndVol > 0;
@@ -15018,6 +15028,7 @@ function soundTick(dt: number) {
   if (!sndOn || !snd || paused || document.hidden) {
     sndHitQ.length = 0;
     sndThump = 0;
+    sndBorn = 0;
     if (snd && !sndAsleep) {
       snd.sleep();
       sndAsleep = true;
@@ -15059,8 +15070,18 @@ function soundTick(dt: number) {
   }
   const spread = m ? Math.min(1, Math.sqrt(Math.max(0, vv / m - (mx / m) ** 2 - (my / m) ** 2)) / (0.4 * Math.min(w, h))) : 0;
   const held = thumb.held;
+  // A new scene (strum) or a shape forming (whoosh).
+  const sceneSig = currentMine?.name ?? lastSceneName;
+  const scene = !!sceneSig && sceneSig !== sndSceneSig && sndSceneSig !== '';
+  sndSceneSig = sceneSig || sndSceneSig;
+  const shapeSig = settings.shape === 'none' ? '' : `${settings.shape}|${settings.shapeText}|${settings.shapeIcon}|${settings.shapeGeo}|${settings.shapeSolid}`;
+  const shape = !!shapeSig && shapeSig !== sndShapeSig;
+  sndShapeSig = shapeSig;
   snd.frame({
-    dt: Math.min(0.1, dt), n, w, h, px, py, vx, vy, dead,
+    dt: Math.min(0.1, dt), n, w, h, px, py, ox, tone, dead,
+    born: sndBorn,
+    scene,
+    shape: shape && !scene,
     speed: Math.min(1, (meanSpeed * settings.speed) / 4),
     spread,
     hits: sndHitQ,
@@ -15072,6 +15093,7 @@ function soundTick(dt: number) {
   });
   sndHitQ.length = 0;
   sndThump = 0;
+  sndBorn = 0;
   if (scanOn) {
     if (!sndScanEl) {
       sndScanEl = document.createElement('div');

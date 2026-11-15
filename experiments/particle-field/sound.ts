@@ -1,18 +1,24 @@
 // Particle sound: the field plays back. Loaded only when Sound is switched on,
 // so with it off there is no audio context, no nodes and no per-frame work.
 //
-// Six layers, all synthesised (no samples):
+// Everything follows one slowly moving chord progression, so the layers
+// harmonise and the sound goes somewhere instead of sitting on one chord:
+//   strings  invisible vertical strings that ring when particles cross them
+//   pad      soft chord voices that swell with the field's energy, silent when calm
+//   steps    the screen as a step sequencer: each column plays where particles crowd
 //   chimes   a note when a particle bounces off an edge or obstacle
-//   drone    a pad that follows the field's speed and spread
 //   grains   tiny noise grains from random particles: rain, wind, crackle
 //   scan     a line sweeps across and plays the particles it crosses
 //   touch    your finger plays a gliding tone; bursts add a drum hit
-// Everything snaps to a scale and shares one reverb, and the number of notes
-// is capped so thousands of particles can't turn into noise.
+//   accents  a strum on scene change, a whoosh when a shape forms, sparkles on births
+// Notes come in phrases with rests between them (busier field, longer
+// phrases), each particle's colour can pick its instrument, and the number of
+// notes is capped so thousands of particles can't turn into noise.
 
 export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
-export type SndTimbre = 'bell' | 'pluck' | 'marimba' | 'glass';
+export type SndTimbre = 'colour' | 'bell' | 'pluck' | 'marimba' | 'glass';
 export type SndMusic = 'free' | 'room' | 'along';
+export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic';
 
 const SCALES: Record<SndScale, number[]> = {
   pentatonic: [0, 2, 4, 7, 9],
@@ -23,18 +29,34 @@ const SCALES: Record<SndScale, number[]> = {
   japanese: [0, 1, 5, 7, 8],
   whole: [0, 2, 4, 6, 8, 10],
 };
+// Chord roots as scale steps; each chord stacks every other step on its root.
+const PROGS: Record<SndProg, number[]> = {
+  still: [0],
+  calm: [0, 3],
+  pop: [0, 4, 5, 3],
+  drift: [0, 5, 3, 4],
+  mystic: [0, 1, 0, 6],
+};
+const TIMBRES = ['marimba', 'bell', 'pluck', 'glass'] as const;
+type Voice = (typeof TIMBRES)[number];
 
 export interface SoundParams {
   vol: number;
   scale: SndScale;
   root: number; // 0 = C … 11 = B
   timbre: SndTimbre;
+  prog: SndProg;
+  tempo: number;
+  strings: number;
+  stringCount: number;
+  pad: number;
+  seq: number;
   hits: number;
-  drone: number;
   grain: number;
   scan: number;
   scanSecs: number;
   touch: number;
+  accents: number;
   reverb: number;
   music: SndMusic;
 }
@@ -46,23 +68,28 @@ export interface SoundFrame {
   h: number;
   px: Float32Array;
   py: Float32Array;
-  vx: Float32Array;
-  vy: Float32Array;
+  ox: Float32Array; // where each particle was a frame ago
+  tone: Float32Array; // 0..1 along the palette
   dead: ArrayLike<number> | null;
   speed: number; // 0..1, how busy the field is
   spread: number; // 0..1, how spread out
-  // Bounces since last frame: x, y, impact (0..1) triples.
+  // Bounces since last frame: x, y, impact (0..1), tone triples.
   hits: number[];
   touch: { x: number; y: number; down: boolean };
   thump: number; // a burst happened (0..1 strength)
+  born: number; // particles spawned since last frame
+  scene: boolean; // a new scene started
+  shape: boolean; // a shape just formed
   pulse: number; // the music's kick envelope (0 without music)
   bpm: number;
   musicOn: boolean;
 }
 
-const MAX_VOICES = 28;
-// Token bucket: at most this many notes a second across chimes and scan.
-const NOTE_RATE = 24;
+const MAX_VOICES = 32;
+// Token bucket: at most this many melodic notes a second.
+const NOTE_RATE = 22;
+const STEPS = 16;
+const ROWS = 8;
 
 export class ParticleSound {
   private ctx: AudioContext;
@@ -75,11 +102,26 @@ export class ParticleSound {
   private grainDebt = 0;
   private lastThump = 0;
   private p: SoundParams;
-  private droneOsc: OscillatorNode[] = [];
-  private dronePan: StereoPannerNode[] = [];
-  private droneFilter: BiquadFilterNode;
-  private droneGain: GainNode;
-  private droneKey = '';
+  // Harmony and phrasing.
+  private beat = 0; // beats since start, fractional
+  private chord = 0; // index into the progression
+  private energy = 0; // smoothed field speed
+  private phraseOn = true;
+  private phraseLeft = 8; // beats left in this phrase or rest
+  // Pad.
+  private padOsc: OscillatorNode[] = [];
+  private padGain: GainNode;
+  private padFilter: BiquadFilterNode;
+  private padLfo = 0;
+  private padChord = '';
+  // Strings: when each last rang (ms).
+  private stringAt: number[] = [];
+  // How many crossings each string usually gets a frame, so a sudden crowd rings it.
+  private stringAvg: number[] = [];
+  // Step sequencer.
+  private step = -1;
+  private grid = new Float32Array(ROWS);
+  // Touch.
   private touchOsc: OscillatorNode;
   private touchOsc2: OscillatorNode;
   private touchFilter: BiquadFilterNode;
@@ -87,9 +129,9 @@ export class ParticleSound {
   private touchPan: StereoPannerNode;
   private lastTouch = { x: 0, y: 0 };
   private touchSpeed = 0;
+  private lastSparkle = 0;
   /** Where the scanline is, 0..1 across the screen. */
   scanX = 0;
-  private scanBefore = 0;
 
   constructor(p: SoundParams) {
     this.p = p;
@@ -107,7 +149,7 @@ export class ParticleSound {
     this.dry = ctx.createGain();
     this.dry.connect(this.master);
     const verb = ctx.createConvolver();
-    verb.buffer = this.impulse(2.6);
+    verb.buffer = this.impulse(2.8);
     this.wet = ctx.createGain();
     this.wet.connect(verb);
     verb.connect(this.master);
@@ -116,24 +158,27 @@ export class ParticleSound {
     const nd = this.noise.getChannelData(0);
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
 
-    // Drone: three detuned saws through a low-pass, the outer two panned apart.
-    this.droneFilter = ctx.createBiquadFilter();
-    this.droneFilter.type = 'lowpass';
-    this.droneFilter.frequency.value = 300;
-    this.droneFilter.Q.value = 0.8;
-    this.droneGain = ctx.createGain();
-    this.droneGain.gain.value = 0;
-    this.droneFilter.connect(this.droneGain);
-    this.send(this.droneGain, 0.6);
-    for (let k = 0; k < 3; k++) {
+    // Pad: four soft voices (sine and triangle, slightly detuned) on the chord,
+    // through a gentle low-pass. Its level breathes with the field.
+    this.padFilter = ctx.createBiquadFilter();
+    this.padFilter.type = 'lowpass';
+    this.padFilter.frequency.value = 900;
+    this.padFilter.Q.value = 0.3;
+    this.padGain = ctx.createGain();
+    this.padGain.gain.value = 0;
+    this.padFilter.connect(this.padGain);
+    this.send(this.padGain, 0.9);
+    for (let k = 0; k < 4; k++) {
       const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.detune.value = (k - 1) * 7;
+      o.type = k % 2 ? 'triangle' : 'sine';
+      o.detune.value = (k - 1.5) * 4;
       const pan = ctx.createStereoPanner();
-      o.connect(pan).connect(this.droneFilter);
+      pan.pan.value = (k - 1.5) * 0.4;
+      const g = ctx.createGain();
+      g.gain.value = k === 0 ? 0.5 : 0.32;
+      o.connect(g).connect(pan).connect(this.padFilter);
       o.start();
-      this.droneOsc.push(o);
-      this.dronePan.push(pan);
+      this.padOsc.push(o);
     }
 
     // Touch: a sine with a soft triangle an octave up, gliding between scale notes.
@@ -208,6 +253,10 @@ export class ParticleSound {
     }
   }
 
+  private get L() {
+    return SCALES[this.p.scale].length;
+  }
+
   // Scale degree (any integer) to frequency, from C3 + root.
   private freq(deg: number, base = 48) {
     const sc = SCALES[this.p.scale];
@@ -217,39 +266,67 @@ export class ParticleSound {
     return 440 * Math.pow(2, (base + this.p.root + semi - 69) / 12);
   }
 
-  // Height on screen to a degree across three octaves (top = high).
-  private degAt(y: number, h: number) {
-    const L = SCALES[this.p.scale].length;
-    return Math.round((1 - Math.min(1, Math.max(0, y / h))) * (L * 3 - 1));
+  // The current chord's root as a scale degree.
+  private chordRoot() {
+    const prog = PROGS[this.p.prog];
+    return prog[this.chord % prog.length];
   }
 
-  private note(deg: number, vel: number, pan: number) {
+  // The k-th chord tone, counting up across octaves (0 = root, 1 = third, 2 = fifth, 3 = root an octave up…).
+  private chordTone(k: number) {
+    // Stack every other step of the scale on the root: root, third, fifth.
+    const oct = Math.floor(k / 3);
+    return this.chordRoot() + (k - oct * 3) * 2 + oct * this.L;
+  }
+
+  // Snap a degree to the nearest chord tone.
+  private toChord(deg: number) {
+    let best = deg, bd = 99;
+    for (let k = -3; k < 12; k++) {
+      const c = this.chordTone(k);
+      const d = Math.abs(c - deg);
+      if (d < bd) (bd = d), (best = c);
+    }
+    return best;
+  }
+
+  // Height on screen to a degree across three octaves (top = high).
+  private degAt(y: number, h: number) {
+    return Math.round((1 - Math.min(1, Math.max(0, y / h))) * (this.L * 3 - 1));
+  }
+
+  private voiceFor(tone: number): Voice {
+    const tb = this.p.timbre;
+    if (tb !== 'colour') return tb;
+    return TIMBRES[Math.min(3, Math.floor(tone * 4))];
+  }
+
+  private note(deg: number, vel: number, pan: number, voice: Voice, when = 0) {
     if (this.voices >= MAX_VOICES || this.tokens < 1 || vel < 0.02) return;
     this.tokens--;
     this.voices++;
     const ctx = this.ctx;
-    const t = ctx.currentTime;
+    const t = ctx.currentTime + when;
     const f = this.freq(deg);
-    const tb = this.p.timbre;
     // Low notes ring longer, like real bars and strings.
-    const decay = (tb === 'pluck' ? 0.5 : tb === 'marimba' ? 0.6 : tb === 'glass' ? 1.8 : 1.4) * (1.3 - Math.min(1, f / 1600) * 0.6);
-    const ratio = tb === 'bell' ? 2.76 : tb === 'glass' ? 4.07 : tb === 'marimba' ? 3.9 : 2;
+    const decay = (voice === 'pluck' ? 0.55 : voice === 'marimba' ? 0.7 : voice === 'glass' ? 2 : 1.5) * (1.3 - Math.min(1, f / 1600) * 0.6);
+    const ratio = voice === 'bell' ? 2.76 : voice === 'glass' ? 4.07 : voice === 'marimba' ? 3.9 : 2;
     const o1 = ctx.createOscillator();
     const o2 = ctx.createOscillator();
-    o1.type = tb === 'pluck' ? 'triangle' : 'sine';
+    o1.type = voice === 'pluck' ? 'triangle' : 'sine';
     o1.frequency.value = f;
     o2.frequency.value = f * ratio;
     const g = ctx.createGain();
     const g2 = ctx.createGain();
     const peak = vel * 0.22;
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(peak, t + 0.004);
+    g.gain.linearRampToValueAtTime(peak, t + (voice === 'glass' ? 0.02 : 0.004));
     g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
     // The overtone dies first, so the strike is bright and the tail pure.
-    g2.gain.setValueAtTime(tb === 'pluck' ? 0.15 : 0.35, t);
-    g2.gain.exponentialRampToValueAtTime(0.001, t + decay * 0.3);
+    g2.gain.setValueAtTime(voice === 'pluck' ? 0.15 : voice === 'marimba' ? 0.5 : 0.35, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + decay * (voice === 'marimba' ? 0.08 : 0.3));
     const pn = ctx.createStereoPanner();
-    pn.pan.value = pan;
+    pn.pan.value = Math.max(-1, Math.min(1, pan));
     o1.connect(g);
     o2.connect(g2).connect(g);
     g.connect(pn);
@@ -264,10 +341,9 @@ export class ParticleSound {
     };
   }
 
-  private grain(x: number, y: number, w: number, h: number, amt: number, speed: number) {
+  private grain(x: number, y: number, w: number, h: number, amt: number, speed: number, len = 0.006 + (1 - speed) * 0.03, wet = 0.4) {
     const ctx = this.ctx;
     const t = ctx.currentTime + Math.random() * 0.016;
-    const len = 0.006 + (1 - speed) * 0.03;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const bp = ctx.createBiquadFilter();
@@ -281,7 +357,7 @@ export class ParticleSound {
     const pn = ctx.createStereoPanner();
     pn.pan.value = (x / w) * 1.6 - 0.8;
     src.connect(bp).connect(g).connect(pn);
-    this.send(pn, 0.4);
+    this.send(pn, wet);
     src.start(t, Math.random() * 0.9, len + 0.01);
     src.onended = () => pn.disconnect();
   }
@@ -303,40 +379,169 @@ export class ParticleSound {
     o.onended = () => g.disconnect();
   }
 
+  // A rising filtered-noise sweep, for a shape forming.
+  private whoosh(k: number) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 2.5;
+    bp.frequency.setValueAtTime(300, t);
+    bp.frequency.exponentialRampToValueAtTime(3500, t + 0.9);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.18 * k, t + 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+    src.connect(bp).connect(g);
+    this.send(g, 1);
+    src.start(t);
+    src.stop(t + 1.25);
+    src.onended = () => g.disconnect();
+  }
+
+  // The chord, rolled upwards like a harp.
+  private strum(k: number) {
+    const save = this.tokens;
+    this.tokens = 99;
+    for (let j = 0; j < 5; j++) this.note(this.chordTone(j + 1), 0.55 * k, -0.6 + j * 0.3, 'bell', j * 0.07);
+    this.tokens = save;
+  }
+
   frame(F: SoundFrame) {
     const P = this.p;
     if (this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime;
+    const now = performance.now();
     this.tokens = Math.min(NOTE_RATE, this.tokens + F.dt * NOTE_RATE);
-    // With music: leave room for the kick (notes duck under it).
-    const room = F.musicOn && P.music !== 'free' ? 1 - Math.min(1, F.pulse * 1.3) : 1;
-    const onKick = F.musicOn && P.music !== 'free' && F.pulse > 0.55;
     const { w, h } = F;
+    // With music: leave room for the kick (notes duck under it).
+    const fit = F.musicOn && P.music !== 'free';
+    const room = fit ? 1 - Math.min(1, F.pulse * 1.3) : 1;
+    const onKick = fit && F.pulse > 0.55;
+    this.energy += (F.speed - this.energy) * Math.min(1, F.dt * 1.5);
 
-    // Chimes: the hardest few bounces of this frame.
-    if (P.hits > 0 && F.hits.length && !onKick) {
-      const H = F.hits;
-      const m = H.length / 3;
-      let budget = 3;
-      for (let k = 0; k < m && budget > 0; k += Math.max(1, Math.floor(m / 3))) {
-        const x = H[k * 3], y = H[k * 3 + 1], v = H[k * 3 + 2];
-        this.note(this.degAt(y, h), P.hits * (0.45 + 0.55 * v) * room, (x / w) * 1.6 - 0.8);
-        budget--;
+    // Clock: the song's tempo when playing along, else the Tempo setting.
+    const bpm = P.music === 'along' && F.musicOn && F.bpm > 40 ? F.bpm : P.tempo;
+    const beats = F.dt * (bpm / 60);
+    const before = this.beat;
+    this.beat += beats;
+    // A new chord every two bars.
+    if (Math.floor(this.beat / 8) !== Math.floor(before / 8)) this.chord++;
+    // Phrases and rests: a busier field plays longer and rests less.
+    this.phraseLeft -= beats;
+    if (this.phraseLeft <= 0) {
+      this.phraseOn = !this.phraseOn;
+      const e = this.energy;
+      this.phraseLeft = this.phraseOn ? 4 + Math.round(e * 3) * 4 : Math.max(1, Math.round((1 - e) * 3)) * 2;
+    }
+    // Inside a rest, only the odd note gets through.
+    const gate = () => !onKick && (this.phraseOn || Math.random() < 0.03);
+
+    // Accents.
+    if (P.accents > 0) {
+      if (F.scene) this.strum(P.accents);
+      if (F.shape) this.whoosh(P.accents);
+      if (F.born > Math.max(24, F.n * 0.02) && now - this.lastSparkle > 250) {
+        this.lastSparkle = now;
+        const save = this.tokens;
+        this.tokens = 99;
+        for (let j = 0; j < 3; j++) this.note(this.chordTone(6 + ((Math.random() * 4) | 0)), 0.35 * P.accents, Math.random() * 1.6 - 0.8, 'glass', j * 0.05);
+        this.tokens = save;
       }
     }
 
-    // Drone: chord from the scale, brighter as the field speeds up.
-    const key = `${P.scale}${P.root}`;
-    if (key !== this.droneKey) {
-      this.droneKey = key;
-      [0, 2, 4].forEach((d, k) => this.droneOsc[k].frequency.setTargetAtTime(this.freq(d, 36), t, 0.4));
+    // Pad: the chord, swelling with energy and a slow breath, silent when still.
+    const chordKey = `${P.scale}${P.root}${this.chordRoot()}`;
+    if (chordKey !== this.padChord) {
+      this.padChord = chordKey;
+      [0, 1, 2, 3].forEach((k) => this.padOsc[k].frequency.setTargetAtTime(this.freq(this.chordTone(k), 36), t, 0.5));
     }
-    const dg = P.drone * 0.1 * (0.6 + F.speed * 0.4) * room;
-    this.droneGain.gain.setTargetAtTime(dg, t, 0.25);
-    if (P.drone > 0) {
-      this.droneFilter.frequency.setTargetAtTime(160 + F.speed * 2600, t, 0.3);
-      this.dronePan[0].pan.setTargetAtTime(-0.7 * F.spread, t, 0.5);
-      this.dronePan[2].pan.setTargetAtTime(0.7 * F.spread, t, 0.5);
+    this.padLfo += F.dt * 0.6;
+    const breath = 0.65 + 0.35 * Math.sin(this.padLfo);
+    const lively = Math.max(0, Math.min(1, (this.energy - 0.04) * 3));
+    this.padGain.gain.setTargetAtTime(P.pad * 0.3 * lively * breath * (0.4 + 0.6 * room), t, 0.4);
+    if (P.pad > 0) this.padFilter.frequency.setTargetAtTime(400 + this.energy * 1800 + F.spread * 400, t, 0.5);
+
+    // Strings: vertical lines across the screen; a particle crossing one
+    // plucks it (a chord tone, higher in the upper half of the screen).
+    if (P.strings > 0 && F.n > 0) {
+      const N = Math.max(2, Math.round(P.stringCount));
+      const count = new Uint16Array(N);
+      const where = new Float32Array(N * 2);
+      const stride = Math.max(1, Math.floor(F.n / 2500));
+      for (let i = (Math.random() * stride) | 0; i < F.n; i += stride) {
+        if (F.dead && F.dead[i]) continue;
+        const a = F.ox[i], b = F.px[i];
+        if (Math.abs(b - a) > w * 0.5) continue; // wrapped round the screen
+        const sa = Math.floor((a / w) * N + 0.5), sb = Math.floor((b / w) * N + 0.5);
+        if (sa === sb) continue;
+        const s = Math.min(sa, sb);
+        if (s < 1 || s > N) continue;
+        const k = s - 1;
+        if (count[k]++ === 0) {
+          where[k * 2] = F.py[i];
+          where[k * 2 + 1] = F.tone[i] ?? 0.5;
+        }
+      }
+      // Each string rings about rate times a second (more when the field is
+      // busy), and more often while more particles than usual cross it.
+      const rate = 0.6 + this.energy * 2;
+      for (let k = 0; k < N; k++) {
+        const c = count[k] * stride;
+        const avg = (this.stringAvg[k] = (this.stringAvg[k] ?? c) * 0.97 + c * 0.03);
+        if (!count[k] || now - (this.stringAt[k] ?? 0) < 160) continue;
+        if (Math.random() > rate * F.dt * Math.min(4, c / Math.max(0.5, avg)) || !gate()) continue;
+        this.stringAt[k] = now;
+        const high = where[k * 2] < h * 0.5 ? 3 : 0;
+        const vel = P.strings * Math.min(1, 0.35 + Math.log2(1 + count[k] * stride) * 0.12) * room;
+        this.note(this.chordTone(k + high), vel, ((k + 1) / (N + 1)) * 1.6 - 0.8, this.voiceFor(where[k * 2 + 1]));
+      }
+    }
+
+    // Steps: sixteen columns played in time; where particles crowd in a
+    // column, that row plays (a chord tone), with a soft tick for the pulse.
+    if (P.seq > 0 && F.n > 0) {
+      const s = Math.floor(this.beat * 4) % STEPS;
+      if (s !== this.step) {
+        this.step = s;
+        const x0 = (s / STEPS) * w, x1 = ((s + 1) / STEPS) * w;
+        this.grid.fill(0);
+        let tot = 0;
+        const stride = Math.max(1, Math.floor(F.n / 3000));
+        for (let i = 0; i < F.n; i += stride) {
+          if (F.dead && F.dead[i]) continue;
+          const x = F.px[i];
+          if (x < x0 || x >= x1) continue;
+          this.grid[Math.min(ROWS - 1, Math.max(0, Math.floor((F.py[i] / h) * ROWS)))]++;
+          tot++;
+        }
+        const mean = (F.n / stride / STEPS) / ROWS;
+        if (s % 2 === 0 && !onKick) this.grain(x0, h * 0.15, w, h, P.seq * (s % 4 === 0 ? 0.35 : 0.18), 0.9, 0.012, 0.1);
+        let played = 0;
+        if (tot && gate()) {
+          for (let r = 0; r < ROWS && played < 2; r++) {
+            if (this.grid[r] < mean * 1.8 || this.grid[r] < 2) continue;
+            const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * 2.5)));
+            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room, (s / STEPS) * 1.6 - 0.8, P.timbre === 'colour' ? 'marimba' : P.timbre);
+            played++;
+          }
+        }
+      }
+    }
+
+    // Chimes: the hardest few bounces of this frame.
+    if (P.hits > 0 && F.hits.length && gate()) {
+      const H = F.hits;
+      const m = H.length / 4;
+      let budget = 3;
+      for (let k = 0; k < m && budget > 0; k += Math.max(1, Math.floor(m / 3))) {
+        const x = H[k * 4], y = H[k * 4 + 1], v = H[k * 4 + 2], tn = H[k * 4 + 3];
+        this.note(this.degAt(y, h), P.hits * (0.45 + 0.55 * v) * room, (x / w) * 1.6 - 0.8, this.voiceFor(tn));
+        budget--;
+      }
     }
 
     // Grains: a rate that grows with how busy the field is, capped.
@@ -351,18 +556,17 @@ export class ParticleSound {
       }
     } else this.grainDebt = 0;
 
-    // Scanline: a sweep every scanSecs (a bar, in time with the music when
-    // playing along), playing a few of the particles it passes.
+    // Scanline: one sweep per bar (or every Sweep time seconds), playing a
+    // few of the particles it passes.
     if (P.scan > 0 && F.n > 0) {
       const secs = P.music === 'along' && F.musicOn && F.bpm > 40 ? (4 * 60) / F.bpm : P.scanSecs;
-      this.scanBefore = this.scanX;
+      const before = this.scanX;
       this.scanX += F.dt / secs;
       const wrapped = this.scanX >= 1;
       if (wrapped) this.scanX -= 1;
-      const a = this.scanBefore * w, b = this.scanX * w;
+      const a = before * w, b = this.scanX * w;
       const seen = new Set<number>();
       let found = 0;
-      // Sample instead of visiting every particle when there are many.
       const step = Math.max(1, Math.floor(F.n / 3000));
       for (let i = (Math.random() * step) | 0; i < F.n && found < 4; i += step) {
         if (F.dead && F.dead[i]) continue;
@@ -372,7 +576,7 @@ export class ParticleSound {
           if (seen.has(d)) continue;
           seen.add(d);
           found++;
-          this.note(d, P.scan * 0.45 * (onKick ? 0.3 : 1), (x / w) * 1.6 - 0.8);
+          if (gate()) this.note(d, P.scan * 0.45, (x / w) * 1.6 - 0.8, this.voiceFor(F.tone[i] ?? 0.5));
         }
       }
     }
@@ -392,8 +596,8 @@ export class ParticleSound {
       } else this.touchGain.gain.setTargetAtTime(0, t, 0.12);
       this.lastTouch.x = T.x;
       this.lastTouch.y = T.y;
-      if (F.thump > 0 && performance.now() - this.lastThump > 90) {
-        this.lastThump = performance.now();
+      if (F.thump > 0 && now - this.lastThump > 90) {
+        this.lastThump = now;
         this.thump(Math.min(1, F.thump) * P.touch);
       }
     } else this.touchGain.gain.setTargetAtTime(0, t, 0.1);
