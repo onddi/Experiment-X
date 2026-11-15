@@ -363,7 +363,7 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
-const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums'] as const;
+const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -7668,10 +7668,14 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: 'Rhythm section' },
   { kind: 'range', key: 'sndBass', label: 'Bass line', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndBassSound', label: 'Bass sound', options: [['synth', 'Synth'], ['sub', 'Sub (deep)'], ['round', 'Round (warm)'], ['upright', 'Upright (woody)'], ['acid', 'Acid (squelchy)'], ['picked', 'Picked (electric)']], show: () => settings.sndBass > 0 },
+  { kind: 'range', key: 'sndBassTone', label: 'Bass tone', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'normal' : v < 0 ? `darker ${pct(-v)}` : `brighter ${pct(v)}`), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'select', key: 'sndKit', label: 'Drum kit', options: [['soft', 'Soft'], ['808', '808 (boom and clap)'], ['punchy', 'Punchy (club)'], ['brush', 'Brushes (jazz)'], ['hand', 'Hand percussion']], show: () => settings.sndDrums > 0 },
   { kind: 'range', key: 'sndSwing', label: 'Swing', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'straight' : pct(v)) },
   { kind: 'sub', label: 'Expression' },
+  { kind: 'select', key: 'sndPadSound', label: 'Pad sound', options: [['soft', 'Soft'], ['strings', 'Strings'], ['organ', 'Organ'], ['choir', 'Choir'], ['shimmer', 'Shimmer']], show: () => settings.sndDrone > 0 },
   { kind: 'range', key: 'sndLength', label: 'Note length', min: 0.3, max: 3, step: 0.1, format: (v) => (v === 1 ? 'normal' : `×${v.toFixed(1)}`) },
+  { kind: 'range', key: 'sndAttack', label: 'Attack', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'struck' : v >= 0.7 ? `bowed ${pct(v)}` : pct(v)) },
   { kind: 'range', key: 'sndDyn', label: 'Dynamics', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndBend', label: 'Bend', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndArp', label: 'Arpeggio', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndStrings > 0 },
@@ -7679,6 +7683,9 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndReverb', label: 'Reverb', min: 0, max: 1, step: 0.05, format: pct },
   { kind: 'range', key: 'sndEcho', label: 'Echo (in time)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndSweep', label: 'Filter sweep', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndBright', label: 'Brightness', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : v < 0 ? `darker ${pct(-v)}` : `brighter ${pct(v)}`) },
+  { kind: 'range', key: 'sndDrive', label: 'Drive', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndLofi', label: 'Lo-fi', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndChorus', label: 'Chorus', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndDepth', label: 'Depth (3D)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'sub', label: 'Show and music' },
@@ -14060,16 +14067,19 @@ const SND_OFF: Partial<Settings> = { sndStrings: 0, sndDrone: 0, sndSeq: 0, sndH
 const SOUND_PRESETS: [string, Partial<Settings>][] = [
   ['Lounge', { sndBassSound: 'round', sndBass: 0.45, sndSwing: 0.35, sndChorus: 0.35, sndEcho: 0.15, sndTimbre: 'lounge', sndScale: 'dorian', sndProg: 'pop', sndTempo: 92, sndStrings: 0.6, sndStringCount: 6, sndDrone: 0.4, sndSeq: 0.3, sndReverb: 0.5 }],
   ['Music box night', { sndTimbre: 'musicbox', sndScale: 'pentatonic', sndProg: 'calm', sndTempo: 70, sndStrings: 0.6, sndStringCount: 7, sndDrone: 0.3, sndReverb: 0.7 }],
-  ['Gamelan', { sndTimbre: 'world', sndScale: 'japanese', sndProg: 'still', sndTempo: 108, sndStrings: 0.4, sndSeq: 0.6, sndReverb: 0.45 }],
+  ['Gamelan', { sndKit: 'hand', sndDrums: 0.35, sndTimbre: 'world', sndScale: 'japanese', sndProg: 'still', sndTempo: 108, sndStrings: 0.4, sndSeq: 0.6, sndReverb: 0.45 }],
   ['Rain on glass', { sndEcho: 0.3, sndChorus: 0.4, sndBend: 0.4, sndTimbre: 'glass', sndScale: 'whole', sndProg: 'drift', sndTempo: 60, sndStrings: 0.35, sndGrain: 0.5, sndDrone: 0.3, sndReverb: 0.85 }],
-  ['Arcade', { sndDrums: 0.6, sndBass: 0.5, sndSweep: 0.5, sndLength: 0.6, sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 128, sndSeq: 0.8, sndHits: 0.6, sndStrings: 0.3, sndReverb: 0.2 }],
-  ['Deep space', { sndEcho: 0.45, sndSweep: 0.4, sndLength: 1.8, sndChordBars: 4, sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 60, sndOctave: -1, sndRange: 3, sndDrone: 0.8, sndStrings: 0.3, sndReverb: 1 }],
+  ['Arcade', { sndKit: 'punchy', sndDrive: 0.3, sndBright: 0.3, sndDrums: 0.6, sndBass: 0.5, sndSweep: 0.5, sndLength: 0.6, sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 128, sndSeq: 0.8, sndHits: 0.6, sndStrings: 0.3, sndReverb: 0.2 }],
+  ['Deep space', { sndPadSound: 'choir', sndAttack: 0.6, sndEcho: 0.45, sndSweep: 0.4, sndLength: 1.8, sndChordBars: 4, sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 60, sndOctave: -1, sndRange: 3, sndDrone: 0.8, sndStrings: 0.3, sndReverb: 1 }],
   ['Harp garden', { sndArp: 0.5, sndDyn: 0.5, sndTimbre: 'harp', sndScale: 'major', sndProg: 'drift', sndTempo: 80, sndStrings: 0.9, sndStringCount: 9, sndRange: 3, sndDrone: 0.2, sndReverb: 0.55 }],
-  ['Blues bar', { sndBassSound: 'upright', sndSwing: 0.6, sndBass: 0.5, sndDrums: 0.3, sndDyn: 0.6, sndTimbre: 'epiano', sndScale: 'blues', sndProg: 'calm', sndTempo: 84, sndStrings: 0.5, sndSeq: 0.4, sndDrone: 0.25, sndReverb: 0.35 }],
+  ['Blues bar', { sndKit: 'brush', sndPadSound: 'organ', sndBassSound: 'upright', sndSwing: 0.6, sndBass: 0.5, sndDrums: 0.3, sndDyn: 0.6, sndTimbre: 'epiano', sndScale: 'blues', sndProg: 'calm', sndTempo: 84, sndStrings: 0.5, sndSeq: 0.4, sndDrone: 0.25, sndReverb: 0.35 }],
   ['Steel band', { sndBassSound: 'picked', sndDrums: 0.45, sndBass: 0.4, sndSwing: 0.2, sndTimbre: 'steel', sndScale: 'major', sndProg: 'pop', sndTempo: 116, sndSeq: 0.6, sndStrings: 0.4, sndReverb: 0.3 }],
-  ['Night drive', { sndBassSound: 'acid', sndTimbre: 'synth', sndScale: 'minor', sndProg: 'drift', sndChordMove: 'energy', sndTempo: 104, sndStrings: 0.4, sndArp: 0.6, sndBass: 0.6, sndDrums: 0.5, sndEcho: 0.35, sndSweep: 0.7, sndChorus: 0.4, sndDrone: 0.3, sndReverb: 0.4 }],
-  ['Dub echoes', { sndBassSound: 'sub', sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'calm', sndTempo: 76, sndSeq: 0.4, sndStrings: 0.3, sndBass: 0.7, sndDrums: 0.35, sndSwing: 0.25, sndEcho: 0.7, sndSweep: 0.3, sndReverb: 0.5 }],
+  ['Night drive', { sndKit: '808', sndPadSound: 'strings', sndBassSound: 'acid', sndTimbre: 'synth', sndScale: 'minor', sndProg: 'drift', sndChordMove: 'energy', sndTempo: 104, sndStrings: 0.4, sndArp: 0.6, sndBass: 0.6, sndDrums: 0.5, sndEcho: 0.35, sndSweep: 0.7, sndChorus: 0.4, sndDrone: 0.3, sndReverb: 0.4 }],
+  ['Dub echoes', { sndKit: '808', sndLofi: 0.25, sndBassSound: 'sub', sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'calm', sndTempo: 76, sndSeq: 0.4, sndStrings: 0.3, sndBass: 0.7, sndDrums: 0.35, sndSwing: 0.25, sndEcho: 0.7, sndSweep: 0.3, sndReverb: 0.5 }],
   ['Wind chimes', { sndTimbre: 'glass', sndScale: 'pentatonic', sndProg: 'still', sndTempo: 70, sndStrings: 0.6, sndStringCount: 10, sndDyn: 0.8, sndBend: 0.5, sndLength: 2, sndChorus: 0.5, sndReverb: 0.8 }],
+  ['Lo-fi study', { sndTimbre: 'epiano', sndScale: 'dorian', sndProg: 'drift', sndTempo: 78, sndStrings: 0.5, sndDrone: 0.3, sndPadSound: 'strings', sndBass: 0.5, sndBassSound: 'round', sndBassTone: -0.4, sndDrums: 0.45, sndKit: 'brush', sndSwing: 0.45, sndLofi: 0.55, sndBright: -0.35, sndChorus: 0.3, sndReverb: 0.35 }],
+  ['Cathedral', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndChordBars: 4, sndTempo: 60, sndDrone: 0.7, sndPadSound: 'choir', sndStrings: 0.35, sndAttack: 0.8, sndLength: 2.2, sndReverb: 1 }],
+  ['Fuzz garage', { sndTimbre: 'synth', sndScale: 'blues', sndProg: 'pop', sndTempo: 122, sndStrings: 0.4, sndSeq: 0.5, sndBass: 0.6, sndBassSound: 'picked', sndDrums: 0.6, sndKit: 'punchy', sndDrive: 0.7, sndBright: 0.2, sndReverb: 0.25 }],
   ['Scanner', { sndTimbre: 'marimba', sndScale: 'pentatonic', sndProg: 'drift', sndTempo: 96, sndScan: 0.7, sndScanSecs: 3, sndStrings: 0.2, sndReverb: 0.4 }],
 ];
 const SND_PRESETS_KEY = 'particle-field:sound-presets';
@@ -14120,6 +14130,13 @@ function shuffleSound() {
     sndBass: Math.random() < 0.4 ? r(0.3, 0.7) : 0,
     sndBassSound: pick(['synth', 'sub', 'round', 'upright', 'acid', 'picked'] as const),
     sndDrums: Math.random() < 0.3 ? r(0.25, 0.6) : 0,
+    sndKit: pick(['soft', '808', 'punchy', 'brush', 'hand'] as const),
+    sndPadSound: pick(['soft', 'soft', 'strings', 'organ', 'choir', 'shimmer'] as const),
+    sndBassTone: Math.random() < 0.4 ? r(-0.6, 0.6) : 0,
+    sndAttack: Math.random() < 0.25 ? r(0.3, 0.9) : 0,
+    sndBright: Math.random() < 0.4 ? r(-0.5, 0.5) : 0,
+    sndDrive: Math.random() < 0.2 ? r(0.2, 0.6) : 0,
+    sndLofi: Math.random() < 0.15 ? r(0.2, 0.6) : 0,
   };
   if (!look.sndStrings && !look.sndSeq && !look.sndScan) look.sndStrings = 0.6;
   useSound(look);
@@ -15273,7 +15290,7 @@ function sndParams(): SoundParams {
   return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
-    echo: S.sndEcho, sweep: S.sndSweep, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, drums: S.sndDrums };
+    echo: S.sndEcho, sweep: S.sndSweep, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi };
 }
 // Your chords: "1 5 6 4" (or 1-5-6-4, I V vi IV) to scale degrees from 0.
 const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };

@@ -176,6 +176,13 @@ export interface Settings {
   sndBass: number;
   sndBassSound: 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked';
   sndDrums: number;
+  sndKit: 'soft' | '808' | 'punchy' | 'brush' | 'hand';
+  sndPadSound: 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
+  sndBassTone: number;
+  sndAttack: number;
+  sndBright: number;
+  sndDrive: number;
+  sndLofi: number;
   sndTempo: number;
   sndStrings: number;
   sndStringCount: number;
@@ -620,6 +627,13 @@ export const DEFAULTS: Settings = {
   sndBass: 0,
   sndBassSound: 'synth',
   sndDrums: 0,
+  sndKit: 'soft',
+  sndPadSound: 'soft',
+  sndBassTone: 0,
+  sndAttack: 0,
+  sndBright: 0,
+  sndDrive: 0,
+  sndLofi: 0,
   sndTempo: 90,
   sndStrings: 0.7,
   sndStringCount: 6,

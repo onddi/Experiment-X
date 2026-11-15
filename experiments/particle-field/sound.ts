@@ -21,6 +21,8 @@ export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
 export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked';
+export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand';
+export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 
 const SCALES: Record<SndScale, number[]> = {
@@ -105,6 +107,8 @@ const BASSES: Record<BassSound, BassDef> = {
   picked: { type: 'square', cut: 700, from: 3.5, sweep: 0.1, open: 1.5, q: 2, sub: 0.6, attack: 0.003, hold: 0.45, ring: 1.4, click: 2500, gain: 0.8 },
 };
 
+const PAD_GAIN: Record<PadSound, number> = { soft: 1, strings: 1.35, organ: 0.85, choir: 3.6, shimmer: 1.05 };
+
 export interface SoundParams {
   vol: number;
   scale: SndScale;
@@ -144,7 +148,14 @@ export interface SoundParams {
   // Rhythm section.
   bass: number;
   bassSound: BassSound;
+  bassTone: number; // -1 dark … 1 bright
   drums: number;
+  kit: DrumKit;
+  padSound: PadSound;
+  attack: number; // 0 struck … 1 bowed
+  bright: number; // -1 dark … 1 bright, over everything
+  drive: number; // warm saturation over everything
+  lofi: number; // fewer bits, less top, tape hiss and crackle
 }
 
 export interface SoundFrame {
@@ -217,6 +228,17 @@ export class ParticleSound {
   private echoDelay: DelayNode | null = null;
   private echoFb: GainNode | null = null;
   private chorusOut: GainNode | null = null;
+  // The end of the effects chain (feeds the compressor); Drive and Lo-fi are
+  // spliced in here the first time they're turned up.
+  private shelf: BiquadFilterNode;
+  private chainEnd: AudioNode;
+  private driveShaper: WaveShaperNode | null = null;
+  private driveK = -1;
+  private lofiShaper: WaveShaperNode | null = null;
+  private lofiLp: BiquadFilterNode | null = null;
+  private lofiHiss: GainNode | null = null;
+  private lofiBits = -1;
+  private padKind = '';
   // Pad.
   private padOsc: OscillatorNode[] = [];
   private padGain: GainNode;
@@ -261,7 +283,13 @@ export class ParticleSound {
     this.tone = ctx.createBiquadFilter();
     this.tone.type = 'lowpass';
     this.tone.frequency.value = 20000;
-    this.master.connect(this.tone).connect(comp);
+    // Brightness: a high shelf over everything (flat at 0).
+    this.shelf = ctx.createBiquadFilter();
+    this.shelf.type = 'highshelf';
+    this.shelf.frequency.value = 3000;
+    this.shelf.gain.value = 0;
+    this.master.connect(this.tone).connect(this.shelf).connect(comp);
+    this.chainEnd = this.shelf;
     this.dry = ctx.createGain();
     this.dry.connect(this.master);
     const verb = ctx.createConvolver();
@@ -336,6 +364,37 @@ export class ParticleSound {
     }
     if (p.chorus > 0) this.ensureChorus();
     if (this.chorusOut) this.chorusOut.gain.setTargetAtTime(p.chorus * 0.8, t, 0.1);
+    this.shelf.gain.setTargetAtTime(p.bright * 9, t, 0.1);
+    if (p.drive > 0) this.ensureDrive();
+    if (this.driveShaper) {
+      const k = Math.round(p.drive * 20) / 20;
+      if (k !== this.driveK) {
+        this.driveK = k;
+        if (k === 0) this.driveShaper.curve = null;
+        else {
+          // tanh saturation, scaled back so a hotter drive is warmer, not louder.
+          const a = 1 + k * 9, c = new Float32Array(1024);
+          for (let i = 0; i < 1024; i++) c[i] = (Math.tanh(a * ((i / 1023) * 2 - 1)) / a) * (1 + k * 1.2);
+          this.driveShaper.curve = c;
+        }
+      }
+    }
+    if (p.lofi > 0) this.ensureLofi();
+    if (this.lofiShaper && this.lofiLp && this.lofiHiss) {
+      const bits = p.lofi === 0 ? 0 : Math.round(12 - p.lofi * 8);
+      if (bits !== this.lofiBits) {
+        this.lofiBits = bits;
+        if (!bits) this.lofiShaper.curve = null;
+        else {
+          const st = 2 ** bits / 2, c = new Float32Array(4096);
+          for (let i = 0; i < 4096; i++) c[i] = Math.round(((i / 4095) * 2 - 1) * st) / st;
+          this.lofiShaper.curve = c;
+        }
+      }
+      this.lofiLp.frequency.setTargetAtTime(p.lofi === 0 ? 20000 : 9000 - p.lofi * 6500, t, 0.1);
+      this.lofiHiss.gain.setTargetAtTime(p.lofi * 0.012, t, 0.2);
+    }
+    this.setPad(p.padSound);
     if (p.sweep === 0) {
       this.tone.frequency.setTargetAtTime(20000, t, 0.2);
       this.tone.Q.value = 0.7;
@@ -371,6 +430,66 @@ export class ParticleSound {
     const w = ctx.createGain();
     w.gain.value = 0.4;
     hp.connect(w).connect(this.wet);
+  }
+
+  private splice(a: AudioNode, b: AudioNode) {
+    this.chainEnd.disconnect(this.comp);
+    this.chainEnd.connect(a);
+    b.connect(this.comp);
+    this.chainEnd = b;
+  }
+
+  // Drive: a soft-clipping waveshaper, warm at low settings, fuzzy at the top.
+  private ensureDrive() {
+    if (this.driveShaper) return;
+    this.driveShaper = this.ctx.createWaveShaper();
+    this.driveShaper.oversample = '2x';
+    this.splice(this.driveShaper, this.driveShaper);
+  }
+
+  // Lo-fi: fewer bits (a staircase waveshaper), the top rolled off, and a
+  // little tape hiss underneath.
+  private ensureLofi() {
+    if (this.lofiShaper) return;
+    const ctx = this.ctx;
+    this.lofiShaper = ctx.createWaveShaper();
+    this.lofiLp = ctx.createBiquadFilter();
+    this.lofiLp.type = 'lowpass';
+    this.lofiLp.frequency.value = 20000;
+    this.lofiShaper.connect(this.lofiLp);
+    this.splice(this.lofiShaper, this.lofiLp);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 4000;
+    bp.Q.value = 0.5;
+    this.lofiHiss = ctx.createGain();
+    this.lofiHiss.gain.value = 0;
+    src.connect(bp).connect(this.lofiHiss).connect(this.comp);
+    src.start();
+  }
+
+  // Pad sounds: the four chord voices' waves, detune and filter.
+  private setPad(kind: PadSound) {
+    if (kind === this.padKind) return;
+    this.padKind = kind;
+    const waves: Record<PadSound, OscillatorType[]> = {
+      soft: ['sine', 'triangle', 'sine', 'triangle'],
+      strings: ['sawtooth', 'sawtooth', 'sawtooth', 'sawtooth'],
+      organ: ['square', 'sine', 'square', 'sine'],
+      choir: ['sawtooth', 'triangle', 'sawtooth', 'triangle'],
+      shimmer: ['triangle', 'sine', 'triangle', 'sine'],
+    };
+    const spread = kind === 'shimmer' ? 14 : kind === 'strings' ? 8 : kind === 'organ' ? 1 : 4;
+    this.padOsc.forEach((o, k) => {
+      o.type = waves[kind][k];
+      o.detune.value = (k - 1.5) * spread;
+    });
+    // Choir: a band-pass on a vowel-ish formant; the rest a low-pass.
+    this.padFilter.type = kind === 'choir' ? 'bandpass' : 'lowpass';
+    this.padFilter.Q.value = kind === 'choir' ? 2.2 : kind === 'strings' ? 0.8 : 0.3;
   }
 
   // Chorus: two slowly wobbling copies, a few milliseconds late, left and right.
@@ -521,7 +640,8 @@ export class ParticleSound {
     const g = ctx.createGain();
     const g2 = ctx.createGain();
     const peak = vel * 0.22 * (V.gain ?? 1);
-    const atk = V.attack ?? 0.004;
+    // Attack: from struck to bowed, notes swelling in.
+    const atk = Math.max(V.attack ?? 0.004, P.attack * Math.min(0.35, decay * 0.4));
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(peak, t + atk);
     g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
@@ -731,7 +851,7 @@ export class ParticleSound {
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
     lp.Q.value = B.q;
-    const cut = B.cut * (1 + this.energy * B.open);
+    const cut = B.cut * (1 + this.energy * B.open) * 2 ** (this.p.bassTone * 1.5);
     lp.frequency.setValueAtTime(Math.min(15000, cut * B.from), t);
     lp.frequency.exponentialRampToValueAtTime(cut, t + B.sweep);
     const g = ctx.createGain();
@@ -769,70 +889,87 @@ export class ParticleSound {
     };
   }
 
-  private kick(k: number, when: number) {
+  // A pitched body that drops and dies away: kicks and toms.
+  private body(when: number, f0: number, f1: number, drop: number, decay: number, amp: number, type: OscillatorType = 'sine', wet = 0.1) {
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
     const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(150, t);
-    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f1, t + drop);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.75 * k, t + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    g.gain.exponentialRampToValueAtTime(amp, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
     o.connect(g);
-    this.send(g, 0.1, false);
+    this.send(g, wet, false);
     o.start(t);
-    o.stop(t + 0.4);
+    o.stop(t + decay + 0.05);
     o.onended = () => g.disconnect();
   }
 
-  private snare(k: number, when: number) {
+  // Filtered noise with an envelope: snares, claps, hats, brushes, shakers.
+  private hiss(when: number, type: BiquadFilterType, f: number, q: number, attack: number, decay: number, amp: number, pan = 0, wet = 0.2) {
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'highpass';
-    bp.frequency.value = 1200;
+    const fl = ctx.createBiquadFilter();
+    fl.type = type;
+    fl.frequency.value = f;
+    fl.Q.value = q;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.35 * k, t + 0.003);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    const o = ctx.createOscillator();
-    o.type = 'triangle';
-    o.frequency.setValueAtTime(220, t);
-    o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0.3 * k, t);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
-    src.connect(bp).connect(g);
-    o.connect(og).connect(g);
-    this.send(g, 0.35, false);
-    src.start(t, Math.random() * 0.7, 0.22);
-    o.start(t);
-    o.stop(t + 0.12);
-    src.onended = () => g.disconnect();
+    g.gain.exponentialRampToValueAtTime(amp, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+    const pn = ctx.createStereoPanner();
+    pn.pan.value = pan;
+    src.connect(fl).connect(g).connect(pn);
+    this.send(pn, wet, false);
+    src.start(t, Math.random() * 0.7, attack + decay + 0.02);
+    src.onended = () => pn.disconnect();
+  }
+
+  private kick(k: number, when: number) {
+    switch (this.p.kit) {
+      case '808': return this.body(when, 120, 46, 0.06, 0.9, 0.8 * k);
+      case 'punchy':
+        this.hiss(when, 'highpass', 3000, 0.7, 0.001, 0.012, 0.3 * k, 0, 0);
+        return this.body(when, 190, 50, 0.05, 0.28, 0.8 * k);
+      case 'brush': return this.body(when, 95, 55, 0.08, 0.3, 0.6 * k);
+      case 'hand': return this.body(when, 120, 92, 0.1, 0.42, 0.6 * k, 'sine', 0.25); // low tom
+      default: return this.body(when, 150, 45, 0.12, 0.35, 0.75 * k);
+    }
+  }
+
+  private snare(k: number, when: number) {
+    switch (this.p.kit) {
+      case '808': // a clap: three quick bursts and a tail
+        for (let j = 0; j < 3; j++) this.hiss(when + j * 0.011, 'bandpass', 1400, 1.2, 0.001, 0.02, 0.4 * k, 0, 0.3);
+        return this.hiss(when + 0.03, 'bandpass', 1300, 1, 0.002, 0.18, 0.3 * k, 0, 0.4);
+      case 'punchy':
+        this.body(when, 260, 190, 0.05, 0.12, 0.35 * k, 'triangle', 0.2);
+        return this.hiss(when, 'highpass', 1800, 0.7, 0.001, 0.16, 0.45 * k, 0, 0.3);
+      case 'brush': return this.hiss(when, 'bandpass', 3200, 0.6, 0.035, 0.22, 0.4 * k, -0.2, 0.3); // a swish
+      case 'hand': // rim / clave
+        this.body(when, 1800, 1700, 0.02, 0.06, 0.25 * k, 'sine', 0.3);
+        return this.hiss(when, 'highpass', 4000, 0.7, 0.001, 0.01, 0.15 * k, 0, 0.1);
+      default:
+        this.body(when, 220, 160, 0.08, 0.1, 0.3 * k, 'triangle', 0.35);
+        return this.hiss(when, 'highpass', 1200, 0.7, 0.003, 0.2, 0.35 * k, 0, 0.35);
+    }
   }
 
   private hat(k: number, when: number, open: boolean) {
-    const ctx = this.ctx;
-    const t = ctx.currentTime + when;
-    const len = open ? 0.22 : 0.045;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 7000;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.22 * k, t + 0.002);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    const pn = ctx.createStereoPanner();
-    pn.pan.value = 0.3;
-    src.connect(hp).connect(g).connect(pn);
-    this.send(pn, 0.15, false);
-    src.start(t, Math.random() * 0.8, len + 0.02);
-    src.onended = () => pn.disconnect();
+    switch (this.p.kit) {
+      case '808': return this.hiss(when, 'highpass', 8500, 0.7, 0.001, open ? 0.35 : 0.035, 0.22 * k, 0.3, 0.1);
+      case 'punchy': return this.hiss(when, 'bandpass', 10000, 1.5, 0.001, open ? 0.25 : 0.03, 0.3 * k, 0.3, 0.1);
+      case 'brush': // a ride cymbal ping
+        this.body(when, 3150, 3100, 0.1, open ? 0.9 : 0.5, 0.05 * k, 'sine', 0.4);
+        return this.hiss(when, 'highpass', 7000, 0.7, 0.001, 0.25, 0.06 * k, 0.4, 0.3);
+      case 'hand': return this.hiss(when, 'bandpass', 6500, 1, 0.012, open ? 0.15 : 0.06, 0.18 * k, 0.35, 0.1); // shaker
+      default: return this.hiss(when, 'highpass', 7000, 0.7, 0.002, open ? 0.22 : 0.045, 0.22 * k, 0.3, 0.15);
+    }
   }
 
   frame(F: SoundFrame) {
@@ -899,8 +1036,14 @@ export class ParticleSound {
     this.padLfo += F.dt * 0.6;
     const breath = 0.65 + 0.35 * Math.sin(this.padLfo);
     const lively = Math.max(0, Math.min(1, (this.energy - 0.04) * 3));
-    this.padGain.gain.setTargetAtTime(P.pad * 0.3 * lively * breath * (0.4 + 0.6 * room), t, 0.4);
-    if (P.pad > 0) this.padFilter.frequency.setTargetAtTime(400 + this.energy * 1800 + F.spread * 400, t, 0.5);
+    this.padGain.gain.setTargetAtTime(P.pad * 0.3 * PAD_GAIN[P.padSound] * lively * breath * (0.4 + 0.6 * room), t, 0.4);
+    if (P.pad > 0) {
+      const pk = P.padSound;
+      const f = pk === 'choir' ? 650 + this.energy * 500 + Math.sin(this.padLfo * 0.37) * 180 : (400 + this.energy * 1800 + F.spread * 400) * (pk === 'organ' ? 2.2 : pk === 'shimmer' ? 3 : pk === 'strings' ? 1.3 : 1);
+      this.padFilter.frequency.setTargetAtTime(f, t, 0.5);
+    }
+    // Lo-fi crackle: the odd dusty click.
+    if (P.lofi > 0 && Math.random() < F.dt * P.lofi * 5) this.grain(Math.random() * w, h * 0.05, w, h, P.lofi * 0.5, 1, 0.002, 0.05);
 
     // Strings: vertical lines across the screen; a particle crossing one
     // plucks it (a chord tone, higher in the upper half of the screen).
