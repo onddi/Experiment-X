@@ -14284,11 +14284,11 @@ function renderSoundPresets(): HTMLElement {
     acts.className = 'fx-look-acts';
     const shuf = document.createElement('button');
     shuf.type = 'button';
-    shuf.textContent = '⚄ Shuffle sound';
+    shuf.textContent = '⚄ Shuffle';
     shuf.addEventListener('click', shuffleSound);
     const save = document.createElement('button');
     save.type = 'button';
-    save.textContent = '+ Save this sound';
+    save.textContent = '+ Save';
     save.addEventListener('click', () => {
       const name = prompt('Name this sound', `My sound ${mine.length + 1}`)?.trim();
       if (!name) return;
@@ -14297,7 +14297,22 @@ function renderSoundPresets(): HTMLElement {
       writeJson(SND_PRESETS_KEY, [[name, look], ...mySoundPresets().filter(([n]) => n !== name)]);
       draw();
     });
-    acts.append(shuf, save);
+    // Clear: every sound setting back to its default (volume stays as it is).
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.textContent = 'Clear';
+    clear.title = 'Every sound setting back to its default, beat edits and your own chords too';
+    clear.addEventListener('click', () => {
+      const S = settings as unknown as Record<string, unknown>;
+      const was = Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, S[k]]));
+      Object.assign(settings, Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, DEFAULTS[k]])));
+      changed(new Set(SND_LOOK_KEYS));
+      showToast('Sound cleared to the defaults', ['Undo', () => {
+        Object.assign(settings, was);
+        changed(new Set(SND_LOOK_KEYS));
+      }]);
+    });
+    acts.append(shuf, save, clear);
     box.append(chips, acts);
   };
   refreshers.push(() => box.isConnected && draw());
