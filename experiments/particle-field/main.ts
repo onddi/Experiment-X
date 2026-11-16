@@ -18873,7 +18873,7 @@ const LAYER_OF: Record<string, LayerId | null> = {
   presets: 'perform', mine: 'perform', timeline: 'perform', xfader: 'perform', transitions: 'perform', macros: 'perform', play: 'perform', anim: 'perform', vj: 'perform',
   quality: null, view: null, record: null, device: null, actions: null,
 };
-type BPick = { name: string; on: () => boolean; patch?: Partial<Settings>; go?: () => void };
+type BPick = { name: string; on: () => boolean; patch?: Partial<Settings>; go?: () => void; swatch?: string };
 type BGroup = { label?: string; picks: BPick[]; tune?: string };
 type BLayer = {
   id: LayerId;
@@ -18892,6 +18892,12 @@ type BLayer = {
 const bHas = (p: Partial<Settings>) => Object.entries(p).every(([k, v]) => (settings as unknown as Record<string, unknown>)[k] === v);
 const bPick = (name: string, patch: Partial<Settings>): BPick => ({ name, patch, on: () => bHas(patch) });
 const secSum = (id: string) => (CONTROLS.find((c) => c.kind === 'section' && c.id === id) as Extract<Control, { kind: 'section' }> | undefined)?.summary?.() ?? '';
+// Every option of a choice, the popular ones first.
+function bAll<K extends keyof Settings>(key: K, options: [string, string][], first: string[] = [], names: Record<string, string> = {}): BPick[] {
+  const order = [...first.filter((v) => options.some(([k]) => k === v)), ...options.map(([k]) => k).filter((k) => !first.includes(k))];
+  return order.map((v) => bPick(names[v] ?? label(options, v), { [key]: v } as Partial<Settings>));
+}
+const palSwatch = (p: PaletteDef) => `linear-gradient(90deg, ${p.stops.map(([h, s, l]) => `hsl(${h} ${s}% ${l}%)`).join(', ')})`;
 const MOTION_PICKS: [string, Partial<Settings>][] = [
   ['Still', { flow: 0, gravity: 0, wind: 0, flock: 0 }],
   ['Drift', { flow: 0.3, flowType: 'waves', gravity: 0, wind: 0, flock: 0 }],
@@ -18909,8 +18915,11 @@ const LAYERS: BLayer[] = [
     id: 'particles', name: 'Particles', color: '#ecebf5', q: 'What is each particle?', about: 'Dots, glyphs, threads: what one particle is, and how many.',
     used: () => true,
     sum: () => `${label(RENDERS, settings.render)} · ${settings.count.toLocaleString()}`,
-    groups: () => [{ picks: [bPick('Dots', { render: 'dots' }), bPick('Glyphs', { render: 'glyphs' }), bPick('Threads', { render: 'threads' }), bPick('Ribbons', { render: 'ribbons' }), bPick('Sparkles', { render: 'sparkles' }), bPick('Comets', { render: 'comets' })] }],
-    extras: () => ['glyphSet', 'count', 'size'],
+    groups: () => [
+      { picks: bAll('render', RENDERS, ['dots', 'glyphs', 'threads', 'ribbons', 'sparkles', 'comets', 'glow', 'neon', 'ink']) },
+      ...(settings.render === 'glyphs' ? [{ label: 'Characters', picks: bAll('glyphSet', [...Object.entries(GLYPH_SETS).map(([k, g]) => [k, g.label] as [string, string]), ['custom', 'Your own text']]) }] : []),
+    ],
+    extras: () => ['glyphText', 'count', 'size', 'trail'],
   },
   {
     id: 'form', name: 'Form', color: '#7be0c3', q: 'Do they form something?', about: 'A word, an icon, a 3D solid or you: a shape the particles are pulled home to.',
@@ -18927,6 +18936,7 @@ const LAYERS: BLayer[] = [
         bPick('An icon', { shape: 'icon' }),
         bPick('A pattern', { shape: 'pattern' }),
         bPick('3D solid', { shape: 'solid' }),
+        bPick('Geometric', { shape: 'geo' }),
         { name: 'An image', on: () => settings.shape === 'image', go: () => {
           bApply({ shape: 'image' });
           if (!shapeImage) imageInput.click();
@@ -18936,18 +18946,26 @@ const LAYERS: BLayer[] = [
           bApply({ shape: 'drawing' });
           if (!drawStrokes.length && !drawMode) toggleDraw();
         } },
+        bPick('A sequence', { shape: 'sequence' }),
+        bPick('Music or clock', { shape: 'live' }),
         { name: 'Fountain', on: () => !hasShape() && hasEmitter(), patch: { shape: 'none', emitter: 'point', emitMode: 'steady', emitX: 0.5, emitY: 0.75, lifespan: 5, lifeFade: 'swell', launchSpeed: 2.5, launchDir: 270, launchSpread: 50 } },
       ],
-    }],
-    extras: () => ['shapeText', 'shapeIcon', 'shapePattern', 'shapeSolid', 'shapeSize', 'homeStrength'],
+    },
+    ...(({ icon: [{ label: 'Icon', picks: bAll('shapeIcon', ICON_SHAPES) }], solid: [{ label: 'Solid', picks: bAll('shapeSolid', SOLID_SHAPES) }], pattern: [{ label: 'Pattern', picks: bAll('shapePattern', PATTERNS) }], geo: [{ label: 'Shape', picks: bAll('shapeGeo', GEO_SHAPES) }], live: [{ label: 'Show', picks: bAll('shapeLive', LIVE_SHAPES) }] } as Record<string, BGroup[]>)[settings.shape] ?? []),
+    ...(!hasShape() && hasEmitter() ? [{ label: 'Born from', picks: bAll('emitter', EMITTERS.filter(([k]) => k !== 'none')) }] : []),
+    ],
+    extras: () => ['shapeText', 'shapeSeq', 'imageMode', 'shapeSize', 'homeStrength'],
     off: () => ({ shape: 'none', emitter: 'none', lifespan: 0, launchSpeed: 0 }),
   },
   {
     id: 'motion', name: 'Motion', color: '#6fb6ff', q: 'How do they move?', about: 'Currents, gravity, flocking: what carries the particles around.',
     used: () => motionName() !== 'Still' || !!settings.wells,
     sum: () => `${motionName() ?? 'Custom'} · ${settings.speed.toFixed(1)}× speed`,
-    groups: () => [{ picks: MOTION_PICKS.map(([n, p]) => bPick(n, p)) }],
-    extras: () => ['speed', 'flow'],
+    groups: () => [
+      { picks: MOTION_PICKS.map(([n, p]) => bPick(n, p)) },
+      ...(settings.flow > 0 ? [{ label: 'Current', picks: bAll('flowType', FLOW_TYPES) }] : []),
+    ],
+    extras: () => ['speed', 'flow', 'gravity', 'flock'],
     off: () => ({ flow: 0, gravity: 0, wind: 0, flock: 0, wells: '' }),
   },
   {
@@ -18955,10 +18973,10 @@ const LAYERS: BLayer[] = [
     used: () => true,
     sum: () => secSum('colour'),
     groups: () => [
-      { label: 'Palette', picks: (['aurora', 'ice', 'ember', 'neon', 'mono', 'toxic'] as Settings['palette'][]).map((p) => bPick(PALETTES[p as keyof typeof PALETTES].label, { palette: p })) },
-      { label: 'Colour by', picks: ([['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['vertical', 'Height'], ['radial', 'Centre glow'], ['cycle', 'Waves']] as [Settings['colorBy'], string][]).map(([k, n]) => bPick(n, { colorBy: k })) },
+      { label: 'Palette', picks: [...(Object.entries(PALETTES) as [Settings['palette'], PaletteDef][]).map(([k, p]): BPick => ({ ...bPick(p.label, { palette: k }), swatch: palSwatch(p) })), bPick('Your own', { palette: 'custom' })] },
+      { label: 'Colour by', picks: bAll('colorBy', COLOR_BY, ['palette', 'speed', 'direction', 'vertical', 'radial', 'cycle'], { palette: 'Random', direction: 'Heading', vertical: 'Height', cycle: 'Waves' }) },
     ],
-    extras: () => ['hueShift'],
+    extras: () => ['customColors', 'customBg', 'hueShift'],
   },
   {
     id: 'depth', name: 'Depth & light', color: '#b48cff', q: 'Flat or deep?', about: 'Near and far layers: near particles glow, far ones sink into fog. 3D solids get light and shade.',
@@ -19001,7 +19019,7 @@ const LAYERS: BLayer[] = [
     groups: () => [{
       picks: [
         { name: 'None', on: () => !gfxOn() && !lensUsed(), go: () => bApply({ ...fxLookOf({}), ...LENS_OFF }) },
-        ...FX_LOOKS.filter(([n]) => ['Dreamy', 'VHS night', 'Terminal', 'Warp tunnel', 'Kaleidoscope', 'Neon sign', 'Ghost trails', 'Film noir'].includes(n)).map(([n, l]): BPick => ({ name: n, on: () => fxLookName() === n, go: () => bApply(fxLookOf(l)) })),
+        ...[...myFxLooks(), ...FX_LOOKS].map(([n, l]): BPick => ({ name: n, on: () => fxLookName() === n, go: () => bApply(fxLookOf(l)) })),
       ],
     }],
     extras: () => ['gfxBloom'],
@@ -19138,6 +19156,8 @@ function buildRelease() {
 }
 function closeBuild() {
   if (!buildEl) return;
+  buildReturnCards();
+  buildMore = null;
   buildEl.remove();
   buildEl = null;
   document.body.classList.remove('building');
@@ -19183,7 +19203,7 @@ function buildStructure() {
   const ls = LAYERS.map((l) => `${l.id}:${l.used() ? 1 : 0}${buildHidden.has(l.id) ? 'h' : ''}`).join(',');
   const open = buildMode === 'steps' ? LAYERS[buildStep] : buildOpen ? layerById(buildOpen) : null;
   const ex = open ? open.extras().filter((k) => buildCtl(k)).join(',') + `|${open.groups().map((g) => g.picks.length).join(',')}` : '';
-  return `${buildPeek}|${buildMode}|${buildStep}|${buildOpen}|${ls}|${ex}|${gpuFx.ok}|${!!currentMine}|${S.shape === 'text'}`;
+  return `${buildPeek}|${buildMore}|${buildMode}|${buildStep}|${buildOpen}|${ls}|${ex}|${gpuFx.ok}|${!!currentMine}|${S.shape === 'text'}`;
 }
 function buildPaint() {
   if (!buildEl) return;
@@ -19196,6 +19216,7 @@ function buildPaint() {
 }
 function buildDraw() {
   const el = buildEl!;
+  buildReturnCards();
   el.innerHTML = '';
   el.classList.toggle('steps', buildMode === 'steps');
   el.classList.toggle('peek', buildPeek);
@@ -19380,16 +19401,23 @@ function buildBody(l: BLayer) {
       h.className = 'bd-glabel';
       h.innerHTML = '<span></span>';
       h.querySelector('span')!.textContent = g.label ?? '';
-      if (g.tune) h.append(buildTune(g.tune, g.picks.length ? 'Fine-tune' : g.tune === 'links' ? 'Connections and moving settings' : 'Open'));
+      if (g.tune) h.append(buildMoreBtn(`${l.id}:${g.tune}`, g.picks.length ? 'All settings' : 'Connections and moving settings'));
       box.append(h);
     }
     if (g.picks.length) {
       const grid = document.createElement('div');
       grid.className = 'bd-picks';
+      // A long list scrolls sideways in two rows, so the sheet stays short.
+      grid.classList.toggle('many', g.picks.length > 9);
       for (const p of g.picks) {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = p.name;
+        if (p.swatch) {
+          const sw = document.createElement('i');
+          sw.style.background = p.swatch;
+          b.prepend(sw);
+        }
         b.addEventListener('click', () => {
           buildHidden.delete(l.id);
           if (p.go) p.go();
@@ -19407,32 +19435,75 @@ function buildBody(l: BLayer) {
     const c = buildCtl(k);
     if (c) body.append(buildExtra(c));
   }
-  // Fine-tune: the layer's cards in the Studio (Reacts to tunes per input).
-  if (l.id !== 'reacts') {
-    const cards = layerCards(l.id);
-    if (cards.length) {
-      const ft = document.createElement('div');
-      ft.className = 'bd-tune';
-      const t = document.createElement('span');
-      t.textContent = 'Fine-tune';
-      ft.append(t);
-      for (const c of cards) ft.append(buildTune(c.id, c.label));
-      body.append(ft);
-    }
+  // Every setting of the layer, in place: its own Studio cards, lent to the sheet.
+  if (l.id !== 'reacts' && layerCards(l.id).length) {
+    const ft = document.createElement('div');
+    ft.className = 'bd-tune';
+    ft.append(buildMoreBtn(l.id, `All ${l.name} settings`));
+    body.append(ft);
   }
+  if (buildMore && buildMore.split(':')[0] === l.id) body.append(buildCards(buildMore));
+  // Scroll each sideways list to its current pick.
+  requestAnimationFrame(() => body.querySelectorAll<HTMLElement>('.bd-picks.many').forEach((g) => {
+    const on = g.querySelector<HTMLElement>('button.on');
+    if (on) g.scrollLeft = on.offsetLeft - g.clientWidth / 2 + on.offsetWidth / 2;
+  }));
   return body;
 }
-function buildTune(id: string, text: string) {
+// Reacts to lends its cards per input.
+const REACT_CARDS: Record<string, string[]> = {
+  audio: ['audio', 'vibe', 'mgmusic', 'drums', 'drops', 'bands', 'mcolour', 'camera', 'viewfx', 'mmotion', 'mwords', 'rapflow', 'gfxmusic'],
+  pointer: ['pointer'],
+  hands: ['cam', 'hands', 'mgcam', 'facefx', 'caminputs'],
+  sound: ['sound'],
+  links: ['links'],
+};
+function buildMoreCards(key: string) {
+  const [lid, tune] = key.split(':') as [LayerId, string?];
+  const all = layerCards(lid);
+  return tune ? all.filter((c) => REACT_CARDS[tune]?.includes(c.id)) : all;
+}
+let buildMore: string | null = null;
+function buildMoreBtn(key: string, text: string) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'bd-link';
-  b.textContent = `${text} ›`;
+  b.className = 'bd-link bd-more';
+  const open = buildMore === key;
+  b.setAttribute('aria-expanded', String(open));
+  b.textContent = open ? 'Fewer settings ▴' : `${text} ▾`;
   b.addEventListener('click', () => {
-    closeBuild();
-    openSection(id);
-    uPaint(true);
+    buildMore = open ? null : key;
+    buildPaint();
+    if (!open) requestAnimationFrame(() => buildEl?.querySelector('.bd-cards')?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
   });
   return b;
+}
+// The Studio's own cards, moved into the sheet while it shows them and put
+// back where they were after; every control on them works as in the Studio.
+const buildLent: [HTMLElement, Comment, boolean][] = [];
+function buildReturnCards() {
+  for (const [sec, mark, other] of buildLent.splice(0)) {
+    mark.replaceWith(sec);
+    sec.classList.toggle('other-tab', other);
+  }
+}
+function buildCards(key: string) {
+  const box = document.createElement('div');
+  box.className = 'bd-cards';
+  for (const c of buildMoreCards(key)) {
+    const sec = document.querySelector<HTMLElement>(`#controls section[data-sec="${c.id}"]`);
+    if (!sec) continue;
+    const mark = document.createComment(`build:${c.id}`);
+    sec.replaceWith(mark);
+    buildLent.push([sec, mark, sec.classList.contains('other-tab')]);
+    sec.classList.remove('other-tab', 'closed');
+    box.append(sec);
+  }
+  // As in the Studio's folders: a card's header doesn't fold it here.
+  box.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('.group-head') && !(e.target as HTMLElement).closest('button, input, label, select')) e.stopImmediatePropagation();
+  }, true);
+  return box;
 }
 const picksOn: [HTMLButtonElement, BPick][] = [];
 const extrasOn: [HTMLElement, () => void][] = [];

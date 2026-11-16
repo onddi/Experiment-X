@@ -2778,6 +2778,16 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .bd-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .bd-picks button { min-height: 44px; padding: 4px 6px; border-radius: 12px; border: 1px solid rgb(255 255 255 / 0.1); background: rgb(255 255 255 / 0.03); font-size: 13px; font-weight: 600; line-height: 1.2; }
 .bd-picks button:hover { background: rgb(255 255 255 / 0.08); }
+.bd-picks.many { grid-template-columns: none; grid-template-rows: repeat(2, auto); grid-auto-flow: column; grid-auto-columns: minmax(96px, max-content); overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; scroll-padding: 0 12px; }
+.bd-picks.many::-webkit-scrollbar { display: none; }
+.bd-picks.many button { padding: 4px 12px; white-space: nowrap; }
+.bd-picks button i { display: block; height: 6px; margin: 0 auto 5px; width: 100%; min-width: 64px; border-radius: 3px; }
+.bd-more { font-weight: 600 !important; }
+.bd-cards { display: flex; flex-direction: column; gap: 8px; margin: 2px -4px 0; }
+.bd-cards .group-head .chev { display: none; }
+.bd-cards .more-body[hidden] { display: block; }
+.bd-cards .more-toggle { pointer-events: none; }
+.bd-cards .more-toggle .chev { display: none; }
 .bd-picks button.on { border: 1.5px solid var(--lc, var(--accent)); background: color-mix(in srgb, var(--lc, var(--accent)) 18%, transparent); color: #fff; }
 .build-sheet.steps { --lc: var(--accent); }
 .bd-x { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 13px; }
