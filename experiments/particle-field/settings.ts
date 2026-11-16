@@ -445,7 +445,7 @@ export interface Settings {
   gfxSplit: number;
   gfxRays: number;
   gfxFlare: number;
-  gfxTint: 'white' | 'warm' | 'cool' | 'pink' | 'green';
+  gfxTint: 'white' | 'warm' | 'cool' | 'pink' | 'green' | 'gold' | 'amber' | 'red' | 'rose' | 'violet' | 'blue' | 'ice' | 'teal' | 'mint' | 'lime';
   gfxBloomKick: boolean;
   gfxFeedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt' | 'spiral' | 'spread';
   gfxZoom: number;

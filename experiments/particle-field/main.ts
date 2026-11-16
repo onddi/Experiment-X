@@ -6546,7 +6546,7 @@ let gfxGlitchNext = 0;
 let gfxInvertEnv = 0;
 let gfxHue = 0;
 let gfxLastT = 0;
-const GFX_TINTS: Record<Settings['gfxTint'], [number, number, number]> = { white: [1, 1, 1], warm: [1.15, 0.78, 0.45], cool: [0.55, 0.85, 1.25], pink: [1.25, 0.5, 0.95], green: [0.5, 1.2, 0.6] };
+const GFX_TINTS: Record<Settings['gfxTint'], [number, number, number]> = { white: [1, 1, 1], warm: [1.15, 0.78, 0.45], cool: [0.55, 0.85, 1.25], pink: [1.25, 0.5, 0.95], green: [0.5, 1.2, 0.6], gold: [1.2, 0.95, 0.4], amber: [1.25, 0.65, 0.25], red: [1.3, 0.4, 0.35], rose: [1.2, 0.7, 0.8], violet: [0.85, 0.5, 1.3], blue: [0.45, 0.6, 1.35], ice: [0.75, 1.0, 1.2], teal: [0.4, 1.1, 1.05], mint: [0.65, 1.2, 0.85], lime: [0.85, 1.25, 0.35] };
 // The scene's own palette as two grade colours: its background (lifted a touch) and its brightest colour.
 function gfxSceneGrade(): [[number, number, number], [number, number, number]] {
   const P = pal();
@@ -9197,7 +9197,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gfxSplit', label: 'Colour split', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v / 2)) },
   { kind: 'range', key: 'gfxRays', label: 'Light rays', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'gfxFlare', label: 'Film flare', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'select', key: 'gfxTint', label: 'Glow colour', options: [['white', 'As it is'], ['warm', 'Warm'], ['cool', 'Cool'], ['pink', 'Pink'], ['green', 'Green']], show: () => settings.gfxBloom > 0 || settings.gfxFlare > 0 },
+  { kind: 'select', key: 'gfxTint', label: 'Glow colour', options: [['white', 'As it is'], ['warm', 'Warm'], ['cool', 'Cool'], ['gold', 'Gold'], ['amber', 'Amber'], ['red', 'Red'], ['rose', 'Rose'], ['pink', 'Pink'], ['violet', 'Violet'], ['blue', 'Deep blue'], ['ice', 'Ice'], ['teal', 'Teal'], ['mint', 'Mint'], ['green', 'Green'], ['lime', 'Lime']], show: () => settings.gfxBloom > 0 || settings.gfxFlare > 0 },
   { kind: 'section', id: 'gfxfeed', label: 'Feedback', tab: 'fx',
     about: 'The last frame is drawn back into the next one. Tunnel zooms and turns it into an endless spiral; Mirror does the same, reflected left to right; Spiral colours drifts the colour on every pass; Smear pushes trails along a slow current; Melt lets them drip down; Spread lets every glow ripple outward.',
     lock: ['gfxFeedback', 'gfxZoom', 'gfxSpin', 'gfxFlow', 'gfxLength'],
