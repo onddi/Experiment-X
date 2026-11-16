@@ -422,7 +422,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -8148,6 +8148,7 @@ type ControlBody =
   | { kind: 'swatch' }
   | { kind: 'audio' };
 
+const CHIME_SOUNDS: [string, string][] = [['same', 'Like the strings'], ['wind', 'Wind chimes'], ['celesta', 'Celesta'], ['tubular', 'Tubular bells'], ['crystal', 'Crystal'], ['tri', 'Triangle'], ['gong', 'Gong'], ['drop', 'Water drops'], ['wood', 'Wood block'], ['bell', 'Bell'], ['glass', 'Glass'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['kalimba', 'Kalimba'], ['marimba', 'Marimba'], ['steel', 'Steel drum']];
 const PAD_SOUNDS: [string, string][] = [['soft', 'Soft'], ['warm', 'Warm analog'], ['strings', 'Strings'], ['bowed', 'Bowed'], ['tape', 'Tape (wobbly)'], ['glass', 'Glass'], ['shimmer', 'Shimmer'], ['air', 'Air'], ['choir', 'Choir'], ['organ', 'Organ'], ['dark', 'Dark drone']];
 const BASS_SOUNDS: [string, string][] = [
   ['synth', 'Synth (two saws)'], ['moog', 'Analog (fat)'], ['pulse', 'Pulse (hollow)'], ['sub', 'Sub (deep)'], ['808', '808 (long, slides)'],
@@ -9462,6 +9463,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndSeq', label: 'Steps (rhythm)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndAccents', label: 'Accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndHits', label: 'Bounce chimes', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'select', key: 'sndHitSound', label: 'Chime sound', options: CHIME_SOUNDS, show: () => settings.sndHits > 0 },
   { kind: 'note', text: 'Chimes need something to bounce off: Off-screen set to Bounce, or obstacles.', show: () => settings.sndHits > 0 && settings.edges !== 'bounce' && settings.obstacles === 'none' },
   { kind: 'range', key: 'sndGrain', label: 'Grains', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndScan', label: 'Scanline', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -16130,7 +16132,7 @@ const SND_TRACKS: SndTrack[] = [
   { name: 'Strings', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndOctave', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
   { name: 'Pad', key: 'sndDrone', dot: '#b48cff', keys: ['sndPadSound', 'sndPadPump'], sub: () => optLabel(PAD_SOUNDS, settings.sndPadSound) + (settings.sndPadPump > 0 ? ' · pumping' : '') },
   { name: 'Steps', key: 'sndSeq', dot: '#6fd3b0', keys: [], sub: () => `a rhythm on ${optLabel(TIMBRES, settings.sndTimbre).toLowerCase()}` },
-  { name: 'Chimes', key: 'sndHits', dot: '#9fe3f0', keys: [], notes: ['Chimes need'], sub: () => 'when particles bounce' },
+  { name: 'Chimes', key: 'sndHits', dot: '#9fe3f0', keys: ['sndHitSound'], notes: ['Chimes need'], sub: () => (settings.sndHitSound === 'same' ? 'when particles bounce' : `${optLabel(CHIME_SOUNDS, settings.sndHitSound)} · on bounces`) },
   { name: 'Grains', key: 'sndGrain', dot: '#7c8aa6', keys: [], sub: () => 'a crackle from the crowd' },
   { name: 'Scanline', key: 'sndScan', dot: '#8fa8ff', keys: ['sndScanSecs'], sub: () => `sweeps every ${settings.sndScanSecs} s` },
   { name: 'Touch', key: 'sndTouch', dot: '#ef6fa8', keys: ['sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct'], notes: ['Each finger'], sub: () => optLabel(TOUCH_SOUNDS, settings.sndTouchSound) },
@@ -17892,7 +17894,7 @@ function sndParams(): SoundParams {
     sndReverb: cl(R.sndReverb * space), sndEcho: cl(R.sndEcho * space), sndChorus: cl(R.sndChorus * space),
     sndBass: cl(R.sndBass * groove + lift), sndDrums: cl(R.sndDrums * groove + lift), sndSwing: cl(R.sndSwing + (R.sndMGroove - 0.5) * 0.4),
   });
-  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
+  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, hitSound: S.sndHitSound, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
     echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };

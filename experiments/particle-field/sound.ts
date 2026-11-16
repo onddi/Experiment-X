@@ -16,7 +16,9 @@
 // notes is capped so thousands of particles can't turn into noise.
 
 export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
-export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
+export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop';
+// The chimes' own sound, or 'same' to play whatever the strings play.
+export type HitSound = 'same' | Voice;
 export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
@@ -108,6 +110,15 @@ const VOICES: Record<Voice, VoiceDef> = {
   flute: { type: 'sine', ratio: 2, level: 0.12, fade: 1, decay: 0.9, attack: 0.07, vibrato: 12, octave: 1, gain: 0.8 },
   synth: { type: 'sawtooth', ratio: 1.006, level: 0.6, fade: 1, decay: 0.6, sweep: [3200, 350], gain: 0.95 },
   koto: { type: 'sawtooth', ratio: 2, level: 0.2, fade: 0.15, decay: 1.1, sweep: [2600, 500], bend: 40, gain: 1 },
+  // Chime sounds: bright, ringing, a little inharmonic.
+  wind: { type: 'sine', ratio: 5.4, level: 0.3, fade: 0.35, decay: 2.8, octave: 1, wobble: [3, 0.12], gain: 1.1 },
+  celesta: { type: 'sine', ratio: 4, level: 0.22, fade: 0.12, decay: 1.1, octave: 1, fm: [1, 0.25], gain: 1.1 },
+  tubular: { type: 'sine', ratio: 2.0, level: 0.4, fade: 0.45, decay: 3.2, fm: [3.5, 0.3], gain: 1.1 },
+  crystal: { type: 'sine', ratio: 5.4, level: 0.4, fade: 0.5, decay: 2.5, octave: 1, wobble: [7, 0.15], gain: 0.95 },
+  tri: { type: 'sine', ratio: 5.1, level: 0.5, fade: 0.6, decay: 2.2, octave: 2, fm: [7.3, 0.3], gain: 0.8 },
+  gong: { type: 'sine', ratio: 1.48, level: 0.5, fade: 0.8, decay: 3.5, octave: -1, fm: [1.41, 0.8], wobble: [0.8, 0.25], gain: 1.3 },
+  wood: { type: 'triangle', ratio: 2.7, level: 0.6, fade: 0.1, decay: 0.18, gain: 2.6 },
+  drop: { type: 'sine', ratio: 2, level: 0.1, fade: 0.2, decay: 0.3, octave: 1, bend: -700, gain: 2 },
 };
 
 // Bass sounds, built like a synth patch: a few oscillators (detuned for
@@ -206,6 +217,7 @@ export interface SoundParams {
   pad: number;
   seq: number;
   hits: number;
+  hitSound: HitSound;
   grain: number;
   scan: number;
   scanSecs: number;
@@ -1999,7 +2011,7 @@ export class ParticleSound {
       let budget = 3;
       for (let k = 0; k < m && budget > 0; k += Math.max(1, Math.floor(m / 3))) {
         const x = H[k * 4], y = H[k * 4 + 1], v = H[k * 4 + 2], tn = H[k * 4 + 3];
-        this.note(this.degAt(y, h), P.hits * (0.45 + 0.55 * v) * room, (x / w) * 1.6 - 0.8, this.voiceFor(tn));
+        this.note(this.degAt(y, h), P.hits * (0.45 + 0.55 * v) * room, (x / w) * 1.6 - 0.8, P.hitSound && P.hitSound !== 'same' ? P.hitSound : this.voiceFor(tn));
         budget--;
       }
     }

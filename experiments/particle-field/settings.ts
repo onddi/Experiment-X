@@ -223,6 +223,7 @@ export interface Settings {
   sndSeq: number;
   sndAccents: number;
   sndHits: number;
+  sndHitSound: import('./sound.ts').HitSound;
   sndDrone: number;
   sndGrain: number;
   sndScan: number;
@@ -773,6 +774,7 @@ export const DEFAULTS: Settings = {
   sndSeq: 0,
   sndAccents: 0.6,
   sndHits: 0.5,
+  sndHitSound: 'same',
   sndDrone: 0.4,
   sndGrain: 0,
   sndScan: 0,
