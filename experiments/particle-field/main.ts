@@ -8491,6 +8491,26 @@ type ControlBody =
   | { kind: 'swatch' }
   | { kind: 'audio' };
 
+// How the top layer mixes into the base (CSS mix-blend-mode on its frame).
+const TOP_BLENDS: [Settings['topBlend'], string][] = [
+  ['normal', 'Normal'],
+  ['screen', 'Screen (light adds)'],
+  ['plus-lighter', 'Add (brighter)'],
+  ['lighten', 'Lighten'],
+  ['color-dodge', 'Dodge (hot glow)'],
+  ['overlay', 'Overlay (more contrast)'],
+  ['soft-light', 'Soft light'],
+  ['hard-light', 'Hard light'],
+  ['multiply', 'Multiply (only where both are)'],
+  ['darken', 'Darken'],
+  ['color-burn', 'Burn'],
+  ['difference', 'Difference'],
+  ['exclusion', 'Exclusion (softer difference)'],
+  ['hue', 'Hue (tints the base)'],
+  ['color', 'Colour (recolours the base)'],
+  ['saturation', 'Saturation'],
+  ['luminosity', 'Brightness only'],
+];
 const GRAIN_SOUNDS: [string, string][] = [['dust', 'Dust'], ['notes', 'Glitter notes'], ['rain', 'Rain'], ['bubbles', 'Bubbles'], ['vinyl', 'Vinyl crackle'], ['wood', 'Wood knocks']];
 const CHIME_SOUNDS: [string, string][] = [['same', 'Like the strings'], ['wind', 'Wind chimes'], ['celesta', 'Celesta'], ['tubular', 'Tubular bells'], ['crystal', 'Crystal'], ['tri', 'Triangle'], ['gong', 'Gong'], ['drop', 'Water drops'], ['wood', 'Wood block'], ['bell', 'Bell'], ['glass', 'Glass'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['kalimba', 'Kalimba'], ['marimba', 'Marimba'], ['steel', 'Steel drum']];
 const PAD_SOUNDS: [string, string][] = [['soft', 'Soft'], ['warm', 'Warm analog'], ['strings', 'Strings'], ['bowed', 'Bowed'], ['tape', 'Tape (wobbly)'], ['glass', 'Glass'], ['shimmer', 'Shimmer'], ['air', 'Air'], ['choir', 'Choir'], ['organ', 'Organ'], ['dark', 'Dark drone']];
@@ -9281,7 +9301,7 @@ const CONTROLS: Control[] = [
     summary: () => (settings.topScene ? topName(settings.topScene) : 'off') },
   { kind: 'select', key: 'topScene', label: 'Scene on top', options: TOP_SCENES },
   { kind: 'range', key: 'topOpacity', label: 'Opacity', min: 0.05, max: 1, step: 0.05, format: pct, show: () => !!settings.topScene },
-  { kind: 'select', key: 'topBlend', label: 'Blend', options: [['normal', 'Normal'], ['screen', 'Screen (light adds)'], ['plus-lighter', 'Add (brighter)'], ['lighten', 'Lighten'], ['difference', 'Difference']], show: () => !!settings.topScene },
+  { kind: 'select', key: 'topBlend', label: 'Blend', options: TOP_BLENDS, show: () => !!settings.topScene },
   { kind: 'toggle', key: 'topPointer', label: 'Your finger moves it too', show: () => !!settings.topScene },
   { kind: 'buttons', buttons: [['Edit this layer', () => topEdit(true)], ['Another scene', () => set('topScene', PRESETS[(Math.random() * PRESETS.length) | 0][0])]], show: () => !!settings.topScene },
 

@@ -312,7 +312,7 @@ export interface Settings {
   obsAlpha: number;
   topScene: string; // '' = no top layer
   topOpacity: number;
-  topBlend: 'normal' | 'screen' | 'lighten' | 'plus-lighter' | 'difference';
+  topBlend: 'normal' | 'screen' | 'lighten' | 'plus-lighter' | 'difference' | 'overlay' | 'soft-light' | 'hard-light' | 'color-dodge' | 'color-burn' | 'multiply' | 'darken' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
   topPointer: boolean;
   topSaved: string; // the top layer's own settings (JSON), kept with a saved scene
   obsCircles: string;
