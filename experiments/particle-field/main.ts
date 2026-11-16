@@ -16362,8 +16362,20 @@ function renderSoundPage(body: HTMLElement) {
     const id = `t:${t.key}`;
     if (det.childElementCount) {
       folds.push([id, wrap, det]);
-      name.addEventListener('click', () => setOpen(id));
-      chev.addEventListener('click', () => setOpen(id));
+      // Its settings may all be hidden (most show only while it plays):
+      // then there's nothing to open, so no arrow and the name taps the dot.
+      let empty = false;
+      name.addEventListener('click', () => (empty ? dot.click() : setOpen(id)));
+      chev.addEventListener('click', () => !empty && setOpen(id));
+      afterShow.push(() => {
+        empty = ![...det.children].some((c) => !(c as HTMLElement).hidden);
+        chev.classList.toggle('none', empty);
+        chev.tabIndex = empty ? -1 : 0;
+        if (empty) {
+          det.hidden = true;
+          wrap.classList.remove('open');
+        } else paintFolds();
+      });
     } else {
       det.hidden = true;
       chev.classList.add('none');
