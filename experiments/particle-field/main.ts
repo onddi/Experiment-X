@@ -2696,7 +2696,12 @@ function renderLinks() {
           drawn = formatLinks(links);
           set('links', drawn as never);
         });
-        bottom.append(amt, out);
+        const sw = document.createElement('div');
+        sw.className = 'link-amt';
+        const nm = document.createElement('span');
+        nm.textContent = 'Strength';
+        sw.append(nm, amt, out);
+        bottom.append(fillRange(sw, amt));
       }
       bottom.append(select(whenOpts, l.when, (v) => upd({ when: v }), 'Only while'));
       row.append(top, bottom);
@@ -12733,36 +12738,49 @@ function renderVibeMix() {
     const row = document.createElement('div');
     row.className = 'vm-row';
     row.dataset.g = g.id;
-    row.innerHTML = '<span class="vm-name"><i></i><b></b></span><span class="vm-track" role="slider" tabindex="0"><u></u><em></em></span><span class="vm-val"></span>';
+    // A fill row (fillStep): the whole row is the slider, tinted in the
+    // part's colour; a drag moves on from where it is.
+    row.className = 'vm-row fr';
+    row.innerHTML = '<i class="fr-fill"></i><span class="vm-name"><i></i><b></b></span><span class="vm-val"></span>';
     row.querySelector('b')!.textContent = g.label;
-    const light = row.querySelector('i')!;
-    const track = row.querySelector<HTMLElement>('.vm-track')!;
-    const fill = row.querySelector('u')!;
-    const knob = row.querySelector('em')!;
+    const light = row.querySelector<HTMLElement>('.vm-name i')!;
+    const track = row;
+    const fill = row.querySelector<HTMLElement>('.fr-fill')!;
     const val = row.querySelector<HTMLElement>('.vm-val')!;
+    track.setAttribute('role', 'slider');
+    track.tabIndex = 0;
     track.setAttribute('aria-label', `${g.label}: how much it moves the field`);
     const draw = () => {
       const v = mixLevel(g);
-      fill.style.width = knob.style.left = `${v * 100}%`;
+      fill.style.width = `${v * 100}%`;
       val.textContent = v < 0.02 ? 'off' : `${Math.round(v * 100)}%`;
       track.setAttribute('aria-valuenow', String(Math.round(v * 100)));
     };
     draws.push(draw);
     let from: { f: MgFlav; v: number }[] = [];
-    const at = (e: PointerEvent) => {
-      const r = track.getBoundingClientRect();
-      setMix(g, clamp01((e.clientX - r.left) / r.width), from);
-      draw();
-    };
+    let st: { y: number; lx: number; v: number; moved: boolean } | null = null;
     track.addEventListener('pointerdown', (e) => {
       from = mixFlavs(g).map((f) => ({ f, v: f.get() }));
+      st = { y: e.clientY, lx: e.clientX, v: mixLevel(g), moved: false };
       try { track.setPointerCapture(e.pointerId); } catch { /* fine */ }
-      at(e);
     });
     track.addEventListener('pointermove', (e) => {
-      if (track.hasPointerCapture?.(e.pointerId)) at(e);
+      if (!st || !track.hasPointerCapture?.(e.pointerId)) return;
+      if (!st.moved && Math.abs(e.clientX - st.lx) < 4) return;
+      st.moved = true;
+      track.classList.add('turning');
+      st.v = clamp01(st.v + fillStep(track, st.y, e, st.lx));
+      st.lx = e.clientX;
+      setMix(g, st.v, from);
+      draw();
     });
-    track.addEventListener('pointerup', () => refresh());
+    const end = () => {
+      if (st?.moved) refresh();
+      st = null;
+      track.classList.remove('turning', 'fine');
+    };
+    track.addEventListener('pointerup', end);
+    track.addEventListener('pointercancel', end);
     track.addEventListener('keydown', (e) => {
       const d = e.key === 'ArrowRight' ? 0.05 : e.key === 'ArrowLeft' ? -0.05 : 0;
       if (!d) return;
@@ -13825,15 +13843,20 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       let down = false;
       let moved = false;
       let sx = 0;
+      let sy = 0;
+      let fv = 0;
       const at = (e: PointerEvent) => {
-        const rr = fb.getBoundingClientRect();
-        f.put(clamp01((e.clientX - rr.left) / rr.width));
+        fv = clamp01(fv + fillStep(fb, sy, e, sx));
+        sx = e.clientX;
+        f.put(fv);
         redraw();
       };
       fb.addEventListener('pointerdown', (e) => {
         down = true;
         moved = false;
         sx = e.clientX;
+        sy = e.clientY;
+        fv = f.get();
         try {
           fb.setPointerCapture(e.pointerId);
         } catch {
@@ -13977,6 +14000,7 @@ function mgFine(k: keyof Settings, draws: (() => void)[]) {
     });
     row.classList.add('range');
     row.append(out, inp);
+    fillRange(row, inp);
   } else if (c.kind === 'select' || c.kind === 'choice') {
     const sel = document.createElement('select');
     for (const [v, t] of c.options) sel.append(new Option(t, v));
@@ -15514,6 +15538,59 @@ function fillStep(el: HTMLElement, y0: number, e: PointerEvent, lastX: number) {
   return ((e.clientX - lastX) / Math.max(80, el.getBoundingClientRect().width)) * (fine ? FINE_RATE : 1);
 }
 const isFillRow = (el: HTMLElement) => !!el.closest(".overview[data-density='strips'], #panel[data-view='list']");
+// Any native range as a fill row: `row` (holding the name and the value)
+// becomes the slider and the input stays, hidden, for the value, its events
+// and the keyboard. Setting input.value from code repaints the tint.
+const RANGE_VALUE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!;
+function fillRange(row: HTMLElement, inp: HTMLInputElement, colour?: string) {
+  row.classList.add('fr');
+  if (colour) row.style.setProperty('--fc', colour);
+  inp.classList.add('fr-input');
+  const fill = document.createElement('i');
+  fill.className = 'fr-fill';
+  row.prepend(fill);
+  const lo = () => (inp.min === '' ? 0 : Number(inp.min));
+  const hi = () => (inp.max === '' ? 100 : Number(inp.max));
+  const draw = () => (fill.style.width = `${Math.max(0, Math.min(1, (Number(RANGE_VALUE.get!.call(inp)) - lo()) / (hi() - lo() || 1))) * 100}%`);
+  Object.defineProperty(inp, 'value', {
+    get: () => RANGE_VALUE.get!.call(inp),
+    set: (v: string) => {
+      RANGE_VALUE.set!.call(inp, v);
+      draw();
+    },
+  });
+  inp.addEventListener('input', draw);
+  let st: { y: number; lx: number; v: number; moved: boolean } | null = null;
+  row.addEventListener('pointerdown', (e) => {
+    if ((e.target as HTMLElement).closest('select, button, input:not(.fr-input), a')) return;
+    st = { y: e.clientY, lx: e.clientX, v: Number(inp.value), moved: false };
+    try {
+      row.setPointerCapture(e.pointerId);
+    } catch {
+      /* fine */
+    }
+  });
+  row.addEventListener('pointermove', (e) => {
+    if (!st || !row.hasPointerCapture?.(e.pointerId)) return;
+    if (!st.moved && Math.abs(e.clientX - st.lx) < 4) return;
+    st.moved = true;
+    row.classList.add('turning');
+    st.v = Math.max(lo(), Math.min(hi(), st.v + fillStep(row, st.y, e, st.lx) * (hi() - lo())));
+    st.lx = e.clientX;
+    const before = inp.value;
+    inp.value = String(st.v);
+    if (inp.value !== before) inp.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const end = () => {
+    if (st?.moved) inp.dispatchEvent(new Event('change', { bubbles: true }));
+    st = null;
+    row.classList.remove('turning', 'fine');
+  };
+  row.addEventListener('pointerup', end);
+  row.addEventListener('pointercancel', end);
+  draw();
+  return row;
+}
 function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-knob';
@@ -15861,7 +15938,10 @@ function animPanel(c: Extract<Control, { kind: 'range' }>): HTMLElement {
       });
       const dw = document.createElement('div');
       dw.className = 'anim-depth';
-      dw.append(depth, out);
+      const dn = document.createElement('span');
+      dn.textContent = 'Swing';
+      dw.append(dn, depth, out);
+      fillRange(dw, depth);
       box.append(labelled('How far', dw));
     }
     if (a || recording) {
@@ -16374,6 +16454,7 @@ function renderSoundPage(body: HTMLElement) {
     const name = mk('button', 'sndp-name', '<b></b><small></small>');
     name.querySelector('b')!.textContent = t.name;
     const lv = levelBar(t.key, `${t.name} level`);
+    lv.style.setProperty('--fc', t.dot);
     const val = mk('span', 'sndp-v');
     const chev = mk('button', 'sndp-chev', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>');
     chev.setAttribute('aria-label', `${t.name} settings`);
@@ -22054,6 +22135,7 @@ function buildExtra(c: Extract<Control, { kind: 'range' | 'select' | 'text' }>) 
     const val = document.createElement('b');
     inp.addEventListener('input', () => set(c.key, Number(inp.value) as never));
     row.append(inp, val);
+    fillRange(row, inp);
     extrasOn.push([inp, () => {
       if (!buildHeld) inp.value = String(S[c.key]);
       const v = Number(S[c.key]);
