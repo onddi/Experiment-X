@@ -624,6 +624,24 @@ export class ParticleSound {
     this.set(this.p);
   }
 
+  private recDest: MediaStreamAudioDestinationNode | null = null;
+  private recMix: MediaStreamAudioSourceNode | null = null;
+  /** A live track of what the particles play, with `mixIn` (the music source) mixed under it, for recording. */
+  tap(mixIn: MediaStreamTrack | null): MediaStreamTrack | null {
+    const ctx = this.ctx;
+    if (!this.recDest) {
+      this.recDest = ctx.createMediaStreamDestination();
+      this.comp.connect(this.recDest);
+    }
+    this.recMix?.disconnect();
+    this.recMix = null;
+    if (mixIn) {
+      this.recMix = ctx.createMediaStreamSource(new MediaStream([mixIn]));
+      this.recMix.connect(this.recDest);
+    }
+    if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+    return this.recDest.stream.getAudioTracks()[0]?.clone() ?? null;
+  }
   close() {
     void this.ctx.close().catch(() => {});
   }

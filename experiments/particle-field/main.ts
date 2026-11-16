@@ -5336,7 +5336,11 @@ const recorder = new Recorder({
     const [r, g, b] = bgNow();
     return `rgb(${r} ${g} ${b})`;
   },
-  audio: () => audio.tap() ?? (audio.source === 'feed' ? feedAudioTap() : null),
+  // The music source, and the particles' own sound mixed in when they play.
+  audio: () => {
+    const music = audio.tap() ?? (audio.source === 'feed' ? feedAudioTap() : null);
+    return snd && settings.sndVol > 0 ? snd.tap(music) ?? music : music;
+  },
   overlay: () => (fxCanvas.hidden ? null : fxCanvas),
   onChange: () => recUi.forEach((f) => f()),
 });
