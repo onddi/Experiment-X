@@ -319,6 +319,11 @@ export interface Settings {
   topBlend: 'normal' | 'screen' | 'lighten' | 'plus-lighter' | 'difference' | 'overlay' | 'soft-light' | 'hard-light' | 'color-dodge' | 'color-burn' | 'multiply' | 'darken' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
   topPointer: boolean;
   topSaved: string; // the top layer's own settings (JSON), kept with a saved scene
+  botScene: string; // '' = no bottom layer
+  botOpacity: number;
+  botBlend: Settings['topBlend']; // how the field sits on it
+  botPointer: boolean;
+  botSaved: string;
   obsCircles: string;
   obsRadius: number;
   obsText: string;
@@ -881,6 +886,11 @@ export const DEFAULTS: Settings = {
   topBlend: 'normal',
   topPointer: true,
   topSaved: '',
+  botScene: '',
+  botOpacity: 1,
+  botBlend: 'normal',
+  botPointer: true,
+  botSaved: '',
   obsForce: 1,
   obsPlace: true,
   obsShow: true,

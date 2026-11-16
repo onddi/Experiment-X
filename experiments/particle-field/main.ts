@@ -1,4 +1,4 @@
-import { TOP_LAYER } from './layerboot.ts';
+import { TOP_LAYER, LAYER_ROLE } from './layerboot.ts';
 import { fillPattern, FILL_PATTERNS, PATTERN_FORM, PATTERN_VARY, patternArms, isFillPattern } from './patterns.ts';
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
@@ -407,7 +407,7 @@ function resize() {
 
 // Stacked in X-Frame: the canvas stays transparent and trails fade out instead
 // of being painted over with the background.
-let seeThrough = TOP_LAYER;
+let seeThrough = LAYER_ROLE === 'top';
 
 function clear() {
   const [r, g, b] = bgNow();
@@ -8151,108 +8151,153 @@ let shapeInfo = { targets: 0, ms: 0 };
 // layerboot.ts) over the field and drives it with messages: which scene, the
 // pointer, and when its own Studio is open for editing. The copy has no UI of
 // its own until then, and no sound, mic or camera ever.
-let topFrame: HTMLIFrameElement | null = null;
-let topSent = '';
-let topSig = '';
-let topEditing = false;
+// The Bottom layer is the same thing laid under the field: it paints its own
+// background, and this field turns see-through over it.
+type LayerRole = 'top' | 'bottom';
 let topFeed: ((f: SpectrumFrame) => void) | null = null;
-const topPost = (m: Record<string, unknown>) => topFrame?.contentWindow?.postMessage({ pfTop: 1, ...m }, location.origin);
+const LAYER_KEYS = {
+  top: { scene: 'topScene', opacity: 'topOpacity', blend: 'topBlend', pointer: 'topPointer', saved: 'topSaved' },
+  bottom: { scene: 'botScene', opacity: 'botOpacity', blend: 'botBlend', pointer: 'botPointer', saved: 'botSaved' },
+} as const;
+class FieldLayer {
+  frame: HTMLIFrameElement | null = null;
+  sent = '';
+  sig = '';
+  music = false;
+  constructor(readonly role: LayerRole) {}
+  get k() {
+    return LAYER_KEYS[this.role];
+  }
+  get scene(): string {
+    return settings[this.k.scene];
+  }
+  get saved(): string {
+    return settings[this.k.saved];
+  }
+  post(m: Record<string, unknown>) {
+    this.frame?.contentWindow?.postMessage({ pfTop: 1, ...m }, location.origin);
+  }
+  tick() {
+    const S = settings;
+    // The music: the base's spectrum each frame, so the layer's reactions
+    // run on the same sound without a mic of its own.
+    if (this.frame) {
+      const sp = audio.frameOut();
+      if (sp) {
+        this.post({ spectrum: sp });
+        this.music = true;
+      } else if (this.music) {
+        this.post({ spectrum: null });
+        this.music = false;
+      }
+    }
+    const sig = `${this.scene}|${S[this.k.opacity]}|${S[this.k.blend]}|${this.saved.length}`;
+    if (sig === this.sig) return;
+    this.sig = sig;
+    if (!this.scene) {
+      if (this.frame && layerEditing === this) layerEdit(this, false);
+      this.frame?.remove();
+      this.frame = null;
+      this.sent = '';
+      if (this.role === 'bottom') bottomUnder(false);
+      return;
+    }
+    if (!this.frame) {
+      const f = document.createElement('iframe');
+      f.className = `top-frame ${this.role}-frame`;
+      f.title = this.role === 'top' ? 'Top layer' : 'Bottom layer';
+      f.setAttribute('aria-hidden', 'true');
+      f.tabIndex = -1;
+      const q = new URLSearchParams(location.search);
+      q.set('layer', this.role);
+      f.src = `${location.pathname}?${q}`;
+      f.addEventListener('load', () => {
+        this.sent = '';
+        this.sig = '';
+      });
+      if (this.role === 'top') canvas.after(f);
+      else canvas.before(f);
+      this.frame = f;
+      if (this.role === 'bottom') bottomUnder(true);
+    }
+    this.frame.style.opacity = String(S[this.k.opacity]);
+    if (this.role === 'top') this.frame.style.mixBlendMode = S.topBlend;
+    else for (const c of document.querySelectorAll<HTMLElement>('#c, canvas.gl-layer')) c.style.mixBlendMode = S.botBlend;
+    // A saved scene brings the layer as it was edited; else the scene itself.
+    const saved = this.saved;
+    const want = saved ? `${this.scene}#${saved.length}:${saved.slice(-24)}` : this.scene;
+    if (this.sent !== want && this.frame.contentWindow) {
+      let p: Partial<Settings> | null = null;
+      try {
+        p = saved ? (JSON.parse(saved) as Partial<Settings>) : null;
+      } catch {
+        p = null;
+      }
+      p ??= topScenePatch(this.scene);
+      if (p) {
+        this.post({ apply: p, name: want });
+        this.sent = want;
+      }
+    }
+  }
+}
+const LAYERS_ON: FieldLayer[] = [new FieldLayer('top'), new FieldLayer('bottom')];
+let layerEditing: FieldLayer | null = null;
 function topScenePatch(name: string): Partial<Settings> | null {
   const p = name.startsWith('mine:') ? myPresets.find((m) => m.name === topName(name))?.settings : PRESETS.find(([n]) => n === name)?.[1];
   return p ? { ...p } : null;
 }
-let topMusic = false;
+// With a bottom layer this field's background goes: it is drawn see-through.
+function bottomUnder(on: boolean) {
+  if (seeThrough === on) return;
+  seeThrough = on;
+  document.body.classList.toggle('see-through', on);
+  document.documentElement.classList.toggle('has-bottom', on);
+  if (!on) for (const c of document.querySelectorAll<HTMLElement>('#c, canvas.gl-layer')) c.style.mixBlendMode = '';
+  clear();
+}
 function topTick() {
   if (TOP_LAYER) return;
   topScenesSync();
-  const S = settings;
-  // The music: the base's spectrum each frame, so the top layer's reactions
-  // run on the same sound without a mic of its own.
-  if (topFrame) {
-    const sp = audio.frameOut();
-    if (sp) {
-      topPost({ spectrum: sp });
-      topMusic = true;
-    } else if (topMusic) {
-      topPost({ spectrum: null });
-      topMusic = false;
-    }
-  }
-  const sig = `${S.topScene}|${S.topOpacity}|${S.topBlend}|${S.topSaved.length}`;
-  if (sig === topSig) return;
-  topSig = sig;
-  if (!S.topScene) {
-    topFrame?.remove();
-    topFrame = null;
-    topSent = '';
-    return;
-  }
-  if (!topFrame) {
-    const f = document.createElement('iframe');
-    f.className = 'top-frame';
-    f.title = 'Top layer';
-    f.setAttribute('aria-hidden', 'true');
-    f.tabIndex = -1;
-    const q = new URLSearchParams(location.search);
-    q.set('layer', 'top');
-    f.src = `${location.pathname}?${q}`;
-    f.addEventListener('load', () => {
-      topSent = '';
-      topSig = '';
-    });
-    canvas.after(f);
-    topFrame = f;
-  }
-  topFrame.style.opacity = String(S.topOpacity);
-  topFrame.style.mixBlendMode = S.topBlend;
-  // A saved scene brings the top layer as it was edited; else the scene itself.
-  const want = S.topSaved ? `${S.topScene}#${S.topSaved.length}:${S.topSaved.slice(-24)}` : S.topScene;
-  if (topSent !== want && topFrame.contentWindow) {
-    let p: Partial<Settings> | null = null;
-    try {
-      p = S.topSaved ? (JSON.parse(S.topSaved) as Partial<Settings>) : null;
-    } catch {
-      p = null;
-    }
-    p ??= topScenePatch(S.topScene);
-    if (p) {
-      topPost({ apply: p, name: want });
-      topSent = want;
-    }
-  }
+  for (const l of LAYERS_ON) l.tick();
 }
-function topEdit(on: boolean) {
-  if (!topFrame) return;
-  topEditing = on;
+function layerEdit(l: FieldLayer, on: boolean) {
+  if (!l.frame) return;
+  if (on && layerEditing && layerEditing !== l) layerEdit(layerEditing, false);
+  layerEditing = on ? l : null;
+  l.frame.classList.toggle('editing', on);
   document.documentElement.classList.toggle('top-editing', on);
-  topPost({ edit: on });
+  l.post({ edit: on });
 }
+const topEdit = (on: boolean) => layerEdit(LAYERS_ON[0], on);
+const botEdit = (on: boolean) => layerEdit(LAYERS_ON[1], on);
 if (!TOP_LAYER) {
-  // The pointer, as fractions of the field, so a drag pushes both layers.
+  // The pointer, as fractions of the field, so a drag pushes every layer.
   const share = (e: PointerEvent, down?: boolean) => {
-    if (!topFrame || !settings.topPointer || topEditing) return;
+    if (layerEditing) return;
     const r = canvas.getBoundingClientRect();
-    topPost({ ptr: [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height], down });
+    for (const l of LAYERS_ON) if (l.frame && settings[l.k.pointer]) l.post({ ptr: [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height], down });
   };
   canvas.addEventListener('pointermove', (e) => share(e));
   canvas.addEventListener('pointerdown', (e) => share(e, true));
   canvas.addEventListener('pointerup', (e) => share(e, false));
-  canvas.addEventListener('pointerleave', () => topFrame && topPost({ ptr: null }));
+  canvas.addEventListener('pointerleave', () => LAYERS_ON.forEach((l) => l.frame && l.post({ ptr: null })));
   addEventListener('message', (e) => {
-    if (e.origin !== location.origin || e.source !== topFrame?.contentWindow || !e.data?.pfTop) return;
-    if (e.data.done) topEdit(false);
+    const l = LAYERS_ON.find((x) => x.frame && e.source === x.frame.contentWindow);
+    if (e.origin !== location.origin || !l || !e.data?.pfTop) return;
+    if (e.data.done) layerEdit(l, false);
     if (e.data.ready) {
-      topSent = '';
-      topSig = '';
+      l.sent = '';
+      l.sig = '';
     }
   });
 }
 if (TOP_LAYER) {
-  document.body.classList.add('see-through');
+  if (LAYER_ROLE === 'top') document.body.classList.add('see-through');
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'top-back';
-  back.textContent = '← Back to the base layer';
+  back.textContent = LAYER_ROLE === 'bottom' ? '← Back to the field' : '← Back to the base layer';
   back.addEventListener('click', () => parent.postMessage({ pfTop: 1, done: true }, location.origin));
   document.body.append(back);
   addEventListener('message', (e) => {
@@ -8274,7 +8319,7 @@ if (TOP_LAYER) {
       if (matchMedia('(pointer: coarse)').matches && (p.count ?? DEFAULTS.count) > 2500) p.count = 2500;
       apply(p);
       settings.sndVol = 0;
-      settings.topScene = '';
+      settings.topScene = settings.botScene = '';
     }
     if ('ptr' in d) {
       if (!d.ptr) {
@@ -8302,7 +8347,7 @@ if (TOP_LAYER) {
     }
   });
   settings.sndVol = 0;
-  settings.topScene = '';
+  settings.topScene = settings.botScene = '';
   parent.postMessage({ pfTop: 1, ready: true }, location.origin);
 }
 
@@ -9368,6 +9413,16 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'topPointer', label: 'Your finger moves it too', show: () => !!settings.topScene },
   { kind: 'buttons', buttons: [['Edit this layer', () => topEdit(true)], ['Another scene', () => set('topScene', PRESETS[(Math.random() * PRESETS.length) | 0][0])]], show: () => !!settings.topScene },
 
+  { kind: 'section', id: 'botlayer', label: 'Bottom layer', tab: 'presets', about: 'Another field under this one: any scene as the backdrop, and this field turns see-through over it. No sound, mic or camera of its own.',
+    lock: ['botScene', 'botOpacity', 'botBlend', 'botPointer'],
+    power: { on: () => !!settings.botScene, off: { botScene: '' }, start: { botScene: 'Aurora' } },
+    summary: () => (settings.botScene ? topName(settings.botScene) : 'off') },
+  { kind: 'select', key: 'botScene', label: 'Scene underneath', options: TOP_SCENES },
+  { kind: 'range', key: 'botOpacity', label: 'Brightness', min: 0.05, max: 1, step: 0.05, format: pct, show: () => !!settings.botScene },
+  { kind: 'select', key: 'botBlend', label: 'This field on it', options: TOP_BLENDS, show: () => !!settings.botScene },
+  { kind: 'toggle', key: 'botPointer', label: 'Your finger moves it too', show: () => !!settings.botScene },
+  { kind: 'buttons', buttons: [['Edit this layer', () => botEdit(true)], ['Another scene', () => set('botScene', PRESETS[(Math.random() * PRESETS.length) | 0][0])]], show: () => !!settings.botScene },
+
   { kind: 'section', id: 'xfader', label: 'Crossfader', tab: 'presets',
     about: 'Blend between two scenes with a fader: every setting goes partway from A to B.',
     summary: () => (xf.on ? `${xf.a.name} ${Math.round((1 - settings.xfPos) * 100)} · ${Math.round(settings.xfPos * 100)} ${xf.b.name}` : 'off'),
@@ -10273,6 +10328,7 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   tlHold([k]);
   // A new scene on top starts from that scene, not the saved edits.
   if (k === 'topScene') settings.topSaved = '';
+  if (k === 'botScene') settings.botSaved = '';
   // Picking the image shape (one already loaded): take its colours.
   if (k === 'shape' && v === 'image' && (shapeImage || shapeMedia)) imageColoursOn(!!shapeMedia);
 }
@@ -19292,9 +19348,10 @@ function snapshot(): Partial<Settings> {
   // Mid-morph, save where the look is heading, not the halfway values.
   const { audioFineTune: _skip, ...rest } = { ...withBases(settings), ...(morphState?.to ?? {}) } as Settings;
   // The top layer's edits travel with the scene.
-  if (rest.topScene) {
+  for (const [on, key, ns] of [[rest.topScene, 'topSaved', 'pftop:'], [rest.botScene, 'botSaved', 'pfbot:']] as const) {
+    if (!on) continue;
     try {
-      rest.topSaved = localStorage.getItem('pftop:particle-field:settings') ?? '';
+      rest[key] = localStorage.getItem(`${ns}particle-field:settings`) ?? '';
     } catch {
       // Private mode: the scene keeps just its name.
     }

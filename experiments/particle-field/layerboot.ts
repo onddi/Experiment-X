@@ -3,13 +3,18 @@
 // so that copy keeps every saved thing (its settings, panel state …) apart from
 // the base page, and so it never reaches the microphone, the camera or the
 // speakers: the base layer owns all of those.
-export const TOP_LAYER = new URLSearchParams(location.search).get('layer') === 'top';
+// ?layer=bottom is the same, laid under the field instead (with its own saved
+// things, and its own background: the field over it turns see-through).
+const ROLE = new URLSearchParams(location.search).get('layer');
+export const LAYER_ROLE: 'top' | 'bottom' | '' = ROLE === 'top' || ROLE === 'bottom' ? ROLE : '';
+export const TOP_LAYER = LAYER_ROLE !== '';
 
 if (TOP_LAYER) {
   // Your saved scenes (and palettes) are one list for both layers: a scene
   // saved while editing the top layer shows up on the base too.
   const SHARED = new Set(['particle-field:my-presets', 'particle-field:my-palettes']);
-  const own = (k: string) => (/^(particle-field|pf-)/.test(k) && !SHARED.has(k) ? `pftop:${k}` : k);
+  const ns = LAYER_ROLE === 'top' ? 'pftop:' : 'pfbot:';
+  const own = (k: string) => (/^(particle-field|pf-)/.test(k) && !SHARED.has(k) ? `${ns}${k}` : k);
   const S = Storage.prototype;
   const get = S.getItem;
   const put = S.setItem;
