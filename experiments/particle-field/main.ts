@@ -19008,12 +19008,11 @@ const LAYERS: BLayer[] = [
     off: () => ({ ...fxLookOf({}), ...LENS_OFF }),
   },
   {
-    id: 'perform', name: 'Perform', color: '#c7b8ff', q: 'How will you play it?', about: 'A mood over the whole scene, knobs on the field, a timeline of scenes.',
+    id: 'perform', name: 'Perform', color: '#c7b8ff', q: 'How will you play it?', about: 'A mood over the whole scene. Knobs, the timeline and the crossfader are under Fine-tune.',
     used: () => !neutralMood() || settings.playOn || tlActive() || settings.audioVj > 0,
     sum: () => [neutralMood() ? '' : `${moodNow() ?? 'Custom'} mood`, settings.playOn ? 'knobs on the field' : '', tlActive() ? 'timeline' : '', settings.audioVj > 0 ? 'auto VJ' : ''].filter(Boolean).join(' · ') || 'Nothing',
     groups: () => [
       { label: 'Mood', picks: [{ name: 'As built', on: neutralMood, go: () => setMood({}) }, ...MOODS.map(([n, m]): BPick => ({ name: n, on: () => moodNow() === n, go: () => setMood(m) }))] },
-      { label: 'Knobs on the field', picks: [bPick('Off', { playOn: false }), bPick('On', { playOn: true })] },
     ],
     extras: () => ['morph'],
     off: () => ({ ...moodOf({}), playOn: false }),
