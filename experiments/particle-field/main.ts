@@ -3146,7 +3146,7 @@ function nextSceneSameFamily() {
 }
 function saveSceneNow() {
   const name = `Gesture ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
-  myPresets.push({ name, settings: snapshot() });
+  myPresets.push({ name, settings: snapshot(), ...TOP_TAG });
   writeJson(MY_PRESETS_KEY, myPresets);
   redrawMine();
   showToast(`Saved “${name}” to My scenes`);
@@ -9238,11 +9238,13 @@ function useKnobSet(keys: string[]) {
 const TOP_SCENES: [string, string][] = [['', 'None']];
 let topScenesSig = '\u0000';
 function topScenesSync() {
-  const sig = myPresets.map((p) => p.name).join('\u0001');
+  const sig = myPresets.map((p) => `${p.name}${p.top ? '^' : ''}`).join('\u0001');
   if (sig === topScenesSig) return;
   topScenesSig = sig;
   TOP_SCENES.length = 0;
-  TOP_SCENES.push(['', 'None'], ...myPresets.map((p): [string, string] => [`mine:${p.name}`, `★ ${p.name}`]), ...PRESETS.map(([n]): [string, string] => [n, n]));
+  // Top layers you made first (◆), then your other scenes (★), then the library.
+  const mine = (top: boolean) => myPresets.filter((p) => !!p.top === top).map((p): [string, string] => [`mine:${p.name}`, `${top ? '◆' : '★'} ${p.name}`]);
+  TOP_SCENES.push(['', 'None'], ...mine(true), ...mine(false), ...PRESETS.map(([n]): [string, string] => [n, n]));
 }
 const topName = (v: string) => v.replace(/^mine:/, '');
 const CONTROLS: Control[] = [
@@ -11679,7 +11681,7 @@ function tlAddCurrent() {
   else if (lastSceneName) c = { name: lastSceneName, bars: 8, how: 'morph' };
   else {
     const name = `Timeline ${myPresets.length + 1}`;
-    myPresets.push({ name, settings: snapshot() });
+    myPresets.push({ name, settings: snapshot(), ...TOP_TAG });
     writeJson(MY_PRESETS_KEY, myPresets);
     redrawMine();
     c = { name, mine: true, bars: 8, how: 'morph' };
@@ -19005,7 +19007,9 @@ function saveLocks() {
 }
 
 const MY_PRESETS_KEY = 'particle-field:my-presets';
-type MyPreset = { name: string; settings: Partial<Settings>; key?: string };
+type MyPreset = { name: string; settings: Partial<Settings>; key?: string; top?: boolean };
+// Scenes saved while editing the Top layer are marked, to list them first there.
+const TOP_TAG: { top?: boolean } = TOP_LAYER ? { top: true } : {};
 let myPresets: MyPreset[] = readJson<MyPreset[]>(MY_PRESETS_KEY, []).map((p) => ({ ...p, settings: migrateLegacy(p.settings) }));
 // The preset of yours you played last, so Update can save over it in one tap.
 let currentMine: MyPreset | null = null;
@@ -19082,8 +19086,8 @@ function renderMyPresets() {
         item.className = p === currentMine ? 'mine cur' : 'mine';
         const b = document.createElement('button');
         b.type = 'button';
-        b.textContent = p.name;
-        b.title = 'Load this scene';
+        b.textContent = p.top ? `◆ ${p.name}` : p.name;
+        b.title = p.top ? 'Made as a top layer. Load it here, or pick it under Top layer' : 'Load this scene';
         b.addEventListener('click', () => playMine(p));
         // Which number key plays it.
         const key = document.createElement('select');
@@ -19160,7 +19164,7 @@ function renderMyPresets() {
       const name = raw.slice(0, 40) || `My scene ${myPresets.length + 1}`;
       const existing = myPresets.findIndex((p) => p.name === name);
       if (existing >= 0) myPresets[existing].settings = snapshot();
-      else myPresets.push({ name, settings: snapshot() });
+      else myPresets.push({ name, settings: snapshot(), ...TOP_TAG });
       currentMine = myPresets[existing >= 0 ? existing : myPresets.length - 1];
       writeJson(MY_PRESETS_KEY, myPresets);
       draw();
@@ -22172,7 +22176,7 @@ function buildSave() {
   if (!name) return;
   const at = myPresets.findIndex((p) => p.name === name);
   if (at >= 0) myPresets[at].settings = snapshot();
-  else myPresets.push({ name, settings: snapshot() });
+  else myPresets.push({ name, settings: snapshot(), ...TOP_TAG });
   currentMine = myPresets[at >= 0 ? at : myPresets.length - 1];
   writeJson(MY_PRESETS_KEY, myPresets);
   redrawMine();
