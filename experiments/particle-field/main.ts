@@ -2,7 +2,7 @@ import { fillPattern, FILL_PATTERNS, PATTERN_FORM, PATTERN_VARY, patternArms, is
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
-import { GLYPH_SETS, PALETTES, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
+import { GLYPH_SETS, PALETTES, PAL_GROUPS, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint } from './shapes.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
@@ -17,14 +17,36 @@ import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES,
 
 // --- settings ----------------------------------------------------------------
 
-// The current palette, including a custom one built from colour pickers.
-function pal(): PaletteDef {
+// The current palette, including a custom one built from colour pickers,
+// with the Saturation, Brightness and Background dials applied.
+function basePal(): PaletteDef {
   if (settings.palette !== 'custom') return PALETTES[settings.palette];
   return {
     label: 'Custom',
     bg: hexToRgb(settings.customBg),
     stops: settings.customColors.split(',').filter(Boolean).map((hex) => rgbToHsl(hexToRgb(hex))),
   };
+}
+let palCache: { key: string; def: PaletteDef } | null = null;
+function pal(): PaletteDef {
+  const S = settings;
+  if (S.palSat === 1 && S.palLight === 0 && S.palBg === 'own') return basePal();
+  const key = `${S.palette}|${S.palette === 'custom' ? S.customColors + S.customBg : ''}|${S.palSat}|${S.palLight}|${S.palBg}`;
+  if (palCache?.key === key) return palCache.def;
+  const b = basePal();
+  const light = S.palBg === 'light';
+  const stops = b.stops.map(([h, sat, l]): [number, number, number] => {
+    let L = Math.max(4, Math.min(97, l + S.palLight * 35));
+    // On a light background the colours run dark to mid, so they still show.
+    if (light) L = Math.max(10, Math.min(62, 12 + (100 - L) * 0.55));
+    return [h, Math.min(100, sat * S.palSat), L];
+  });
+  const mid = b.stops[Math.floor(b.stops.length / 2)] ?? [0, 0, 50];
+  const rgbOf = (h: number, sat: number, l: number) => hslToRgb(h, sat, l).map(Math.round) as [number, number, number];
+  const bg = S.palBg === 'black' ? [0, 0, 0] as const : S.palBg === 'tinted' ? rgbOf(mid[0], 45, 9) : light ? rgbOf(mid[0], 30, 93) : b.bg;
+  const def: PaletteDef = { ...b, bg, stops };
+  palCache = { key, def };
+  return def;
 }
 
 const STORAGE_KEY = 'particle-field:settings';
@@ -6612,6 +6634,7 @@ type ControlBody =
   | { kind: 'mixgrid'; which: 'music' | 'camera' | 'lens' }
   | { kind: 'links' }
   | { kind: 'sub'; label: string }
+  | { kind: 'mypals' }
   | { kind: 'heading'; label: string; tab: Tab }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
@@ -6648,6 +6671,51 @@ const RENDERS: [string, string][] = [
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'],
   ['mixed', 'Mixed'],
 ];
+const PAL_BGS: [string, string][] = [['own', 'Its own'], ['black', 'Black'], ['tinted', 'Tinted'], ['light', 'Light']];
+// Palettes in vibe order (Warm, Cool, Neon …), each vibe in its listed order.
+const palKeys = () => (Object.keys(PALETTES) as (keyof typeof PALETTES)[]).sort((a, b) => PAL_GROUPS.indexOf((PALETTES[a] as PaletteDef).group ?? 'Warm') - PAL_GROUPS.indexOf((PALETTES[b] as PaletteDef).group ?? 'Warm'));
+// Palettes you made or generated and kept, on this device.
+type MyPal = { name: string; colors: string; bg: string };
+const MY_PALS_KEY = 'particle-field:my-palettes';
+let myPals: MyPal[] = readJson<MyPal[]>(MY_PALS_KEY, []);
+const hslHex = (h: number, sat: number, l: number) => '#' + hslToRgb(((h % 360) + 360) % 360, sat, l).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+const HUE_WORDS = ['Red', 'Orange', 'Amber', 'Lime', 'Green', 'Jade', 'Teal', 'Sky', 'Blue', 'Indigo', 'Violet', 'Magenta', 'Pink'];
+const PAL_SCHEMES: [string, number[]][] = [['glow', [0, 20, 40, 60]], ['pair', [0, 12, 180, 192]], ['triad', [0, 120, 240, 0]], ['split', [0, 150, 210, 30]], ['tone', [0, 0, 8, -8]], ['fade', [0, -30, -60, -90]]];
+function palSet(patch: Partial<Settings>) {
+  palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: performance.now(), dur: 700, tick: 0 };
+  Object.assign(settings, patch);
+  changed(new Set(Object.keys(patch) as (keyof Settings)[]), true);
+  refresh();
+}
+// A new palette that hangs together: one base hue and a scheme round it,
+// running dark and calm to bright and hot, on a background tinted to match.
+function genPalette() {
+  const base = Math.random() * 360;
+  const [scheme, offs] = PAL_SCHEMES[(Math.random() * PAL_SCHEMES.length) | 0];
+  const sat = 55 + Math.random() * 40;
+  const lo = 28 + Math.random() * 14;
+  const hi = 70 + Math.random() * 18;
+  const cols = offs.map((o, i) => hslHex(base + o, scheme === 'tone' ? sat * (0.6 + i * 0.15) : sat + (Math.random() - 0.5) * 10, lo + ((hi - lo) * i) / (offs.length - 1)));
+  const name = `${HUE_WORDS[Math.round(base / 30) % 12]} ${scheme}`;
+  palGenName = name;
+  palSet({ palette: 'custom', customColors: cols.join(','), customBg: hslHex(base, 40, 5) });
+}
+let palGenName = '';
+const myPalOn = (m: MyPal) => settings.palette === 'custom' && settings.customColors === m.colors && settings.customBg === m.bg;
+function keepPalette() {
+  if (settings.palette !== 'custom' || myPals.some(myPalOn)) return;
+  const name = palGenName || `Palette ${myPals.length + 1}`;
+  myPals = [...myPals, { name, colors: settings.customColors, bg: settings.customBg }];
+  writeJson(MY_PALS_KEY, myPals);
+  showToast(`Kept “${name}” in your palettes`);
+  refresh();
+}
+function dropPalette(m: MyPal) {
+  myPals = myPals.filter((x) => x !== m);
+  writeJson(MY_PALS_KEY, myPals);
+  refresh();
+}
+const myPalSwatch = (m: MyPal) => `linear-gradient(90deg, ${m.colors.split(',').join(', ')})`;
 const isSpectrum = () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring');
 const SPEC_LAYOUTS: [string, string][] = [['centre', 'Centre out'], ['floor', 'Floor'], ['mirror', 'Mirrored'], ['line', 'Line']];
 const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)'], ['spectrum', 'Spectrum band (music spectrum)']];
@@ -7499,12 +7567,16 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
   { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
 
-  { kind: 'section', id: 'colour', label: 'Colour', tab: 'look', lock: ['palette', 'colorBy', 'customColors', 'customBg'],
+  { kind: 'section', id: 'colour', label: 'Colour', tab: 'look', lock: ['palette', 'colorBy', 'customColors', 'customBg', 'palSat', 'palLight', 'palBg'],
     summary: () => `${pal().label}, ${label(COLOR_BY, settings.colorBy)}` },
-  { kind: 'select', key: 'palette', label: 'Palette', options: [...Object.entries(PALETTES).map(([k, p]) => [k, p.label] as [string, string]), ['custom', 'Custom…']] },
+  { kind: 'select', key: 'palette', label: 'Palette', options: [...palKeys().map((k) => [k, PALETTES[k].label] as [string, string]), ['custom', 'Custom…']] },
+  { kind: 'mypals' },
   { kind: 'colors', key: 'customColors', label: 'Colours (calm → hot)', show: () => settings.palette === 'custom' },
   { kind: 'color', key: 'customBg', label: 'Background', show: () => settings.palette === 'custom' },
   { kind: 'swatch' },
+  { kind: 'range', key: 'palSat', label: 'Saturation', min: 0, max: 2, step: 0.05, format: (v) => (v === 1 ? 'as is' : `${Math.round(v * 100)}%`) },
+  { kind: 'range', key: 'palLight', label: 'Brightness', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as is' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}`) },
+  { kind: 'choice', key: 'palBg', label: 'Background', options: PAL_BGS },
   { kind: 'range', key: 'hueShift', label: 'Hue shift', min: -180, max: 180, step: 1, format: (v) => (v ? `${v > 0 ? '+' : ''}${Math.round(v)}°` : 'off') },
   { kind: 'select', key: 'colorBy', label: 'Colour by', options: COLOR_BY },
 
@@ -8320,7 +8392,7 @@ function morphTo(target: Settings, morphSec = settings.morph) {
   if ((['wells', 'obstacles', 'obsCircles', 'obsText'] as const).some((k) => instant.has(k)) && (T.wells || T.obstacles !== 'none')) forceIn = { start: now, dur };
   // Styles and modes can't glide, so the old picture fades out over the new.
   if ((['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter'] as const).some((k) => instant.has(k))) pictureFade(Math.min(2.5, Math.max(0.6, morphSec * 0.4)));
-  const palChanged = instant.has('palette') || instant.has('customColors') || instant.has('customBg');
+  const palChanged = instant.has('palette') || instant.has('customColors') || instant.has('customBg') || instant.has('palBg');
   if (palChanged) palMix = { from: shadeRgb.slice(), fromBg: bgNow(), start: now, dur, tick: 0 };
   for (const k of instant) S[k] = T[k];
   morphState = Object.keys(to).length ? { from, to, start: now, dur } : null;
@@ -8745,7 +8817,7 @@ let xfAuto: { from: number; to: number; start: number; dur: number } | null = nu
 const xfMoved = new Set<keyof Settings>();
 let xfSettle = 0;
 const xfPalCache = new Map<string, { shades: Rgb[]; bg: Rgb }>();
-const XF_PAL = ['palette', 'customColors', 'customBg'] as const;
+const XF_PAL = ['palette', 'customColors', 'customBg', 'palBg'] as const;
 let xfUi: (() => void)[] = [];
 let xfDip = 0; // 0..1, darkening around the middle when A and B differ in a big way
 const XF_BIG = new Set<string>(['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'pointerMode']);
@@ -10381,7 +10453,7 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
     prevEmitter = settings.emitter;
     emitterChanged();
   }
-  if (keys.has('palette') || keys.has('customColors') || keys.has('customBg')) {
+  if (keys.has('palette') || keys.has('customColors') || keys.has('customBg') || keys.has('palSat') || keys.has('palLight') || keys.has('palBg')) {
     buildShades();
     if (!morphing) clear();
   }
@@ -10404,7 +10476,7 @@ const afterShow: (() => void)[] = [];
 const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['morph', 'beatSnap'],
   look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow'],
-  colour: ['palette', 'colorBy', 'customColors'],
+  colour: ['palette', 'colorBy', 'customColors', 'palSat', 'palLight', 'palBg'],
   shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['speed', 'friction', 'jitter'],
@@ -12939,6 +13011,57 @@ function renderControls() {
 
     if (ctl.kind === 'audio') {
       searchItem(body, renderAudio());
+      continue;
+    }
+
+    if (ctl.kind === 'mypals') {
+      // Generate, keep, and the palettes you kept (tap to use, × to drop).
+      const box = document.createElement('div');
+      box.className = 'mypals';
+      body.append(box);
+      let sig = '';
+      refreshers.push(() => {
+        const kept = myPals.some(myPalOn);
+        const now = `${myPals.map((m) => m.name + m.colors + m.bg).join('|')}|${settings.palette}|${settings.customColors}|${settings.customBg}|${kept}`;
+        if (now === sig) return;
+        sig = now;
+        box.innerHTML = '';
+        const acts = document.createElement('div');
+        acts.className = 'mp-acts';
+        const gen = document.createElement('button');
+        gen.type = 'button';
+        gen.textContent = '✦ Generate';
+        gen.title = 'A new palette that hangs together';
+        gen.addEventListener('click', genPalette);
+        acts.append(gen);
+        if (settings.palette === 'custom' && !kept) {
+          const keep = document.createElement('button');
+          keep.type = 'button';
+          keep.textContent = 'Keep this one';
+          keep.addEventListener('click', keepPalette);
+          acts.append(keep);
+        }
+        box.append(acts);
+        if (myPals.length) {
+          const list = document.createElement('div');
+          list.className = 'mp-list';
+          for (const m of myPals) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'mp-chip';
+            chip.classList.toggle('on', myPalOn(m));
+            chip.innerHTML = '<i></i><span></span><b aria-label="Remove">×</b>';
+            chip.querySelector('i')!.style.background = myPalSwatch(m);
+            chip.querySelector('span')!.textContent = m.name;
+            chip.addEventListener('click', (e) => {
+              if ((e.target as HTMLElement).tagName === 'B') dropPalette(m);
+              else palSet({ palette: 'custom', customColors: m.colors, customBg: m.bg });
+            });
+            list.append(chip);
+          }
+          box.append(list);
+        }
+      });
       continue;
     }
 
@@ -18951,7 +19074,8 @@ const LAYER_OF: Record<string, LayerId | null> = {
   quality: null, view: null, record: null, device: null, actions: null,
 };
 type BPick = { name: string; on: () => boolean; patch?: Partial<Settings>; go?: () => void; swatch?: string };
-type BGroup = { label?: string; picks: BPick[]; tune?: string };
+type BGroup = { label?: string; picks: BPick[]; tune?: string; row?: boolean };
+let palVibe = 'All';
 type BLayer = {
   id: LayerId;
   name: string;
@@ -19051,10 +19175,18 @@ const LAYERS: BLayer[] = [
     used: () => true,
     sum: () => secSum('colour'),
     groups: () => [
-      { label: 'Palette', picks: [...(Object.entries(PALETTES) as [Settings['palette'], PaletteDef][]).map(([k, p]): BPick => ({ ...bPick(p.label, { palette: k }), swatch: palSwatch(p) })), bPick('Your own', { palette: 'custom' })] },
+      // A row of vibes filters the palettes below it.
+      { label: 'Palette', row: true, picks: ['All', ...PAL_GROUPS, ...(myPals.length ? ['Yours'] : [])].map((g): BPick => ({ name: g, on: () => palVibe === g, go: () => (palVibe = g) })) },
+      { picks: [
+        ...(palVibe === 'Yours' ? [] : palKeys().filter((k) => palVibe === 'All' || (PALETTES[k] as PaletteDef).group === palVibe).map((k): BPick => ({ ...bPick(PALETTES[k].label, { palette: k }), swatch: palSwatch(PALETTES[k]) }))),
+        ...(palVibe === 'All' || palVibe === 'Yours' ? myPals.map((m): BPick => ({ name: m.name, on: () => myPalOn(m), go: () => palSet({ palette: 'custom', customColors: m.colors, customBg: m.bg }), swatch: myPalSwatch(m) })) : []),
+        { name: '✦ Generate', on: () => false, go: genPalette },
+        ...(settings.palette === 'custom' && !myPals.some(myPalOn) ? [{ name: 'Keep it', on: () => false, go: keepPalette }] : []),
+      ] },
+      { label: 'Background', picks: bAll('palBg', PAL_BGS) },
       { label: 'Colour by', picks: bAll('colorBy', COLOR_BY, ['palette', 'speed', 'direction', 'vertical', 'radial', 'cycle'], { palette: 'Random', direction: 'Heading', vertical: 'Height', cycle: 'Waves' }) },
     ],
-    extras: () => ['customColors', 'customBg', 'hueShift'],
+    extras: () => ['palSat', 'palLight', 'hueShift'],
   },
   {
     id: 'depth', name: 'Depth & light', color: '#b48cff', q: 'Flat or deep?', about: 'Near and far layers: near particles glow, far ones sink into fog. 3D solids get light and shade.',
@@ -19281,7 +19413,7 @@ function buildStructure() {
   const ls = LAYERS.map((l) => `${l.id}:${l.used() ? 1 : 0}${buildHidden.has(l.id) ? 'h' : ''}`).join(',');
   const open = buildMode === 'steps' ? LAYERS[buildStep] : buildOpen ? layerById(buildOpen) : null;
   const ex = open ? open.extras().filter((k) => buildCtl(k)).join(',') + `|${open.groups().map((g) => g.picks.length).join(',')}` : '';
-  return `${buildPeek}|${buildMore}|${buildMode}|${buildStep}|${buildOpen}|${ls}|${ex}|${gpuFx.ok}|${!!currentMine}|${S.shape === 'text'}`;
+  return `${buildPeek}|${buildMore}|${buildMode}|${buildStep}|${buildOpen}|${ls}|${ex}|${palVibe}|${myPals.length}|${gpuFx.ok}|${!!currentMine}|${S.shape === 'text'}`;
 }
 function buildPaint() {
   if (!buildEl) return;
@@ -19488,9 +19620,10 @@ function buildBody(l: BLayer) {
       // A long list scrolls sideways in two rows, so the sheet stays short.
       // Two flex rows rather than a grid: Safari squeezes auto-sized grid
       // columns in a scroller, so long names ran into each other.
-      const many = g.picks.length > 9;
+      const many = g.picks.length > 9 || !!g.row;
       grid.classList.toggle('many', many);
-      const rows = many ? [document.createElement('div'), document.createElement('div')] : [];
+      grid.classList.toggle('one', !!g.row);
+      const rows = !many ? [] : g.row ? [document.createElement('div')] : [document.createElement('div'), document.createElement('div')];
       for (const r of rows) {
         r.className = 'bd-prow';
         grid.append(r);
@@ -19511,7 +19644,7 @@ function buildBody(l: BLayer) {
           buildPaint();
         });
         picksOn.push([b, p]);
-        (many ? rows[pi % 2] : grid).append(b);
+        (many ? rows[pi % rows.length] : grid).append(b);
       }
       box.append(grid);
     }

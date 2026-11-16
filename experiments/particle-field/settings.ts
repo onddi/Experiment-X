@@ -142,6 +142,9 @@ export interface Settings {
   anim: string;
   // Turns every colour round the colour wheel (degrees).
   hueShift: number;
+  palSat: number;
+  palLight: number;
+  palBg: 'own' | 'black' | 'tinted' | 'light';
   // Macros: each moves a group of settings at once, relative to the scene. 0.5 = as the scene is.
   mEnergy: number;
   mOrder: number;
@@ -486,33 +489,74 @@ export interface PaletteDef {
   bg: readonly [number, number, number];
   stops: readonly (readonly [number, number, number])[];
   cyclic?: boolean;
+  /** The vibe it's listed under. */
+  group?: PalGroup;
 }
+export const PAL_GROUPS = ['Warm', 'Cool', 'Neon', 'Earthy', 'Soft', 'Duotone', 'Film & print'] as const;
+export type PalGroup = (typeof PAL_GROUPS)[number];
 
 export const PALETTES = {
-  aurora: { label: 'Aurora', bg: [7, 7, 12], stops: [[200, 90, 65], [260, 85, 68], [320, 90, 66]] },
-  ember: { label: 'Ember', bg: [12, 6, 4], stops: [[355, 85, 40], [10, 90, 52], [30, 95, 58], [48, 100, 70]] },
-  ocean: { label: 'Ocean', bg: [3, 9, 14], stops: [[225, 80, 45], [200, 90, 55], [180, 80, 60], [165, 70, 78]] },
-  sunset: { label: 'Sunset', bg: [14, 6, 14], stops: [[265, 60, 45], [320, 75, 55], [350, 85, 62], [25, 95, 62], [45, 100, 72]] },
-  forest: { label: 'Forest', bg: [5, 10, 7], stops: [[160, 50, 30], [140, 55, 42], [100, 55, 52], [70, 70, 65]] },
-  ice: { label: 'Ice', bg: [5, 8, 14], stops: [[220, 50, 45], [205, 70, 65], [195, 80, 82], [190, 60, 96]] },
-  gold: { label: 'Gold', bg: [10, 8, 4], stops: [[30, 70, 30], [38, 80, 48], [45, 90, 62], [50, 100, 85]] },
-  vapor: { label: 'Vaporwave', bg: [10, 5, 18], stops: [[280, 80, 55], [310, 90, 65], [190, 95, 62], [175, 90, 75]] },
-  candy: { label: 'Candy', bg: [14, 10, 16], stops: [[330, 85, 72], [280, 70, 76], [200, 80, 74], [160, 65, 72]] },
-  toxic: { label: 'Toxic', bg: [4, 8, 4], stops: [[150, 80, 30], [120, 90, 45], [90, 100, 55], [65, 100, 70]] },
-  infra: { label: 'Infrared', bg: [3, 3, 8], stops: [[240, 70, 30], [280, 80, 45], [330, 90, 52], [15, 100, 55], [50, 100, 65], [60, 100, 92]] },
-  neon: { label: 'Neon', bg: [6, 4, 10], stops: [[300, 100, 62], [240, 100, 66], [180, 100, 55], [300, 100, 62]], cyclic: true },
-  mono: { label: 'Mono', bg: [8, 8, 8], stops: [[0, 0, 35], [0, 0, 65], [0, 0, 95]] },
-  rainbow: { label: 'Rainbow', bg: [6, 6, 8], stops: [[0, 90, 62], [120, 90, 58], [240, 90, 66], [360, 90, 62]], cyclic: true },
-  cosmic: { label: 'Cosmic', bg: [4, 3, 14], stops: [[250, 70, 35], [275, 75, 55], [320, 85, 68], [200, 90, 80]] },
-  cyber: { label: 'Cyberpunk', bg: [10, 4, 16], stops: [[320, 100, 60], [285, 90, 62], [190, 100, 55], [55, 100, 60]] },
-  tealorange: { label: 'Teal & orange', bg: [6, 10, 12], stops: [[185, 80, 45], [190, 60, 70], [30, 70, 75], [25, 95, 58]] },
-  crimson: { label: 'Crimson', bg: [10, 3, 5], stops: [[345, 80, 30], [350, 85, 45], [0, 90, 58], [10, 100, 72]] },
-  lavender: { label: 'Lavender', bg: [12, 10, 18], stops: [[260, 50, 60], [275, 55, 72], [300, 45, 82], [230, 50, 85]] },
-  pastel: { label: 'Pastel', bg: [16, 16, 22], stops: [[350, 80, 82], [40, 85, 80], [150, 55, 78], [210, 75, 80], [270, 65, 82]], cyclic: false },
-  desert: { label: 'Desert', bg: [16, 11, 8], stops: [[15, 45, 40], [25, 55, 55], [35, 60, 68], [45, 50, 82]] },
-  paper: { label: 'Ink on paper', bg: [242, 238, 228], stops: [[220, 30, 12], [220, 25, 25], [215, 20, 38]] },
-  blueprint: { label: 'Blueprint', bg: [18, 52, 110], stops: [[205, 60, 70], [200, 70, 85], [195, 40, 96]] },
-  risograph: { label: 'Risograph', bg: [245, 240, 230], stops: [[335, 85, 55], [210, 80, 45], [45, 95, 52]] },
+  aurora: { label: 'Aurora', group: 'Cool', bg: [7, 7, 12], stops: [[200, 90, 65], [260, 85, 68], [320, 90, 66]] },
+  ember: { label: 'Ember', group: 'Warm', bg: [12, 6, 4], stops: [[355, 85, 40], [10, 90, 52], [30, 95, 58], [48, 100, 70]] },
+  ocean: { label: 'Ocean', group: 'Cool', bg: [3, 9, 14], stops: [[225, 80, 45], [200, 90, 55], [180, 80, 60], [165, 70, 78]] },
+  sunset: { label: 'Sunset', group: 'Warm', bg: [14, 6, 14], stops: [[265, 60, 45], [320, 75, 55], [350, 85, 62], [25, 95, 62], [45, 100, 72]] },
+  forest: { label: 'Forest', group: 'Earthy', bg: [5, 10, 7], stops: [[160, 50, 30], [140, 55, 42], [100, 55, 52], [70, 70, 65]] },
+  ice: { label: 'Ice', group: 'Cool', bg: [5, 8, 14], stops: [[220, 50, 45], [205, 70, 65], [195, 80, 82], [190, 60, 96]] },
+  gold: { label: 'Gold', group: 'Warm', bg: [10, 8, 4], stops: [[30, 70, 30], [38, 80, 48], [45, 90, 62], [50, 100, 85]] },
+  vapor: { label: 'Vaporwave', group: 'Neon', bg: [10, 5, 18], stops: [[280, 80, 55], [310, 90, 65], [190, 95, 62], [175, 90, 75]] },
+  candy: { label: 'Candy', group: 'Soft', bg: [14, 10, 16], stops: [[330, 85, 72], [280, 70, 76], [200, 80, 74], [160, 65, 72]] },
+  toxic: { label: 'Toxic', group: 'Neon', bg: [4, 8, 4], stops: [[150, 80, 30], [120, 90, 45], [90, 100, 55], [65, 100, 70]] },
+  infra: { label: 'Infrared', group: 'Neon', bg: [3, 3, 8], stops: [[240, 70, 30], [280, 80, 45], [330, 90, 52], [15, 100, 55], [50, 100, 65], [60, 100, 92]] },
+  neon: { label: 'Neon', group: 'Neon', bg: [6, 4, 10], stops: [[300, 100, 62], [240, 100, 66], [180, 100, 55], [300, 100, 62]], cyclic: true },
+  mono: { label: 'Mono', group: 'Duotone', bg: [8, 8, 8], stops: [[0, 0, 35], [0, 0, 65], [0, 0, 95]] },
+  rainbow: { label: 'Rainbow', group: 'Neon', bg: [6, 6, 8], stops: [[0, 90, 62], [120, 90, 58], [240, 90, 66], [360, 90, 62]], cyclic: true },
+  cosmic: { label: 'Cosmic', group: 'Cool', bg: [4, 3, 14], stops: [[250, 70, 35], [275, 75, 55], [320, 85, 68], [200, 90, 80]] },
+  cyber: { label: 'Cyberpunk', group: 'Neon', bg: [10, 4, 16], stops: [[320, 100, 60], [285, 90, 62], [190, 100, 55], [55, 100, 60]] },
+  tealorange: { label: 'Teal & orange', group: 'Duotone', bg: [6, 10, 12], stops: [[185, 80, 45], [190, 60, 70], [30, 70, 75], [25, 95, 58]] },
+  crimson: { label: 'Crimson', group: 'Warm', bg: [10, 3, 5], stops: [[345, 80, 30], [350, 85, 45], [0, 90, 58], [10, 100, 72]] },
+  lavender: { label: 'Lavender', group: 'Soft', bg: [12, 10, 18], stops: [[260, 50, 60], [275, 55, 72], [300, 45, 82], [230, 50, 85]] },
+  pastel: { label: 'Pastel', group: 'Soft', bg: [16, 16, 22], stops: [[350, 80, 82], [40, 85, 80], [150, 55, 78], [210, 75, 80], [270, 65, 82]], cyclic: false },
+  desert: { label: 'Desert', group: 'Earthy', bg: [16, 11, 8], stops: [[15, 45, 40], [25, 55, 55], [35, 60, 68], [45, 50, 82]] },
+  paper: { label: 'Ink on paper', group: 'Film & print', bg: [242, 238, 228], stops: [[220, 30, 12], [220, 25, 25], [215, 20, 38]] },
+  blueprint: { label: 'Blueprint', group: 'Film & print', bg: [18, 52, 110], stops: [[205, 60, 70], [200, 70, 85], [195, 40, 96]] },
+  risograph: { label: 'Risograph', group: 'Film & print', bg: [245, 240, 230], stops: [[335, 85, 55], [210, 80, 45], [45, 95, 52]] },
+  // Warm
+  peach: { label: 'Peach', group: 'Warm', bg: [16, 8, 8], stops: [[350, 60, 45], [10, 75, 62], [25, 90, 72], [38, 100, 84]] },
+  lava: { label: 'Lava', group: 'Warm', bg: [8, 2, 2], stops: [[0, 0, 12], [0, 90, 35], [15, 100, 50], [40, 100, 62], [55, 100, 85]] },
+  autumn: { label: 'Autumn', group: 'Warm', bg: [12, 7, 4], stops: [[0, 60, 32], [18, 75, 45], [32, 85, 52], [45, 80, 62]] },
+  magma: { label: 'Magma', group: 'Warm', bg: [6, 3, 10], stops: [[270, 60, 22], [320, 70, 38], [355, 85, 52], [25, 100, 62], [50, 100, 80]] },
+  // Cool
+  deepsea: { label: 'Deep sea', group: 'Cool', bg: [1, 4, 10], stops: [[230, 85, 25], [215, 90, 40], [195, 95, 50], [175, 100, 60]] },
+  glacier: { label: 'Glacier', group: 'Cool', bg: [8, 12, 18], stops: [[210, 25, 45], [200, 35, 65], [190, 45, 82], [185, 30, 95]] },
+  twilight: { label: 'Twilight', group: 'Cool', bg: [6, 5, 16], stops: [[240, 55, 32], [255, 50, 48], [290, 40, 62], [330, 55, 72]] },
+  mint: { label: 'Mint', group: 'Cool', bg: [4, 12, 11], stops: [[175, 55, 35], [165, 60, 52], [155, 65, 68], [140, 70, 84]] },
+  // Neon
+  laser: { label: 'Laser', group: 'Neon', bg: [2, 2, 6], stops: [[120, 100, 50], [180, 100, 50], [300, 100, 58], [120, 100, 50]], cyclic: true },
+  acid: { label: 'Acid', group: 'Neon', bg: [6, 4, 8], stops: [[280, 100, 55], [320, 100, 60], [75, 100, 55], [60, 100, 65]] },
+  synthwave: { label: 'Synthwave', group: 'Neon', bg: [12, 4, 24], stops: [[260, 85, 45], [300, 95, 58], [330, 100, 62], [40, 100, 62], [55, 100, 70]] },
+  club: { label: 'Club', group: 'Neon', bg: [4, 2, 10], stops: [[230, 100, 58], [270, 100, 62], [330, 100, 60], [0, 100, 62]] },
+  // Earthy
+  moss: { label: 'Moss', group: 'Earthy', bg: [6, 8, 4], stops: [[90, 30, 22], [85, 35, 35], [75, 40, 48], [60, 45, 62]] },
+  terracotta: { label: 'Terracotta', group: 'Earthy', bg: [14, 8, 6], stops: [[10, 45, 32], [15, 55, 45], [25, 55, 58], [35, 45, 74]] },
+  olive: { label: 'Olive', group: 'Earthy', bg: [9, 9, 5], stops: [[65, 35, 25], [60, 40, 38], [50, 45, 52], [40, 50, 70]] },
+  clay: { label: 'Clay', group: 'Earthy', bg: [12, 10, 9], stops: [[20, 18, 35], [25, 22, 50], [30, 25, 65], [35, 30, 80]] },
+  jungle: { label: 'Jungle', group: 'Earthy', bg: [2, 8, 5], stops: [[160, 70, 20], [140, 65, 32], [110, 60, 42], [80, 75, 50], [50, 90, 58]] },
+  // Soft
+  sorbet: { label: 'Sorbet', group: 'Soft', bg: [16, 12, 14], stops: [[5, 75, 76], [30, 85, 76], [55, 80, 78], [100, 55, 76]] },
+  blush: { label: 'Blush', group: 'Soft', bg: [18, 12, 14], stops: [[340, 40, 62], [350, 50, 72], [10, 60, 80], [25, 70, 88]] },
+  seafoam: { label: 'Seafoam', group: 'Soft', bg: [10, 16, 16], stops: [[200, 45, 66], [180, 45, 72], [160, 45, 78], [140, 40, 86]] },
+  dawn: { label: 'Dawn', group: 'Soft', bg: [14, 12, 20], stops: [[230, 40, 62], [280, 35, 72], [330, 50, 78], [30, 70, 82]] },
+  // Duotone
+  pinkblue: { label: 'Pink & blue', group: 'Duotone', bg: [6, 6, 14], stops: [[220, 90, 58], [250, 50, 70], [320, 60, 74], [330, 95, 64]] },
+  purplegold: { label: 'Purple & gold', group: 'Duotone', bg: [8, 4, 12], stops: [[270, 70, 42], [275, 50, 60], [42, 60, 66], [45, 95, 58]] },
+  redcyan: { label: 'Red & cyan', group: 'Duotone', bg: [6, 6, 8], stops: [[185, 100, 50], [185, 40, 75], [355, 40, 75], [355, 100, 58]] },
+  limeviolet: { label: 'Lime & violet', group: 'Duotone', bg: [6, 4, 10], stops: [[265, 85, 55], [265, 40, 72], [80, 50, 72], [80, 100, 55]] },
+  // Film & print
+  sepia: { label: 'Sepia', group: 'Film & print', bg: [18, 12, 8], stops: [[30, 35, 30], [32, 40, 48], [36, 45, 66], [40, 55, 84]] },
+  noir: { label: 'Noir', group: 'Film & print', bg: [5, 5, 5], stops: [[0, 0, 22], [0, 0, 50], [0, 0, 82], [355, 90, 52]] },
+  kodachrome: { label: 'Kodachrome', group: 'Film & print', bg: [10, 9, 8], stops: [[205, 55, 38], [190, 40, 55], [45, 80, 58], [12, 80, 52], [48, 95, 76]] },
+  polaroid: { label: 'Polaroid', group: 'Film & print', bg: [238, 233, 222], stops: [[200, 40, 32], [345, 45, 45], [30, 60, 45], [170, 35, 35]] },
+  cyanotype: { label: 'Cyanotype', group: 'Film & print', bg: [14, 42, 92], stops: [[212, 40, 58], [208, 45, 76], [200, 35, 90], [195, 20, 98]] },
 } satisfies Record<string, PaletteDef>;
 
 
@@ -607,6 +651,9 @@ export const DEFAULTS: Settings = {
   links: '',
   anim: '',
   hueShift: 0,
+  palSat: 1,
+  palLight: 0,
+  palBg: 'own',
   mEnergy: 0.5,
   mOrder: 0.5,
   mDream: 0.5,
