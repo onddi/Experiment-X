@@ -744,6 +744,22 @@ function drawThumb(fade: number, light: boolean) {
   ctx.restore();
 }
 
+// "Place it on the field" (Birth & lifespan): the next tap on the field puts
+// the emitter there, and holding and sliding moves it.
+let emitPlacing = false;
+let emitDragging = false;
+canvas.addEventListener('pointermove', (e) => {
+  if (!emitDragging) return;
+  settings.emitX = Math.min(1, Math.max(0, e.offsetX / w));
+  settings.emitY = Math.min(1, Math.max(0, e.offsetY / h));
+  changed(new Set(['emitX', 'emitY']));
+});
+for (const ev of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(ev, () => (emitDragging = false));
+function placeEmitter() {
+  emitPlacing = true;
+  if (sheetMode()) uGo('stage');
+  showToast('Tap the field to place the emitter', ['Cancel', () => (emitPlacing = false)]);
+}
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   // A second finger starts a two-finger gesture instead (twist, freeze, play knobs).
@@ -754,11 +770,17 @@ canvas.addEventListener('pointerdown', (e) => {
     hint.classList.add('gone');
     return;
   }
-  if (settings.placeWell === 'emitter') {
-    settings.emitX = e.offsetX / w;
-    settings.emitY = e.offsetY / h;
+  if (emitPlacing || settings.placeWell === 'emitter') {
+    settings.emitX = Math.min(1, Math.max(0, e.offsetX / w));
+    settings.emitY = Math.min(1, Math.max(0, e.offsetY / h));
     changed(new Set(['emitX', 'emitY']));
     hint.classList.add('gone');
+    // Keep the finger down and slide to move it.
+    emitDragging = true;
+    if (emitPlacing) {
+      emitPlacing = false;
+      showToast('Emitter placed. Slide to move it while you hold.');
+    }
     return;
   }
   if (settings.placeWell !== 'off') {
@@ -9341,6 +9363,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Bursts on each kick drum; turn on Audio first.', show: () => hasEmitter() && settings.emitMode === 'beat' && audio.source === 'off' },
   { kind: 'range', key: 'emitX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
   { kind: 'range', key: 'emitY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
+  { kind: 'buttons', buttons: [['Place it on the field', () => placeEmitter()]], show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
   { kind: 'range', key: 'emitSize', label: 'Size', min: 10, max: 600, step: 5, format: (v) => `${v}px`, show: () => ['line', 'circle', 'ring'].includes(settings.emitter) },
   { kind: 'range', key: 'emitAngle', label: 'Line angle', min: 0, max: 179, step: 1, format: (v) => `${v}°`, show: () => settings.emitter === 'line' },
   { kind: 'more', label: 'More birth settings' },
@@ -9352,7 +9375,6 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'launchSpread', label: 'Spread', min: 0, max: 360, step: 5, format: (v) => (v >= 360 ? 'all directions' : `${v}°`), show: () => settings.launchSpeed > 0 },
   { kind: 'note', text: 'Launch applies whenever a particle is born: on Scatter, with a Lifespan, and from an emitter.' },
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
-  { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
   { kind: 'section', about: 'Particles that make particles: bursts when they die or hit something, trails, bursts on the beat.', id: 'spawning', label: 'Spawning', tab: 'shape',
     lock: ['spawnOn', 'spawnFrom', 'spawnCount', 'spawnSpeed', 'spawnLife', 'spawnSize', 'spawnTone', 'spawnShare', 'spawnChain'],
