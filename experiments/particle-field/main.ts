@@ -1999,9 +1999,14 @@ let shapeMedia: { video: HTMLVideoElement | null; frames: HTMLCanvasElement[] | 
 let mediaFrameNo = 0;
 let mediaAt = 0;
 const mediaCanvas = document.createElement('canvas');
+let mediaBmp: ImageBitmap | null = null;
+let mediaBusy = false;
+let mediaNoBmp = false;
 function mediaStop() {
   shapeMedia?.video?.pause();
   shapeMedia = null;
+  mediaBmp?.close();
+  mediaBmp = null;
 }
 // The picture as it is now (drawn into a canvas small enough to sample).
 function mediaFrame(): HTMLCanvasElement | null {
@@ -2010,7 +2015,12 @@ function mediaFrame(): HTMLCanvasElement | null {
   let src: CanvasImageSource;
   let sw: number;
   let sh: number;
-  if (m.video) {
+  if (m.video && mediaBmp) {
+    // A frame the browser already shrank (off this thread).
+    src = mediaBmp;
+    sw = mediaBmp.width;
+    sh = mediaBmp.height;
+  } else if (m.video) {
     if (m.video.readyState < 2) return null;
     src = m.video;
     sw = m.video.videoWidth;
@@ -2024,7 +2034,8 @@ function mediaFrame(): HTMLCanvasElement | null {
     sw = m.frames![k].width;
     sh = m.frames![k].height;
   }
-  const sc = Math.min(1, 640 / Math.max(sw, sh, 1));
+  // The shape is sampled on a grid of about half the screen, so a small frame is plenty.
+  const sc = Math.min(1, 400 / Math.max(sw, sh, 1));
   const W = Math.max(2, Math.round(sw * sc));
   const H = Math.max(2, Math.round(sh * sc));
   if (mediaCanvas.width !== W || mediaCanvas.height !== H) {
@@ -2039,10 +2050,38 @@ function mediaFrame(): HTMLCanvasElement | null {
 // Video and GIF shapes are sampled again a few times a second.
 function mediaTick(now: number) {
   if (settings.shape !== 'image') return;
+  const v = shapeMedia?.video;
   if (shapeMedia && now - mediaAt > 1000 / settings.imageRate) {
-    mediaAt = now;
-    mediaFrameNo++;
-    buildShape();
+    if (v && !mediaNoBmp) {
+      // Ask for the next frame already small: copying a full video frame
+      // out of the GPU is what costs on a phone, so the browser shrinks it first.
+      if (mediaBusy || v.readyState < 2) return picColours(now);
+      mediaAt = now;
+      mediaBusy = true;
+      const k = Math.min(1, 400 / Math.max(v.videoWidth, v.videoHeight, 1));
+      createImageBitmap(v, { resizeWidth: Math.max(2, Math.round(v.videoWidth * k)), resizeHeight: Math.max(2, Math.round(v.videoHeight * k)), resizeQuality: 'low' }).then(
+        (b) => {
+          mediaBusy = false;
+          if (shapeMedia?.video !== v) return b.close();
+          mediaBmp?.close();
+          mediaBmp = b;
+          mediaFrameNo++;
+          liveShape = true;
+          buildShape();
+          liveShape = false;
+        },
+        () => {
+          mediaBusy = false;
+          mediaNoBmp = true;
+        },
+      );
+    } else {
+      mediaAt = now;
+      mediaFrameNo++;
+      liveShape = true;
+      buildShape();
+      liveShape = false;
+    }
   }
   picColours(now);
 }
