@@ -208,6 +208,12 @@ export interface Settings {
   sndScan: number;
   sndScanSecs: number;
   sndTouch: number;
+  sndTouchSound: 'theremin' | 'lead' | 'pad' | 'organ' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
+  sndTouchMode: 'glide' | 'notes' | 'chord';
+  sndTouchGlide: number;
+  sndTouchVib: number;
+  sndTouchAxis: 'up' | 'across';
+  sndTouchOct: number;
   sndReverb: number;
   sndMusic: 'free' | 'room' | 'along';
   /** Draw the strings, the step column and the scanline faintly. */
@@ -712,6 +718,12 @@ export const DEFAULTS: Settings = {
   sndScan: 0,
   sndScanSecs: 4,
   sndTouch: 0.6,
+  sndTouchSound: 'theremin',
+  sndTouchMode: 'glide',
+  sndTouchGlide: 0.15,
+  sndTouchVib: 0.3,
+  sndTouchAxis: 'up',
+  sndTouchOct: 0,
   sndReverb: 0.45,
   sndMusic: 'room',
   sndShow: true,

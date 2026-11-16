@@ -24,6 +24,33 @@ export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked
 export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand';
 export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
+/** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
+export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | Voice;
+export type TouchMode = 'glide' | 'notes' | 'chord';
+const HELD: Record<string, { a: OscillatorType; b: OscillatorType; ratio: number; mix: number; q: number; attack: number; gain: number }> = {
+  theremin: { a: 'sine', b: 'triangle', ratio: 2, mix: 0.3, q: 0.7, attack: 0.03, gain: 1 },
+  lead: { a: 'sawtooth', b: 'square', ratio: 1.005, mix: 0.45, q: 5, attack: 0.02, gain: 0.55 },
+  pad: { a: 'triangle', b: 'sawtooth', ratio: 1.008, mix: 0.35, q: 1, attack: 0.25, gain: 0.8 },
+  organ: { a: 'sine', b: 'sine', ratio: 2, mix: 0.6, q: 0.7, attack: 0.015, gain: 0.85 },
+};
+export const isHeldTouch = (s: string) => s in HELD;
+interface TouchVoice {
+  osc: OscillatorNode;
+  osc2: OscillatorNode;
+  mix: GainNode;
+  filter: BiquadFilterNode;
+  gain: GainNode;
+  pan: StereoPannerNode;
+  lfo: OscillatorNode;
+  vib: GainNode;
+  sound: string;
+  id: number;
+  x: number;
+  y: number;
+  speed: number;
+  deg: number;
+  on: boolean;
+}
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const SCALES: Record<SndScale, number[]> = {
@@ -128,6 +155,12 @@ export interface SoundParams {
   scan: number;
   scanSecs: number;
   touch: number;
+  touchSound: TouchSound;
+  touchMode: TouchMode;
+  touchGlide: number; // 0 snaps … 1 slow slides
+  touchVib: number; // vibrato that grows while a finger holds still
+  touchAxis: 'up' | 'across'; // which way pitch runs
+  touchOctave: number;
   accents: number;
   reverb: number;
   music: SndMusic;
@@ -176,6 +209,7 @@ export interface SoundFrame {
   // Bounces since last frame: x, y, impact (0..1), tone triples.
   hits: number[];
   touch: { x: number; y: number; down: boolean };
+  fingers?: { id: number; x: number; y: number }[]; // every finger down (touch screens); else touch is used
   thump: number; // a burst happened (0..1 strength)
   born: number; // particles spawned since last frame
   scene: boolean; // a new scene started
@@ -294,13 +328,7 @@ export class ParticleSound {
   step = -1;
   private grid = new Float32Array(ROWS);
   // Touch.
-  private touchOsc: OscillatorNode;
-  private touchOsc2: OscillatorNode;
-  private touchFilter: BiquadFilterNode;
-  private touchGain: GainNode;
-  private touchPan: StereoPannerNode;
-  private lastTouch = { x: 0, y: 0 };
-  private touchSpeed = 0;
+  private touchVoices: TouchVoice[] = [];
   private lastSparkle = 0;
   /** Where the scanline is, 0..1 across the screen. */
   scanX = 0;
@@ -364,24 +392,6 @@ export class ParticleSound {
       this.padOsc.push(o);
     }
 
-    // Touch: a sine with a soft triangle an octave up, gliding between scale notes.
-    this.touchOsc = ctx.createOscillator();
-    this.touchOsc2 = ctx.createOscillator();
-    this.touchOsc2.type = 'triangle';
-    this.touchFilter = ctx.createBiquadFilter();
-    this.touchFilter.type = 'lowpass';
-    this.touchFilter.frequency.value = 1500;
-    this.touchGain = ctx.createGain();
-    this.touchGain.gain.value = 0;
-    this.touchPan = ctx.createStereoPanner();
-    const t2 = ctx.createGain();
-    t2.gain.value = 0.3;
-    this.touchOsc.connect(this.touchFilter);
-    this.touchOsc2.connect(t2).connect(this.touchFilter);
-    this.touchFilter.connect(this.touchGain).connect(this.touchPan);
-    this.send(this.touchPan, 0.5);
-    this.touchOsc.start();
-    this.touchOsc2.start();
     this.set(p);
   }
 
@@ -622,6 +632,118 @@ export class ParticleSound {
   wake() {
     this.resume();
     this.set(this.p);
+  }
+
+  // A held voice for one finger: two oscillators through a low-pass, with a
+  // vibrato LFO on their pitch.
+  private touchVoice(id: number): TouchVoice {
+    const free = this.touchVoices.find((v) => !v.on && v.id === id) ?? this.touchVoices.find((v) => !v.on);
+    if (free) return free;
+    const ctx = this.ctx;
+    const v: TouchVoice = {
+      osc: ctx.createOscillator(), osc2: ctx.createOscillator(), mix: ctx.createGain(), filter: ctx.createBiquadFilter(),
+      gain: ctx.createGain(), pan: ctx.createStereoPanner(), lfo: ctx.createOscillator(), vib: ctx.createGain(),
+      sound: '', id, x: 0, y: 0, speed: 0, deg: -999, on: false,
+    };
+    v.filter.type = 'lowpass';
+    v.gain.gain.value = 0;
+    v.osc.connect(v.filter);
+    v.osc2.connect(v.mix).connect(v.filter);
+    v.filter.connect(v.gain).connect(v.pan);
+    v.lfo.frequency.value = 5.5;
+    v.vib.gain.value = 0;
+    v.lfo.connect(v.vib);
+    v.vib.connect(v.osc.detune);
+    v.vib.connect(v.osc2.detune);
+    this.send(v.pan, 0.5);
+    v.osc.start();
+    v.osc2.start();
+    v.lfo.start();
+    this.touchVoices.push(v);
+    return v;
+  }
+  private touchRelease(v: TouchVoice, t: number) {
+    if (!v.on) return;
+    v.on = false;
+    const H = HELD[v.sound];
+    v.gain.gain.setTargetAtTime(0, t, H ? Math.max(0.08, H.attack) : 0.08);
+    v.vib.gain.setTargetAtTime(0, t, 0.1);
+  }
+  // Fingers to voices. Up/down (or across) picks the scale note, the other
+  // way is tone and stereo; moving faster plays louder; holding still lets a
+  // vibrato bloom. Held sounds sing; struck ones play as you land and as
+  // you cross into each new note (a strum).
+  private touchFrame(F: SoundFrame, t: number, w: number, h: number) {
+    const P = this.p;
+    const fingers = F.fingers && F.fingers.length ? F.fingers.slice(0, 5) : F.touch.down ? [{ id: -1, x: F.touch.x, y: F.touch.y }] : [];
+    const live = new Set(fingers.map((f) => f.id));
+    for (const v of this.touchVoices) if (v.on && !live.has(v.id)) this.touchRelease(v, t);
+    const held = HELD[P.touchSound];
+    const across = P.touchAxis === 'across';
+    const base = 48 + 12 * P.touchOctave;
+    for (const f of fingers) {
+      let v = this.touchVoices.find((x) => x.on && x.id === f.id);
+      const fresh = !v;
+      if (!v) {
+        v = this.touchVoice(f.id);
+        v.on = true;
+        v.id = f.id;
+        v.x = f.x;
+        v.y = f.y;
+        v.speed = 0;
+        v.deg = -999;
+      }
+      const mv = Math.hypot(f.x - v.x, f.y - v.y) / Math.max(1e-3, F.dt);
+      v.speed += (Math.min(1, mv / 900) - v.speed) * 0.15;
+      v.x = f.x;
+      v.y = f.y;
+      const pos = across ? Math.min(1, Math.max(0, f.x / w)) : 1 - Math.min(1, Math.max(0, f.y / h));
+      const tone = across ? 1 - Math.min(1, Math.max(0, f.y / h)) : Math.min(1, Math.max(0, f.x / w));
+      let deg = Math.round(pos * (this.L * P.range - 1));
+      if (P.touchMode === 'chord') deg = this.toChord(deg);
+      const pan = tone * 1.2 - 0.6;
+      const lvl = P.touch * (0.4 + v.speed * 0.6);
+      this.levels[LI.touch] = Math.max(this.levels[LI.touch], lvl);
+      if (held) {
+        if (v.sound !== P.touchSound) {
+          v.sound = P.touchSound;
+          v.osc.type = held.a;
+          v.osc2.type = held.b;
+          v.mix.gain.value = held.mix;
+          v.filter.Q.value = held.q;
+        }
+        const fr = this.freq(deg, base);
+        // Glide: from a snap to a long slide; Notes steps cleanly.
+        const tau = fresh ? 0.001 : P.touchMode === 'notes' ? 0.004 : 0.008 + P.touchGlide * 0.25;
+        v.osc.frequency.setTargetAtTime(fr, t, tau);
+        v.osc2.frequency.setTargetAtTime(fr * held.ratio, t, tau);
+        // Chord: the second oscillator sings the chord tone above instead.
+        if (P.touchMode === 'chord') v.osc2.frequency.setTargetAtTime(this.freq(this.toChord(deg + 2), base), t, tau);
+        v.filter.frequency.setTargetAtTime(400 + tone * tone * 6000 + v.speed * 1500, t, 0.05);
+        v.pan.pan.setTargetAtTime(pan, t, 0.05);
+        v.vib.gain.setTargetAtTime(P.touchVib * 40 * (1 - v.speed) ** 2, t, 0.4);
+        const audible = this.audible('touch');
+        v.gain.gain.setTargetAtTime(audible ? lvl * 0.3 * held.gain : 0, t, fresh ? held.attack : 0.03);
+        if (P.touchMode === 'notes' && v.deg !== deg && !fresh && audible) {
+          // A small re-accent on each new note.
+          v.gain.gain.setValueAtTime(lvl * 0.18 * held.gain, t);
+          v.gain.gain.setTargetAtTime(lvl * 0.3 * held.gain, t + 0.01, 0.04);
+        }
+        v.deg = deg;
+      } else {
+        if (v.sound !== P.touchSound) v.sound = P.touchSound;
+        v.gain.gain.setTargetAtTime(0, t, 0.05);
+        if (v.deg === deg) continue;
+        v.deg = deg;
+        this.cur = 'touch';
+        const vel = Math.min(1, P.touch * (fresh ? 0.75 : 0.45 + v.speed * 0.5));
+        const voice = P.touchSound as Voice;
+        const up = P.touchOctave * this.L;
+        // Chord: landing strums the chord from the finger's note up.
+        if (P.touchMode === 'chord' && fresh) [0, 2, 4].forEach((k, i) => this.note(this.toChord(deg + k) + up, vel * (1 - i * 0.15), pan, voice, i * 0.03));
+        else this.note(deg + up, vel, pan, voice);
+      }
+    }
   }
 
   private recDest: MediaStreamAudioDestinationNode | null = null;
@@ -1420,27 +1542,13 @@ export class ParticleSound {
       }
     }
 
-    // Touch: glide to the scale note under the finger; louder as it moves.
+    // Touch: every finger its own voice (see touchFrame).
     if (P.touch > 0) {
-      const T = F.touch;
-      if (T.down) {
-        const mv = Math.hypot(T.x - this.lastTouch.x, T.y - this.lastTouch.y) / Math.max(1e-3, F.dt);
-        this.touchSpeed += (Math.min(1, mv / 900) - this.touchSpeed) * 0.15;
-        const f = this.freq(this.degAt(T.y, h), 48);
-        this.touchOsc.frequency.setTargetAtTime(f, t, 0.035);
-        this.touchOsc2.frequency.setTargetAtTime(f * 2, t, 0.035);
-        this.touchFilter.frequency.setTargetAtTime(500 + (T.x / w) * 4500, t, 0.05);
-        this.touchPan.pan.setTargetAtTime((T.x / w) * 1.2 - 0.6, t, 0.05);
-        const tl = P.touch * (0.4 + this.touchSpeed * 0.6);
-        this.levels[LI.touch] = Math.max(this.levels[LI.touch], tl);
-        this.touchGain.gain.setTargetAtTime(this.audible('touch') ? tl * 0.3 : 0, t, 0.03);
-      } else this.touchGain.gain.setTargetAtTime(0, t, 0.12);
-      this.lastTouch.x = T.x;
-      this.lastTouch.y = T.y;
+      this.touchFrame(F, t, w, h);
       if (F.thump > 0 && now - this.lastThump > 90) {
         this.lastThump = now;
         this.thump(Math.min(1, F.thump) * P.touch);
       }
-    } else this.touchGain.gain.setTargetAtTime(0, t, 0.1);
+    } else for (const v of this.touchVoices) this.touchRelease(v, t);
   }
 }

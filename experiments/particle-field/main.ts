@@ -397,7 +397,9 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
+const HELD_TOUCH = new Set(['theremin', 'lead', 'pad', 'organ']);
+const TOUCH_SOUNDS: [string, string][] = [['theremin', 'Theremin (held)'], ['lead', 'Synth lead (held)'], ['pad', 'Soft pad (held)'], ['organ', 'Organ (held)'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['bell', 'Bell'], ['marimba', 'Marimba'], ['kalimba', 'Kalimba'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['glass', 'Glass'], ['koto', 'Koto'], ['steel', 'Steel drum'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth stab']];
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -7911,6 +7913,13 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndScan', label: 'Scanline', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndScanSecs', label: 'Sweep time', min: 1, max: 16, step: 0.5, format: (v) => `${v} s`, show: () => settings.sndScan > 0 && settings.sndMusic !== 'along' },
   { kind: 'range', key: 'sndTouch', label: 'Touch instrument', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'select', key: 'sndTouchSound', label: 'Touch sound', options: TOUCH_SOUNDS, show: () => settings.sndTouch > 0 },
+  { kind: 'choice', key: 'sndTouchMode', label: 'Touch plays', options: [['glide', 'Glide'], ['notes', 'Notes'], ['chord', 'Chords']], show: () => settings.sndTouch > 0 },
+  { kind: 'range', key: 'sndTouchGlide', label: 'Glide', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'snap' : pct(v)), show: () => settings.sndTouch > 0 && settings.sndTouchMode === 'glide' && HELD_TOUCH.has(settings.sndTouchSound) },
+  { kind: 'range', key: 'sndTouchVib', label: 'Vibrato (hold still)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndTouch > 0 && HELD_TOUCH.has(settings.sndTouchSound) },
+  { kind: 'choice', key: 'sndTouchAxis', label: 'Pitch runs', options: [['up', 'Up'], ['across', 'Across']], show: () => settings.sndTouch > 0 },
+  { kind: 'range', key: 'sndTouchOct', label: 'Touch octave', min: -2, max: 2, step: 1, format: (v) => (v === 0 ? 'middle' : `${v > 0 ? '+' : ''}${v}`), show: () => settings.sndTouch > 0 },
+  { kind: 'note', text: 'Each finger plays its own note (up to five). Pitch runs one way, tone and stereo the other; moving faster plays louder.', show: () => settings.sndTouch > 0 },
   { kind: 'sub', label: 'Rhythm section' },
   { kind: 'range', key: 'sndBass', label: 'Bass line', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndBassSound', label: 'Bass sound', options: [['synth', 'Synth'], ['sub', 'Sub (deep)'], ['round', 'Round (warm)'], ['upright', 'Upright (woody)'], ['acid', 'Acid (squelchy)'], ['picked', 'Picked (electric)']], show: () => settings.sndBass > 0 },
@@ -15658,9 +15667,16 @@ function sndRoot(): number {
   const st = pl?.stops[Math.floor(pl.stops.length / 2)];
   return st ? Math.round(st[0] / 30) % 12 : 0;
 }
+// Every finger on the field, in field pixels, for the touch instrument.
+function sndFingers() {
+  if (!playTouch.size) return undefined;
+  const r = canvas.getBoundingClientRect();
+  const kx = w / Math.max(1, r.width), ky = h / Math.max(1, r.height);
+  return [...playTouch.entries()].map(([id, p]) => ({ id, x: (p.x - r.left) * kx, y: (p.y - r.top) * ky }));
+}
 function sndParams(): SoundParams {
   const S = settings;
-  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic,
+  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
     echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };
@@ -15854,6 +15870,7 @@ function soundTick(dt: number) {
     spread,
     hits: sndHitQ,
     touch: { x: held ? thumb.x : pointer.x, y: held ? thumb.y : pointer.y, down: held || pointer.down },
+    fingers: sndFingers(),
     thump: sndThump,
     pulse: musicOn ? L.pulse : 0,
     bpm: L.bpm,
