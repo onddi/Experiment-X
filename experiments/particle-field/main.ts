@@ -19015,6 +19015,7 @@ let myPresets: MyPreset[] = readJson<MyPreset[]>(MY_PRESETS_KEY, []).map((p) => 
 let currentMine: MyPreset | null = null;
 function updateMine(p: MyPreset) {
   p.settings = snapshot();
+  Object.assign(p, TOP_TAG);
   writeJson(MY_PRESETS_KEY, myPresets);
   currentMine = p;
   redrawMine();
@@ -19163,7 +19164,7 @@ function renderMyPresets() {
       }
       const name = raw.slice(0, 40) || `My scene ${myPresets.length + 1}`;
       const existing = myPresets.findIndex((p) => p.name === name);
-      if (existing >= 0) myPresets[existing].settings = snapshot();
+      if (existing >= 0) Object.assign(myPresets[existing], { settings: snapshot() }, TOP_TAG);
       else myPresets.push({ name, settings: snapshot(), ...TOP_TAG });
       currentMine = myPresets[existing >= 0 ? existing : myPresets.length - 1];
       writeJson(MY_PRESETS_KEY, myPresets);
@@ -22175,7 +22176,7 @@ function buildSave() {
   const name = prompt('Name this scene', lastSceneName ? `My ${lastSceneName}` : `My scene ${myPresets.length + 1}`)?.trim().slice(0, 40);
   if (!name) return;
   const at = myPresets.findIndex((p) => p.name === name);
-  if (at >= 0) myPresets[at].settings = snapshot();
+  if (at >= 0) Object.assign(myPresets[at], { settings: snapshot() }, TOP_TAG);
   else myPresets.push({ name, settings: snapshot(), ...TOP_TAG });
   currentMine = myPresets[at >= 0 ? at : myPresets.length - 1];
   writeJson(MY_PRESETS_KEY, myPresets);
