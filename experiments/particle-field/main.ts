@@ -584,9 +584,83 @@ function obCircleList(): { x: number; y: number }[] {
     .map(([x, y]) => ({ x, y }));
 }
 
+// More pieces ("+ Add obstacle"): each its own kind, word, font, size, angle
+// and place. They join the main obstacle and share its look and push.
+type ObPiece = { kind: 'text' | 'wall' | 'ring' | 'circle'; text: string; font: Settings['obsFont']; size: number; angle: number; x: number; y: number };
+const OB_MORE_MAX = 5;
+let obMoreRaw = '\u0000';
+let obMoreList: ObPiece[] = [];
+function obMore(): ObPiece[] {
+  if (settings.obsMore === obMoreRaw) return obMoreList;
+  obMoreRaw = settings.obsMore;
+  try {
+    const v = JSON.parse(settings.obsMore || '[]');
+    obMoreList = Array.isArray(v) ? v.filter((p) => p && typeof p === 'object' && ['text', 'wall', 'ring', 'circle'].includes(p.kind)).slice(0, OB_MORE_MAX) : [];
+  } catch {
+    obMoreList = [];
+  }
+  return obMoreList;
+}
+function setObMore(list: ObPiece[]) {
+  settings.obsMore = list.length ? JSON.stringify(list.map((p) => ({ ...p, x: +p.x.toFixed(4), y: +p.y.toFixed(4) }))) : '';
+  changed(new Set(['obsMore']));
+}
+// Spin and drift: the time they're drawn at, in steps of 1/20 s so the
+// field (and its distance grid) rebuilds at most 20 times a second.
+const obMoving = () => settings.obsSpin !== 0 || settings.obsDrift > 0;
+let obT = 0;
+function onePiece(g: CanvasRenderingContext2D, p: ObPiece, k: number) {
+  const S = settings;
+  let x = p.x;
+  let y = p.y;
+  let a = p.angle;
+  if (S.obsDrift > 0) {
+    const A = S.obsDrift * 0.12;
+    x += Math.sin(obT * 0.37 + k * 1.7) * A;
+    y += Math.cos(obT * 0.29 + k * 2.3) * A;
+  }
+  if (S.obsSpin) a += S.obsSpin * obT * (k % 2 ? -1 : 1);
+  g.save();
+  g.translate(x * w, y * h);
+  g.rotate((a * Math.PI) / 180);
+  if (p.kind === 'text') {
+    const text = p.text.trim() || ' ';
+    const face = OB_FONTS[p.font] ?? OB_FONTS.bold;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    let size = h * 0.5;
+    g.font = `${face[0]} ${size}px ${face[1]}`;
+    size *= Math.min(1, (w * p.size) / Math.max(1, g.measureText(text).width));
+    size = Math.min(size, h * 0.6 * p.size + 4);
+    g.font = `${face[0]} ${size}px ${face[1]}`;
+    g.fillText(text, 0, 0);
+  } else if (p.kind === 'wall') {
+    const L = Math.max(w, h) * p.size;
+    g.beginPath();
+    g.roundRect(-L / 2, -12, L, 24, 12);
+    g.fill();
+  } else if (p.kind === 'circle') {
+    g.beginPath();
+    g.arc(0, 0, Math.max(6, Math.min(w, h) * 0.3 * p.size), 0, Math.PI * 2);
+    g.fill();
+  } else {
+    // A ring with a gap (at the angle) for the flow to get in and out.
+    const r = Math.min(w, h) * 0.45 * p.size;
+    g.lineWidth = 22;
+    g.lineCap = 'round';
+    g.strokeStyle = g.fillStyle;
+    g.beginPath();
+    g.arc(0, 0, r, 0.35, Math.PI * 2 - 0.35);
+    g.stroke();
+  }
+  g.restore();
+}
+
 // Draws the obstacles in screen pixels (used for both the grid and the display).
 function traceObstacles(g: CanvasRenderingContext2D) {
   const S = settings;
+  if (S.obstacles === 'none') return;
+  obMore().forEach((p, k) => onePiece(g, p, k + 1));
   if (S.obstacles === 'circles') {
     g.beginPath();
     for (const c of obCircleList()) {
@@ -596,36 +670,7 @@ function traceObstacles(g: CanvasRenderingContext2D) {
     g.fill();
   } else if (S.obstacles === 'text' || S.obstacles === 'wall' || S.obstacles === 'ring') {
     // One piece, placed (Position, or dragged on the field) and turned.
-    g.save();
-    g.translate(S.obsX * w, S.obsY * h);
-    g.rotate((S.obsAngle * Math.PI) / 180);
-    if (S.obstacles === 'text') {
-      const text = S.obsText.trim() || ' ';
-      const face = OB_FONTS[S.obsFont] ?? OB_FONTS.bold;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      let size = h * 0.5;
-      g.font = `${face[0]} ${size}px ${face[1]}`;
-      size *= Math.min(1, (w * S.obsSize) / Math.max(1, g.measureText(text).width));
-      size = Math.min(size, h * 0.6 * S.obsSize + 4);
-      g.font = `${face[0]} ${size}px ${face[1]}`;
-      g.fillText(text, 0, 0);
-    } else if (S.obstacles === 'wall') {
-      const L = Math.max(w, h) * S.obsSize;
-      g.beginPath();
-      g.roundRect(-L / 2, -12, L, 24, 12);
-      g.fill();
-    } else {
-      // A ring with a gap (at the angle) for the flow to get in and out.
-      const r = Math.min(w, h) * 0.45 * S.obsSize;
-      g.lineWidth = 22;
-      g.lineCap = 'round';
-      g.strokeStyle = g.fillStyle;
-      g.beginPath();
-      g.arc(0, 0, r, 0.35, Math.PI * 2 - 0.35);
-      g.stroke();
-    }
-    g.restore();
+    onePiece(g, { kind: S.obstacles, text: S.obsText, font: S.obsFont, size: S.obsSize, angle: S.obsAngle, x: S.obsX, y: S.obsY }, 0);
   } else if (S.obstacles === 'body') {
     // Your silhouette from the camera, where the camera shows you on screen.
     const m = cam.body;
@@ -641,7 +686,8 @@ function traceObstacles(g: CanvasRenderingContext2D) {
 function obstacleField(): ObField | null {
   const S = settings;
   if (S.obstacles === 'none') return null;
-  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, S.obsX, S.obsY, S.obsAngle, S.obsFont, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
+  obT = obMoving() ? Math.floor(performance.now() / 50) / 20 : 0;
+  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, S.obsX, S.obsY, S.obsAngle, S.obsFont, S.obsMore, S.obsInside, obT, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
   if (key === obKey) return obField;
   obKey = key;
   const W = Math.max(1, Math.ceil(w / OB_CELL));
@@ -657,7 +703,9 @@ function obstacleField(): ObField | null {
   const N = W * H;
   const inside = new Uint8Array(N);
   let any = false;
-  for (let k = 0; k < N; k++) if (data[k * 4 + 3] > 110) (inside[k] = 1), (any = true);
+  // Keep inside: the shapes become the only room there is.
+  const inv = S.obsInside ? 0 : 1;
+  for (let k = 0; k < N; k++) if ((data[k * 4 + 3] > 110 ? 1 : 0) === inv) (inside[k] = 1), (any = true);
   if (!any) return (obField = null);
   // Chamfer distance (1 / 1.414) to the nearest cell of the other kind.
   const dist = (src: number) => {
@@ -827,6 +875,20 @@ let emitPlacing = false;
 let emitDragging = false;
 let obsPlacing = false;
 let obsDragging = false;
+let obsTarget = -1; // -1 = the main obstacle, else a piece in obsMore
+const obsMoveTo = (x: number, y: number) => {
+  if (obsTarget < 0) {
+    settings.obsX = x;
+    settings.obsY = y;
+    changed(new Set(['obsX', 'obsY']));
+    return;
+  }
+  const list = obMore().map((p) => ({ ...p }));
+  if (!list[obsTarget]) return;
+  list[obsTarget].x = x;
+  list[obsTarget].y = y;
+  setObMore(list);
+};
 let obCircleDrag: { k: number; x: number; y: number; moved: boolean; added: boolean } | null = null;
 const fx = (e: PointerEvent) => Math.min(1, Math.max(0, e.offsetX / w));
 const fy = (e: PointerEvent) => Math.min(1, Math.max(0, e.offsetY / h));
@@ -836,9 +898,7 @@ canvas.addEventListener('pointermove', (e) => {
     settings.emitY = fy(e);
     changed(new Set(['emitX', 'emitY']));
   } else if (obsDragging) {
-    settings.obsX = fx(e);
-    settings.obsY = fy(e);
-    changed(new Set(['obsX', 'obsY']));
+    obsMoveTo(fx(e), fy(e));
   } else if (obCircleDrag) {
     const d = obCircleDrag;
     if (!d.moved && Math.hypot(e.offsetX - d.x, e.offsetY - d.y) < 6) return;
@@ -867,7 +927,8 @@ function placeEmitter() {
   if (sheetMode()) uGo('stage');
   showToast('Tap the field to place the emitter', ['Cancel', () => (emitPlacing = false)]);
 }
-function placeObstacle() {
+function placeObstacle(k = -1) {
+  obsTarget = k;
   obsPlacing = true;
   emitPlacing = false;
   if (sheetMode()) uGo('stage');
@@ -880,9 +941,7 @@ canvas.addEventListener('pointerdown', (e) => {
   pressAt = performance.now();
   if (obsPlacing) {
     obsPlacing = false;
-    settings.obsX = fx(e);
-    settings.obsY = fy(e);
-    changed(new Set(['obsX', 'obsY']));
+    obsMoveTo(fx(e), fy(e));
     obsDragging = true;
     showToast('Obstacle moved. Slide to move it while you hold.');
     return;
@@ -1407,6 +1466,8 @@ function step(dt: number) {
   if (fin >= 1) forceIn = null;
   const finE = fin * fin * (3 - 2 * fin);
   const obF = settings.obsForce * finE;
+  // Inside the shapes the edge is felt late, so thin letters still fill.
+  const obMargin = settings.obsInside ? 6 : OB_MARGIN;
   // The thumb stone and its wall: round obstacles the particles part round.
   const stones = thumb.k > 0.01 ? [{ x: thumb.x, y: thumb.y, r: thumb.r * thumb.k }, ...wallNow] : wallNow;
   const wellF = settings.wellForce * 0.12 * finE;
@@ -1908,15 +1969,16 @@ function step(dt: number) {
             const hit = hitResp(i, nx, ny);
             if (hit > 0.6 && hitKids && (!kid[i] || (kid[i] === 1 && S.spawnChain))) spawnBurst(i, kid[i] ? 2 : S.spawnCount, nx, ny, Math.min(1.5, 0.4 + hit / 2.5));
           }
-        } else if (d < OB_MARGIN) {
+        } else if (d < obMargin) {
           const nx = ob.nx[c];
           const ny = ob.ny[c];
-          const near = 1 - Math.max(0, d) / OB_MARGIN;
+          const near = 1 - Math.max(0, d) / obMargin;
           // Slide: drop the part of the velocity that heads into the edge.
           const vn = vx[i] * nx + vy[i] * ny;
           if (vn < 0) {
             if (sndOn && vn < -(meanSpeed * 0.6 + 0.05)) sndHit(px[i], py[i], Math.min(1, -vn / (meanSpeed * 2 + 0.5)), tone[i]);
-            const k = Math.min(1, near * obF);
+            // Inside: bounce off the edge (k up to 2) so they keep moving round the room.
+            const k = Math.min(1, near * obF) * (settings.obsInside ? 1.8 : 1);
             vx[i] -= vn * nx * k;
             vy[i] -= vn * ny * k;
           }
@@ -8464,6 +8526,7 @@ type ControlBody =
   | { kind: 'xfader' }
   | { kind: 'knobsmore' }
   | { kind: 'animlist' }
+  | { kind: 'oblist'; show?: () => boolean }
   | { kind: 'fxlooks' }
   | { kind: 'sndpresets' }
   | { kind: 'sndlayers' }
@@ -9781,9 +9844,9 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
 
-  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont', 'obsStyle', 'obsColour', 'obsAlpha'],
+  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont', 'obsStyle', 'obsColour', 'obsAlpha', 'obsMore', 'obsSpin', 'obsDrift', 'obsInside'],
     power: { on: () => settings.obstacles !== 'none', off: { obstacles: 'none' }, start: { obstacles: 'circles' } },
-    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'wall' ? 'a wall' : settings.obstacles === 'ring' ? 'a ring' : settings.obstacles === 'body' ? 'your silhouette' : 'off') },
+    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'wall' ? 'a wall' : settings.obstacles === 'ring' ? 'a ring' : settings.obstacles === 'body' ? 'your silhouette' : 'off') + (settings.obstacles !== 'none' && obMore().length ? ` + ${obMore().length} more` : '') },
   { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['body', 'Your silhouette (camera)']] },
   { kind: 'range', key: 'camRate', label: 'Silhouette updates per second', min: 1, max: 15, step: 1, show: bodyObs },
   { kind: 'toggle', key: 'obsPlace', label: 'Tap adds or removes circles, drag moves them', show: () => settings.obstacles === 'circles' },
@@ -9795,11 +9858,15 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'obsX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
   { kind: 'buttons', buttons: [['Move it on the field', () => placeObstacle()]], show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsSpin', label: 'Spin', min: -90, max: 90, step: 1, format: (v) => (v === 0 ? 'still' : `${v}°/s`) },
+  { kind: 'range', key: 'obsDrift', label: 'Drift', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)) },
+  { kind: 'toggle', key: 'obsInside', label: 'Keep particles inside the shapes' },
   { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'select', key: 'obsStyle', label: 'Look', options: [['faint', 'Faint'], ['solid', 'Solid'], ['outline', 'Outline'], ['glow', 'Glow']], show: () => settings.obsShow },
   { kind: 'select', key: 'obsColour', label: 'Colour', options: [['white', 'White'], ['scene', 'Scene colours'], ['dark', 'Dark (a cut-out)']], show: () => settings.obsShow },
   { kind: 'range', key: 'obsAlpha', label: 'Strength', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.obsShow && !(settings.obsStyle === 'faint' && settings.obsColour === 'white') },
+  { kind: 'oblist', show: () => settings.obstacles !== 'none' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
 
   { kind: 'section', about: 'A floor, walls or a bowl, and what particles do when they hit: bounce, slide, stick or pile up.', id: 'collide', label: 'Collisions', tab: 'motion',
@@ -15055,6 +15122,12 @@ function renderControls() {
       searchItem(body, renderFxLooks(), 'fx looks presets save vhs thermal dreamy noir');
       continue;
     }
+    if (ctl.kind === 'oblist') {
+      const el = renderObList();
+      searchItem(dest, el, 'obstacles add more word text wall ring circle second');
+      if (ctl.show) conditional.push([el, ctl.show]);
+      continue;
+    }
     if (ctl.kind === 'animlist') {
       searchItem(body, renderAnimList(), 'animate moving settings keyframes swing lfo automation record');
       continue;
@@ -17352,6 +17425,142 @@ function renderFxLooks(): HTMLElement {
   refreshers.push(() => box.isConnected && draw());
   draw();
   return box;
+}
+
+// The extra obstacle pieces, one folding card each, and "+ Add obstacle".
+const obOpen = new Set<number>();
+function renderObList(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'ob-list';
+  const title = document.createElement('h4');
+  title.className = 'ob-title';
+  title.textContent = 'More obstacles';
+  const cards = document.createElement('div');
+  cards.className = 'ob-cards';
+  box.append(title, cards);
+  let drawn = '\u0000';
+  const edit = (k: number, patch: Partial<ObPiece>) => {
+    const list = obMore().map((p) => ({ ...p }));
+    if (!list[k]) return;
+    Object.assign(list[k], patch);
+    setObMore(list);
+    drawn = settings.obsMore;
+    const head = cards.querySelectorAll<HTMLElement>('.ob-card > summary b')[k];
+    if (head) head.textContent = obPieceName(list[k]);
+  };
+  const row = (name: string, el: HTMLElement) => {
+    const r = document.createElement('label');
+    r.className = `bd-x bd-x-${el instanceof HTMLSelectElement ? 'select' : el instanceof HTMLInputElement && el.type === 'range' ? 'range' : 'text'}`;
+    const n = document.createElement('span');
+    n.textContent = name;
+    r.append(n, el);
+    return r;
+  };
+  const slider = (name: string, k: number, key: 'size' | 'angle' | 'x' | 'y', min: number, max: number, step: number, fmt: (v: number) => string) => {
+    const inp = document.createElement('input');
+    inp.type = 'range';
+    inp.min = String(min);
+    inp.max = String(max);
+    inp.step = String(step);
+    const val = document.createElement('b');
+    const r = row(name, inp);
+    r.append(val);
+    fillRange(r, inp);
+    inp.value = String(obMore()[k][key]);
+    val.textContent = fmt(Number(inp.value));
+    inp.addEventListener('input', () => {
+      val.textContent = fmt(Number(inp.value));
+      edit(k, { [key]: Number(inp.value) });
+    });
+    return r;
+  };
+  const draw = () => {
+    if (drawn === settings.obsMore) return;
+    drawn = settings.obsMore;
+    cards.innerHTML = '';
+    const list = obMore();
+    list.forEach((p, k) => {
+      const card = document.createElement('details');
+      card.className = 'ob-card';
+      card.open = obOpen.has(k);
+      card.addEventListener('toggle', () => (card.open ? obOpen.add(k) : obOpen.delete(k)));
+      const sum = document.createElement('summary');
+      const t = document.createElement('b');
+      t.textContent = obPieceName(p);
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'ob-x';
+      x.textContent = '✕';
+      x.setAttribute('aria-label', 'Remove this obstacle');
+      x.addEventListener('click', (e) => {
+        e.preventDefault();
+        obOpen.clear();
+        setObMore(obMore().filter((_, i) => i !== k));
+        draw();
+      });
+      sum.append(t, x);
+      card.append(sum);
+      const kind = document.createElement('select');
+      for (const [v, l] of [['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['circle', 'A circle']]) kind.add(new Option(l, v));
+      kind.value = p.kind;
+      kind.addEventListener('change', () => {
+        edit(k, { kind: kind.value as ObPiece['kind'] });
+        drawn = '\u0000';
+        draw();
+      });
+      card.append(row('Obstacle', kind));
+      if (p.kind === 'text') {
+        const word = document.createElement('input');
+        word.type = 'text';
+        word.placeholder = 'Type a word';
+        word.value = p.text;
+        word.addEventListener('input', () => edit(k, { text: word.value }));
+        const font = document.createElement('select');
+        for (const [v, l] of [['bold', 'Bold'], ['serif', 'Serif'], ['mono', 'Mono'], ['round', 'Rounded'], ['script', 'Script']]) font.add(new Option(l, v));
+        font.value = p.font;
+        font.addEventListener('change', () => edit(k, { font: font.value as ObPiece['font'] }));
+        card.append(row('Word', word), row('Font', font));
+      }
+      card.append(
+        slider('Size', k, 'size', 0.1, 1, 0.05, pct),
+        slider('Angle', k, 'angle', -90, 90, 1, (v) => `${v}°`),
+        slider('Position ←→', k, 'x', 0, 1, 0.01, pct),
+        slider('Position ↑↓', k, 'y', 0, 1, 0.01, pct),
+      );
+      const mv = document.createElement('button');
+      mv.type = 'button';
+      mv.className = 'ob-move';
+      mv.textContent = 'Move it on the field';
+      mv.addEventListener('click', () => placeObstacle(k));
+      card.append(mv);
+      cards.append(card);
+    });
+    if (list.length < OB_MORE_MAX) {
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'ob-add';
+      add.textContent = list.length ? '+ Add another obstacle' : '+ Add an obstacle';
+      add.addEventListener('click', () => {
+        const n = obMore().length;
+        const S = settings;
+        // Starts as a word (or what the main one is), somewhere clear of the middle.
+        const kind: ObPiece['kind'] = S.obstacles === 'wall' || S.obstacles === 'ring' ? S.obstacles : 'text';
+        const spots = [[0.5, 0.25], [0.5, 0.75], [0.25, 0.5], [0.75, 0.5], [0.5, 0.5]];
+        const [px, py] = spots[n % spots.length];
+        obOpen.clear();
+        obOpen.add(n);
+        setObMore([...obMore(), { kind, text: ['Hello', 'World', 'Flow', 'Glow', 'Hi'][n % 5], font: S.obsFont, size: 0.4, angle: 0, x: px, y: py }]);
+        draw();
+      });
+      cards.append(add);
+    }
+  };
+  draw();
+  refreshers.push(() => box.isConnected && draw());
+  return box;
+}
+function obPieceName(p: ObPiece) {
+  return p.kind === 'text' ? `“${p.text.trim() || '…'}”` : p.kind === 'wall' ? 'A wall' : p.kind === 'ring' ? 'A ring' : 'A circle';
 }
 
 function renderAnimList(): HTMLElement {

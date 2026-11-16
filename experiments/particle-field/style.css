@@ -3015,6 +3015,23 @@ html.top-layer .top-back { display: none; }
 /* No sound, music or camera on the top layer: the base owns them. */
 html.top-layer .fd:is([data-f='sound'], [data-f='music'], [data-f='camera']) { display: none !important; }
 html.top-layer.top-edit .top-back { display: block !important; position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px); transform: translateX(-50%); z-index: 2000; white-space: nowrap; height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid rgb(255 255 255 / 0.2); background: #9aa8ff; color: #0b0b10; font: 600 14px system-ui, sans-serif; cursor: pointer; box-shadow: 0 8px 24px rgb(0 0 0 / 0.5); }
+/* Extra obstacles: one folding card each (main.ts renderObList). */
+.ob-list { grid-column: 1 / -1; margin: 6px 0 10px; }
+.ob-cards { display: grid; gap: 8px; }
+.ob-title { margin: 4px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--label); }
+.ob-card { border: 1px solid rgb(255 255 255 / 0.1); border-radius: 12px; background: rgb(255 255 255 / 0.03); padding: 0 10px; }
+.ob-card[open] { padding-bottom: 10px; }
+.ob-card > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; list-style: none; font-size: 13px; }
+.ob-card > summary::-webkit-details-marker { display: none; }
+.ob-card > summary::before { content: '›'; display: inline-block; width: 10px; color: var(--label); transition: transform 0.15s; }
+.ob-card[open] > summary::before { transform: rotate(90deg); }
+.ob-card > summary b { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-x { width: 32px; height: 32px; border: 0; border-radius: 16px; background: none; color: var(--label); font: inherit; cursor: pointer; }
+.ob-x:hover { background: rgb(255 255 255 / 0.08); color: var(--text); }
+.ob-card .bd-x { margin-top: 4px; }
+.ob-move, .ob-add { height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(255 255 255 / 0.05); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.ob-move { margin-top: 8px; }
+.ob-add { justify-self: start; border-style: dashed; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

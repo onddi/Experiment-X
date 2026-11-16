@@ -310,6 +310,10 @@ export interface Settings {
   obsStyle: 'faint' | 'solid' | 'outline' | 'glow';
   obsColour: 'white' | 'scene' | 'dark';
   obsAlpha: number;
+  obsMore: string; // JSON list of extra pieces (ObPiece[])
+  obsSpin: number; // degrees a second
+  obsDrift: number; // 0 … 1
+  obsInside: boolean; // keep particles inside the shapes
   topScene: string; // '' = no top layer
   topOpacity: number;
   topBlend: 'normal' | 'screen' | 'lighten' | 'plus-lighter' | 'difference' | 'overlay' | 'soft-light' | 'hard-light' | 'color-dodge' | 'color-burn' | 'multiply' | 'darken' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
@@ -868,6 +872,10 @@ export const DEFAULTS: Settings = {
   obsStyle: 'faint',
   obsColour: 'white',
   obsAlpha: 0.5,
+  obsMore: '',
+  obsSpin: 0,
+  obsDrift: 0,
+  obsInside: false,
   topScene: '',
   topOpacity: 1,
   topBlend: 'normal',
