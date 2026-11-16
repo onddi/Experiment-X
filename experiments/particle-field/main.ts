@@ -11,6 +11,7 @@ import { Projector } from './projector.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { GpuFx } from './gpufx.ts';
 import type { ParticleSound, SoundParams, Layer } from './sound.ts';
+import { STYLES, styleById, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './drums.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
@@ -405,7 +406,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -6617,12 +6618,12 @@ function adaptQuality(dt: number, ms: number) {
 type Control = ControlBody & { show?: () => boolean };
 // Cards live on a page; pages are grouped by what you're trying to do:
 // Create the look, Perform with it, or make it React to music and camera.
-type Tab = 'presets' | 'look' | 'fx' | 'shape' | 'motion' | 'music' | 'camera' | 'timeline' | 'xfader' | 'knobs' | 'record' | 'links';
+type Tab = 'presets' | 'look' | 'fx' | 'shape' | 'motion' | 'sound' | 'music' | 'camera' | 'timeline' | 'xfader' | 'knobs' | 'record' | 'links';
 type Intent = 'create' | 'perform' | 'react';
 const TABS: [Tab, string][] = [
   ['look', 'Look'], ['fx', 'FX'], ['shape', 'Shape'], ['motion', 'Motion'],
   ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'On-screen controls'], ['record', 'Device'],
-  ['music', 'Music'], ['camera', 'Camera'], ['links', 'Connections'],
+  ['sound', 'Sound'], ['music', 'Music'], ['camera', 'Camera'], ['links', 'Connections'],
 ];
 // Desktop tab icons: one row of every page, the open one also named.
 const TAB_ICONS: Record<Tab, string> = {
@@ -6635,12 +6636,13 @@ const TAB_ICONS: Record<Tab, string> = {
   xfader: '<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>',
   knobs: '<circle cx="12" cy="12" r="8"/><path d="M12 12l4.2-4.2"/>',
   record: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.6" fill="currentColor" stroke="none"/>',
+  sound: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   music: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
   camera: '<path d="M4 8.5h3.2L9 6h6l1.8 2.5H20V18H4z"/><circle cx="12" cy="13" r="3.2"/>',
   links: '<path d="M10.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1M13.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/>',
 };
 const INTENTS: [Intent, string, Tab[]][] = [
-  ['create', 'Edit', ['shape', 'motion', 'look', 'fx']],
+  ['create', 'Edit', ['shape', 'motion', 'look', 'fx', 'sound']],
   ['react', 'React', ['music', 'camera', 'links']],
   ['perform', 'Play', ['presets', 'timeline', 'knobs', 'record']],
 ];
@@ -6666,6 +6668,7 @@ const FOLDERS: Folder[] = [
   { id: 'motion', label: 'Motion', tabs: ['motion'], icon: TAB_ICONS.motion },
   { id: 'look', label: 'Look', tabs: ['look'], icon: TAB_ICONS.look },
   { id: 'fx', label: 'FX', tabs: ['fx'], icon: TAB_ICONS.fx },
+  { id: 'sound', label: 'Sound', tabs: ['sound'], icon: TAB_ICONS.sound },
   { id: 'music', label: 'Music', tabs: ['music'], icon: TAB_ICONS.music },
   { id: 'camera', label: 'Camera', tabs: ['camera'], icon: TAB_ICONS.camera },
   { id: 'links', label: 'Connections', tabs: ['links'], icon: TAB_ICONS.links },
@@ -6696,6 +6699,7 @@ type ControlBody =
   | { kind: 'sndpresets' }
   | { kind: 'sndlayers' }
   | { kind: 'drumlib' }
+  | { kind: 'sndpage' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'rapmeters' }
@@ -6924,11 +6928,11 @@ let vibeBrowse = false;
 let setVibeBrowse: (on: boolean) => void = (on) => (vibeBrowse = on);
 // The Music page is three tabs under Listening: Vibes (the full vibe picker),
 // Mix (the vibe and its faders) and Reactions (the list, and Rap flow).
-type MusicTab = 'mix' | 'reactions' | 'vibes' | 'sound';
+type MusicTab = 'mix' | 'reactions' | 'vibes';
 const MUSIC_TAB_KEY = 'particle-field:music-tab';
-const MUSIC_TABS: [MusicTab, string][] = [['vibes', 'Vibes'], ['mix', 'Mix'], ['reactions', 'Reactions'], ['sound', 'Sound']];
+const MUSIC_TABS: [MusicTab, string][] = [['vibes', 'Vibes'], ['mix', 'Mix'], ['reactions', 'Reactions']];
 // Sections on one music tab only; the rest show under Mix and Reactions.
-const MT_OF: Record<string, string> = { vibe: 'mix vibes', mgmusic: 'reactions', rapflow: 'reactions', sound: 'sound' };
+const MT_OF: Record<string, string> = { vibe: 'mix vibes', mgmusic: 'reactions', rapflow: 'reactions' };
 let musicTab: MusicTab = (() => {
   try {
     const t = localStorage.getItem(MUSIC_TAB_KEY);
@@ -6937,7 +6941,7 @@ let musicTab: MusicTab = (() => {
     return 'vibes';
   }
 })();
-// Music cards after the Vibes / Mix / Reactions / Sound bar (it sits above Vibe).
+// Music cards after the Vibes / Mix / Reactions bar (it sits above Vibe).
 const afterMusicBar = (ctl: Control) => {
   const i = CONTROLS.indexOf(ctl);
   const v = CONTROLS.findIndex((c) => c.kind === 'section' && c.id === 'vibe');
@@ -7948,19 +7952,17 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'mgmusic', label: 'Reactions', tab: 'music', about: 'What each part of the music does to the field. Tap a cell to step it, slide sideways for exact strength, hold for flavours.' },
   { kind: 'mixgrid', which: 'music' },
-  { kind: 'section', id: 'sound', label: 'Particle sound', tab: 'music',
+  { kind: 'section', id: 'sound', label: 'Particle sound', tab: 'sound',
     about: 'The field plays back: particles pluck invisible strings, a soft pad breathes with the motion, crowds become rhythm and your finger is an instrument. It all follows one slow chord progression, in phrases with rests.',
     lock: [...SND_KEYS],
     power: { on: () => settings.sndVol > 0, off: { sndVol: 0 }, start: { sndVol: 0.7 } },
     summary: () => (settings.sndVol > 0 ? [settings.sndStrings > 0 && 'strings', settings.sndDrone > 0 && 'pad', settings.sndSeq > 0 && 'steps', settings.sndHits > 0 && 'chimes', settings.sndGrain > 0 && 'grains', settings.sndScan > 0 && 'scan', settings.sndBass > 0 && 'bass', settings.sndDrums > 0 && 'drums', settings.sndTouch > 0 && 'touch'].filter(Boolean).join(', ') || 'on' : 'off') },
-  { kind: 'sndpresets' },
   { kind: 'buttons', buttons: [['Open the sound studio (M)', () => openStudioFromMenu()]], show: () => settings.sndVol > 0 },
   { kind: 'range', key: 'sndVol', label: 'Volume', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndMBusy', label: 'Busy', min: 0, max: 1, step: 0.05, format: macroFmt },
   { kind: 'range', key: 'sndMBright', label: 'Bright', min: 0, max: 1, step: 0.05, format: macroFmt },
   { kind: 'range', key: 'sndMSpace', label: 'Space', min: 0, max: 1, step: 0.05, format: macroFmt },
   { kind: 'range', key: 'sndMGroove', label: 'Groove', min: 0, max: 1, step: 0.05, format: macroFmt },
-  { kind: 'sndlayers' },
   { kind: 'range', key: 'sndField', label: 'Field drive', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'steady' : v >= 0.85 ? `the field leads ${pct(v)}` : pct(v)) },
   { kind: 'select', key: 'sndScale', label: 'Scale', options: [['pentatonic', 'Pentatonic'], ['major', 'Major'], ['minor', 'Minor'], ['dorian', 'Dorian'], ['blues', 'Blues'], ['japanese', 'Japanese'], ['whole', 'Whole tone (dreamy)']] },
   { kind: 'select', key: 'sndKey', label: 'Key', options: [['auto', 'Auto (palette, or the song)'], ...SND_NOTES.map((k): [string, string] => [k, k])] },
@@ -7974,7 +7976,6 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Following the song needs music playing; without it the chords change every few bars.', show: () => settings.sndChordMove === 'song' && audio.source === 'off' },
   { kind: 'buttons', buttons: [['Next chord ▸', () => snd?.nextChord()]] },
   { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
-  { kind: 'sub', label: 'Layers' },
   { kind: 'range', key: 'sndStrings', label: 'Strings', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndStringCount', label: 'How many strings', min: 2, max: 12, step: 1, format: (v) => String(v), show: () => settings.sndStrings > 0 },
   { kind: 'range', key: 'sndDrone', label: 'Pad', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -7993,26 +7994,22 @@ const CONTROLS: Control[] = [
   { kind: 'choice', key: 'sndTouchAxis', label: 'Pitch runs', options: [['up', 'Up'], ['across', 'Across']], show: () => settings.sndTouch > 0 },
   { kind: 'range', key: 'sndTouchOct', label: 'Touch octave', min: -2, max: 2, step: 1, format: (v) => (v === 0 ? 'middle' : `${v > 0 ? '+' : ''}${v}`), show: () => settings.sndTouch > 0 },
   { kind: 'note', text: 'Each finger plays its own note (up to five). Pitch runs one way, tone and stereo the other; moving faster plays louder.', show: () => settings.sndTouch > 0 },
-  { kind: 'sub', label: 'Rhythm section' },
   { kind: 'range', key: 'sndBass', label: 'Bass line', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndBassSound', label: 'Bass sound', options: BASS_SOUNDS, show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassTone', label: 'Bass tone', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'normal' : v < 0 ? `darker ${pct(-v)}` : `brighter ${pct(v)}`), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'drumlib', show: () => settings.sndDrums > 0 || settings.sndBass > 0 },
   { kind: 'select', key: 'sndKit', label: 'Drum kit', options: KIT_OPTIONS, show: () => settings.sndDrums > 0 },
   { kind: 'range', key: 'sndVary', label: 'Variation', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as written' : pct(v)), show: () => !!settings.sndGenre },
   { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrums > 0 },
   { kind: 'range', key: 'sndFollow', label: 'Follow the field', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !!settings.sndGenre },
   { kind: 'range', key: 'sndBeatChange', label: 'New beat', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'stay' : `every ${v} bars`), show: () => !!settings.sndGenre },
   { kind: 'range', key: 'sndSwing', label: 'Swing', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'straight' : pct(v)) },
-  { kind: 'sub', label: 'Expression' },
   { kind: 'select', key: 'sndPadSound', label: 'Pad sound', options: [['soft', 'Soft'], ['strings', 'Strings'], ['organ', 'Organ'], ['choir', 'Choir'], ['shimmer', 'Shimmer']], show: () => settings.sndDrone > 0 },
   { kind: 'range', key: 'sndLength', label: 'Note length', min: 0.3, max: 3, step: 0.1, format: (v) => (v === 1 ? 'normal' : `×${v.toFixed(1)}`) },
   { kind: 'range', key: 'sndAttack', label: 'Attack', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'struck' : v >= 0.7 ? `bowed ${pct(v)}` : pct(v)) },
   { kind: 'range', key: 'sndDyn', label: 'Dynamics', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndBend', label: 'Bend', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndArp', label: 'Arpeggio', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndStrings > 0 },
-  { kind: 'sub', label: 'Effects' },
   { kind: 'range', key: 'sndReverb', label: 'Reverb', min: 0, max: 1, step: 0.05, format: pct },
   { kind: 'range', key: 'sndEcho', label: 'Echo (in time)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndSweep', label: 'Filter sweep', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -8021,10 +8018,9 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndLofi', label: 'Lo-fi', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndChorus', label: 'Chorus', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndDepth', label: 'Depth (3D)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
-  { kind: 'sub', label: 'Show and music' },
   { kind: 'toggle', key: 'sndShow', label: 'Show the instruments on screen' },
   { kind: 'select', key: 'sndMusic', label: 'With music playing', options: [['free', 'Ignore it'], ['room', 'Leave room for the beat'], ['along', 'Play along (key and tempo)']] },
-
+  { kind: 'sndpage' },
   { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'music', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
     power: { on: () => settings.audioVj > 0, off: { audioVj: 0 }, start: { audioVj: 8 } },
     summary: () => (settings.audioVj > 0 ? `every ${settings.audioVj} bars` : 'off') },
@@ -10565,7 +10561,6 @@ const afterShow: (() => void)[] = [];
 // and vibes set most (plus each card's main choice). The rest wait under
 // Fine-tune. Cards with 4 or fewer settings show everything.
 const ESSENTIALS: Record<string, (keyof Settings)[]> = {
-  sound: ['sndVol', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove'],
   transitions: ['morph', 'beatSnap'],
   look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow'],
   colour: ['palette', 'colorBy', 'customColors', 'palSat', 'palLight', 'palBg'],
@@ -12604,49 +12599,6 @@ function buildFolderTabs() {
     refreshers.push(paint);
     paint();
   }
-  // Particle sound: Advanced in four tabs (Play, Layers, Groove, Tone),
-  // split at its sub-headings.
-  const sndFine = controls.querySelector<HTMLElement>(':scope > .group[data-sec="sound"] .fine-body');
-  if (sndFine) {
-    const TABS_OF: Record<string, number> = { Layers: 1, 'Rhythm section': 2, Expression: 3, Effects: 3, 'Show and music': 0 };
-    const parts: HTMLElement[][] = [[], [], [], []];
-    let at = 0;
-    for (const e of [...sndFine.children] as HTMLElement[]) {
-      if (e.tagName === 'H3') {
-        at = TABS_OF[e.textContent ?? ''] ?? at;
-        // A heading that only repeats its tab's name goes.
-        if (e.textContent === 'Layers' || e.textContent === 'Rhythm section') e.classList.add('snd-dup');
-      }
-      parts[at].push(e);
-    }
-    const bar = document.createElement('div');
-    bar.className = 'mtabs ftabs sub';
-    bar.setAttribute('role', 'tablist');
-    const SND_TAB_KEY = 'particle-field:sound-adv-tab';
-    let sel = Math.max(0, Math.min(3, Number(readJson(SND_TAB_KEY, 0)) || 0));
-    const btns = ['Play', 'Layers', 'Groove', 'Tone'].map((name, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.setAttribute('role', 'tab');
-      b.textContent = name;
-      b.addEventListener('click', () => {
-        sel = i;
-        writeJson(SND_TAB_KEY, i);
-        paint();
-      });
-      bar.append(b);
-      return b;
-    });
-    const paint = () => {
-      btns.forEach((b, i) => {
-        b.classList.toggle('on', i === sel);
-        b.setAttribute('aria-selected', String(i === sel));
-      });
-      parts.forEach((els, i) => els.forEach((e) => e.classList.toggle('ft-hide', i !== sel || e.classList.contains('snd-dup'))));
-    };
-    sndFine.prepend(bar);
-    paint();
-  }
   // Touch & gestures: its own tabs for one finger, two fingers, and taps.
   const ptr = controls.querySelector<HTMLElement>(':scope > .group[data-sec="pointer"] .ess-body');
   if (ptr) {
@@ -13123,6 +13075,10 @@ function renderControls() {
         row.append(b);
       }
       body.append(box);
+      continue;
+    }
+    if (ctl.kind === 'sndpage') {
+      renderSoundPage(body);
       continue;
     }
     if (ctl.kind === 'drumlib') {
@@ -14589,6 +14545,411 @@ function renderDrumLib() {
   draw();
   return box;
 }
+// --- The Sound page: Style, then one row per instrument, then Song and Mix ---
+// Built from the card's own rows (each setting rendered as usual), moved into
+// place: a track's settings sit under its row and open one track at a time.
+type SndTrack = { name: string; key: keyof Settings; dot: string; sub: () => string; keys: (keyof Settings)[]; notes?: string[]; beats?: boolean };
+const optLabel = (opts: readonly (readonly [string, string])[], v: string) => (opts.find(([k]) => k === v)?.[1] ?? v).replace(/ \(.*\)$/, '');
+const TIMBRES: [string, string][] = [['colour', 'Chimes band'], ['lounge', 'Lounge band'], ['world', 'World band'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth']];
+const PAD_SOUNDS: [string, string][] = [['soft', 'Soft'], ['strings', 'Strings'], ['organ', 'Organ'], ['choir', 'Choir'], ['shimmer', 'Shimmer']];
+const SND_TRACKS: SndTrack[] = [
+  { name: 'Drums', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndKit', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
+    sub: () => {
+      const g = drumGenre(settings.sndGenre);
+      const kit = optLabel(KIT_OPTIONS, settings.sndKit);
+      return g ? `${g.beats[settings.sndBeat]?.name ?? g.name} · ${kit}` : `follows the field · ${kit}`;
+    } },
+  { name: 'Bass', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassSound', 'sndBassTone'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
+  { name: 'Strings', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndOctave', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
+  { name: 'Pad', key: 'sndDrone', dot: '#b48cff', keys: ['sndPadSound'], sub: () => optLabel(PAD_SOUNDS, settings.sndPadSound) },
+  { name: 'Steps', key: 'sndSeq', dot: '#6fd3b0', keys: [], sub: () => `a rhythm on ${optLabel(TIMBRES, settings.sndTimbre).toLowerCase()}` },
+  { name: 'Chimes', key: 'sndHits', dot: '#9fe3f0', keys: [], notes: ['Chimes need'], sub: () => 'when particles bounce' },
+  { name: 'Grains', key: 'sndGrain', dot: '#7c8aa6', keys: [], sub: () => 'a crackle from the crowd' },
+  { name: 'Scanline', key: 'sndScan', dot: '#8fa8ff', keys: ['sndScanSecs'], sub: () => `sweeps every ${settings.sndScanSecs} s` },
+  { name: 'Touch', key: 'sndTouch', dot: '#ef6fa8', keys: ['sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct'], notes: ['Each finger'], sub: () => optLabel(TOUCH_SOUNDS, settings.sndTouchSound) },
+  { name: 'Accents', key: 'sndAccents', dot: '#f3d36b', keys: [], sub: () => 'births and bursts' },
+];
+const SONG_KEYS: (keyof Settings)[] = ['sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
+const MIX_KEYS: (keyof Settings)[] = ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndReverb', 'sndEcho', 'sndSweep', 'sndBright', 'sndDrive', 'sndLofi', 'sndChorus', 'sndDepth', 'sndShow'];
+const SND_OPEN_KEY = 'particle-field:sound-open';
+// A style's whole sound: the preset's setup, and the genre's drums, bass and tempo.
+function styleLook(st: Style | null, v: string): Partial<Settings> {
+  const preset = [...mySoundPresets(), ...SOUND_PRESETS].find(([n]) => n === v)?.[1] ?? {};
+  const look = soundOf(preset);
+  const g = st?.beat ? drumGenre(st.beat) : null;
+  if (g) {
+    Object.assign(look, { sndGenre: g.id, sndBeat: 0, sndKit: g.kit, sndTempo: g.bpm, sndSwing: g.swing, sndBassSound: g.bass, sndGrid: '' });
+    look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.55);
+    look.sndBass = Math.max(Number(look.sndBass) || 0, 0.5);
+  }
+  look.sndStyle = `${st?.id ?? 'yours'}/${v}`;
+  return look;
+}
+function useStyle(st: Style | null, v: string) {
+  Object.assign(settings, styleLook(st, v));
+  if (settings.sndVol === 0) settings.sndVol = 0.7;
+  changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
+}
+function randomStyle() {
+  const pick = <T,>(a: readonly T[]) => a[(Math.random() * a.length) | 0];
+  const cur = settings.sndStyle;
+  let st: Style, v: string;
+  do {
+    st = pick(STYLES);
+    v = pick(st.vars);
+  } while (`${st.id}/${v}` === cur);
+  useStyle(st, v);
+}
+// What the Style row says: the picked style, marked when you've changed it since.
+function styleNow(): { st: Style | null; v: string; name: string; edited: boolean } {
+  const [sid, v = ''] = settings.sndStyle.split('/');
+  const st = styleById(sid) ?? null;
+  if (!v) {
+    const p = soundPresetName();
+    return { st: null, v: p ?? '', name: p ?? 'Your own mix', edited: false };
+  }
+  const L = styleLook(st, v) as Record<string, unknown>;
+  const S = settings as unknown as Record<string, unknown>;
+  const edited = SND_LOOK_KEYS.some((k) => S[k] !== L[k]);
+  return { st, v, name: st ? `${st.name} · ${v}` : v, edited };
+}
+function renderSoundPage(body: HTMLElement) {
+  const take = (k: string) => body.querySelector<HTMLElement>(`:scope > [data-key="${k}"]`);
+  const note = (start: string) => [...body.querySelectorAll<HTMLElement>(':scope > p.note')].find((p) => p.textContent?.startsWith(start)) ?? null;
+  const page = document.createElement('div');
+  page.className = 'sndp';
+  const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, html = '') => {
+    const e = document.createElement(tag);
+    e.className = cls;
+    if (html) e.innerHTML = html;
+    if (e instanceof HTMLButtonElement) e.type = 'button';
+    return e;
+  };
+  let open = '';
+  try {
+    open = localStorage.getItem(SND_OPEN_KEY) ?? '';
+  } catch {
+    // Starts closed.
+  }
+  const folds: [string, HTMLElement, HTMLElement][] = [];
+  const setOpen = (id: string) => {
+    open = open === id ? '' : id;
+    try {
+      localStorage.setItem(SND_OPEN_KEY, open);
+    } catch {
+      // Not remembered.
+    }
+    paintFolds();
+  };
+  const paintFolds = () => {
+    for (const [id, row, det] of folds) {
+      det.hidden = open !== id;
+      row.classList.toggle('open', open === id);
+      row.querySelector('.sndp-chev')?.setAttribute('aria-expanded', String(open === id));
+    }
+  };
+
+  // Style: genre, then a variation; the dice picks one at random.
+  const style = mk('div', 'sndp-style');
+  const sMain = mk('button', 'sndp-style-main', '<small>Style</small><b></b><span>sets the instruments, beat, bass, chords, tempo and effects</span>');
+  const dice = mk('button', 'sndp-dice', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/></svg>');
+  dice.setAttribute('aria-label', 'Random style');
+  dice.title = 'Random style';
+  dice.addEventListener('click', randomStyle);
+  style.append(sMain, dice);
+  const pick = mk('div', 'sndp-pick');
+  pick.hidden = true;
+  sMain.addEventListener('click', () => {
+    pick.hidden = !pick.hidden;
+    sMain.setAttribute('aria-expanded', String(!pick.hidden));
+    if (!pick.hidden) {
+      browse = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : browse);
+      paintPick(true);
+    }
+  });
+  let browse = '';
+  let pickSig = '';
+  const paintPick = (force = false) => {
+    if (pick.hidden) return;
+    const now = styleNow();
+    const mine = mySoundPresets();
+    const sig = `${browse}|${settings.sndStyle}|${now.edited}|${mine.map(([n]) => n).join(',')}`;
+    if (sig === pickSig && !force) return;
+    pickSig = sig;
+    pick.innerHTML = '';
+    const grid = mk('div', 'sndp-genres');
+    const genres: [string, string][] = [...STYLES.map((s): [string, string] => [s.id, s.name]), ...(mine.length ? [['yours', 'Yours'] as [string, string]] : [])];
+    for (const [id, name] of genres) {
+      const b = mk('button', 'sndp-genre');
+      b.textContent = name;
+      const on = id === browse;
+      b.classList.toggle('on', on);
+      b.classList.toggle('cur', (now.st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : '')) === id);
+      b.setAttribute('aria-pressed', String(on));
+      b.addEventListener('click', () => {
+        browse = id;
+        paintPick(true);
+      });
+      grid.append(b);
+    }
+    pick.append(grid);
+    const st = styleById(browse) ?? null;
+    const vars = browse === 'yours' ? mine.map(([n]) => n) : st?.vars ?? [];
+    if (vars.length) {
+      const list = mk('div', 'sndp-vars');
+      for (const v of vars) {
+        const row = mk('button', 'sndp-var');
+        const on = settings.sndStyle === `${st?.id ?? 'yours'}/${v}`;
+        row.classList.toggle('on', on);
+        row.setAttribute('aria-pressed', String(on));
+        const nm = document.createElement('span');
+        nm.textContent = v;
+        row.append(nm);
+        if (on && now.edited) {
+          const e = document.createElement('small');
+          e.textContent = 'changed · tap to reset';
+          row.append(e);
+        }
+        if (browse === 'yours') {
+          const x = document.createElement('i');
+          x.textContent = '×';
+          x.title = `Delete ${v}`;
+          x.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            writeJson(SND_PRESETS_KEY, mySoundPresets().filter(([n]) => n !== v));
+            paintPick(true);
+          });
+          row.append(x);
+        }
+        row.addEventListener('click', () => useStyle(st, v));
+        list.append(row);
+      }
+      pick.append(list);
+    } else {
+      const p = mk('p', 'note');
+      p.textContent = 'Pick a genre, then one of its variations.';
+      pick.append(p);
+    }
+    const acts = mk('div', 'sndp-acts');
+    const save = mk('button', '');
+    save.textContent = '+ Save as yours';
+    save.addEventListener('click', () => {
+      const name = prompt('Name this sound', `My sound ${mine.length + 1}`)?.trim();
+      if (!name) return;
+      const S = settings as unknown as Record<string, unknown>;
+      const look = Object.fromEntries(SND_LOOK_KEYS.filter((k) => k !== 'sndStyle').map((k) => [k, S[k]])) as Partial<Settings>;
+      writeJson(SND_PRESETS_KEY, [[name, look], ...mySoundPresets().filter(([n]) => n !== name)]);
+      settings.sndStyle = `yours/${name}`;
+      changed(new Set<keyof Settings>(['sndStyle']));
+      browse = 'yours';
+      paintPick(true);
+    });
+    const clear = mk('button', '');
+    clear.textContent = 'Clear';
+    clear.title = 'Every sound setting back to its default';
+    clear.addEventListener('click', () => {
+      const S = settings as unknown as Record<string, unknown>;
+      const was = Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, S[k]]));
+      Object.assign(settings, Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, DEFAULTS[k]])));
+      changed(new Set(SND_LOOK_KEYS));
+      showToast('Sound cleared to the defaults', ['Undo', () => {
+        Object.assign(settings, was);
+        changed(new Set(SND_LOOK_KEYS));
+      }]);
+    });
+    acts.append(save, clear);
+    pick.append(acts);
+  };
+  refreshers.push(() => {
+    const n = styleNow();
+    sMain.querySelector('b')!.textContent = n.name + (n.edited ? ' · changed' : '');
+    paintPick();
+  });
+
+  // Tracks: one row each. The dot switches it on and off, the bar sets its level,
+  // the name opens its own settings.
+  const tracks = mk('div', 'sndp-tracks');
+  const mem = () => readJson<Record<string, number>>(SND_MEM_KEY, {});
+  for (const t of SND_TRACKS) {
+    const wrap = mk('div', 'sndp-trk');
+    const row = mk('div', 'sndp-row');
+    const dot = mk('button', 'sndp-dot');
+    dot.style.setProperty('--c', t.dot);
+    dot.setAttribute('aria-label', `${t.name} on or off`);
+    dot.addEventListener('click', () => {
+      const v = Number(settings[t.key]);
+      const m = mem();
+      if (v > 0) {
+        m[t.key] = v;
+        writeJson(SND_MEM_KEY, m);
+        set(t.key, 0 as never);
+      } else set(t.key, (m[t.key] || Number(DEFAULTS[t.key]) || 0.5) as never);
+    });
+    const name = mk('button', 'sndp-name', '<b></b><small></small>');
+    name.querySelector('b')!.textContent = t.name;
+    const lv = levelBar(t.key, `${t.name} level`);
+    const val = mk('span', 'sndp-v');
+    const chev = mk('button', 'sndp-chev', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>');
+    chev.setAttribute('aria-label', `${t.name} settings`);
+    row.append(dot, name, lv, val, chev);
+    const det = mk('div', 'sndp-det');
+    if (t.beats) det.append(beatChips());
+    for (const k of t.keys) {
+      const e = take(k);
+      if (e) det.append(e);
+    }
+    for (const n of t.notes ?? []) {
+      const e = note(n);
+      if (e) det.append(e);
+    }
+    const id = `t:${t.key}`;
+    if (det.childElementCount) {
+      folds.push([id, wrap, det]);
+      name.addEventListener('click', () => setOpen(id));
+      chev.addEventListener('click', () => setOpen(id));
+    } else {
+      det.hidden = true;
+      chev.classList.add('none');
+      chev.tabIndex = -1;
+      name.addEventListener('click', () => dot.click());
+    }
+    // The level's own slider row isn't needed: the bar is it.
+    take(t.key)?.remove();
+    refreshers.push(() => {
+      const v = Number(settings[t.key]);
+      const on = v > 0;
+      wrap.classList.toggle('off', !on);
+      dot.setAttribute('aria-pressed', String(on));
+      val.textContent = on ? String(Math.round(v * 100)) : 'off';
+      name.querySelector('small')!.textContent = t.sub();
+    });
+    wrap.append(row, det);
+    tracks.append(wrap);
+  }
+
+  // Song and Mix: one summary line each, tap for the rest.
+  const lines = mk('div', 'sndp-lines');
+  const line = (id: string, label: string, keys: (keyof Settings)[], summary: () => string, extra: HTMLElement[] = []) => {
+    const wrap = mk('div', 'sndp-line');
+    const row = mk('button', 'sndp-lrow', '<b></b><span></span><svg class="sndp-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>');
+    row.querySelector('b')!.textContent = label;
+    row.addEventListener('click', () => setOpen(id));
+    const det = mk('div', 'sndp-det');
+    for (const k of keys) {
+      const e = take(k);
+      if (e) det.append(e);
+    }
+    det.append(...extra);
+    folds.push([id, wrap, det]);
+    refreshers.push(() => {
+      row.querySelector('span')!.textContent = summary();
+    });
+    wrap.append(row, det);
+    lines.append(wrap);
+    return det;
+  };
+  const songNote = note('Following the song');
+  const nextChord = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('Next chord'));
+  const songDet = line('song', 'Song', SONG_KEYS, () => {
+    const key = settings.sndKey === 'auto' ? 'Auto key' : settings.sndKey;
+    const prog = settings.sndProg === 'custom' ? settings.sndProgText : optLabel([['drift', 'Drift'], ['pop', 'Pop'], ['calm', 'Calm'], ['mystic', 'Mystic'], ['still', 'One chord']], settings.sndProg);
+    return `${settings.sndKey === 'auto' ? settings.sndScale : `${key} ${settings.sndScale}`} · ${settings.sndTempo} bpm · ${prog}`;
+  });
+  // Next chord and the song note go with the chord settings.
+  const after = songDet.querySelector('[data-key="sndChordBars"]');
+  if (after) after.after(...[songNote, nextChord].filter((e): e is HTMLElement => !!e));
+  line('mix', 'Mix', MIX_KEYS, () => {
+    const w = (v: number, up: string, down: string) => (Math.abs(v - 0.5) < 0.01 ? '' : v > 0.5 ? up : down);
+    const words = [w(settings.sndMBusy, 'busier', 'calmer'), w(settings.sndMBright, 'brighter', 'darker'), w(settings.sndMSpace, 'roomier', 'drier'), w(settings.sndMGroove, 'groovier', 'straighter')].filter(Boolean);
+    return words.length ? words.join(' · ') : 'Busy, Bright, Space, Groove';
+  });
+
+  // Volume first, as a bar like the tracks', then the page; the studio button last.
+  take('sndVol')?.remove();
+  const vol = mk('div', 'sndp-vol', '<b>Volume</b>');
+  const volV = mk('span', 'sndp-v');
+  vol.append(levelBar('sndVol', 'Volume'), volV);
+  refreshers.push(() => (volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off'));
+  const studioBtn = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('sound studio'));
+  page.append(style, pick, tracks, lines);
+  body.prepend(vol, page);
+  if (studioBtn) page.after(studioBtn);
+  paintFolds();
+}
+// A level bar: tap or slide sideways anywhere on it (the whole row height
+// is the target); arrow keys step it.
+function levelBar(key: keyof Settings, label: string): HTMLElement {
+  const lv = document.createElement('div');
+  lv.className = 'sndp-lv';
+  lv.innerHTML = '<i></i>';
+  lv.setAttribute('role', 'slider');
+  lv.tabIndex = 0;
+  lv.setAttribute('aria-label', label);
+  lv.setAttribute('aria-valuemin', '0');
+  lv.setAttribute('aria-valuemax', '100');
+  const put = (v: number) => set(key, (Math.round(Math.max(0, Math.min(1, v)) * 20) / 20) as never);
+  const at = (x: number) => {
+    const r = lv.getBoundingClientRect();
+    put((x - r.left) / r.width);
+  };
+  lv.addEventListener('pointerdown', (e) => {
+    lv.setPointerCapture(e.pointerId);
+    at(e.clientX);
+  });
+  lv.addEventListener('pointermove', (e) => {
+    if (lv.hasPointerCapture(e.pointerId)) at(e.clientX);
+  });
+  lv.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 0.05 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -0.05 : 0;
+    if (!d) return;
+    e.preventDefault();
+    put(Number(settings[key]) + d);
+  });
+  refreshers.push(() => {
+    const v = Number(settings[key]);
+    lv.querySelector('i')!.style.width = `${Math.round(v * 100)}%`;
+    lv.setAttribute('aria-valuenow', String(Math.round(v * 100)));
+  });
+  return lv;
+}
+// The Drums track's beats: the genre's beats as chips, Random first.
+function beatChips(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'sndp-beats';
+  let sig = '';
+  const draw = () => {
+    const g = drumGenre(settings.sndGenre);
+    const next = `${settings.sndGenre}|${settings.sndBeat}`;
+    if (next === sig) return;
+    sig = next;
+    box.innerHTML = '';
+    if (!g) {
+      const p = document.createElement('p');
+      p.className = 'note';
+      p.textContent = 'The drums follow the field. Pick a style with a beat (House, Trap, Dub…) for written beats.';
+      box.append(p);
+      return;
+    }
+    const add = (text: string, on: boolean, go: () => void) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sndp-chip';
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.textContent = text;
+      b.addEventListener('click', go);
+      box.append(b);
+    };
+    add('⚄', false, () => {
+      const n = g.beats.length;
+      set('sndBeat', (settings.sndBeat + 1 + Math.floor(Math.random() * (n - 1))) % n);
+    });
+    g.beats.forEach((b, i) => add(b.name, settings.sndBeat === i, () => set('sndBeat', i)));
+  };
+  refreshers.push(draw);
+  draw();
+  return box;
+}
 // What's moving: the Play folder's card. The clock, each moving setting
 // (tap to open its slider), Freeze and Stop all.
 // --- Sound presets: the whole Particle sound setup at once ---------------------
@@ -15971,13 +16332,15 @@ let studioLoading = false;
 let studioPref: StudioMode = (() => {
   try {
     const v = localStorage.getItem(STUDIO_KEY);
-    return v === 'mini' || v === 'open' ? v : 'off';
+    return v === 'open' ? v : 'off';
   } catch {
     return 'off';
   }
 })();
 const LAYER_KEY: Partial<Record<Layer, keyof Settings>> = { bass: 'sndBass', drums: 'sndDrums', strings: 'sndStrings', steps: 'sndSeq', pad: 'sndDrone', chimes: 'sndHits', scan: 'sndScan', grains: 'sndGrain', touch: 'sndTouch', accents: 'sndAccents' };
 function setStudio(m: StudioMode) {
+  // The tucked mini bar is gone: tucking the studio closes it.
+  if (m === 'mini') m = 'off';
   studioPref = m;
   try {
     localStorage.setItem(STUDIO_KEY, m);
@@ -16033,15 +16396,14 @@ function syncStudio() {
       },
       wide: () => stage.clientWidth >= 720,
       onMode: (mm) => setStudio(mm),
-      mute: () => toggleMute(true),
     }, tab);
     studio.setMode('off');
     syncStudio();
   }).finally(() => (studioLoading = false));
 }
-// The dock's ♪: off → the mini bar → the studio → off.
+// The dock's ♪ opens and closes the studio.
 function cycleStudio() {
-  setStudio(studioPref === 'off' ? 'mini' : studioPref === 'mini' ? 'open' : 'off');
+  setStudio(studioPref === 'open' ? 'off' : 'open');
 }
 function openStudioFromMenu() {
   setStudio('open');
@@ -17416,7 +17778,7 @@ function toggleMute(on = !sndMuted()) {
   changed(new Set(['sndVol']));
   uPaint(true);
 }
-const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · hold to mute' : studioPref === 'mini' ? 'Open the sound studio (M) · hold to mute' : 'Close the sound studio (M) · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
+const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · hold to mute' : 'Close the sound studio (M) · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : []), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
@@ -18198,7 +18560,7 @@ function showBar(ms = 3500) {
 }
 document.addEventListener('pointerdown', (e) => {
   if (!sheetMode()) return;
-  if (mbar.contains(e.target as Node) || ubar.contains(e.target as Node) || (e.target as Element).closest?.('.sst-mini') || e.clientY > window.innerHeight - (studio?.mode === 'mini' ? 160 : 110)) showBar();
+  if (mbar.contains(e.target as Node) || ubar.contains(e.target as Node) || e.clientY > window.innerHeight - 110) showBar();
 }, true);
 // On arrival, once, so you know where it lives.
 showBar(4500);

@@ -191,6 +191,8 @@ export interface Settings {
   sndKit: DrumKit;
   /** A beat from the library: genre id ('' = the field plays the drums) and which of its beats. */
   sndGenre: string;
+  // The sound style picked on the Sound page ('genre/preset'); '' when none.
+  sndStyle: string;
   sndBeat: number;
   sndVary: number;
   sndFills: number;
@@ -711,6 +713,7 @@ export const DEFAULTS: Settings = {
   sndDrums: 0,
   sndKit: 'soft',
   sndGenre: '',
+  sndStyle: '',
   sndBeat: 0,
   sndVary: 0.25,
   sndFills: 8,

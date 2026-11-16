@@ -59,8 +59,6 @@ export interface StudioHost {
   wide: () => boolean;
   /** The studio was opened, tucked or closed from inside it. */
   onMode: (m: StudioMode) => void;
-  /** Mute the sound (the dock's ♫ unmutes it). */
-  mute: () => void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
@@ -183,16 +181,7 @@ export class SoundStudio {
       e.stopPropagation();
       this.h.onMode('open');
     });
-    const mute = el('button', 'sst-icon');
-    mute.type = 'button';
-    mute.setAttribute('aria-label', 'Mute');
-    mute.title = 'Mute';
-    mute.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
-    mute.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.h.mute();
-    });
-    this.mini.append(this.miniLv, nx, mute, up);
+    this.mini.append(this.miniLv, nx, up);
     // Swipe up on the bar opens the studio.
     let y0 = NaN;
     this.mini.addEventListener('pointerdown', (e) => (y0 = e.clientY));
