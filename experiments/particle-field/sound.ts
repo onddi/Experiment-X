@@ -20,8 +20,9 @@ export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano
 export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
-export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked';
-export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand';
+export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked' | '808';
+import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
+export type { DrumKit };
 export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 /** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
@@ -124,6 +125,8 @@ interface BassDef {
   ring?: number; // the longest a note rings (plucked strings die away)
   click?: number; // pick noise, band Hz
   drop?: number; // cents the note starts sharp
+  punch?: number; // starts this many times higher and falls fast (an 808's thump)
+  dist?: number; // saturation, so a deep sine is heard on small speakers
   gain: number;
 }
 const BASSES: Record<BassSound, BassDef> = {
@@ -133,7 +136,19 @@ const BASSES: Record<BassSound, BassDef> = {
   upright: { type: 'triangle', cut: 900, from: 2.5, sweep: 0.08, open: 0.6, q: 1, sub: 0.6, attack: 0.004, hold: 0.35, ring: 0.9, click: 900, drop: 25, gain: 1.3 },
   acid: { type: 'sawtooth', cut: 220, from: 12, sweep: 0.18, open: 4, q: 14, sub: 0.4, attack: 0.004, hold: 0.7, gain: 1.15 },
   picked: { type: 'square', cut: 700, from: 3.5, sweep: 0.1, open: 1.5, q: 2, sub: 0.6, attack: 0.003, hold: 0.45, ring: 1.4, click: 2500, gain: 0.8 },
+  '808': { type: 'sine', cut: 1400, from: 1, sweep: 0.05, open: 0, q: 0.5, sub: 0, attack: 0.003, hold: 0.8, punch: 2.2, dist: 3, gain: 1.5 },
 };
+
+const satCurves = new Map<number, Float32Array<ArrayBuffer>>();
+function satCurve(k: number) {
+  let c = satCurves.get(k);
+  if (!c) {
+    c = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) c[i] = Math.tanh((i / 511.5 - 1) * k) / Math.tanh(k);
+    satCurves.set(k, c);
+  }
+  return c;
+}
 
 const PAD_GAIN: Record<PadSound, number> = { soft: 1, strings: 1.35, organ: 0.85, choir: 3.6, shimmer: 1.05 };
 
@@ -191,6 +206,13 @@ export interface SoundParams {
   bright: number; // -1 dark … 1 bright, over everything
   drive: number; // warm saturation over everything
   lofi: number; // fewer bits, less top, tape hiss and crackle
+  // Beats from the library: a genre and one of its beats ('' = the field plays the drums).
+  genre: string;
+  beat: number;
+  vary: number; // 0 as written … 1 ghost notes, dropped hits and rolls
+  fills: number; // a fill every this many bars (0 = none)
+  follow: number; // a calm field thins the beat, a busy one adds hats
+  beatChange: number; // a new beat in the genre every this many bars (0 = stay)
   grid: string; // Beat grid edits: 64 chars, 4 rows (kick, snare, hat, bass) × 16 steps; '+' forces a hit, '-' silences one
 }
 
@@ -238,6 +260,8 @@ const MAX_VOICES = 32;
 // Token bucket: at most this many melodic notes a second.
 const NOTE_RATE = 22;
 const STEPS = 16;
+// How loud each drum of a beat sits.
+const ROW_GAIN: Record<DrumRow, number> = { k: 1, s: 0.85, c: 0.85, h: 0.5, o: 0.5, r: 0.7, p: 0.7, t: 0.8, y: 0.6 };
 const ROWS = 8;
 
 export class ParticleSound {
@@ -1075,7 +1099,8 @@ export class ParticleSound {
 
   // Bass: one body oscillator through a low-pass (its sweep makes the
   // character) with a sine underneath for weight.
-  private bassNote(deg: number, vel: number, len: number, when: number) {
+  private bassF = 0; // the last bass note's pitch, for slides
+  private bassNote(deg: number, vel: number, len: number, when: number, slide = false) {
     if (this.voices >= MAX_VOICES) return;
     {
       let f0 = this.freq(deg, 36);
@@ -1095,7 +1120,15 @@ export class ParticleSound {
     const end = t + len + 0.1;
     const o = ctx.createOscillator();
     o.type = B.type;
-    o.frequency.value = f;
+    const from = this.bassF;
+    this.bassF = f;
+    if (slide && from > 0 && from !== f) {
+      o.frequency.setValueAtTime(from, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.14, len * 0.5));
+    } else if (B.punch) {
+      o.frequency.setValueAtTime(f * B.punch, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.03);
+    } else o.frequency.value = f;
     if (B.drop) {
       o.detune.setValueAtTime(B.drop, t);
       o.detune.linearRampToValueAtTime(0, t + 0.05);
@@ -1116,7 +1149,11 @@ export class ParticleSound {
     g.gain.setTargetAtTime(0.0001, t + len, 0.04);
     const sg = ctx.createGain();
     sg.gain.value = B.sub;
-    o.connect(lp).connect(g);
+    if (B.dist) {
+      const ws = ctx.createWaveShaper();
+      ws.curve = satCurve(B.dist);
+      o.connect(ws).connect(lp).connect(g);
+    } else o.connect(lp).connect(g);
     sub.connect(sg).connect(g);
     this.send(g, 0.12, false);
     const nodes: AudioScheduledSourceNode[] = [o, sub];
@@ -1184,9 +1221,23 @@ export class ParticleSound {
     src.onended = () => pn.disconnect();
   }
 
+  // Kits from drums.ts: one pitched body, with the kit's pitch jitter.
+  private kitBody(b: Body, k: number, when: number, wet: number, tune = 1) {
+    const K = KITS[this.p.kit] ?? KITS.soft;
+    const j = tune * (K.jit ? 1 + (Math.random() - 0.5) * K.jit : 1);
+    this.body(when, b[0] * j, b[1] * j, b[2], b[3], b[4] * k, b[5] ?? 'sine', wet);
+  }
+
   private kick(k: number, when: number) {
     this.log('drums', k, 0.02, 0.25, when);
     if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit];
+    if (K?.kick) {
+      this.kitBody(K.kick.body, k, when, K.wet * 0.3);
+      if (K.kick.sub) this.kitBody(K.kick.sub, k, when, 0);
+      if (K.kick.click) this.hiss(when, 'highpass', 3000, 0.7, 0.001, 0.01, K.kick.click * k, 0, 0);
+      return;
+    }
     switch (this.p.kit) {
       case '808': return this.body(when, 120, 46, 0.06, 0.9, 0.8 * k);
       case 'punchy':
@@ -1201,6 +1252,12 @@ export class ParticleSound {
   private snare(k: number, when: number) {
     this.log('drums', k, 0.12, 0.25, when);
     if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit];
+    if (K?.snare) {
+      if (K.snare.body) this.kitBody(K.snare.body, k, when, K.wet * 0.8);
+      const [ty, f, q, a, d, amp] = K.snare.noise;
+      return this.hiss(when, ty, f, q, a, d, amp * k, 0, K.wet);
+    }
     switch (this.p.kit) {
       case '808': // a clap: three quick bursts and a tail
         for (let j = 0; j < 3; j++) this.hiss(when + j * 0.011, 'bandpass', 1400, 1.2, 0.001, 0.02, 0.4 * k, 0, 0.3);
@@ -1219,8 +1276,21 @@ export class ParticleSound {
   }
 
   private hat(k: number, when: number, open: boolean) {
-    this.log('drums', k * 0.6, 0.22, 0.1, when);
+    this.log('drums', k * 0.6, open ? 0.24 : 0.22, 0.1, when);
     if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit];
+    if (K?.hat) {
+      const H = K.hat;
+      const d = open ? H.open : H.closed;
+      const j = K.jit ? 1 + (Math.random() - 0.5) * K.jit : 1;
+      this.hiss(when, H.type, H.f * j, H.q, 0.001, d, H.amp * k, 0.3, K.wet * 0.4);
+      if (H.ping) {
+        // Metal: two square tones that don't agree.
+        this.body(when, 3310, 3300, 0.01, d * 0.8, 0.025 * H.ping * k, 'square', 0.05);
+        this.body(when, 5170, 5160, 0.01, d * 0.6, 0.02 * H.ping * k, 'square', 0.05);
+      }
+      return;
+    }
     switch (this.p.kit) {
       case '808': return this.hiss(when, 'highpass', 8500, 0.7, 0.001, open ? 0.35 : 0.035, 0.22 * k, 0.3, 0.1);
       case 'punchy': return this.hiss(when, 'bandpass', 10000, 1.5, 0.001, open ? 0.25 : 0.03, 0.3 * k, 0.3, 0.1);
@@ -1229,6 +1299,169 @@ export class ParticleSound {
         return this.hiss(when, 'highpass', 7000, 0.7, 0.001, 0.25, 0.06 * k, 0.4, 0.3);
       case 'hand': return this.hiss(when, 'bandpass', 6500, 1, 0.012, open ? 0.15 : 0.06, 0.18 * k, 0.35, 0.1); // shaker
       default: return this.hiss(when, 'highpass', 7000, 0.7, 0.002, open ? 0.22 : 0.045, 0.22 * k, 0.3, 0.15);
+    }
+  }
+
+  // The drums a beat adds: clap, rim, percussion, toms and a crash.
+  private clap(k: number, when: number) {
+    this.log('drums', k, 0.14, 0.2, when);
+    if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit] ?? KITS.soft;
+    const C = K.clap;
+    for (let j = 0; j < C.n; j++) this.hiss(when + j * 0.011, 'bandpass', C.f, 1.2, 0.001, 0.018, C.amp * k * 1.1, 0, K.wet);
+    this.hiss(when + C.n * 0.011, 'bandpass', C.f * 0.95, 1, 0.002, C.decay, C.amp * k * 0.85, 0, K.wet * 1.3);
+  }
+
+  private rim(k: number, when: number) {
+    this.log('drums', k * 0.8, 0.16, 0.1, when);
+    if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit] ?? KITS.soft;
+    this.kitBody(K.rim, k, when, K.wet);
+    this.hiss(when, 'highpass', 4000, 0.7, 0.001, 0.008, 0.12 * k, -0.15, K.wet * 0.5);
+  }
+
+  private perc(k: number, when: number) {
+    this.log('drums', k * 0.8, 0.18, 0.15, when);
+    if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit] ?? KITS.soft;
+    for (const b of K.perc) this.kitBody(b, k, when, K.wet);
+  }
+
+  private tom(k: number, when: number, down = 0) {
+    this.log('drums', k, 0.08 - down * 0.015, 0.25, when);
+    if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit] ?? KITS.soft;
+    this.kitBody(K.tom, k, when, K.wet, Math.pow(0.84, down));
+  }
+
+  private crash(k: number, when: number) {
+    this.log('drums', k * 0.7, 0.3, 1, when);
+    if (!this.audible('drums')) return;
+    const K = KITS[this.p.kit] ?? KITS.soft;
+    const [ty, f, q, a, d, amp] = K.crash;
+    this.hiss(when, ty, f, q, a, d, amp * k, -0.25, K.wet + 0.2);
+    this.hiss(when, 'bandpass', f * 0.7, 1.5, a, d * 0.5, amp * k * 0.5, 0.25, K.wet + 0.2);
+  }
+
+  // --- Beats from the library ---
+  private beatIdx = 0;
+  private beatSet = -1;
+  private beatGenre = '';
+  private beatBar = -1;
+  /** A drop in the music asks for a new beat at the next bar. */
+  private beatSwap = false;
+  /** Which of the genre's beats is playing (it can move on by itself). */
+  get beatPlaying() {
+    return this.beatIdx;
+  }
+  private beatOf(P: SoundParams, tick: number, s: number) {
+    const g = P.genre ? genreById(P.genre) : undefined;
+    if (!g) return null;
+    if (P.genre !== this.beatGenre || P.beat !== this.beatSet) {
+      this.beatGenre = P.genre;
+      this.beatSet = P.beat;
+      this.beatIdx = Math.max(0, P.beat) % g.beats.length;
+    }
+    const bar = Math.floor(tick / 16);
+    if (s === 0 && bar !== this.beatBar) {
+      this.beatBar = bar;
+      if (P.beatChange > 0 && g.beats.length > 1 && ((bar > 0 && bar % P.beatChange === 0) || this.beatSwap)) {
+        this.beatIdx = (this.beatIdx + 1 + Math.floor(Math.random() * (g.beats.length - 1))) % g.beats.length;
+      }
+      this.beatSwap = false;
+    }
+    return { g, beat: g.beats[this.beatIdx], bar };
+  }
+
+  private beatDrums(P: SoundParams, B: NonNullable<ReturnType<ParticleSound['beatOf']>>, tick: number, s: number, sw: number, stepDur: number, k: number, e: number, onKick: boolean, ed: (row: number, nat: boolean) => boolean) {
+    const V = P.vary;
+    const hits = new Map<DrumRow, { v: number; n: number }>();
+    const calm = P.follow * Math.max(0, 0.7 - e * 1.6);
+    for (const r of DRUM_ROWS) {
+      const row = B.beat[r];
+      if (!row) continue;
+      const i = tick % row.length;
+      let h = stepHit(row[i]);
+      const anchor = (r === 'k' && i === 0) || ((r === 's' || r === 'c') && row[i] === 'X');
+      // Variation: drop ghost notes and the odd hit, add ghosts and rolls.
+      if (h) {
+        if (h.v < 0.45 && Math.random() < V * 0.6) h = null;
+        else if (!anchor && Math.random() < V * 0.12) h = null;
+        else if ((r === 'h' || r === 's') && h.n === 1 && Math.random() < V * 0.1) h = { v: 0.55, n: Math.random() < 0.5 ? 2 : 3 };
+      } else if (V > 0) {
+        const q = Math.random();
+        if (r === 'h' && q < V * 0.15) h = { v: 0.35, n: 1 };
+        else if (r === 's' && q < V * 0.06) h = { v: 0.3, n: 1 };
+        else if (r === 'k' && s % 2 === 0 && q < V * 0.05) h = { v: 0.6, n: 1 };
+      }
+      // Follow the field: calm thins out the soft hits, busy adds hats.
+      if (h && !anchor && h.v < calm) h = null;
+      if (!h && r === 'h' && P.follow > 0 && e > 0.5 && Math.random() < P.follow * (e - 0.5) * 0.8) h = { v: 0.4, n: 1 };
+      if (h) hits.set(r, h);
+    }
+    // A fill at the end of every few bars, in the genre's way.
+    let down = 0;
+    const from = V > 0.6 ? 8 : 12;
+    if (P.fills > 0 && B.bar % P.fills === P.fills - 1 && s >= from) {
+      const f = (s - from) / (16 - from);
+      switch (B.g.fill) {
+        case 'roll':
+          hits.delete('h');
+          hits.delete('o');
+          hits.set('s', { v: 0.35 + 0.6 * f, n: s === 15 ? 2 : 1 });
+          break;
+        case 'toms':
+          hits.delete('h');
+          down = Math.min(3, Math.floor(f * 4));
+          if (s % 2 === 0 || V > 0.4) hits.set('t', { v: 0.7 + 0.3 * f, n: 1 });
+          if (s === 15) hits.set('s', { v: 0.9, n: 1 });
+          break;
+        case 'hats':
+          hits.set('h', { v: 0.5 + 0.3 * f, n: [2, 3, 4, 3][s % 4] });
+          break;
+        case 'glitch':
+          for (const r of ['k', 's', 'h'] as DrumRow[]) if (Math.random() < 0.45) hits.set(r, { v: 0.5 + Math.random() * 0.4, n: 2 + ((Math.random() * 3) | 0) });
+          break;
+        case 'drop':
+          if (s >= 14) {
+            hits.clear();
+            if (s === 15) hits.set('s', { v: 0.9, n: 1 });
+          }
+          break;
+      }
+    }
+    if (s === 0 && P.fills > 0 && B.bar > 0 && B.bar % P.fills === 0) hits.set('y', { v: 0.7, n: 1 });
+    // Beat grid edits still win: '+' adds, '-' silences (kick, snare or clap, hats).
+    const edit = (row: number, rs: DrumRow[]) => {
+      const has = rs.some((r) => hits.has(r));
+      const on = ed(row, has);
+      if (!on) for (const r of rs) hits.delete(r);
+      else if (!has) hits.set(rs[0], { v: 0.8, n: 1 });
+    };
+    edit(0, ['k']);
+    edit(1, ['s', 'c']);
+    edit(2, ['h', 'o']);
+    if (onKick) hits.delete('k');
+    for (const [r, h] of hits) {
+      if (r === 'k') this.gridNow[s] = 1;
+      else if (r === 's' || r === 'c') this.gridNow[16 + s] = 1;
+      else if (r === 'h' || r === 'o') this.gridNow[32 + s] = 1;
+      const gap = stepDur / h.n;
+      for (let j = 0; j < h.n; j++) this.hit(r, k * ROW_GAIN[r] * h.v * (h.n > 1 ? 0.55 + (0.45 * (j + 1)) / h.n : 1), sw + j * gap, down);
+    }
+  }
+
+  private hit(r: DrumRow, k: number, when: number, down = 0) {
+    switch (r) {
+      case 'k': return this.kick(k, when);
+      case 's': return this.snare(k, when);
+      case 'c': return this.clap(k, when);
+      case 'h': return this.hat(k, when, false);
+      case 'o': return this.hat(k, when, true);
+      case 'r': return this.rim(k, when);
+      case 'p': return this.perc(k, when);
+      case 't': return this.tom(k, when, down);
+      case 'y': return this.crash(k, when);
     }
   }
 
@@ -1263,6 +1496,7 @@ export class ParticleSound {
     // Levels fall back between notes.
     const fall = Math.exp(-F.dt * 5);
     for (let k = 0; k < this.levels.length; k++) this.levels[k] *= fall;
+    if (F.drop) this.beatSwap = true;
     const beats = F.dt * (bpm / 60);
     const before = this.beat;
     this.beat += beats;
@@ -1451,9 +1685,37 @@ export class ParticleSound {
         // At high Field drive the particles can break a written silence.
         return c === 43 ? true : c === 45 ? nat && D > 0.6 && Math.random() < ((D - 0.6) / 0.4) * 0.7 : nat;
       };
-      // Bass: the chord's root, low. Calm fields hold one long note a bar;
-      // busier ones walk root and fifth, then eighths with pickups.
-      if (P.bass > 0) {
+      // A beat from the library, when one is picked.
+      const tick = Math.floor(this.beat * 4);
+      const B = this.beatOf(P, tick, s);
+      // Bass: the beat's bass row, when it has one.
+      if (P.bass > 0 && B?.beat.b) {
+        const row = B.beat.b;
+        const i = tick % row.length;
+        let deg = -999, vel = 0.8, slide = false;
+        switch (row[i]) {
+          case 'B': (deg = this.chordRoot()), (vel = 1); break;
+          case 'b': deg = this.chordRoot(); break;
+          case 'o': (deg = this.chordRoot()), (vel = 0.45); break;
+          case 'f': deg = this.chordTone(2); break;
+          case 't': deg = this.chordTone(1); break;
+          case 'u': deg = this.chordTone(3); break;
+          case '~': (deg = this.chordRoot()), (vel = 0.85), (slide = true); break;
+          case '?': if (Math.random() < 0.5) (deg = this.chordRoot()), (vel = 0.6); break;
+        }
+        if (deg > -999 && i > 0 && (vel < 0.5 && Math.random() < P.vary * 0.6 || vel < P.follow * Math.max(0, 0.7 - e * 1.6))) deg = -999;
+        let gap = 1;
+        while (gap < row.length && row[(i + gap) % row.length] === '.') gap++;
+        let len = stepDur * Math.min(gap, P.bassSound === '808' ? 12 : 8) * 0.92;
+        const play = ed(3, deg > -999);
+        if (play && deg === -999) (deg = this.chordRoot()), (vel = 0.7), (len = stepDur * 1.5);
+        if (play) {
+          this.gridNow[48 + s] = 1;
+          this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * vel, len * P.length, sw, slide);
+        }
+      } else if (P.bass > 0) {
+        // Bass: the chord's root, low. Calm fields hold one long note a bar;
+        // busier ones walk root and fifth, then eighths with pickups.
         let deg = -999, len = stepDur * 2;
         if (e > 0.03) {
           if (s === 0) (deg = this.chordRoot()), (len = e < 0.15 ? stepDur * 14 : stepDur * 3.5);
@@ -1469,9 +1731,10 @@ export class ParticleSound {
         }
       }
 
+      if (P.drums > 0 && B) this.beatDrums(P, B, tick, s, sw, stepDur, P.drums * (fit ? 0.4 : 1), e, onKick, ed);
       // Drums: the beat comes from the field. Particles low in this column
       // add kicks, in the middle snares, high up hi-hats; busier plays more.
-      if (P.drums > 0) {
+      else if (P.drums > 0) {
         const k = P.drums * (fit ? 0.4 : 1);
         const m2 = Math.max(1, mean * 2);
         const low = this.grid[6] + this.grid[7], mid = this.grid[3] + this.grid[4], top = this.grid[0] + this.grid[1];

@@ -1,4 +1,5 @@
 // Settings: every option's type and its default value. Pure data, no DOM.
+import type { DrumKit } from './drums.ts';
 import type { FillPattern } from './patterns.ts';
 import type { Genre, VoxMode } from './audio.ts';
 export type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
@@ -185,9 +186,16 @@ export interface Settings {
   sndChorus: number;
   sndDepth: number;
   sndBass: number;
-  sndBassSound: 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked';
+  sndBassSound: 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked' | '808';
   sndDrums: number;
-  sndKit: 'soft' | '808' | 'punchy' | 'brush' | 'hand';
+  sndKit: DrumKit;
+  /** A beat from the library: genre id ('' = the field plays the drums) and which of its beats. */
+  sndGenre: string;
+  sndBeat: number;
+  sndVary: number;
+  sndFills: number;
+  sndFollow: number;
+  sndBeatChange: number;
   sndPadSound: 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
   sndBassTone: number;
   sndAttack: number;
@@ -702,6 +710,12 @@ export const DEFAULTS: Settings = {
   sndBassSound: 'synth',
   sndDrums: 0,
   sndKit: 'soft',
+  sndGenre: '',
+  sndBeat: 0,
+  sndVary: 0.25,
+  sndFills: 8,
+  sndFollow: 0.4,
+  sndBeatChange: 0,
   sndPadSound: 'soft',
   sndBassTone: 0,
   sndAttack: 0,

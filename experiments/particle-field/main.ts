@@ -11,6 +11,7 @@ import { Projector } from './projector.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { GpuFx } from './gpufx.ts';
 import type { ParticleSound, SoundParams, Layer } from './sound.ts';
+import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './drums.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
@@ -404,7 +405,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -6640,6 +6641,7 @@ type ControlBody =
   | { kind: 'fxlooks' }
   | { kind: 'sndpresets' }
   | { kind: 'sndlayers' }
+  | { kind: 'drumlib' }
   | { kind: 'presetlib' }
   | { kind: 'exmeters' }
   | { kind: 'rapmeters' }
@@ -7933,10 +7935,15 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Each finger plays its own note (up to five). Pitch runs one way, tone and stereo the other; moving faster plays louder.', show: () => settings.sndTouch > 0 },
   { kind: 'sub', label: 'Rhythm section' },
   { kind: 'range', key: 'sndBass', label: 'Bass line', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'select', key: 'sndBassSound', label: 'Bass sound', options: [['synth', 'Synth'], ['sub', 'Sub (deep)'], ['round', 'Round (warm)'], ['upright', 'Upright (woody)'], ['acid', 'Acid (squelchy)'], ['picked', 'Picked (electric)']], show: () => settings.sndBass > 0 },
+  { kind: 'select', key: 'sndBassSound', label: 'Bass sound', options: [['synth', 'Synth'], ['sub', 'Sub (deep)'], ['round', 'Round (warm)'], ['upright', 'Upright (woody)'], ['acid', 'Acid (squelchy)'], ['picked', 'Picked (electric)'], ['808', '808 (long, slides)']], show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassTone', label: 'Bass tone', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'normal' : v < 0 ? `darker ${pct(-v)}` : `brighter ${pct(v)}`), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'select', key: 'sndKit', label: 'Drum kit', options: [['soft', 'Soft'], ['808', '808 (boom and clap)'], ['punchy', 'Punchy (club)'], ['brush', 'Brushes (jazz)'], ['hand', 'Hand percussion']], show: () => settings.sndDrums > 0 },
+  { kind: 'drumlib', show: () => settings.sndDrums > 0 || settings.sndBass > 0 },
+  { kind: 'select', key: 'sndKit', label: 'Drum kit', options: KIT_OPTIONS, show: () => settings.sndDrums > 0 },
+  { kind: 'range', key: 'sndVary', label: 'Variation', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as written' : pct(v)), show: () => !!settings.sndGenre },
+  { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrums > 0 },
+  { kind: 'range', key: 'sndFollow', label: 'Follow the field', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !!settings.sndGenre },
+  { kind: 'range', key: 'sndBeatChange', label: 'New beat', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'stay' : `every ${v} bars`), show: () => !!settings.sndGenre },
   { kind: 'range', key: 'sndSwing', label: 'Swing', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'straight' : pct(v)) },
   { kind: 'sub', label: 'Expression' },
   { kind: 'select', key: 'sndPadSound', label: 'Pad sound', options: [['soft', 'Soft'], ['strings', 'Strings'], ['organ', 'Organ'], ['choir', 'Choir'], ['shimmer', 'Shimmer']], show: () => settings.sndDrone > 0 },
@@ -13058,6 +13065,12 @@ function renderControls() {
       body.append(box);
       continue;
     }
+    if (ctl.kind === 'drumlib') {
+      const el = renderDrumLib();
+      dest.append(el);
+      if (ctl.show) conditional.push([el, ctl.show]);
+      continue;
+    }
     if (ctl.kind === 'sndpresets') {
       searchItem(body, renderSoundPresets(), 'sound presets shuffle random lounge harp arcade');
       continue;
@@ -14451,6 +14464,71 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
   return wrap;
 }
 
+// Beats by genre: genre chips, then that genre's beats (and a dice), in rows that scroll sideways.
+function renderDrumLib() {
+  const box = document.createElement('div');
+  box.className = 'fx-looks snd-presets snd-beats';
+  let sig = '';
+  const pickGenre = (id: string) => {
+    const g = drumGenre(id);
+    const next: Partial<Settings> = { sndGenre: id, sndBeat: 0 };
+    if (g) {
+      Object.assign(next, { sndKit: g.kit, sndTempo: g.bpm, sndSwing: g.swing, sndBassSound: g.bass, sndGrid: '' });
+      if (settings.sndDrums === 0) next.sndDrums = 0.6;
+    }
+    Object.assign(settings, next);
+    changed(new Set(Object.keys(next) as (keyof Settings)[]));
+    refresh();
+  };
+  const pickBeat = (i: number) => {
+    settings.sndBeat = i;
+    changed(new Set<keyof Settings>(['sndBeat']));
+    refresh();
+  };
+  const rows = (parent: HTMLElement, label: string) => {
+    const h = document.createElement('h4');
+    h.textContent = label;
+    const chips = document.createElement('div');
+    chips.className = 'fx-look-chips';
+    const r = [document.createElement('div'), document.createElement('div')];
+    for (const x of r) {
+      x.className = 'snd-prow';
+      chips.append(x);
+    }
+    parent.append(h, chips);
+    let n = 0;
+    return (text: string, on: boolean, go: () => void, cls = '') => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `fx-look ${cls}`.trim();
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.textContent = text;
+      b.addEventListener('click', go);
+      r[n++ % 2].append(b);
+    };
+  };
+  const draw = () => {
+    const next = `${settings.sndGenre}|${settings.sndBeat}`;
+    if (next === sig && box.childElementCount) return;
+    sig = next;
+    box.innerHTML = '';
+    const g = drumGenre(settings.sndGenre);
+    const addG = rows(box, 'Beat');
+    addG('From the field', !g, () => pickGenre(''));
+    for (const G of DRUM_GENRES) addG(G.name, g === G, () => pickGenre(G.id));
+    if (!g) return;
+    const addB = rows(box, `${g.name} beats`);
+    addB('Random', false, () => {
+      const n = g.beats.length;
+      pickBeat((settings.sndBeat + 1 + Math.floor(Math.random() * (n - 1))) % n);
+    }, 'dice');
+    g.beats.forEach((b, i) => addB(b.name, settings.sndBeat === i, () => pickBeat(i)));
+  };
+  refreshers.push(draw);
+  draw();
+  return box;
+}
 // What's moving: the Play folder's card. The clock, each moving setting
 // (tap to open its slider), Freeze and Stop all.
 // --- Sound presets: the whole Particle sound setup at once ---------------------
@@ -15792,7 +15870,7 @@ function sndParams(): SoundParams {
   return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
-    echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };
+    echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };
 }
 // Your chords: "1 5 6 4" (or 1-5-6-4, I V vi IV) to scale degrees from 0.
 const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };
