@@ -2846,6 +2846,16 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .snd-beats { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-beats h4 { margin: 4px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-beats .dice::before { content: '⚄ '; }
+/* The tucked sound bar rests with the dock: it fades when the dock does
+   and comes back with it (a tap near the bottom, or the mouse moving). */
+.sst-mini { transition: opacity 0.4s; }
+@media (max-width: 720px) {
+  body:has(.u-bar.stage:not(.shown)) .sst-mini { opacity: 0; pointer-events: none; }
+}
+@media (min-width: 721px) {
+  body:has(.u-bar.stage.rest:not(:hover)) .sst-mini:not(:hover) { opacity: 0; }
+}
+.icon-buttons button.muted, .u-tray button.muted { color: #9a99ab; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

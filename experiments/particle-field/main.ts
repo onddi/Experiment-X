@@ -16033,6 +16033,7 @@ function syncStudio() {
       },
       wide: () => stage.clientWidth >= 720,
       onMode: (mm) => setStudio(mm),
+      mute: () => toggleMute(true),
     }, tab);
     studio.setMode('off');
     syncStudio();
@@ -17381,7 +17382,41 @@ function uCrossfade() {
 const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
 // The sound studio's ♪, while Particle sound is on.
 const NOTE_ICON = svg('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>');
-const uStudio = (): [string, string, () => void, string?][] => (settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M)' : studioPref === 'mini' ? 'Open the sound studio (M)' : 'Close the sound studio (M)', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'on' : '']] : []);
+// Mute: the sound goes silent but the dock keeps its ♫ (struck through);
+// a tap brings it back at the level it had. Hold ♫ to mute from the dock.
+const NOTE_MUTED_ICON = svg('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/><path d="M3 3l18 18"/>');
+const MUTE_KEY = 'particle-field:snd-muted-vol';
+let sndMuteVol = 0;
+let sndMutedAt = 0;
+try {
+  sndMuteVol = Number(localStorage.getItem(MUTE_KEY)) || 0;
+} catch {
+  // No storage: mute lasts this visit only.
+}
+const sndMuted = () => settings.sndVol === 0 && sndMuteVol > 0;
+function toggleMute(on = !sndMuted()) {
+  if (on) {
+    if (settings.sndVol === 0) return;
+    sndMuteVol = settings.sndVol;
+    settings.sndVol = 0;
+    sndMutedAt = performance.now();
+    showToast('Muted · tap ♫ to bring it back');
+  } else {
+    // The release of the hold that muted it isn't a tap.
+    if (!sndMuted() || performance.now() - sndMutedAt < 800) return;
+    settings.sndVol = sndMuteVol;
+    sndMuteVol = 0;
+  }
+  try {
+    if (sndMuteVol) localStorage.setItem(MUTE_KEY, String(sndMuteVol));
+    else localStorage.removeItem(MUTE_KEY);
+  } catch {
+    // Fine without.
+  }
+  changed(new Set(['sndVol']));
+  uPaint(true);
+}
+const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · hold to mute' : studioPref === 'mini' ? 'Open the sound studio (M) · hold to mute' : 'Close the sound studio (M) · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : []), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
@@ -17422,7 +17457,7 @@ function uPaint(force = false) {
   const v = uView();
   const desk = !sheetMode();
   if (desk) uPlace();
-  const sig = `${settings.sndVol > 0}|${studioPref}|${v}|${xf.on}|${ovPickKnobs}|${ovDensity}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
+  const sig = `${settings.sndVol > 0}|${sndMuted()}|${studioPref}|${v}|${xf.on}|${ovPickKnobs}|${ovDensity}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
   if (sig === uSig && !force) return;
   uSig = sig;
   ubar.classList.remove('stage', 'deck', 'studio', 'build');
@@ -17466,8 +17501,27 @@ function uPaint(force = false) {
     b.innerHTML = ic + (named ? `<span>${label.replace(/ \(.*\)$/, '')}</span>` : '');
     if (cls) b.classList.add(...cls.split(' '));
     if (cls?.includes('more')) dockMoreBtn = b;
+    // ♫: hold half a second to mute.
+    let held = false;
+    if (cls?.split(' ').includes('snd') && !cls.includes('muted')) {
+      let t = 0;
+      b.addEventListener('pointerdown', () => {
+        held = false;
+        clearTimeout(t);
+        t = window.setTimeout(() => {
+          held = true;
+          toggleMute(true);
+        }, 500);
+      });
+      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => clearTimeout(t));
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
     b.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (held) {
+        held = false;
+        return;
+      }
       fn();
     });
     tray.append(b);
@@ -18144,7 +18198,7 @@ function showBar(ms = 3500) {
 }
 document.addEventListener('pointerdown', (e) => {
   if (!sheetMode()) return;
-  if (mbar.contains(e.target as Node) || ubar.contains(e.target as Node) || e.clientY > window.innerHeight - 110) showBar();
+  if (mbar.contains(e.target as Node) || ubar.contains(e.target as Node) || (e.target as Element).closest?.('.sst-mini') || e.clientY > window.innerHeight - (studio?.mode === 'mini' ? 160 : 110)) showBar();
 }, true);
 // On arrival, once, so you know where it lives.
 showBar(4500);
@@ -18822,6 +18876,7 @@ window.addEventListener('keydown', (e) => {
     else xfNudge(right ? 0.05 : -0.05);
   }
   else if (k === 'i') toggleDebug();
+  else if (k === 'm' && sndMuted()) toggleMute(false);
   else if (k === 'm' && settings.sndVol > 0) setStudio(studioPref === 'open' ? 'off' : 'open');
   else if (k === 'n' && sndOn) snd?.nextChord();
 });
