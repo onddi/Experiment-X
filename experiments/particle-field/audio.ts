@@ -435,6 +435,14 @@ export class AudioInput {
   }
   private hzBin = 0;
 
+  /** The bins measured last frame, to pass on (the Top layer listens to them). */
+  frameOut(): SpectrumFrame | null {
+    if (this.source === 'off') return null;
+    if (this.source === 'feed') return this.feedFrame;
+    if (!this.ctx || !this.analyser || !this.freq.length) return null;
+    return { bins: this.freq.slice(), sampleRate: this.ctx.sampleRate, fftSize: this.analyser.fftSize, fast: this.fastFreq.slice(), fastFftSize: this.fast?.fftSize, at: performance.timeOrigin + performance.now() };
+  }
+
   /** Call once per frame. */
   update(now: number) {
     const a = this.analyser;

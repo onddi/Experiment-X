@@ -8093,14 +8093,29 @@ let topFrame: HTMLIFrameElement | null = null;
 let topSent = '';
 let topSig = '';
 let topEditing = false;
+let topFeed: ((f: SpectrumFrame) => void) | null = null;
 const topPost = (m: Record<string, unknown>) => topFrame?.contentWindow?.postMessage({ pfTop: 1, ...m }, location.origin);
 function topScenePatch(name: string): Partial<Settings> | null {
-  const p = PRESETS.find(([n]) => n === name)?.[1];
+  const p = name.startsWith('mine:') ? myPresets.find((m) => m.name === topName(name))?.settings : PRESETS.find(([n]) => n === name)?.[1];
   return p ? { ...p } : null;
 }
+let topMusic = false;
 function topTick() {
   if (TOP_LAYER) return;
+  topScenesSync();
   const S = settings;
+  // The music: the base's spectrum each frame, so the top layer's reactions
+  // run on the same sound without a mic of its own.
+  if (topFrame) {
+    const sp = audio.frameOut();
+    if (sp) {
+      topPost({ spectrum: sp });
+      topMusic = true;
+    } else if (topMusic) {
+      topPost({ spectrum: null });
+      topMusic = false;
+    }
+  }
   const sig = `${S.topScene}|${S.topOpacity}|${S.topBlend}`;
   if (sig === topSig) return;
   topSig = sig;
@@ -8200,6 +8215,15 @@ if (TOP_LAYER) {
         pointer.active = true;
       }
       if (typeof d.down === 'boolean') pointer.down = d.down;
+    }
+    if ('spectrum' in d) {
+      if (!d.spectrum) {
+        if (audio.source === 'feed') audio.stop();
+        topFeed = null;
+      } else {
+        if (audio.source !== 'feed') audio.startFeed((on) => ((topFeed = on), () => (topFeed = null)));
+        topFeed?.(d.spectrum as SpectrumFrame);
+      }
     }
     if ('edit' in d) {
       document.documentElement.classList.toggle('top-edit', !!d.edit);
@@ -9199,6 +9223,17 @@ function useKnobSet(keys: string[]) {
   changed(new Set<keyof Settings>([...KNOB_SLOTS, 'knobsPick']));
 }
 
+// The Top layer's scene list: yours first (kept up to date), then the library.
+const TOP_SCENES: [string, string][] = [['', 'None']];
+let topScenesSig = '\u0000';
+function topScenesSync() {
+  const sig = myPresets.map((p) => p.name).join('\u0001');
+  if (sig === topScenesSig) return;
+  topScenesSig = sig;
+  TOP_SCENES.length = 0;
+  TOP_SCENES.push(['', 'None'], ...myPresets.map((p): [string, string] => [`mine:${p.name}`, `★ ${p.name}`]), ...PRESETS.map(([n]): [string, string] => [n, n]));
+}
+const topName = (v: string) => v.replace(/^mine:/, '');
 const CONTROLS: Control[] = [
   { kind: 'section', id: 'presets', label: 'Scene library', tab: 'presets', summary: () => currentMine?.name || lastSceneName || '' },
   { kind: 'presetlib' },
@@ -9230,8 +9265,8 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'toplayer', label: 'Top layer', tab: 'presets', about: 'A second field drawn over this one: any scene, on top. It has no sound, mic or camera of its own.',
     lock: ['topScene', 'topOpacity', 'topBlend', 'topPointer'],
     power: { on: () => !!settings.topScene, off: { topScene: '' }, start: { topScene: 'Galaxy' } },
-    summary: () => settings.topScene || 'off' },
-  { kind: 'select', key: 'topScene', label: 'Scene on top', options: [['', 'None'], ...PRESETS.map(([n]): [string, string] => [n, n])] },
+    summary: () => (settings.topScene ? topName(settings.topScene) : 'off') },
+  { kind: 'select', key: 'topScene', label: 'Scene on top', options: TOP_SCENES },
   { kind: 'range', key: 'topOpacity', label: 'Opacity', min: 0.05, max: 1, step: 0.05, format: pct, show: () => !!settings.topScene },
   { kind: 'select', key: 'topBlend', label: 'Blend', options: [['normal', 'Normal'], ['screen', 'Screen (light adds)'], ['plus-lighter', 'Add (brighter)'], ['lighten', 'Lighten'], ['difference', 'Difference']], show: () => !!settings.topScene },
   { kind: 'toggle', key: 'topPointer', label: 'Your finger moves it too', show: () => !!settings.topScene },
