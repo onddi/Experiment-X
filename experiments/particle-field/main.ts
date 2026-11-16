@@ -147,6 +147,23 @@ app.innerHTML = `
   </aside>
 `;
 
+// A new version deployed while this page was open removes the old lazily
+// loaded files (sound, studio …), so loading one fails and its button seems
+// dead. Reload once to pick up the new version; settings are kept.
+function reloadForNewVersion() {
+  try {
+    const last = Number(sessionStorage.getItem('particle-field:stale-reload') || 0);
+    if (Date.now() - last < 30000) return;
+    sessionStorage.setItem('particle-field:stale-reload', String(Date.now()));
+  } catch {
+    return;
+  }
+  location.reload();
+}
+window.addEventListener('vite:preloadError', (e) => {
+  e.preventDefault();
+  reloadForNewVersion();
+});
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 // The old start hint is gone; the field speaks for itself.
@@ -18005,7 +18022,7 @@ function syncStudio() {
     }, tab);
     studio.setMode('off');
     syncStudio();
-  }).finally(() => (studioLoading = false));
+  }).catch(reloadForNewVersion).finally(() => (studioLoading = false));
 }
 // The dock's ♪ opens and closes the studio.
 function cycleStudio() {
@@ -18038,7 +18055,7 @@ function soundTick(dt: number) {
         snd = new m.ParticleSound(sndParams());
         snd.resume();
         sndSig = '';
-      }).finally(() => (sndLoading = false));
+      }).catch(reloadForNewVersion).finally(() => (sndLoading = false));
     }
     return;
   }
