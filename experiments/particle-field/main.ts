@@ -290,10 +290,11 @@ function fadeOf(i: number) {
     // Fog: the far half fades into the background. Soft: far ones are drawn
     // bigger (see updateSizes) and fainter, like out-of-focus light.
     const far = 1 - pz[i];
-    if (settings.depthFog > 0) {
+    const fog = Math.min(1, settings.depthFog + macro.fog);
+    if (fog > 0) {
       // Fog: the back half sinks into the background (smoothstep from just behind the middle).
       const f = Math.max(0, Math.min(1, (far - 0.2) / 0.55));
-      a *= 1 - settings.depthFog * 0.95 * f * f * (3 - 2 * f);
+      a *= 1 - fog * 0.95 * f * f * (3 - 2 * f);
     }
     if (settings.depthSoft > 0) a /= 1 + settings.depthSoft * Math.max(0, far - 0.35) * 5;
   }
@@ -1862,7 +1863,7 @@ const linkRun = new LinkRunner();
 // Density macro: multiplies the scene's particle count (see countNow).
 let densityK = 1;
 // Macros (Macros card, plus Connections pushing them): what they do this frame.
-const macro = { speed: 1, flow: 1, flowMin: 0, jitter: 1, jitterAdd: 0, friction: 1, home: 1, trailAdd: 0, size: 1, filter: '', flock: 1, align: 1, emit: 1, spin: 1, wind: 1, parallax: 1, ribbon: 1 };
+const macro = { speed: 1, flow: 1, flowMin: 0, jitter: 1, jitterAdd: 0, friction: 1, home: 1, trailAdd: 0, size: 1, filter: '', flock: 1, align: 1, emit: 1, spin: 1, wind: 1, parallax: 1, ribbon: 1, glyph: 1, fog: 0, bloom: 1 };
 // Shape turning runs on its own clock, so Energy can speed it up without a jump.
 let shapeT = 0;
 let linkNeed = linkNeeds([]);
@@ -4547,7 +4548,7 @@ function updateGlyphs() {
   const { glyphChange, glyphRate } = settings;
   if (glyphChange === 'flicker' && glyphRate > 0) {
     // Expected number of changes this frame, without looping over all.
-    let m = n * glyphRate;
+    let m = n * glyphRate * macro.glyph;
     while (m > 0) {
       if (m >= 1 || Math.random() < m) gl[(Math.random() * n) | 0] = Math.random();
       m--;
@@ -5206,7 +5207,7 @@ function gpuFrame(now: number) {
     else ptrs.push(0.5 + Math.sin(t * (0.5 + i * 0.07) + ph) * 0.3, 0.5 + Math.sin(t * (0.37 + i * 0.05) + ph * 1.3) * 0.25);
   }
   gpuFx.render(under, {
-    bloom: S.gfxBloom * (S.gfxBloomKick ? (music ? Math.min(1, gfxDrive[S.gfxLightBy === 'off' ? 'kick' : S.gfxLightBy] * 1.4 * S.gfxLightAmt) : 0.5 + 0.5 * Math.sin(t * 4)) : 1),
+    bloom: S.gfxBloom * macro.bloom * (S.gfxBloomKick ? (music ? Math.min(1, gfxDrive[S.gfxLightBy === 'off' ? 'kick' : S.gfxLightBy] * 1.4 * S.gfxLightAmt) : 0.5 + 0.5 * Math.sin(t * 4)) : 1),
     spread: S.gfxSpread, split: S.gfxSplit, rays: S.gfxRays, flare: S.gfxFlare, tint: GFX_TINTS[S.gfxTint] ?? GFX_TINTS.white,
     feedback: S.gfxFeedback, zoom: S.gfxZoom, spin: S.gfxSpin, flow: S.gfxFlow, length: S.gfxLength,
     lens: S.gfxLens, lensSize: S.gfxLensSize, bend: S.gfxBend, shock: S.gfxShock, slices: S.gfxSlices, lensMix: S.gfxLensMix, count: S.gfxCount,
@@ -6097,6 +6098,24 @@ const MACROS: [MacroKey, string, string, string][] = [
   ['mHeat', 'Heat', 'cool', 'warm'],
   ['mDensity', 'Density', 'sparse', 'dense'],
 ];
+// Moods: all five macros at once. 0.5 is the scene as it is.
+const MOODS: [string, Partial<Record<MacroKey, number>>][] = [
+  ['Chill', { mEnergy: 0.25, mOrder: 0.6, mDream: 0.62 }],
+  ['Frantic', { mEnergy: 0.9, mOrder: 0.3, mDream: 0.4, mDensity: 0.7 }],
+  ['Tight', { mOrder: 0.9, mDream: 0.3 }],
+  ['Storm', { mEnergy: 1, mOrder: 0.1, mDensity: 0.85 }],
+  ['Dreamy', { mEnergy: 0.35, mOrder: 0.45, mDream: 0.85, mHeat: 0.58 }],
+  ['Ghost', { mEnergy: 0.3, mDream: 0.8, mHeat: 0.3, mDensity: 0.25 }],
+  ['Ice', { mEnergy: 0.4, mOrder: 0.75, mDream: 0.35, mHeat: 0.15, mDensity: 0.4 }],
+  ['Fever', { mEnergy: 0.8, mOrder: 0.4, mDream: 0.55, mHeat: 0.85, mDensity: 0.7 }],
+];
+const MACRO_KEYS = MACROS.map(([k]) => k);
+const moodOf = (m: Partial<Record<MacroKey, number>>) => Object.fromEntries(MACRO_KEYS.map((k) => [k, m[k] ?? 0.5])) as Record<MacroKey, number>;
+const moodNow = () => MOODS.find(([, m]) => MACRO_KEYS.every((k) => Math.abs(settings[k] - moodOf(m)[k]) < 0.005))?.[0] ?? null;
+function setMood(m: Partial<Record<MacroKey, number>>) {
+  Object.assign(settings, moodOf(m));
+  changed(new Set(MACRO_KEYS));
+}
 const macroText = (v: number, lo: string, hi: string) => (Math.abs(v - 0.5) < 0.01 ? 'scene' : `${v < 0.5 ? lo : hi} ${Math.round(Math.abs(v - 0.5) * 200)}%`);
 // Any input (music, face, hands, body, pointer) to any action or amount; the
 // Connections card edits them. The runner lives in links.ts; this gathers the
@@ -6234,6 +6253,10 @@ function runMacros() {
   macro.wind = two(0.8 * e) * two(-1 * up(o));
   macro.parallax = 1 + 1.2 * up(d) - 0.5 * up(-d);
   macro.ribbon = 1 + 0.8 * up(d) - 0.4 * up(-d);
+  // And the newest: glyph flicker, 3D fog and FX bloom (each only where it is on).
+  macro.glyph = two(1.4 * e) * two(-0.8 * up(o));
+  macro.fog = 0.45 * up(d);
+  macro.bloom = 1 + 0.8 * up(d) - 0.5 * up(-d);
   const parts: string[] = [];
   if (Math.abs(d) > 0.02) parts.push(d > 0 ? `blur(${(d * 1.4).toFixed(2)}px) saturate(${(1 - 0.3 * d).toFixed(2)})` : `contrast(${(1 - 0.3 * d).toFixed(2)}) saturate(${(1 - 0.2 * d).toFixed(2)})`);
   if (Math.abs(t) > 0.02) {
@@ -7264,17 +7287,17 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Scenes don\'t change these.' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
   { kind: 'section', id: 'macros', label: 'Macros', tab: 'presets',
-    about: 'Each slider moves a group of settings at once, on top of the scene. The middle is the scene as it is.',
+    about: 'Each slider moves a group of settings at once, on top of the scene; a mood sets all five. The middle is the scene as it is. Each scene and shuffle starts them at the middle and your own scenes save them; lock this card to keep them through every change.',
     lock: ['mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode'],
     summary: () => {
       const on = MACROS.filter(([k]) => Math.abs(settings[k] - 0.5) > 0.01).map(([, name]) => name);
-      return on.length ? on.join(', ') : 'as the scene';
+      return moodNow() ?? (on.length ? on.join(', ') : 'as the scene');
     } },
+  { kind: 'buttons', buttons: MOODS.map(([name, m]): [string, () => void] => [name, () => setMood(m)]), active: (t) => moodNow() === t },
   ...MACROS.map(([key, name, lo, hi]): Control => ({ kind: 'range', key, label: name, min: 0, max: 1, step: 0.01, format: (v) => macroText(v, lo, hi) })),
   { kind: 'select', key: 'densityMode', label: 'New particles', options: [['fade', 'Trickle in and out'], ['pop', 'Pop in and out']], show: () => Math.abs(settings.mDensity - 0.5) > 0.01 },
   { kind: 'buttons', buttons: [['Back to the scene', () => {
-    Object.assign(settings, { mEnergy: 0.5, mOrder: 0.5, mDream: 0.5, mHeat: 0.5, mDensity: 0.5 });
-    changed(new Set(['mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity']));
+    setMood({});
   }]], show: () => MACROS.some(([k]) => Math.abs(settings[k] - 0.5) > 0.01) },
   { kind: 'section', id: 'play', label: 'Field knobs', tab: 'presets',
     about: 'Knobs along the bottom edge (up to eight from each scene) and the mouse wheel: turn settings with the menu closed.',
@@ -8125,7 +8148,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'mEnergy', 'mOrder', 'mDream', 'mHeat', 'mDensity', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -15969,6 +15992,16 @@ function shuffle(again?: unknown) {
     for (const k of [...SCENE_INPUT_KEYS, ...MUSIC_KEYS, 'anim']) {
       if (k in patch || locked.has(k) || !(k in P) || P[k] === D[k] || S[k] !== P[k]) continue;
       S[k] = D[k];
+      keys.add(k as keyof Settings);
+    }
+  }
+  // Macros belong to the look: a shuffle starts them at the middle, and a
+  // Wild shuffle rolls a mood half the time. A locked Macros card keeps yours.
+  if (!lockedKeys().includes('mEnergy')) {
+    const mood = settings.shuffleCards && Math.random() < 0.5 ? MOODS[Math.floor(Math.random() * MOODS.length)][1] : {};
+    for (const [k, v] of Object.entries(moodOf(mood))) {
+      if (k in patch || S[k] === v) continue;
+      S[k] = v;
       keys.add(k as keyof Settings);
     }
   }
