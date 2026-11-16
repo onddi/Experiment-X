@@ -2222,6 +2222,7 @@ imageInput.addEventListener('change', async () => {
       shapeImage = null;
       shapeKey = '';
       buildShape();
+      imageColoursOn(true);
     }, { once: true });
     void v.play().catch(() => {});
     return;
@@ -2233,6 +2234,7 @@ imageInput.addEventListener('change', async () => {
       shapeImage = null;
       shapeKey = '';
       buildShape();
+      imageColoursOn(true);
       return;
     }
   }
@@ -2267,12 +2269,15 @@ imageInput.addEventListener('change', async () => {
   imageInput.value = '';
 });
 
-// A new image: its particles take the image's own colours (Undo keeps the old).
-function imageColoursOn() {
+// A new image, video or GIF shape: the particles take its colours. A still
+// image is sampled once ('image'); a moving one keeps being sampled as it
+// plays ('camera', Picture colours).
+function imageColoursOn(moving = false) {
   const prev = settings.colorBy;
-  if (prev === 'image') return buildShades();
-  set('colorBy', 'image');
-  showToast('Particles take the image\u2019s colours', ['Undo', () => set('colorBy', prev)]);
+  const want = moving ? 'camera' : 'image';
+  if (prev === want) return buildShades();
+  set('colorBy', want);
+  showToast(`Particles take the ${moving ? 'video\u2019s' : 'image\u2019s'} colours`, ['Undo', () => set('colorBy', prev)]);
 }
 
 // --- camera ----------------------------------------------------------------------
@@ -9852,6 +9857,8 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   settings[k] = v;
   changed(new Set([k]));
   tlHold([k]);
+  // Picking the image shape (one already loaded): take its colours.
+  if (k === 'shape' && v === 'image' && (shapeImage || shapeMedia)) imageColoursOn(!!shapeMedia);
 }
 
 const LENS_KEYS = ['lensMirror', 'lensTiles', 'lensZoom', 'lensSplit', 'lensGlitch', 'lensDots', 'lensMusic', 'lensTwirl', 'lensWave', 'lensRipple', 'lensFan', 'lensShatter', 'lensSlices', 'lensEcho', 'lensGlow', 'lensCrt', 'audioKaleido', 'audioKaleidoDrop'] as const;
@@ -21566,7 +21573,8 @@ const LAYERS: BLayer[] = [
         bPick('Geometric', { shape: 'geo' }),
         { name: 'An image', on: () => settings.shape === 'image', go: () => {
           bApply({ shape: 'image' });
-          if (!shapeImage) imageInput.click();
+          if (!shapeImage && !shapeMedia) imageInput.click();
+          else imageColoursOn(!!shapeMedia);
         } },
         { name: 'You', on: () => settings.shape === 'camera', patch: { shape: 'camera' } },
         { name: 'Drawing', on: () => settings.shape === 'drawing', go: () => {
