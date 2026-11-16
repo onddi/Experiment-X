@@ -1918,8 +1918,11 @@ const CAM_KEYS: (keyof Settings)[] = ['shape', 'camMode', 'camHands', 'gestOn', 
 
 function grabCamera() {
   if (!cam.ready) return;
-  camCanvas.width = cam.width;
-  camCanvas.height = cam.height;
+  // Resizing a canvas reallocates it, so only when the camera's size changes.
+  if (camCanvas.width !== cam.width || camCanvas.height !== cam.height) {
+    camCanvas.width = cam.width;
+    camCanvas.height = cam.height;
+  }
   camCtx.save();
   if (settings.camMirror) {
     camCtx.translate(cam.width, 0);
@@ -3226,6 +3229,7 @@ function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number)
 // Image shape: give each pixel a weight (how much it should attract
 // particles), then pick points with probability proportional to it, like a
 // stipple drawing.
+let sampleCanvas: HTMLCanvasElement | null = null;
 function sampleImage(): [number, number][] {
   const camOn = settings.shape === 'camera';
   if (camOn) grabCamera();
@@ -3242,10 +3246,14 @@ function sampleImage(): [number, number][] {
   const ih = Math.max(2, Math.round(src.height * sc));
   const ix = Math.round((Wv - iw) / 2);
   const iy = Math.round((H - ih) / 2);
-  const c = document.createElement('canvas');
-  c.width = iw;
-  c.height = ih;
+  // One canvas, kept: the camera re-samples several times a second.
+  const c = (sampleCanvas ??= document.createElement('canvas'));
+  if (c.width !== iw || c.height !== ih) {
+    c.width = iw;
+    c.height = ih;
+  }
   const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.clearRect(0, 0, iw, ih);
   g.drawImage(src as CanvasImageSource, 0, 0, iw, ih);
   const d = g.getImageData(0, 0, iw, ih).data;
   const N = iw * ih;

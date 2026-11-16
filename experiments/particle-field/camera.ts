@@ -35,6 +35,10 @@ type VisionModule = {
   ImageSegmenter: Maker;
 };
 
+type FaceRes = { faceLandmarks?: Pt[][]; faceBlendshapes?: { categories: { categoryName: string; score: number }[] }[] };
+type HandRes = { landmarks: Pt[][]; gestures: { categoryName: string; score: number }[][] };
+type BodyMask = { w: number; h: number; data: Float32Array };
+
 export type Status = 'off' | 'loading' | 'ready' | 'failed';
 export type Face = { x: Float32Array; y: Float32Array; z: Float32Array; blend: Record<string, number> };
 // A hand: its 21 points and the gesture it is making ('None', 'Closed_Fist',
@@ -72,6 +76,29 @@ export class Camera {
   private loads: Partial<Record<Task, Promise<void>>> = {};
   private vision: Promise<{ vision: VisionModule; fs: unknown }> | null = null;
   private lastTime: Record<Task, number> = { face: -1, hands: -1, body: -1, pose: -1 };
+  // How long each tracker takes (smoothed, ms) and when it last ran.
+  readonly cost: Record<Task, number> = { face: 0, hands: 0, body: 0, pose: 0 };
+  private ranAt: Record<Task, number> = { face: -1e9, hands: -1e9, body: -1e9, pose: -1e9 };
+  private timed<T>(task: Task, run: () => T): T {
+    const t0 = performance.now();
+    const r = run();
+    this.took(task, performance.now() - t0);
+    return r;
+  }
+  private took(task: Task, dt: number) {
+    this.cost[task] = this.cost[task] ? this.cost[task] * 0.85 + dt * 0.15 : dt;
+  }
+  // The trackers run in a worker where they can, so a slow one (a phone, or
+  // no GPU) never stalls the particles; else here, on the main thread, paced.
+  private worker: Worker | null = null;
+  private noWorker = false;
+  private inWorker: Partial<Record<Task, boolean>> = {};
+  private busy: Partial<Record<Task, boolean>> = {};
+  private loaded: Partial<Record<Task, (r: { ok: boolean; edges?: Record<string, Edge[]> }) => void>> = {};
+  /** Whether a tracker runs in the worker (for the stats). */
+  offThread(task: Task) {
+    return !!this.inWorker[task];
+  }
 
   constructor() {
     this.video.muted = true;
@@ -116,6 +143,7 @@ export class Camera {
     this.body = null;
     this.poses = [];
     this.lastTime = { face: -1, hands: -1, body: -1, pose: -1 };
+    this.busy = {};
   }
 
   private base() {
@@ -137,6 +165,20 @@ export class Camera {
     const had = this.loads[task];
     if (had) return had;
     this.status[task] = 'loading';
+    const p = (async () => {
+      const edges = await this.loadInWorker(task);
+      if (!edges) return this.loadHere(task);
+      this.inWorker[task] = true;
+      if (task === 'face') this.faceEdges(edges);
+      if (task === 'hands') this.handEdges = edges.HAND_CONNECTIONS ?? [];
+      if (task === 'pose') this.poseEdges = edges.POSE_CONNECTIONS ?? [];
+      this.status[task] = 'ready';
+    })();
+    this.loads[task] = p;
+    return p;
+  }
+
+  private loadHere(task: Task): Promise<void> {
     this.vision ??= (async () => {
       const base = this.base();
       const vision = (await import(/* @vite-ignore */ `${base}/vision_bundle.mjs`)) as VisionModule;
@@ -173,7 +215,7 @@ export class Camera {
     return p;
   }
 
-  private faceEdges(F: Maker) {
+  private faceEdges(F: Record<string, Edge[]>) {
     const groups: [Edge[], number][] = [
       [F.FACE_LANDMARKS_FACE_OVAL, 1],
       [[...F.FACE_LANDMARKS_LEFT_EYEBROW, ...F.FACE_LANDMARKS_RIGHT_EYEBROW], 2],
@@ -198,22 +240,95 @@ export class Camera {
   }
 
   // A new video frame for this task? (Trackers skip repeated frames.)
-  private fresh(task: Task) {
-    if (!this.runners[task] || !this.ready) return false;
+  private fresh(task: Task, now: number) {
+    if (!(this.runners[task] || this.inWorker[task]) || !this.ready) return false;
     const vt = this.video.currentTime;
     if (vt === this.lastTime[task]) return false;
+    if (this.inWorker[task]) {
+      if (this.busy[task]) return false;
+      // Hand over the frame; the answer comes back by message.
+      this.lastTime[task] = vt;
+      this.busy[task] = true;
+      createImageBitmap(this.video).then(
+        (img) => this.worker!.postMessage({ type: 'run', task, img, ts: now }, [img]),
+        () => (this.busy[task] = false),
+      );
+      return false;
+    }
+    // On the main thread every tracker that's on shares the budget: a slow
+    // one runs less often, so tracking takes at most about a third of the time.
+    let busy = 0;
+    for (const k in this.cost) if (this.runners[k as Task]) busy += this.cost[k as Task];
+    if (now - this.ranAt[task] < Math.min(400, busy * 2.2)) return false;
     this.lastTime[task] = vt;
+    this.ranAt[task] = now;
     return true;
   }
 
+  private startWorker() {
+    if (this.worker || this.noWorker) return this.worker;
+    try {
+      this.worker = new Worker(new URL('./track.worker.ts', import.meta.url));
+    } catch {
+      this.noWorker = true;
+      return null;
+    }
+    this.worker.onmessage = (e: MessageEvent) => {
+      const d = e.data as { type: 'loaded'; task: Task; ok: boolean; edges?: Record<string, Edge[]> } | { type: 'res'; task: Task; res: unknown; ms: number };
+      if (d.type === 'loaded') {
+        this.loaded[d.task]?.(d);
+        return;
+      }
+      this.busy[d.task] = false;
+      this.took(d.task, d.ms);
+      if (!d.res || !this.on) return;
+      const now = performance.now();
+      if (d.task === 'face') this.useFaces(d.res as FaceRes, now);
+      else if (d.task === 'hands') this.useHands(d.res as HandRes, now);
+      else if (d.task === 'pose') this.usePose(d.res as { landmarks?: Pt[][] }, now);
+      else this.useBody((d.res as { mask: BodyMask | null }).mask);
+    };
+    this.worker.onerror = () => {
+      // The worker itself failed: everything falls back to this thread.
+      this.worker?.terminate();
+      this.worker = null;
+      this.noWorker = true;
+      for (const t of Object.keys(this.loaded) as Task[]) this.loaded[t]?.({ ok: false });
+      for (const t of Object.keys(this.inWorker) as Task[]) if (this.inWorker[t]) {
+        this.inWorker[t] = false;
+        this.status[t] = 'off';
+        delete this.loads[t];
+      }
+    };
+    return this.worker;
+  }
+
+  private loadInWorker(task: Task) {
+    const w = this.startWorker();
+    if (!w) return Promise.resolve(null);
+    return new Promise<Record<string, Edge[]> | null>((done) => {
+      const timer = setTimeout(() => done(null), 30000);
+      this.loaded[task] = (r) => {
+        clearTimeout(timer);
+        delete this.loaded[task];
+        done(r.ok ? (r.edges ?? {}) : null);
+      };
+      w.postMessage({ type: 'load', task, base: this.base(), model: this.model(task) });
+    });
+  }
+
   detectFaces(now: number) {
-    if (!this.fresh('face')) return;
+    if (!this.fresh('face', now)) return;
     let res;
     try {
-      res = this.runners.face!.detectForVideo!(this.video, now);
+      res = this.timed('face', () => this.runners.face!.detectForVideo!(this.video, now));
     } catch {
       return;
     }
+    this.useFaces(res, now);
+  }
+
+  private useFaces(res: FaceRes, now: number) {
     const all = res.faceLandmarks ?? [];
     if (!all.length) {
       // Keep the last faces for a moment, so a missed frame doesn't jolt.
@@ -242,13 +357,17 @@ export class Camera {
   }
 
   detectHands(now: number) {
-    if (!this.fresh('hands')) return;
+    if (!this.fresh('hands', now)) return;
     let res;
     try {
-      res = this.runners.hands!.recognizeForVideo!(this.video, now);
+      res = this.timed('hands', () => this.runners.hands!.recognizeForVideo!(this.video, now));
     } catch {
       return;
     }
+    this.useHands(res, now);
+  }
+
+  private useHands(res: HandRes, now: number) {
     const all = res.landmarks ?? [];
     if (!all.length) {
       if (now - this.handsAt > 300) this.hands = [];
@@ -264,13 +383,17 @@ export class Camera {
   }
 
   detectPose(now: number) {
-    if (!this.fresh('pose')) return;
+    if (!this.fresh('pose', now)) return;
     let res;
     try {
-      res = this.runners.pose!.detectForVideo!(this.video, now);
+      res = this.timed('pose', () => this.runners.pose!.detectForVideo!(this.video, now));
     } catch {
       return;
     }
+    this.usePose(res, now);
+  }
+
+  private usePose(res: { landmarks?: Pt[][] }, now: number) {
     const all = res.landmarks ?? [];
     if (!all.length) {
       if (now - this.poseAt > 500) this.poses = [];
@@ -287,15 +410,19 @@ export class Camera {
   }
 
   segmentBody(now: number) {
-    if (!this.fresh('body')) return;
+    if (!this.fresh('body', now)) return;
     let res;
     try {
-      res = this.runners.body!.segmentForVideo!(this.video, now);
+      res = this.timed('body', () => this.runners.body!.segmentForVideo!(this.video, now));
     } catch {
       return;
     }
     const m = res.confidenceMasks?.[0];
-    if (m) this.body = { w: m.width, h: m.height, data: m.getAsFloat32Array().slice() };
+    this.useBody(m ? { w: m.width, h: m.height, data: m.getAsFloat32Array().slice() } : null);
     res.close();
+  }
+
+  private useBody(m: BodyMask | null) {
+    if (m) this.body = m;
   }
 }
