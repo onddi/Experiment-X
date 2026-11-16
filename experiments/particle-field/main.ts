@@ -18910,7 +18910,7 @@ window.addEventListener(
   'wheel',
   (e) => {
     const t = e.target as Element | null;
-    if (t?.closest?.('#panel, #toggle, .overview, .knob-menu, .scene-sheet, .tuner')) return;
+    if (t?.closest?.('#panel, #toggle, .overview, .knob-menu, .scene-sheet, .tuner, .build-sheet, .sst-sheet, .dock-more')) return;
     if (!playing()) return;
     e.preventDefault();
     // The knobs only play on the Stage (Studio and Deck closed).

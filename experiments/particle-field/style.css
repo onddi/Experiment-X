@@ -2823,8 +2823,35 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
   body.building #stage > canvas, body.building #stage > svg { translate: 0 var(--build-shift, 0px); }
 }
 @media (min-width: 721px) {
-  .build-sheet { top: 0; right: 0; bottom: 0; width: 400px; padding: 14px 16px 84px; border-width: 0 0 0 1px; border-radius: 0; }
+  .build-sheet { top: 0; right: 0; bottom: 0; width: 400px; padding: 14px 16px; border-width: 0 0 0 1px; border-radius: 0; }
   .bd-grip { display: none; }
+  /* A mouse is precise: tighter rows, smaller buttons, more of the scene in view. */
+  .build-sheet { gap: 5px; font-size: 13px; }
+  .bd-head { min-height: 40px; }
+  .bd-head b { font-size: 16px; }
+  .bd-save { height: 32px; padding: 0 14px; font-size: 12.5px !important; }
+  .bd-list { gap: 4px; }
+  .bd-row { height: 38px; gap: 9px; padding: 0 10px; border-radius: 10px; }
+  .bd-row b { font-size: 13px; }
+  .bd-row small { font-size: 11.5px; }
+  .bd-row.small { height: 30px; }
+  .bd-row i, .bd-ctop i { width: 8px; height: 8px; }
+  .bd-card { gap: 8px; padding: 8px 10px 10px; border-radius: 12px; border-width: 1px; }
+  .bd-ctop b { font-size: 14px; }
+  .bd-icon { width: 30px; height: 30px; }
+  .bd-icon svg { width: 15px; height: 15px; }
+  .bd-body { gap: 8px; }
+  .bd-picks { gap: 5px; }
+  .bd-picks button { min-height: 32px; border-radius: 9px; font-size: 12px; font-weight: 500; }
+  .bd-picks.many { margin: 0 -10px; padding: 0 10px; gap: 5px; }
+  .bd-prow { gap: 5px; }
+  .bd-prow button { min-width: 0; padding: 3px 11px; }
+  .bd-picks button i { height: 5px; min-width: 48px; margin-bottom: 4px; }
+  .bd-x { min-height: 28px; font-size: 12.5px; }
+  .bd-x > span { width: 84px; }
+  .bd-x select, .bd-x input[type='text'] { height: 30px; border-radius: 8px; }
+  .bd-foot button { height: 36px; border-radius: 18px; font-size: 13px; }
+  .bd-about { font-size: 12.5px; }
 }
 .bd-picks.one .bd-prow button { min-width: 0; min-height: 34px; border-radius: 17px; padding: 4px 14px; font-weight: 500; }
 .mypals { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
