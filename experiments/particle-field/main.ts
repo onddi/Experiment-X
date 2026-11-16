@@ -41,6 +41,16 @@ try {
     localStorage.setItem('particle-field:knobs-off-v1', '1');
   }
 } catch {}
+// Two-finger drag used to turn the Heat macro, which tinted everything without
+// a word: it now changes speed. Move older saves over once.
+try {
+  if (!localStorage.getItem('particle-field:two-speed-v1')) {
+    if (settings.playTwo === 'mHeat') settings.playTwo = 'speed';
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    if (saved && typeof saved === 'object' && saved.playTwo === 'mHeat') localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, playTwo: 'speed' }));
+    localStorage.setItem('particle-field:two-speed-v1', '1');
+  }
+} catch {}
 
 function load(): Partial<Settings> {
   try {

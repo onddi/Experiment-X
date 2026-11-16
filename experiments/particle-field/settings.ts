@@ -601,7 +601,7 @@ export const DEFAULTS: Settings = {
   playOn: false,
   playLeft: 'mEnergy',
   playRight: 'mDream',
-  playTwo: 'mHeat',
+  playTwo: 'speed',
   playPinch: 'size',
   tapTwice: 'drop',
   twistTwo: 'lensTwirl',
