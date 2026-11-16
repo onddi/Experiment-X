@@ -1089,6 +1089,7 @@ function step(dt: number) {
   const blastLeft = blastUntil - performance.now();
   const blastK = blastLeft > 0 ? Math.min(1, blastLeft / 700) : 0;
   const damp = 1 - friction * (1 - blastK * 0.75);
+  const coast = settings.launchSpeed > 0;
 
   for (const wv of waves) {
     if (wv.kind === 'implode') {
@@ -1637,8 +1638,12 @@ function step(dt: number) {
       }
       rest[i] = 0;
     }
-    vx[i] = (vx[i] + ax * dt) * Math.pow(damp, dt);
-    vy[i] = (vy[i] + ay * dt) * Math.pow(damp, dt);
+    // Launched particles coast: friction eases in over their first second,
+    // so Launch speed carries them visibly before the field takes over.
+    let dmp = damp;
+    if (coast && age[i] < 62) dmp = 1 - (1 - damp) * (0.12 + 0.88 * Math.max(0, (age[i] - 32) / 30));
+    vx[i] = (vx[i] + ax * dt) * Math.pow(dmp, dt);
+    vy[i] = (vy[i] + ay * dt) * Math.pow(dmp, dt);
     ox[i] = px[i];
     oy[i] = py[i];
     const zs = depthOn ? depthK(0.35 + pz[i], settings.depth) : 1;
