@@ -6467,7 +6467,7 @@ type Tab = 'presets' | 'look' | 'fx' | 'shape' | 'motion' | 'music' | 'camera' |
 type Intent = 'create' | 'perform' | 'react';
 const TABS: [Tab, string][] = [
   ['look', 'Look'], ['fx', 'FX'], ['shape', 'Shape'], ['motion', 'Motion'],
-  ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'On-screen controls'], ['record', 'Record'],
+  ['presets', 'Scenes'], ['timeline', 'Timeline'], ['xfader', 'Crossfader'], ['knobs', 'On-screen controls'], ['record', 'Device'],
   ['music', 'Music'], ['camera', 'Camera'], ['links', 'Connections'],
 ];
 // Desktop tab icons: one row of every page, the open one also named.
@@ -6516,10 +6516,10 @@ const FOLDERS: Folder[] = [
   { id: 'camera', label: 'Camera', tabs: ['camera'], icon: TAB_ICONS.camera },
   { id: 'links', label: 'Connections', tabs: ['links'], icon: TAB_ICONS.links },
   { id: 'play', label: 'Play', tabs: ['knobs', 'timeline', 'xfader'], icon: TAB_ICONS.knobs },
-  { id: 'output', label: 'Output', tabs: ['record'], icon: TAB_ICONS.record },
+  { id: 'output', label: 'Device', tabs: ['record'], icon: TAB_ICONS.record },
 ];
 const folderOf = (t: Tab) => FOLDERS.find((f) => f.tabs.includes(t)) ?? FOLDERS[0];
-const PAGE_OF: Record<string, Tab> = { anim: 'knobs', timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', quality: 'record', links: 'links' };
+const PAGE_OF: Record<string, Tab> = { anim: 'knobs', timeline: 'timeline', xfader: 'xfader', macros: 'knobs', play: 'knobs', pointer: 'knobs', view: 'record', record: 'record', quality: 'record', device: 'record', links: 'links' };
 const pageOf = (c: { id: string; tab?: Tab }) => PAGE_OF[c.id] ?? c.tab ?? 'look';
 // A card that can be switched off: `off` is what switching off sets, `start`
 // what switching on sets the first time (later it restores what you had).
@@ -7289,12 +7289,11 @@ const CONTROLS: Control[] = [
   // How switching between looks feels. Not part of any look: presets keep these.
 
   { kind: 'section', id: 'transitions', label: 'Transitions', tab: 'presets',
-    summary: () => [settings.morph > 0 ? `${settings.morph.toFixed(1)}s morph` : 'instant', `snap ${settings.homeStrength.toFixed(1)}×`, settings.beatSnap ? 'on the beat' : '', settings.shuffleCards ? 'wild shuffle' : ''].filter(Boolean).join(' · ') },
+    summary: () => [settings.morph > 0 ? `${settings.morph.toFixed(1)}s morph` : 'instant', settings.beatSnap ? 'on the beat' : '', settings.shuffleCards ? 'wild shuffle' : ''].filter(Boolean).join(' · ') },
   { kind: 'range', key: 'morph', label: 'Morph time', min: 0, max: 4, step: 0.1, format: (v) => (v === 0 ? 'instant' : `${v.toFixed(1)}s`) },
-  { kind: 'range', key: 'homeStrength', label: 'Snap to shape', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'beatSnap', label: 'Switch on the next kick drum' },
   { kind: 'toggle', key: 'shuffleCards', label: 'Wild shuffle: bigger changes each time' },
-  { kind: 'note', text: 'Morph time: how long a switch glides. Snap to shape: how hard particles chase their spot in a word or image. Wild shuffle rolls which unlocked cards are on too, not just their settings. Scenes don\'t change these.' },
+  { kind: 'note', text: 'Morph time: how long a switch glides. Wild shuffle rolls which unlocked cards are on too, not just their settings. Scenes don\'t change these.' },
   { kind: 'note', text: 'Beat snap needs Audio on; without a kick within 2.5 s it switches anyway.', show: () => settings.beatSnap && audio.source === 'off' },
   { kind: 'section', id: 'macros', label: 'Macros', tab: 'presets',
     about: 'Each slider moves a group of settings at once, on top of the scene; a mood sets all five. The middle is the scene as it is. Each scene and shuffle starts them at the middle and your own scenes save them; lock this card to keep them through every change.',
@@ -7316,8 +7315,6 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'You picked these knobs yourself (the knob button on a Deck setting), so they stay put through every scene and shuffle. Clear them to let each scene and shuffle bring its own again.', show: () => knobPicks().length > 0 },
   { kind: 'buttons', buttons: [['Clear my picked knobs', () => clearKnobPicks()]], show: () => knobPicks().length > 0 },
   { kind: 'toggle', key: 'knobsFollow', label: 'Knobs follow the scene (each scene and shuffle brings its own)' },
-  { kind: 'choice', key: 'numberKeys', label: 'Number keys do', options: [['knobs', 'Knobs'], ['mine', 'My scenes']] },
-  { kind: 'note', text: 'Hold 1–8 and scroll, swipe or move the mouse to turn knob A–H. Tap the key alone to open its slider.', show: () => settings.numberKeys === 'knobs' },
   { kind: 'note', text: 'Each scene and each shuffle sets knobs for what it is about (its shape, motion, lens…). Your set below plays when this is off.', show: () => settings.knobsFollow && !knobPicks().length },
   { kind: 'sub', label: 'Knob set' },
   { kind: 'buttons', buttons: KNOB_SETS.map(([name, keys]): [string, () => void] => [name, () => useKnobSet(keys)]), active: (t) => knobSetName() === t },
@@ -7391,12 +7388,32 @@ const CONTROLS: Control[] = [
     about: 'A video of the field to save or share: the picture and, if you like, the sound.',
     summary: () => (recorder.on ? 'recording' : recorder.clip ? 'clip ready' : RECORD_LENGTHS.find(([v]) => Number(v) === recorder.prefs.secs)![1]) },
   { kind: 'record' },
+  // Room setup: how this device listens, sees and takes keys. Not part of any
+  // scene, so scenes, shuffles and Build leave it alone.
+  { kind: 'section', id: 'device', label: 'This device', tab: 'record', about: 'How this device listens, sees you and takes keys. Not part of a scene: it stays through every scene and shuffle.' },
+  { kind: 'sub', label: 'Listening' },
+    { kind: 'choice', key: 'audioGenre', label: 'How it listens', options: GENRES },
+  ...GENRES.map(([g]): Control => ({ kind: 'note', text: FEEL_ABOUT[g], show: () => settings.audioGenre === g })),
+  { kind: 'sub', label: 'Vocals' },
+  { kind: 'choice', key: 'audioVox', label: 'Vocals', options: [['auto', 'Auto'], ['sung', 'Sung'], ['speech', 'Rapped']] },
+  { kind: 'note', text: 'Sung follows a held, gliding pitch. Rapped counts syllables, pauses and rhymes too. Auto guesses from what it hears.' },
+  { kind: 'sub', label: 'Sync' },
+  { kind: 'range', key: 'audioSync', label: 'Delay reactions', min: 0, max: 500, step: 10, format: (v) => (v === 0 ? 'off' : `${v} ms`) },
+  { kind: 'buttons', buttons: [['Tap along to set it', () => calibrateSync()]] },
+  { kind: 'note', text: 'Bluetooth headphones play the sound 150–250 ms after the field hears it, so reactions land early. Tap along to the kick and the delay is set for you.' },
+  { kind: 'sub', label: 'Camera' },
+  { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie' },
+  { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview' },
+  { kind: 'sub', label: 'Keyboard' },
+  { kind: 'choice', key: 'numberKeys', label: 'Number keys do', options: [['knobs', 'Knobs'], ['mine', 'My scenes']] },
+  { kind: 'note', text: 'Hold 1–8 and scroll, swipe or move the mouse to turn knob A–H. Tap the key alone to open its slider.', show: () => settings.numberKeys === 'knobs' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
-    lock: ['render', 'mixStyles', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
-    summary: () => label(RENDERS, settings.render) },
+    lock: ['render', 'mixStyles', 'count', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate'],
+    summary: () => `${label(RENDERS, settings.render)}, ${settings.count.toLocaleString()}` },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
+  { kind: 'range', key: 'count', label: 'Count', min: 1, max: 8000, step: 1 },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
@@ -7429,16 +7446,17 @@ const CONTROLS: Control[] = [
       off: { audioKaleido: 0, audioKaleidoDrop: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0 }, start: { audioKaleido: 6 } },
     summary: () => [settings.audioKaleido > 0 ? `kaleidoscope ×${settings.audioKaleido}` : settings.audioKaleidoDrop ? 'kaleidoscope on drops' : '', settings.lensMirror !== 'off' ? 'mirror' : '', settings.lensTiles >= 2 ? `tiles ${settings.lensTiles}×${settings.lensTiles}` : '', settings.lensZoom > 0 ? 'infinite zoom' : '', settings.lensSplit > 0 ? 'colour split' : '', settings.lensGlitch > 0 ? 'glitch' : '', settings.lensDots > 0 ? 'LED dots' : '', ...LENS_MORE.filter(([k]) => settings[k] > 0).map(([, n]) => n.toLowerCase())].filter(Boolean).join(' · ') || 'off' },
   { kind: 'mixgrid', which: 'lens' },
-  { kind: 'range', key: 'audioKaleido', label: 'Kaleidoscope', min: 0, max: 8, step: 2, format: (v) => (v === 0 ? 'off' : `${v} sides`) },
+  { kind: 'note', text: 'Kaleidoscope, mirror, colour split, glitch, LED dots and twirl are in FX (Kaleido and Mirror in Lenses, Colour split in Light, Glitch, LED wall in Surface, Whirlpool in Lenses). The older versions show here only when a scene uses them.', show: () => gpuFx.ok },
+  { kind: 'range', key: 'audioKaleido', label: 'Kaleidoscope', min: 0, max: 8, step: 2, format: (v) => (v === 0 ? 'off' : `${v} sides`), show: () => !gpuFx.ok || settings.audioKaleido > 0 },
   { kind: 'toggle', key: 'audioKaleidoDrop', label: 'Kaleidoscope for 2 bars at each drop (music)', show: () => settings.audioKaleido === 0 },
-  { kind: 'select', key: 'lensMirror', label: 'Mirror', options: [['off', 'Off'], ['lr', 'Left ↔ right'], ['tb', 'Top ↕ bottom'], ['quad', 'Four ways']] },
+  { kind: 'select', key: 'lensMirror', label: 'Mirror', options: [['off', 'Off'], ['lr', 'Left ↔ right'], ['tb', 'Top ↕ bottom'], ['quad', 'Four ways']], show: () => !gpuFx.ok || settings.lensMirror !== 'off' },
   { kind: 'range', key: 'lensTiles', label: 'Tiles', min: 0, max: 6, step: 1, format: (v) => (v < 2 ? 'off' : `${v} × ${v}`) },
   { kind: 'range', key: 'lensZoom', label: 'Infinite zoom', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'range', key: 'lensSplit', label: 'Colour split', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'range', key: 'lensGlitch', label: 'Glitch', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'range', key: 'lensDots', label: 'LED dots', min: 0, max: 24, step: 1, format: (v) => (v === 0 ? 'off' : `${v}px`) },
+  { kind: 'range', key: 'lensSplit', label: 'Colour split', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !gpuFx.ok || settings.lensSplit > 0 },
+  { kind: 'range', key: 'lensGlitch', label: 'Glitch', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !gpuFx.ok || settings.lensGlitch > 0 },
+  { kind: 'range', key: 'lensDots', label: 'LED dots', min: 0, max: 24, step: 1, format: (v) => (v === 0 ? 'off' : `${v}px`), show: () => !gpuFx.ok || settings.lensDots > 0 },
   { kind: 'sub', label: 'Twists and warps' },
-  ...LENS_MORE.slice(0, 4).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) })),
+  ...LENS_MORE.slice(0, 4).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: key === 'lensTwirl' ? () => !gpuFx.ok || settings.lensTwirl > 0 : undefined })),
   { kind: 'sub', label: 'Breaking it up' },
   ...LENS_MORE.slice(4, 6).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) })),
   { kind: 'sub', label: 'Light' },
@@ -7550,7 +7568,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gfxSurfAmt', label: 'Surface amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxSurfBy !== 'off' },
   { kind: 'note', text: 'Needs a sound source (Music).', show: () => audio.source === 'off' },
 
-  { kind: 'section', about: 'Near and far layers, with parallax.', id: 'depth', label: '3D depth', tab: 'look', lock: ['depth', 'depthParallax'],
+  { kind: 'section', about: 'Near and far layers with parallax, and how a 3D solid is lit and turned.', id: 'depth', label: 'Depth & light', tab: 'look', lock: ['depth', 'depthParallax', 'shapeTilt', 'shapeFacing', 'solidLight', 'shapeDrag'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
     summary: () => (settings.depth > 0 ? `${pct(settings.depth)}${settings.depthParallax > 0 ? ', parallax' : ''}` : 'off') },
   { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
@@ -7559,8 +7577,13 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthSoft', label: 'Soft far away', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'toggle', key: 'tiltLook', label: 'Tilt the phone to look around', show: () => tiltSupported },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
+  { kind: 'sub', label: '3D solid', show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'shapeTilt', label: 'Tilt', min: -60, max: 60, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
+  { kind: 'toggle', key: 'shapeDrag', label: 'Drag to turn it', show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'solidLight', label: 'Light and shade', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)), show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shapeTilt', 'shapeFacing', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -7577,7 +7600,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
-  { kind: 'note', text: '3D shapes look best with 3D depth on (Look tab); it turns on with them.', show: () => settings.shape === 'solid' },
+  { kind: 'note', text: '3D shapes look best with depth on; it turns on with them. Tilt, light and shade and facing are in Depth & light (Look tab).', show: () => settings.shape === 'solid' },
   { kind: 'note', text: 'The bars and the ring follow the sound source on the Music tab; without sound they rest flat.', show: () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring') },
   { kind: 'text', key: 'shapeSeq', label: 'Sequence', placeholder: 'heart, star, LOVE', show: () => settings.shape === 'sequence' },
   { kind: 'select', key: 'shapeSeqEvery', label: 'Next one', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['8bars', 'Every 8 bars'], ['drop', 'Only on drops']], show: () => settings.shape === 'sequence' },
@@ -7589,13 +7612,10 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
+  { kind: 'range', key: 'homeStrength', label: 'Snap to shape', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasShape },
   { kind: 'range', key: 'shapeX', label: 'Position ←→', min: -0.5, max: 0.5, step: 0.01, format: signedPct, show: hasShape },
   { kind: 'range', key: 'shapeY', label: 'Position ↑↓', min: -0.5, max: 0.5, step: 0.01, format: signedPct, show: hasShape },
   { kind: 'range', key: 'shapeAngle', label: 'Angle', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: hasShape },
-  { kind: 'range', key: 'shapeTilt', label: 'Tilt', min: -60, max: 60, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
-  { kind: 'toggle', key: 'shapeDrag', label: 'Drag to turn it', show: () => settings.shape === 'solid' },
-  { kind: 'range', key: 'solidLight', label: 'Light and shade', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)), show: () => settings.shape === 'solid' },
-  { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
   { kind: 'buttons', buttons: [['Arrange on the field', () => toggleArrange()], ['Centre it', resetPlacement]], active: (t) => t === 'Arrange on the field' && arranging, show: hasShape },
   { kind: 'select', key: 'entrance', label: 'Entrance', options: ENTRANCES, show: () => hasShape() && !isCam() },
   { kind: 'range', key: 'entranceTime', label: 'Entrance time', min: 0.5, max: 8, step: 0.5, format: (v) => `${v}s`, show: () => hasShape() && !isCam() && settings.entrance !== 'formed' && settings.entrance !== 'scatter' },
@@ -7630,9 +7650,8 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'emitOut', label: 'Shoot outwards (else use Launch)', show: hasEmitter },
   { kind: 'note', text: 'Tip: Forces → Click places → Emitter position, then click the field.', show: () => hasEmitter() && !['edges', 'pointer'].includes(settings.emitter) },
 
-  { kind: 'section', id: 'particles', label: 'Particles', tab: 'motion', lock: ['count', 'speed', 'friction', 'jitter', 'edges', 'renew'],
-    summary: () => `${settings.count.toLocaleString()}, ${settings.speed.toFixed(1)}× speed` },
-  { kind: 'range', key: 'count', label: 'Count', min: 1, max: 8000, step: 1 },
+  { kind: 'section', about: 'How fast they go, what slows them, and what happens at the edges.', id: 'particles', label: 'Speed & edges', tab: 'motion', lock: ['speed', 'friction', 'jitter', 'edges', 'renew'],
+    summary: () => `${settings.speed.toFixed(1)}× speed` },
   { kind: 'range', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'range', key: 'friction', label: 'Friction', min: 0, max: 0.2, step: 0.005, format: pct },
   { kind: 'more', label: 'More settings' },
@@ -7691,16 +7710,6 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'audio', label: 'Listening', tab: 'music', summary: listenSummary },
   { kind: 'audio' },
-  { kind: 'sub', label: 'How it listens' },
-  { kind: 'choice', key: 'audioGenre', label: 'How it listens', options: GENRES },
-  ...GENRES.map(([g]): Control => ({ kind: 'note', text: FEEL_ABOUT[g], show: () => settings.audioGenre === g })),
-  { kind: 'sub', label: 'Vocals' },
-  { kind: 'choice', key: 'audioVox', label: 'Vocals', options: [['auto', 'Auto'], ['sung', 'Sung'], ['speech', 'Rapped']] },
-  { kind: 'note', text: 'Sung follows a held, gliding pitch. Rapped counts syllables, pauses and rhymes too. Auto guesses from what it hears.' },
-  { kind: 'sub', label: 'Sync' },
-  { kind: 'range', key: 'audioSync', label: 'Delay reactions', min: 0, max: 500, step: 10, format: (v) => (v === 0 ? 'off' : `${v} ms`) },
-  { kind: 'buttons', buttons: [['Tap along to set it', () => calibrateSync()]] },
-  { kind: 'note', text: 'Bluetooth headphones play the sound 150–250 ms after the field hears it, so reactions land early. Tap along to the kick and the delay is set for you.' },
 
   { kind: 'section', id: 'vibe', label: 'Vibe', tab: 'music', summary: vibeLabel },
   { kind: 'note', text: 'Start a sound above (Mic, Share tab or File) and the mix moves the field.', show: () => audio.source === 'off' },
@@ -7876,7 +7885,8 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'audioDolly', label: 'Dolly in through a build-up, snap back at the drop' },
   { kind: 'toggle', key: 'audioFlip', label: 'Mirror the view at each drop' },
 
-  { kind: 'section', id: 'viewfx', label: 'View effects', tab: 'music', about: 'Feedback tunnel and echoes of the last kick. The kaleidoscope is in Lens (Look tab).',
+  { kind: 'section', id: 'viewfx', label: 'View effects', tab: 'music', about: 'Feedback tunnel and echoes of the last kick. With WebGL they are in FX (Feedback, Echo frames); this card shows only when a scene uses the older versions.',
+    show: () => !gpuFx.ok || settings.audioTunnel > 0 || settings.audioEcho > 0,
     lock: ['audioTunnel', 'audioTunnelTurn', 'audioEcho'],
     power: { on: () => settings.audioTunnel > 0 || settings.audioEcho > 0,
       off: { audioTunnel: 0, audioEcho: 0 }, start: { audioTunnel: 0.5 } },
@@ -7940,8 +7950,6 @@ const CONTROLS: Control[] = [
   { kind: 'section', id: 'cam', label: 'Camera', tab: 'camera', about: 'Your webcam. Every card on this tab uses it; the picture stays on this device.',
     power: { on: () => cam.on || camStarting, off: {}, start: {}, toggle: () => (cam.on ? stopCamera() : void startCamera()) },
     summary: () => (cam.on ? 'on' : camStarting ? 'starting…' : 'off') },
-  { kind: 'toggle', key: 'camMirror', label: 'Mirror, like a selfie' },
-  { kind: 'toggle', key: 'camPreview', label: 'Show a small camera preview' },
   { kind: 'note', text: 'Switch on any card below and the camera starts by itself (it asks once). Tracking downloads a small model the first time.' },
 
   { kind: 'section', id: 'camshape', label: 'You as the shape', tab: 'camera', about: 'Your face, hands or body become the shape the particles form.',
@@ -10317,12 +10325,12 @@ const afterShow: (() => void)[] = [];
 // and vibes set most (plus each card's main choice). The rest wait under
 // Fine-tune. Cards with 4 or fewer settings show everything.
 const ESSENTIALS: Record<string, (keyof Settings)[]> = {
-  transitions: ['homeStrength', 'morph'],
-  look: ['render', 'mixStyles', 'size', 'trail', 'glow'],
+  transitions: ['morph', 'beatSnap'],
+  look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow'],
   colour: ['palette', 'colorBy', 'customColors'],
-  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize'],
+  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
-  particles: ['count', 'friction', 'jitter'],
+  particles: ['speed', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
   swarm: ['flock', 'space'],
   obstacles: ['obstacles', 'obsText', 'obsShow', 'obsForce'],
@@ -18863,7 +18871,7 @@ const LAYER_OF: Record<string, LayerId | null> = {
   pointer: 'reacts', cam: 'reacts', mgcam: 'reacts', facefx: 'reacts', hands: 'reacts', caminputs: 'reacts', sound: 'reacts', links: 'reacts',
   lens: 'finish', gfxlooks: 'finish', gfxlight: 'finish', gfxfeed: 'finish', gfxecho: 'finish', gfxlens: 'finish', gfxdisplace: 'finish', gfxglitch: 'finish', gfxsurface: 'finish', gfxgrade: 'finish', mirror: 'finish',
   presets: 'perform', mine: 'perform', timeline: 'perform', xfader: 'perform', transitions: 'perform', macros: 'perform', play: 'perform', anim: 'perform', vj: 'perform',
-  quality: null, view: null, record: null, actions: null,
+  quality: null, view: null, record: null, device: null, actions: null,
 };
 type BPick = { name: string; on: () => boolean; patch?: Partial<Settings>; go?: () => void };
 type BGroup = { label?: string; picks: BPick[]; tune?: string };
