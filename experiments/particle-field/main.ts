@@ -16460,6 +16460,9 @@ function renderSoundPage(body: HTMLElement) {
     chev.setAttribute('aria-label', `${t.name} settings`);
     row.append(dot, name, lv, val, chev);
     const det = mk('div', 'sndp-det');
+    // Its own settings take the track's colour.
+    det.style.setProperty('--accent', t.dot);
+    det.style.setProperty('--accent-bg', `color-mix(in oklch, ${t.dot} 18%, transparent)`);
     // What drives it: how the particles play this part.
     det.append(mk('p', 'sndp-how', t.how));
     if (t.beats) det.append(beatChips());

@@ -2859,6 +2859,8 @@ body.gl-only canvas#c { opacity: 0; }
 @media (min-width: 721px) {
   .build-sheet { top: 0; right: 0; bottom: 0; width: 400px; padding: 14px 16px; border-width: 0 0 0 1px; border-radius: 0; }
   .bd-grip { display: none; }
+  /* Hidden: a small floating bar, not an empty full-height panel. */
+  .build-sheet.peek { top: 12px; right: 12px; bottom: auto; width: 360px; padding: 6px 8px 6px 6px; border-width: 1px; border-radius: 16px; }
   /* A mouse is precise: tighter rows, smaller buttons, more of the scene in view. */
   .build-sheet { gap: 5px; font-size: 13px; }
   .bd-head { min-height: 40px; }
