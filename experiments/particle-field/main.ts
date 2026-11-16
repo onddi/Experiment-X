@@ -569,6 +569,7 @@ function setWells(list: Well[]) {
 // out. Particles near an edge lose the part of their velocity heading in, so
 // they slide around it, and anything inside is pushed out.
 const OB_CELL = 4;
+const OB_FONTS: Record<Settings['obsFont'], [string, string]> = { bold: ['800', 'system-ui, sans-serif'], serif: ['700', 'Georgia, "Times New Roman", serif'], mono: ['700', 'ui-monospace, Menlo, Consolas, monospace'], round: ['800', 'ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif'], script: ['700', '"Brush Script MT", "Segoe Script", cursive'] };
 const OB_MARGIN = 22;
 type ObField = { W: number; H: number; sd: Float32Array; nx: Float32Array; ny: Float32Array };
 let obField: ObField | null = null;
@@ -592,16 +593,38 @@ function traceObstacles(g: CanvasRenderingContext2D) {
       g.arc(c.x * w, c.y * h, S.obsRadius, 0, Math.PI * 2);
     }
     g.fill();
-  } else if (S.obstacles === 'text') {
-    const text = S.obsText.trim() || ' ';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    let size = h * 0.5;
-    g.font = `800 ${size}px system-ui, sans-serif`;
-    size *= Math.min(1, (w * S.obsSize) / Math.max(1, g.measureText(text).width));
-    size = Math.min(size, h * 0.6 * S.obsSize + 4);
-    g.font = `800 ${size}px system-ui, sans-serif`;
-    g.fillText(text, w / 2, h / 2);
+  } else if (S.obstacles === 'text' || S.obstacles === 'wall' || S.obstacles === 'ring') {
+    // One piece, placed (Position, or dragged on the field) and turned.
+    g.save();
+    g.translate(S.obsX * w, S.obsY * h);
+    g.rotate((S.obsAngle * Math.PI) / 180);
+    if (S.obstacles === 'text') {
+      const text = S.obsText.trim() || ' ';
+      const face = OB_FONTS[S.obsFont] ?? OB_FONTS.bold;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      let size = h * 0.5;
+      g.font = `${face[0]} ${size}px ${face[1]}`;
+      size *= Math.min(1, (w * S.obsSize) / Math.max(1, g.measureText(text).width));
+      size = Math.min(size, h * 0.6 * S.obsSize + 4);
+      g.font = `${face[0]} ${size}px ${face[1]}`;
+      g.fillText(text, 0, 0);
+    } else if (S.obstacles === 'wall') {
+      const L = Math.max(w, h) * S.obsSize;
+      g.beginPath();
+      g.roundRect(-L / 2, -12, L, 24, 12);
+      g.fill();
+    } else {
+      // A ring with a gap (at the angle) for the flow to get in and out.
+      const r = Math.min(w, h) * 0.45 * S.obsSize;
+      g.lineWidth = 22;
+      g.lineCap = 'round';
+      g.strokeStyle = g.fillStyle;
+      g.beginPath();
+      g.arc(0, 0, r, 0.35, Math.PI * 2 - 0.35);
+      g.stroke();
+    }
+    g.restore();
   } else if (S.obstacles === 'body') {
     // Your silhouette from the camera, where the camera shows you on screen.
     const m = cam.body;
@@ -617,7 +640,7 @@ function traceObstacles(g: CanvasRenderingContext2D) {
 function obstacleField(): ObField | null {
   const S = settings;
   if (S.obstacles === 'none') return null;
-  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
+  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, S.obsX, S.obsY, S.obsAngle, S.obsFont, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
   if (key === obKey) return obField;
   obKey = key;
   const W = Math.max(1, Math.ceil(w / OB_CELL));
@@ -746,27 +769,80 @@ function drawThumb(fade: number, light: boolean) {
 
 // "Place it on the field" (Birth & lifespan): the next tap on the field puts
 // the emitter there, and holding and sliding moves it.
+// Obstacles move the same way ("Move it on the field"); circles drag
+// where they are, and a tap without a drag still adds or removes one.
 let emitPlacing = false;
 let emitDragging = false;
+let obsPlacing = false;
+let obsDragging = false;
+let obCircleDrag: { k: number; x: number; y: number; moved: boolean; added: boolean } | null = null;
+const fx = (e: PointerEvent) => Math.min(1, Math.max(0, e.offsetX / w));
+const fy = (e: PointerEvent) => Math.min(1, Math.max(0, e.offsetY / h));
 canvas.addEventListener('pointermove', (e) => {
-  if (!emitDragging) return;
-  settings.emitX = Math.min(1, Math.max(0, e.offsetX / w));
-  settings.emitY = Math.min(1, Math.max(0, e.offsetY / h));
-  changed(new Set(['emitX', 'emitY']));
+  if (emitDragging) {
+    settings.emitX = fx(e);
+    settings.emitY = fy(e);
+    changed(new Set(['emitX', 'emitY']));
+  } else if (obsDragging) {
+    settings.obsX = fx(e);
+    settings.obsY = fy(e);
+    changed(new Set(['obsX', 'obsY']));
+  } else if (obCircleDrag) {
+    const d = obCircleDrag;
+    if (!d.moved && Math.hypot(e.offsetX - d.x, e.offsetY - d.y) < 6) return;
+    d.moved = true;
+    const list = obCircleList();
+    if (!list[d.k]) return;
+    list[d.k] = { x: fx(e), y: fy(e) };
+    settings.obsCircles = list.map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).join(';');
+    changed(new Set(['obsCircles']));
+  }
 });
-for (const ev of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(ev, () => (emitDragging = false));
+for (const ev of ['pointerup', 'pointercancel'] as const)
+  canvas.addEventListener(ev, () => {
+    emitDragging = obsDragging = false;
+    const d = obCircleDrag;
+    obCircleDrag = null;
+    // A tap on a circle (no drag) removes it.
+    if (d && !d.moved && !d.added && ev === 'pointerup') {
+      settings.obsCircles = obCircleList().filter((_, k) => k !== d.k).map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).join(';');
+      changed(new Set(['obsCircles']));
+    }
+  });
 function placeEmitter() {
   emitPlacing = true;
+  obsPlacing = false;
   if (sheetMode()) uGo('stage');
   showToast('Tap the field to place the emitter', ['Cancel', () => (emitPlacing = false)]);
+}
+function placeObstacle() {
+  obsPlacing = true;
+  emitPlacing = false;
+  if (sheetMode()) uGo('stage');
+  showToast('Tap the field to move the obstacle there', ['Cancel', () => (obsPlacing = false)]);
 }
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   // A second finger starts a two-finger gesture instead (twist, freeze, play knobs).
   if (e.pointerType === 'touch' && playTouch.size >= 1) return;
   pressAt = performance.now();
-  if (settings.obstacles === 'circles' && settings.obsPlace && settings.placeWell === 'off') {
-    toggleObstacle(e.offsetX, e.offsetY);
+  if (obsPlacing) {
+    obsPlacing = false;
+    settings.obsX = fx(e);
+    settings.obsY = fy(e);
+    changed(new Set(['obsX', 'obsY']));
+    obsDragging = true;
+    showToast('Obstacle moved. Slide to move it while you hold.');
+    return;
+  }
+  if (!emitPlacing && settings.obstacles === 'circles' && settings.obsPlace && settings.placeWell === 'off') {
+    const list = obCircleList();
+    const hit = list.findIndex((p) => Math.hypot(p.x * w - e.offsetX, p.y * h - e.offsetY) < settings.obsRadius);
+    if (hit >= 0) obCircleDrag = { k: hit, x: e.offsetX, y: e.offsetY, moved: false, added: false };
+    else {
+      toggleObstacle(e.offsetX, e.offsetY);
+      obCircleDrag = { k: obCircleList().length - 1, x: e.offsetX, y: e.offsetY, moved: false, added: true };
+    }
     hint.classList.add('gone');
     return;
   }
@@ -9446,15 +9522,20 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
 
-  { kind: 'section', about: 'Circles or a word the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow'],
+  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont'],
     power: { on: () => settings.obstacles !== 'none', off: { obstacles: 'none' }, start: { obstacles: 'circles' } },
-    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'body' ? 'your silhouette' : 'off') },
-  { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word'], ['body', 'Your silhouette (camera)']] },
+    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'wall' ? 'a wall' : settings.obstacles === 'ring' ? 'a ring' : settings.obstacles === 'body' ? 'your silhouette' : 'off') },
+  { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['body', 'Your silhouette (camera)']] },
   { kind: 'range', key: 'camRate', label: 'Silhouette updates per second', min: 1, max: 15, step: 1, show: bodyObs },
-  { kind: 'toggle', key: 'obsPlace', label: 'Click places or removes circles', show: () => settings.obstacles === 'circles' },
+  { kind: 'toggle', key: 'obsPlace', label: 'Tap adds or removes circles, drag moves them', show: () => settings.obstacles === 'circles' },
   { kind: 'range', key: 'obsRadius', label: 'Circle size', min: 15, max: 220, step: 5, format: (v) => `${v}px`, show: () => settings.obstacles === 'circles' },
   { kind: 'text', key: 'obsText', label: 'Word', placeholder: 'Type a word', show: () => settings.obstacles === 'text' },
-  { kind: 'range', key: 'obsSize', label: 'Word size', min: 0.2, max: 1, step: 0.05, format: pct, show: () => settings.obstacles === 'text' },
+  { kind: 'select', key: 'obsFont', label: 'Font', options: [['bold', 'Bold'], ['serif', 'Serif'], ['mono', 'Mono'], ['round', 'Rounded'], ['script', 'Script']], show: () => settings.obstacles === 'text' },
+  { kind: 'range', key: 'obsSize', label: 'Size', min: 0.1, max: 1, step: 0.05, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsAngle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
+  { kind: 'buttons', buttons: [['Move it on the field', () => placeObstacle()]], show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },

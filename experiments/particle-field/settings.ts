@@ -302,7 +302,11 @@ export interface Settings {
   wellRange: number;
   placeWell: PlaceWell;
   showWells: boolean;
-  obstacles: 'none' | 'circles' | 'text' | 'body';
+  obstacles: 'none' | 'circles' | 'text' | 'wall' | 'ring' | 'body';
+  obsX: number;
+  obsY: number;
+  obsAngle: number;
+  obsFont: 'bold' | 'serif' | 'mono' | 'round' | 'script';
   obsCircles: string;
   obsRadius: number;
   obsText: string;
@@ -849,6 +853,10 @@ export const DEFAULTS: Settings = {
   obsRadius: 70,
   obsText: 'FLOW',
   obsSize: 0.6,
+  obsX: 0.5,
+  obsY: 0.5,
+  obsAngle: 0,
+  obsFont: 'bold',
   obsForce: 1,
   obsPlace: true,
   obsShow: true,
