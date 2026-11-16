@@ -23,7 +23,7 @@ export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
 export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808';
 import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
-export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
+export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 /** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
 export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | Voice;
@@ -170,7 +170,27 @@ function satCurve(k: number) {
   return c;
 }
 
-const PAD_GAIN: Record<PadSound, number> = { soft: 1, strings: 1.35, organ: 0.85, choir: 3.6, shimmer: 1.05 };
+// A pad sound: each chord note is a pair of oscillators (w), detuned apart by
+// `spread` cents and panned `width` apart, through one filter (`cut` × the
+// field's cutoff; `band`: a band-pass formant instead of a low-pass).
+// `color`: the note added to the triad (7th, 9th, 4 = sus, 0 = the root doubled).
+// `drift`: cents each oscillator wanders; `air`: breathy noise on top;
+// `up`: semitones up or down; `sub`: a sine an octave under the root;
+// `swell`: how much a new chord blooms.
+interface PadDef { w: [OscillatorType, OscillatorType]; spread: number; width: number; cut: number; q: number; band?: number; color: 0 | 4 | 7 | 9; drift: number; air: number; gain: number; up?: number; sub: number; swell: number }
+const PADS: Record<PadSound, PadDef> = {
+  soft: { w: ['sine', 'triangle'], spread: 6, width: 0.5, cut: 1, q: 0.3, color: 0, drift: 3, air: 0, gain: 1, sub: 0.25, swell: 0.6 },
+  strings: { w: ['sawtooth', 'sawtooth'], spread: 12, width: 0.8, cut: 1.3, q: 0.8, color: 7, drift: 5, air: 0.15, gain: 1.14, sub: 0.2, swell: 1 },
+  organ: { w: ['square', 'sine'], spread: 1.5, width: 0.3, cut: 2.2, q: 0.3, color: 0, drift: 0.5, air: 0, gain: 0.8, sub: 0.4, swell: 0.3 },
+  choir: { w: ['sawtooth', 'triangle'], spread: 9, width: 0.7, cut: 1, q: 2.2, band: 650, color: 0, drift: 6, air: 0.35, gain: 3.4, sub: 0, swell: 0.8 },
+  shimmer: { w: ['triangle', 'sine'], spread: 16, width: 0.9, cut: 3, q: 0.3, color: 9, drift: 4, air: 0.2, gain: 0.85, up: 12, sub: 0, swell: 1 },
+  warm: { w: ['sawtooth', 'triangle'], spread: 10, width: 0.7, cut: 0.75, q: 0.6, color: 7, drift: 6, air: 0.05, gain: 1, sub: 0.3, swell: 1.2 },
+  tape: { w: ['triangle', 'sawtooth'], spread: 7, width: 0.5, cut: 0.85, q: 0.4, color: 7, drift: 22, air: 0.12, gain: 1.05, sub: 0.2, swell: 0.7 },
+  glass: { w: ['sine', 'sine'], spread: 5, width: 0.9, cut: 3.5, q: 0.3, color: 9, drift: 2, air: 0.1, gain: 0.92, up: 12, sub: 0, swell: 0.5 },
+  bowed: { w: ['sawtooth', 'sawtooth'], spread: 6, width: 0.6, cut: 1, q: 1.6, band: 1100, color: 0, drift: 7, air: 0.25, gain: 2.8, sub: 0.15, swell: 1.6 },
+  dark: { w: ['triangle', 'sine'], spread: 8, width: 0.6, cut: 0.5, q: 0.7, color: 4, drift: 5, air: 0.08, gain: 0.84, up: -12, sub: 0.35, swell: 0.8 },
+  air: { w: ['sine', 'triangle'], spread: 10, width: 1, cut: 2.4, q: 1.2, band: 2400, color: 9, drift: 4, air: 0.9, gain: 5.6, sub: 0, swell: 1 },
+};
 
 export interface SoundParams {
   vol: number;
@@ -222,6 +242,7 @@ export interface SoundParams {
   drums: number;
   kit: DrumKit;
   padSound: PadSound;
+  padPump: number; // 0 … 1: the pad ducks on each kick (or each beat without drums)
   attack: number; // 0 struck … 1 bowed
   bright: number; // -1 dark … 1 bright, over everything
   drive: number; // warm saturation over everything
@@ -357,11 +378,25 @@ export class ParticleSound {
   private cur: Layer = 'strings';
   private lastRootLogged = -999;
   // Pad.
+  // Four chord notes, each a pair of oscillators (8), then a sub and an air layer.
   private padOsc: OscillatorNode[] = [];
+  private padPan: StereoPannerNode[] = [];
   private padGain: GainNode;
   private padFilter: BiquadFilterNode;
+  private padSub!: OscillatorNode;
+  private padSubGain!: GainNode;
+  private padAir!: BiquadFilterNode;
+  private padAirGain!: GainNode;
   private padLfo = 0;
   private padChord = '';
+  /** Each chord note's pitch now (MIDI, fractional while unset: NaN). */
+  private padMidi = [NaN, NaN, NaN, NaN];
+  private padDrift = new Float32Array(8);
+  private padSwell = 0;
+  private padTick = 0;
+  private padDuck!: GainNode;
+  private padBeat = -1;
+  private padPumpAt = 0;
   // Strings: when each last rang (ms).
   /** When each string last rang (ms), for drawing them. */
   stringAt: number[] = [];
@@ -413,8 +448,10 @@ export class ParticleSound {
     const nd = this.noise.getChannelData(0);
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
 
-    // Pad: four soft voices (sine and triangle, slightly detuned) on the chord,
-    // through a gentle low-pass. Its level breathes with the field.
+    // Pad: four chord notes, each a detuned pair spread across the stereo
+    // field, through one filter; a sub under the root and breathy air on top.
+    // Notes move to the nearest note of the next chord (voice leading), each
+    // oscillator drifts a little, and a new chord swells.
     this.padFilter = ctx.createBiquadFilter();
     this.padFilter.type = 'lowpass';
     this.padFilter.frequency.value = 900;
@@ -422,19 +459,37 @@ export class ParticleSound {
     this.padGain = ctx.createGain();
     this.padGain.gain.value = 0;
     this.padFilter.connect(this.padGain);
-    this.send(this.padGain, 0.9);
-    for (let k = 0; k < 4; k++) {
+    // Pump: a gain after everything, dipped on each kick.
+    this.padDuck = ctx.createGain();
+    this.padGain.connect(this.padDuck);
+    this.send(this.padDuck, 0.9);
+    for (let k = 0; k < 8; k++) {
       const o = ctx.createOscillator();
       o.type = k % 2 ? 'triangle' : 'sine';
-      o.detune.value = (k - 1.5) * 4;
       const pan = ctx.createStereoPanner();
-      pan.pan.value = (k - 1.5) * 0.4;
       const g = ctx.createGain();
-      g.gain.value = k === 0 ? 0.5 : 0.32;
+      g.gain.value = (k < 2 ? 0.26 : 0.18) * 0.62;
       o.connect(g).connect(pan).connect(this.padFilter);
       o.start();
       this.padOsc.push(o);
+      this.padPan.push(pan);
     }
+    this.padSub = ctx.createOscillator();
+    this.padSubGain = ctx.createGain();
+    this.padSubGain.gain.value = 0;
+    this.padSub.connect(this.padSubGain).connect(this.padGain);
+    this.padSub.start();
+    const air = ctx.createBufferSource();
+    air.buffer = this.noise;
+    air.loop = true;
+    this.padAir = ctx.createBiquadFilter();
+    this.padAir.type = 'bandpass';
+    this.padAir.frequency.value = 4000;
+    this.padAir.Q.value = 0.7;
+    this.padAirGain = ctx.createGain();
+    this.padAirGain.gain.value = 0;
+    air.connect(this.padAir).connect(this.padAirGain).connect(this.padGain);
+    air.start();
 
     this.set(p);
   }
@@ -626,21 +681,70 @@ export class ParticleSound {
   private setPad(kind: PadSound) {
     if (kind === this.padKind) return;
     this.padKind = kind;
-    const waves: Record<PadSound, OscillatorType[]> = {
-      soft: ['sine', 'triangle', 'sine', 'triangle'],
-      strings: ['sawtooth', 'sawtooth', 'sawtooth', 'sawtooth'],
-      organ: ['square', 'sine', 'square', 'sine'],
-      choir: ['sawtooth', 'triangle', 'sawtooth', 'triangle'],
-      shimmer: ['triangle', 'sine', 'triangle', 'sine'],
+    const d = PADS[kind] ?? PADS.soft;
+    this.padOsc.forEach((o, k) => (o.type = d.w[k % 2]));
+    this.padFilter.type = d.band ? 'bandpass' : 'lowpass';
+    this.padFilter.Q.value = d.q;
+    this.padChord = '';
+  }
+
+  // Pump: duck the pad at `when`, back up over most of a beat.
+  private pump(when: number, k = 1) {
+    const amt = this.p.padPump * Math.min(1, k);
+    if (amt <= 0 || this.p.pad <= 0) return;
+    const g = this.padDuck.gain;
+    const beat = 60 / Math.max(40, this.bpmNow);
+    g.cancelScheduledValues(when);
+    g.setValueAtTime(g.value, when);
+    g.linearRampToValueAtTime(1 - amt * 0.85, when + 0.012);
+    g.setTargetAtTime(1, when + 0.03, beat * 0.22);
+    this.padPumpAt = when;
+  }
+
+  // The pad's next chord: root, third (or the fourth for sus), fifth and a
+  // colour note, each placed in the octave nearest the note it moves from,
+  // so the voices glide a step or two instead of jumping (voice leading).
+  private padVoice() {
+    const d = PADS[this.p.padSound] ?? PADS.soft;
+    const L = this.L;
+    const r = this.chordRoot();
+    const color = this.voicing > 0 ? 6 : d.color === 7 ? 6 : d.color === 9 ? 8 : d.color === 4 ? 3 : L;
+    const third = d.color === 4 ? 3 : this.voicing < 0 ? 2 + L : 2;
+    const classes = [r, r + third, r + 4, r + color];
+    const sc = SCALES[this.p.scale];
+    const midi = (deg: number) => {
+      const o = Math.floor(deg / L);
+      return 48 + 12 * this.p.octave + this.p.root + (d.up ?? 0) + sc[((deg % L) + L) % L] + 12 * o;
     };
-    const spread = kind === 'shimmer' ? 14 : kind === 'strings' ? 8 : kind === 'organ' ? 1 : 4;
-    this.padOsc.forEach((o, k) => {
-      o.type = waves[kind][k];
-      o.detune.value = (k - 1.5) * spread;
+    const lo = 52 + 12 * this.p.octave + this.p.root + (d.up ?? 0);
+    const hi = lo + 19;
+    const cand = classes.map((c) => {
+      const out: number[] = [];
+      for (let o = -3; o <= 3; o++) {
+        const m = midi(c + o * L);
+        if (m >= lo && m <= hi) out.push(m);
+      }
+      return out.length ? out : [midi(c)];
     });
-    // Choir: a band-pass on a vowel-ish formant; the rest a low-pass.
-    this.padFilter.type = kind === 'choir' ? 'bandpass' : 'lowpass';
-    this.padFilter.Q.value = kind === 'choir' ? 2.2 : kind === 'strings' ? 0.8 : 0.3;
+    const cur = this.padMidi.map((m, k) => (Number.isFinite(m) ? m : lo + 2 + k * 5));
+    let best: number[] = [], bc = 1e9;
+    const perms = [[0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 2, 3, 1], [0, 3, 1, 2], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2], [1, 2, 0, 3], [1, 2, 3, 0], [1, 3, 0, 2], [1, 3, 2, 0], [2, 0, 1, 3], [2, 0, 3, 1], [2, 1, 0, 3], [2, 1, 3, 0], [2, 3, 0, 1], [2, 3, 1, 0], [3, 0, 1, 2], [3, 0, 2, 1], [3, 1, 0, 2], [3, 1, 2, 0], [3, 2, 0, 1], [3, 2, 1, 0]];
+    for (const pm of perms) {
+      const pick = pm.map((ci, slot) => cand[ci].reduce((a, b) => (Math.abs(b - cur[slot]) < Math.abs(a - cur[slot]) ? b : a)));
+      let cost = pick.reduce((a, m, slot) => a + Math.abs(m - cur[slot]), 0);
+      // Two voices on one note, or a crunch of seconds, sound thin or muddy.
+      for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+        const gap = Math.abs(pick[i] - pick[j]);
+        if (gap === 0) cost += 12;
+        else if (gap <= 2 && Math.min(pick[i], pick[j]) < lo + 7) cost += 4;
+      }
+      if (cost < bc) (bc = cost), (best = pick);
+    }
+    this.padMidi = best;
+    const low = Math.min(...best.filter((_, slot) => classes.length > 0 && slot >= 0));
+    let root = midi(r);
+    while (root > low) root -= 12;
+    return { notes: best, sub: root - 12 };
   }
 
   // Chorus: two slowly wobbling copies, a few milliseconds late, left and right.
@@ -1317,6 +1421,7 @@ export class ParticleSound {
   private kick(k: number, when: number) {
     this.log('drums', k, 0.02, 0.25, when);
     if (!this.audible('drums')) return;
+    this.pump(when, k);
     const K = KITS[this.p.kit];
     if (K?.kick) {
       this.kitBody(K.kick.body, k, when, K.wet * 0.3);
@@ -1645,21 +1750,72 @@ export class ParticleSound {
     }
 
     // Pad: the chord, swelling with energy and a slow breath, silent when still.
-    const chordKey = `${P.scale}${P.root}${this.chordRoot()}${this.voicing}`;
-    if (chordKey !== this.padChord) {
+    // Voices glide to the next chord, drift a little in pitch and stereo,
+    // and a new chord blooms (brighter and louder) before settling.
+    const pd = PADS[P.padSound] ?? PADS.soft;
+    const hz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
+    const chordKey = `${P.scale}${P.root}${P.octave}${this.chordRoot()}${this.voicing}${P.padSound}`;
+    if (chordKey !== this.padChord && P.pad > 0) {
+      const first = !this.padChord;
       this.padChord = chordKey;
-      [0, 1, 2, 3].forEach((k) => this.padOsc[k].frequency.setTargetAtTime(this.freq(this.chordTone(k), 48), t, 0.5));
+      const v = this.padVoice();
+      const glide = first ? 0.01 : 0.35;
+      v.notes.forEach((m, slot) => {
+        this.padOsc[slot * 2].frequency.setTargetAtTime(hz(m), t, glide);
+        this.padOsc[slot * 2 + 1].frequency.setTargetAtTime(hz(m), t, glide);
+      });
+      this.padSub.frequency.setTargetAtTime(hz(v.sub), t, glide);
+      this.padAir.frequency.setTargetAtTime(Math.min(9000, hz(v.notes[3]) * 8), t, 0.6);
+      if (!first) this.padSwell = 1;
     }
+    // A burst in the field (births, a drop) blooms the pad too.
+    if (F.thump > 0.3) this.padSwell = Math.max(this.padSwell, Math.min(1, F.thump));
+    this.padSwell *= Math.exp(-F.dt / 2.5);
+    // Pump without drums: on every beat of the clock.
+    const pb = Math.floor(this.beat);
+    if (pb !== this.padBeat) {
+      this.padBeat = pb;
+      if (P.padPump > 0 && t - this.padPumpAt > 0.25 && !(P.drums > 0 && this.audible('drums'))) this.pump(t);
+    }
+    if (P.padPump <= 0) this.padDuck.gain.setTargetAtTime(1, t, 0.1);
     this.padLfo += F.dt * 0.6;
     const breath = 0.65 + 0.35 * Math.sin(this.padLfo);
     const lively = Math.max(0, Math.min(1, (this.energy - 0.04) * 3));
-    const padLvl = P.pad * lively * breath * (0.4 + 0.6 * room) * Math.min(1.8, Math.sqrt(busyK));
+    const swell = this.padSwell * pd.swell;
+    const padLvl = P.pad * lively * breath * (0.4 + 0.6 * room) * Math.min(1.8, Math.sqrt(busyK)) * (1 + 0.35 * swell);
     this.levels[LI.pad] = Math.max(this.levels[LI.pad], padLvl * 0.8);
-    this.padGain.gain.setTargetAtTime(this.audible('pad') ? padLvl * 0.3 * PAD_GAIN[P.padSound] : 0, t, 0.4);
+    const padOn = this.audible('pad');
+    this.padGain.gain.setTargetAtTime(padOn ? padLvl * 0.3 * pd.gain : 0, t, 0.4);
     if (P.pad > 0) {
-      const pk = P.padSound;
-      const f = pk === 'choir' ? 650 + this.energy * 500 + Math.sin(this.padLfo * 0.37) * 180 : (400 + this.energy * 1800 + F.spread * 400) * (pk === 'organ' ? 2.2 : pk === 'shimmer' ? 3 : pk === 'strings' ? 1.3 : 1);
-      this.padFilter.frequency.setTargetAtTime(f, t, 0.5);
+      const sweep = 1 + 0.25 * Math.sin(this.padLfo * 0.21);
+      const bloom = 1 + swell * 0.8;
+      const f = pd.band
+        ? (pd.band + this.energy * pd.band * 0.8 + Math.sin(this.padLfo * 0.37) * pd.band * 0.28) * bloom
+        : (400 + this.energy * 1800 + F.spread * 400) * pd.cut * sweep * bloom * (0.75 + 0.6 * F.speed);
+      this.padFilter.frequency.setTargetAtTime(Math.min(16000, f), t, 0.5);
+      this.padSubGain.gain.setTargetAtTime(pd.sub * 0.22, t, 0.5);
+      this.padAirGain.gain.setTargetAtTime(pd.air * 0.05 * (0.6 + this.energy) * (1 + swell), t, 0.5);
+      // Drift and sway, a few times a second (cheap): each oscillator wanders
+      // a few cents, each pair leans left and right slowly.
+      this.padTick += F.dt;
+      if (this.padTick > 0.12) {
+        const dt = this.padTick;
+        this.padTick = 0;
+        for (let k = 0; k < 8; k++) {
+          let dr = this.padDrift[k] + (Math.random() - 0.5) * pd.drift * dt * 2.2;
+          dr *= 1 - Math.min(0.5, dt * 0.35);
+          dr = Math.max(-pd.drift, Math.min(pd.drift, dr));
+          this.padDrift[k] = dr;
+          const side = k % 2 ? 1 : -1;
+          this.padOsc[k].detune.setTargetAtTime(side * pd.spread * 0.5 + dr, t, 0.25);
+          const slot = k >> 1;
+          const sway = 0.75 + 0.25 * Math.sin(this.padLfo * 0.13 + slot * 1.7);
+          const centre = (slot - 1.5) * 0.18;
+          // A spread-out crowd opens the pad wide; a huddle narrows it.
+          const wide = pd.width * (0.55 + 0.9 * F.spread);
+          this.padPan[k].pan.setTargetAtTime(Math.max(-1, Math.min(1, centre + side * wide * 0.5 * sway)), t, 0.4);
+        }
+      }
     }
     // Lo-fi crackle: the odd dusty click.
     if (P.lofi > 0 && Math.random() < F.dt * P.lofi * 5) this.grain(Math.random() * w, h * 0.05, w, h, P.lofi * 0.5, 1, 0.002, 0.05);

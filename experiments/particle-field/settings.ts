@@ -207,7 +207,8 @@ export interface Settings {
   sndFills: number;
   sndFollow: number;
   sndBeatChange: number;
-  sndPadSound: 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
+  sndPadSound: import('./sound.ts').PadSound;
+  sndPadPump: number;
   sndBassTone: number;
   sndAttack: number;
   sndBright: number;
@@ -757,6 +758,7 @@ export const DEFAULTS: Settings = {
   sndFollow: 0.4,
   sndBeatChange: 0,
   sndPadSound: 'soft',
+  sndPadPump: 0,
   sndBassTone: 0,
   sndAttack: 0,
   sndBright: 0,
