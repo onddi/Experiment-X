@@ -15473,6 +15473,18 @@ function typeValue(c: Extract<Control, { kind: 'range' }>, out: HTMLElement, get
   });
   input.addEventListener('blur', () => close(true));
 }
+// Fill rows (settings strips, the big slider, Sound levels): slide anywhere
+// along the row and the value moves on from where it is (a touch never makes
+// it jump), one row width for the whole range. Move the finger 40 px or more
+// up or down off the row and it moves at 15%, for fine changes.
+const FINE_OFF = 40;
+const FINE_RATE = 0.15;
+function fillStep(el: HTMLElement, y0: number, e: PointerEvent, lastX: number) {
+  const fine = Math.abs(e.clientY - y0) > FINE_OFF;
+  el.classList.toggle('fine', fine);
+  return ((e.clientX - lastX) / Math.max(80, el.getBoundingClientRect().width)) * (fine ? FINE_RATE : 1);
+}
+const isFillRow = (el: HTMLElement) => !!el.closest(".overview[data-density='strips'], #panel[data-view='list']");
 function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc) {
   const el = document.createElement('div');
   el.className = 'rack-knob';
@@ -15522,12 +15534,17 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   // Drag right (or up, with a mouse) to turn it up; the whole travel is ~180 px.
   // On a touch screen a tap opens a big slider instead, so the finger
   // doesn't hide what it's turning.
-  let start: { x: number; y: number; v: number; t: number; turned: boolean } | null = null;
+  // Strips and the list view draw it as a fill row: the whole row is the
+  // slider (see fillStep), sideways only, and a tap no longer opens the big
+  // slider (hold still for it); a double tap goes back to the scene's value.
+  let start: { x: number; y: number; v: number; t: number; turned: boolean; fill: boolean; lx: number } | null = null;
   let onValue = false;
+  let lastTap = 0;
   el.addEventListener('pointerdown', (e) => {
     if ((e.target as HTMLElement).closest('.rk-anim, .kn-type')) return;
     onValue = e.target === out;
-    start = { x: e.clientX, y: e.clientY, v: animKnob(c.key, src.get(c.key) as number), t: performance.now(), turned: false };
+    const v = animKnob(c.key, src.get(c.key) as number);
+    start = { x: e.clientX, y: e.clientY, v, t: performance.now(), turned: false, fill: isFillRow(el), lx: e.clientX };
     el.setPointerCapture(e.pointerId);
     if (e.pointerType !== 'touch') el.classList.add('turning');
   });
@@ -15536,11 +15553,18 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     const touch = e.pointerType === 'touch';
     // Touch: sideways only, so an up/down swipe still scrolls the list, and
     // only once it's clearly a drag (a tap opens the slider).
-    if (touch && !start.turned && Math.abs(e.clientX - start.x) < 10) return;
+    if (touch && !start.turned && Math.abs(e.clientX - start.x) < (start.fill ? 6 : 10)) return;
     // Mouse: a small dead zone, so holding still (for the solo view) doesn't nudge it.
     if (!touch && !start.turned && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
     start.turned = true;
     el.classList.add('turning');
+    if (start.fill) {
+      start.v = Math.min(c.max, Math.max(c.min, start.v + fillStep(el, start.y, e, start.lx) * (c.max - c.min)));
+      start.lx = e.clientX;
+      put(start.v);
+      update();
+      return;
+    }
     const d = (e.clientX - start.x - (touch ? 0 : e.clientY - start.y)) / 180;
     put(start.v + d * (c.max - c.min));
     update();
@@ -15562,9 +15586,18 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
       typeValue(c, out, () => src.get(c.key) as number, put, update);
       return;
     }
-    if (start && e.type === 'pointerup' && e.pointerType === 'touch' && !start.turned && performance.now() - start.t < 500) openTuner(c, home, src, update, el);
+    const tap = !!start && e.type === 'pointerup' && e.pointerType === 'touch' && !start.turned && performance.now() - start.t < 500;
+    if (tap && start!.fill) {
+      // dblclick isn't reliable on touch, so count the taps here.
+      const now = performance.now();
+      if (now - lastTap < 350) {
+        src.put(c.key, home());
+        update();
+        lastTap = 0;
+      } else lastTap = now;
+    } else if (tap) openTuner(c, home, src, update, el);
     start = null;
-    el.classList.remove('turning');
+    el.classList.remove('turning', 'fine');
   };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
@@ -16400,8 +16433,8 @@ function renderSoundPage(body: HTMLElement) {
   if (studioBtn) page.after(studioBtn);
   paintFolds();
 }
-// A level bar: tap or slide sideways anywhere on it (the whole row height
-// is the target); arrow keys step it.
+// A level bar: slide sideways anywhere on it (the whole row height is the
+// target); arrow keys step it.
 function levelBar(key: keyof Settings, label: string): HTMLElement {
   const lv = document.createElement('div');
   lv.className = 'sndp-lv';
@@ -16411,18 +16444,28 @@ function levelBar(key: keyof Settings, label: string): HTMLElement {
   lv.setAttribute('aria-label', label);
   lv.setAttribute('aria-valuemin', '0');
   lv.setAttribute('aria-valuemax', '100');
-  const put = (v: number) => set(key, (Math.round(Math.max(0, Math.min(1, v)) * 20) / 20) as never);
-  const at = (x: number) => {
-    const r = lv.getBoundingClientRect();
-    put((x - r.left) / r.width);
-  };
+  const put = (v: number) => set(key, (Math.round(Math.max(0, Math.min(1, v)) * 100) / 100) as never);
+  // A fill row (fillStep): it moves on from where it is, never jumps.
+  let st: { y: number; lx: number; v: number; moved: boolean } | null = null;
   lv.addEventListener('pointerdown', (e) => {
     lv.setPointerCapture(e.pointerId);
-    at(e.clientX);
+    st = { y: e.clientY, lx: e.clientX, v: Number(settings[key]), moved: false };
   });
   lv.addEventListener('pointermove', (e) => {
-    if (lv.hasPointerCapture(e.pointerId)) at(e.clientX);
+    if (!st || !lv.hasPointerCapture(e.pointerId)) return;
+    if (!st.moved && Math.abs(e.clientX - st.lx) < 4) return;
+    st.moved = true;
+    lv.classList.add('turning');
+    st.v = Math.max(0, Math.min(1, st.v + fillStep(lv, st.y, e, st.lx)));
+    st.lx = e.clientX;
+    put(st.v);
   });
+  const end = () => {
+    st = null;
+    lv.classList.remove('turning', 'fine');
+  };
+  lv.addEventListener('pointerup', end);
+  lv.addEventListener('pointercancel', end);
   lv.addEventListener('keydown', (e) => {
     const d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 0.05 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -0.05 : 0;
     if (!d) return;
@@ -16905,13 +16948,15 @@ function comboTrack() {
   };
   return { el, paint };
 }
-function comboDrag(track: HTMLElement, host: HTMLElement, get: () => number, set: (p: number) => void, tapHandle?: () => void) {
-  let st: { x: number; p: number; t: number; moved: boolean; onHandle: boolean } | null = null;
+// The big slider's bar is a fill row (fillStep: no jumps, fine control off
+// the row); a tap on its value types one in. The Stage bar still jumps on a tap.
+function comboDrag(track: HTMLElement, host: HTMLElement, get: () => number, set: (p: number) => void, tapHandle?: () => void, fill = false) {
+  let st: { x: number; y: number; lx: number; p: number; t: number; moved: boolean; onHandle: boolean } | null = null;
   track.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
     e.preventDefault();
     track.setPointerCapture(e.pointerId);
-    st = { x: e.clientX, p: get(), t: performance.now(), moved: false, onHandle: !!(e.target as HTMLElement).closest('.cmb-h') };
+    st = { x: e.clientX, y: e.clientY, lx: e.clientX, p: get(), t: performance.now(), moved: false, onHandle: !!(e.target as HTMLElement).closest(fill ? '.cmb-val' : '.cmb-h') };
   });
   track.addEventListener('pointermove', (e) => {
     if (!st) return;
@@ -16919,6 +16964,12 @@ function comboDrag(track: HTMLElement, host: HTMLElement, get: () => number, set
     if (!st.moved && Math.abs(dx) < 4) return;
     st.moved = true;
     host.classList.add('cmb-drag');
+    if (fill) {
+      st.p = Math.min(1, Math.max(0, st.p + fillStep(track, st.y, e, st.lx)));
+      st.lx = e.clientX;
+      set(st.p);
+      return;
+    }
     set(st.p + dx / Math.max(80, track.clientWidth));
   });
   const end = (e: PointerEvent) => {
@@ -16926,8 +16977,10 @@ function comboDrag(track: HTMLElement, host: HTMLElement, get: () => number, set
     const s = st;
     st = null;
     host.classList.remove('cmb-drag');
+    track.classList.remove('fine');
     if (s.moved || e.type !== 'pointerup' || performance.now() - s.t > 500) return;
     if (s.onHandle && tapHandle) return tapHandle();
+    if (fill) return;
     const r = track.getBoundingClientRect();
     set((e.clientX - r.left) / r.width);
   };
@@ -16946,6 +16999,10 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   el.querySelector('b')!.textContent = name;
   el.querySelector('.tuner-head')!.append(fieldKnobButton(c.key));
   const combo = comboTrack();
+  combo.el.classList.add('cmb-fillrow');
+  const valEl = document.createElement('span');
+  valEl.className = 'cmb-val';
+  combo.el.append(valEl);
   el.querySelector('.tuner-track')!.prepend(combo.el);
   if (canAnimate(c.key)) {
     const ab = document.createElement('button');
@@ -16983,6 +17040,7 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
     if (document.activeElement !== input) input.value = String(v);
     out.textContent = text(v);
     combo.paint(pos(v), text(v), name, pos(home()));
+    valEl.textContent = text(v);
     el.querySelector('.tuner-home')!.toggleAttribute('disabled', Math.abs(v - home()) <= c.step / 2);
   };
   const put = (v: number) => {
@@ -16993,7 +17051,7 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   };
   input.addEventListener('input', () => put(Number(input.value)));
   const typeIt = () => typeValue(c, out, () => src.get(c.key) as number, put, sync);
-  comboDrag(combo.el, el, () => pos(src.get(c.key) as number), (p) => put(c.min + p * (c.max - c.min)), typeIt);
+  comboDrag(combo.el, el, () => pos(src.get(c.key) as number), (p) => put(c.min + p * (c.max - c.min)), typeIt, true);
   el.querySelector('.tuner-home')!.addEventListener('click', () => put(home()));
   el.querySelector('.tuner-close')!.addEventListener('click', closeTuner);
   out.title = 'Tap to type a value';
