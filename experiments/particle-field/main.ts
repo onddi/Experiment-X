@@ -21237,8 +21237,8 @@ type LayerId = 'particles' | 'form' | 'motion' | 'colour' | 'depth' | 'reacts' |
 // device's, not the scene's, so it has none.
 const LAYER_OF: Record<string, LayerId | null> = {
   look: 'particles',
-  shape: 'form', life: 'form', camshape: 'form',
-  particles: 'motion', flow: 'motion', forces: 'motion', swarm: 'motion', obstacles: 'motion',
+  shape: 'form', life: 'form', camshape: 'form', spawning: 'form',
+  particles: 'motion', flow: 'motion', forces: 'motion', swarm: 'motion', obstacles: 'motion', collide: 'motion',
   colour: 'colour',
   depth: 'depth',
   audio: 'reacts', vibe: 'reacts', mgmusic: 'reacts', drums: 'reacts', drops: 'reacts', bands: 'reacts', mcolour: 'reacts', camera: 'reacts', viewfx: 'reacts', mmotion: 'reacts', mwords: 'reacts', rapflow: 'reacts', gfxmusic: 'reacts',
