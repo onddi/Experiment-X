@@ -2705,8 +2705,10 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .sst .off { opacity: .4; }
 .sst-lane-cv, .sst-roll-cv { flex: 1; position: relative; min-width: 0; min-height: 0; }
 .sst-cv { position: absolute; inset: 0; width: 100%; height: 100%; }
-.sst-mixer { display: flex; gap: 4px; align-items: stretch; }
-.sst-strip { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.sst-mixer { display: flex; gap: 4px; align-items: stretch; overflow-x: auto; scrollbar-width: none; }
+.sst-mixer::-webkit-scrollbar { display: none; }
+.sst-strip.zero .sst-strip-name { opacity: 0.5; }
+.sst-strip { flex: 1 0 46px; min-width: 46px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .sst-meter { position: relative; flex: 1; width: 16px; min-height: 60px; border-radius: 8px; background: rgb(255 255 255 / .07); overflow: hidden; cursor: ns-resize; touch-action: none; }
 .sst-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; border-radius: 8px; transition: height .06s linear; }
 .sst-knob { position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / .4); }

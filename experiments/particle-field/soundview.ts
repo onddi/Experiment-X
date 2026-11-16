@@ -312,8 +312,10 @@ export class SoundStudio {
     for (const l of this.rows) this.laneNames.append(this.layerBtn(S, l, 'sst-lane-name'));
     this.mixer.innerHTML = '';
     this.strips = [];
-    for (const l of on) {
+    // Every layer with a level gets a strip, at zero too, so it can be pulled back up.
+    for (const l of LAYERS.filter((x) => this.h.levelKey(x))) {
       const strip = el('div', 'sst-strip');
+      strip.classList.toggle('zero', !on.includes(l));
       const meter = el('div', 'sst-meter');
       const fill = el('div', 'sst-fill');
       fill.style.background = LAYER_COLOR[l];

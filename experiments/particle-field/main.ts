@@ -12616,7 +12616,7 @@ function buildFolderTabs() {
     const bar = document.createElement('div');
     bar.className = 'mtabs ftabs sub';
     bar.setAttribute('role', 'tablist');
-    const SND_TAB_KEY = 'particle-field:sound-tab';
+    const SND_TAB_KEY = 'particle-field:sound-adv-tab';
     let sel = Math.max(0, Math.min(3, Number(readJson(SND_TAB_KEY, 0)) || 0));
     const btns = ['Play', 'Layers', 'Groove', 'Tone'].map((name, i) => {
       const b = document.createElement('button');
