@@ -3005,6 +3005,16 @@ body.gl-only canvas#c { opacity: 0; }
 .mg-fbar i { box-shadow: inset -2px 0 0 #9aa8ff; }
 .mg-fbar { cursor: ew-resize; }
 .sndp-det > .sndp-how { grid-column: 1 / -1; margin: 2px 2px 6px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+/* Top layer: a see-through copy of the page over the field (main.ts topTick). */
+.top-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; pointer-events: none; z-index: 2; color-scheme: normal; }
+html.top-editing .top-frame { position: fixed; z-index: 1000; pointer-events: auto; opacity: 1 !important; mix-blend-mode: normal !important; }
+html.top-layer:not(.top-edit) body > :not(#app), html.top-layer:not(.top-edit) #app > :not(#stage), html.top-layer:not(.top-edit) #stage > :not(canvas, svg) { display: none !important; }
+/* Editing the top layer: its own Studio over the field; the base's controls step aside. */
+html.top-editing body > :not(#app), html.top-editing #app > :not(#stage), html.top-editing #stage > :not(canvas, svg, .top-frame) { visibility: hidden !important; }
+html.top-layer .top-back { display: none; }
+/* No sound, music or camera on the top layer: the base owns them. */
+html.top-layer .fd:is([data-f='sound'], [data-f='music'], [data-f='camera']) { display: none !important; }
+html.top-layer.top-edit .top-back { display: block !important; position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px); transform: translateX(-50%); z-index: 2000; white-space: nowrap; height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid rgb(255 255 255 / 0.2); background: #9aa8ff; color: #0b0b10; font: 600 14px system-ui, sans-serif; cursor: pointer; box-shadow: 0 8px 24px rgb(0 0 0 / 0.5); }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

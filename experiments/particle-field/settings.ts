@@ -310,6 +310,10 @@ export interface Settings {
   obsStyle: 'faint' | 'solid' | 'outline' | 'glow';
   obsColour: 'white' | 'scene' | 'dark';
   obsAlpha: number;
+  topScene: string; // '' = no top layer
+  topOpacity: number;
+  topBlend: 'normal' | 'screen' | 'lighten' | 'plus-lighter' | 'difference';
+  topPointer: boolean;
   obsCircles: string;
   obsRadius: number;
   obsText: string;
@@ -863,6 +867,10 @@ export const DEFAULTS: Settings = {
   obsStyle: 'faint',
   obsColour: 'white',
   obsAlpha: 0.5,
+  topScene: '',
+  topOpacity: 1,
+  topBlend: 'normal',
+  topPointer: true,
   obsForce: 1,
   obsPlace: true,
   obsShow: true,

@@ -1,3 +1,4 @@
+import { TOP_LAYER } from './layerboot.ts';
 import { fillPattern, FILL_PATTERNS, PATTERN_FORM, PATTERN_VARY, patternArms, isFillPattern } from './patterns.ts';
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
@@ -406,7 +407,7 @@ function resize() {
 
 // Stacked in X-Frame: the canvas stays transparent and trails fade out instead
 // of being painted over with the background.
-let seeThrough = false;
+let seeThrough = TOP_LAYER;
 
 function clear() {
   const [r, g, b] = bgNow();
@@ -8083,7 +8084,136 @@ let stepMs = 0;
 let drawMs = 0;
 let shapeInfo = { targets: 0, ms: 0 };
 
+// --- Top layer ---------------------------------------------------------------
+// The base page lays a see-through copy of itself (?layer=top, see
+// layerboot.ts) over the field and drives it with messages: which scene, the
+// pointer, and when its own Studio is open for editing. The copy has no UI of
+// its own until then, and no sound, mic or camera ever.
+let topFrame: HTMLIFrameElement | null = null;
+let topSent = '';
+let topSig = '';
+let topEditing = false;
+const topPost = (m: Record<string, unknown>) => topFrame?.contentWindow?.postMessage({ pfTop: 1, ...m }, location.origin);
+function topScenePatch(name: string): Partial<Settings> | null {
+  const p = PRESETS.find(([n]) => n === name)?.[1];
+  return p ? { ...p } : null;
+}
+function topTick() {
+  if (TOP_LAYER) return;
+  const S = settings;
+  const sig = `${S.topScene}|${S.topOpacity}|${S.topBlend}`;
+  if (sig === topSig) return;
+  topSig = sig;
+  if (!S.topScene) {
+    topFrame?.remove();
+    topFrame = null;
+    topSent = '';
+    return;
+  }
+  if (!topFrame) {
+    const f = document.createElement('iframe');
+    f.className = 'top-frame';
+    f.title = 'Top layer';
+    f.setAttribute('aria-hidden', 'true');
+    f.tabIndex = -1;
+    const q = new URLSearchParams(location.search);
+    q.set('layer', 'top');
+    f.src = `${location.pathname}?${q}`;
+    f.addEventListener('load', () => {
+      topSent = '';
+      topSig = '';
+    });
+    canvas.after(f);
+    topFrame = f;
+  }
+  topFrame.style.opacity = String(S.topOpacity);
+  topFrame.style.mixBlendMode = S.topBlend;
+  if (topSent !== S.topScene && topFrame.contentWindow) {
+    const p = topScenePatch(S.topScene);
+    if (p) {
+      topPost({ apply: p, name: S.topScene });
+      topSent = S.topScene;
+    }
+  }
+}
+function topEdit(on: boolean) {
+  if (!topFrame) return;
+  topEditing = on;
+  document.documentElement.classList.toggle('top-editing', on);
+  topPost({ edit: on });
+}
+if (!TOP_LAYER) {
+  // The pointer, as fractions of the field, so a drag pushes both layers.
+  const share = (e: PointerEvent, down?: boolean) => {
+    if (!topFrame || !settings.topPointer || topEditing) return;
+    const r = canvas.getBoundingClientRect();
+    topPost({ ptr: [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height], down });
+  };
+  canvas.addEventListener('pointermove', (e) => share(e));
+  canvas.addEventListener('pointerdown', (e) => share(e, true));
+  canvas.addEventListener('pointerup', (e) => share(e, false));
+  canvas.addEventListener('pointerleave', () => topFrame && topPost({ ptr: null }));
+  addEventListener('message', (e) => {
+    if (e.origin !== location.origin || e.source !== topFrame?.contentWindow || !e.data?.pfTop) return;
+    if (e.data.done) topEdit(false);
+    if (e.data.ready) {
+      topSent = '';
+      topSig = '';
+    }
+  });
+}
+if (TOP_LAYER) {
+  document.body.classList.add('see-through');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'top-back';
+  back.textContent = '← Back to the base layer';
+  back.addEventListener('click', () => parent.postMessage({ pfTop: 1, done: true }, location.origin));
+  document.body.append(back);
+  addEventListener('message', (e) => {
+    if (e.origin !== location.origin || e.source !== parent || !e.data?.pfTop) return;
+    const d = e.data;
+    // The same scene as last time: keep what was edited in it since.
+    let last = '';
+    if (d.apply) {
+      try {
+        last = localStorage.getItem('particle-field:top-scene') ?? '';
+        localStorage.setItem('particle-field:top-scene', String(d.name ?? ''));
+      } catch {
+        // Private mode: always start from the scene.
+      }
+    }
+    if (d.apply && last !== d.name) {
+      const p = { ...d.apply } as Partial<Settings>;
+      // Phones: the top layer gets a smaller crowd, to keep both smooth.
+      if (matchMedia('(pointer: coarse)').matches && (p.count ?? DEFAULTS.count) > 2500) p.count = 2500;
+      apply(p);
+      settings.sndVol = 0;
+      settings.topScene = '';
+    }
+    if ('ptr' in d) {
+      if (!d.ptr) {
+        pointer.active = false;
+        pointer.x = pointer.y = -1e4;
+      } else {
+        [pointer.x, pointer.y] = unspin(d.ptr[0] * w, d.ptr[1] * h);
+        pointer.active = true;
+      }
+      if (typeof d.down === 'boolean') pointer.down = d.down;
+    }
+    if ('edit' in d) {
+      document.documentElement.classList.toggle('top-edit', !!d.edit);
+      // Straight into its Studio.
+      if (d.edit) uGo('studio');
+    }
+  });
+  settings.sndVol = 0;
+  settings.topScene = '';
+  parent.postMessage({ pfTop: 1, ready: true }, location.origin);
+}
+
 function frame(now: number) {
+  topTick();
   // dt is in 60fps frames, clamped so a background tab doesn't explode the sim.
   const rawMs = Math.min(250, now - last);
   const dt = Math.min(3, (now - last) / (1000 / 60));
@@ -9096,6 +9226,16 @@ const CONTROLS: Control[] = [
     } },
   { kind: 'timeline' },
   { kind: 'note', text: 'Changes happen on the bar. On the field, the ring shows where you are: click it for the next scene, scroll over it to pick one. With music the bars follow its tempo; without, the tempo in Edit. While the timeline runs, Auto VJ waits.' },
+
+  { kind: 'section', id: 'toplayer', label: 'Top layer', tab: 'presets', about: 'A second field drawn over this one: any scene, on top. It has no sound, mic or camera of its own.',
+    lock: ['topScene', 'topOpacity', 'topBlend', 'topPointer'],
+    power: { on: () => !!settings.topScene, off: { topScene: '' }, start: { topScene: 'Galaxy' } },
+    summary: () => settings.topScene || 'off' },
+  { kind: 'select', key: 'topScene', label: 'Scene on top', options: [['', 'None'], ...PRESETS.map(([n]): [string, string] => [n, n])] },
+  { kind: 'range', key: 'topOpacity', label: 'Opacity', min: 0.05, max: 1, step: 0.05, format: pct, show: () => !!settings.topScene },
+  { kind: 'select', key: 'topBlend', label: 'Blend', options: [['normal', 'Normal'], ['screen', 'Screen (light adds)'], ['plus-lighter', 'Add (brighter)'], ['lighten', 'Lighten'], ['difference', 'Difference']], show: () => !!settings.topScene },
+  { kind: 'toggle', key: 'topPointer', label: 'Your finger moves it too', show: () => !!settings.topScene },
+  { kind: 'buttons', buttons: [['Edit this layer', () => topEdit(true)], ['Another scene', () => set('topScene', PRESETS[(Math.random() * PRESETS.length) | 0][0])]], show: () => !!settings.topScene },
 
   { kind: 'section', id: 'xfader', label: 'Crossfader', tab: 'presets',
     about: 'Blend between two scenes with a fader: every setting goes partway from A to B.',
