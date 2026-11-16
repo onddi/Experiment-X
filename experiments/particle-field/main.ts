@@ -16860,15 +16860,24 @@ const pillCombo = comboTrack();
 pill.querySelector('.sp-body')!.append(pillCombo.el);
 // Phones: one bottom bar for Stage, Deck and Studio. The view switch on the
 // left never moves; the tray on the right holds what the view you're in needs.
-type UView = 'stage' | 'deck' | 'studio';
+type UView = 'stage' | 'deck' | 'studio' | 'build';
+// The Build view's sheet, while it's open.
+let buildEl: HTMLElement | null = null;
+const BUILD_ICON = svg('<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 16.5l9 5 9-5"/>');
 const ubar = document.createElement('div');
 ubar.className = 'u-bar';
-ubar.innerHTML = `<div class="u-seg" role="tablist" aria-label="Views"><span class="u-thumb"></span><button type="button" role="tab" data-v="stage" aria-label="Stage" title="Stage">${ICONS.eye}<span>Stage</span></button><button type="button" role="tab" data-v="deck" aria-label="Deck" title="Deck">${ICONS.sliders}<span>Deck</span></button><button type="button" role="tab" data-v="studio" aria-label="Studio" title="Studio (H)">${MENU_ICON}<span>Studio</span></button></div><div class="u-tray"></div>`;
+ubar.innerHTML = `<div class="u-seg" role="tablist" aria-label="Views"><span class="u-thumb"></span><button type="button" role="tab" data-v="stage" aria-label="Stage" title="Stage">${ICONS.eye}<span>Stage</span></button><button type="button" role="tab" data-v="deck" aria-label="Deck" title="Deck">${ICONS.sliders}<span>Deck</span></button><button type="button" role="tab" data-v="studio" aria-label="Studio" title="Studio (H)">${MENU_ICON}<span>Studio</span></button><button type="button" role="tab" data-v="build" aria-label="Build" title="Build: the scene as layers">${BUILD_ICON}<span>Build</span></button></div><div class="u-tray"></div>`;
 document.body.append(ubar);
-const uView = (): UView => (ovEl ? 'deck' : !panel.classList.contains('collapsed') ? 'studio' : 'stage');
+const uView = (): UView => (buildEl ? 'build' : ovEl ? 'deck' : !panel.classList.contains('collapsed') ? 'studio' : 'stage');
 function uGo(v: UView) {
   document.body.classList.remove('u-pages');
-  if (v === 'stage') startWatching();
+  if (v !== 'build') closeBuild();
+  if (v === 'build') {
+    closeOverview();
+    if (!panel.classList.contains('collapsed')) toggle.click();
+    revealKnobs();
+    openBuild();
+  } else if (v === 'stage') startWatching();
   else if (v === 'deck') {
     if (!panel.classList.contains('collapsed')) toggle.click();
     stopWatching();
@@ -16902,6 +16911,7 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
     [`Layout: ${OV_DENSITIES.find(([k]) => k === ovDensity)![1]}`, svg(DENSITY_ICON[ovDensity]), () => uDeckBtn('.ov-density')],
   ],
   studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], uMore()],
+  build: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], uMore()],
 };
 // Desktop: icons for Shuffle and Pause, More for the rest of the actions.
 const MORE_ICON = svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>');
@@ -16923,16 +16933,19 @@ const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> 
   stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
   studio: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
+  build: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
 };
 let uSig = '';
 function uPaint(force = false) {
+  // Opening the Deck or the Studio another way closes Build.
+  if (buildEl && (ovEl || !panel.classList.contains('collapsed'))) closeBuild();
   const v = uView();
   const desk = !sheetMode();
   if (desk) uPlace();
   const sig = `${settings.sndVol > 0}|${studioPref}|${v}|${xf.on}|${ovPickKnobs}|${ovDensity}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
   if (sig === uSig && !force) return;
   uSig = sig;
-  ubar.classList.remove('stage', 'deck', 'studio');
+  ubar.classList.remove('stage', 'deck', 'studio', 'build');
   ubar.classList.add(v);
   // After the tray (it shares the row): the label, then the highlight,
   // which slides straight to the label's final size.
@@ -16990,6 +17003,7 @@ function uPlace() {
   let right = innerWidth;
   if (!panel.classList.contains('collapsed')) right = Math.min(right, panel.getBoundingClientRect().left);
   if (ovEl) right = Math.min(right, ovEl.getBoundingClientRect().left);
+  if (buildEl) right = Math.min(right, buildEl.getBoundingClientRect().left);
   // Placed where it sits on the Stage (centred on the screen) in every view,
   // so the switch never moves; it only shifts left if the Studio or Deck would cover it.
   if (ubar.classList.contains('stage')) stageBarW = ubar.offsetWidth;
@@ -18831,6 +18845,588 @@ function buildFolders() {
   // The Pages dock's page buttons open that folder.
   for (const [, b] of dockTabs) b.addEventListener('click', () => folderEnter?.());
 }
+// --- Build: the scene as eight layers ------------------------------------------
+// The engine read as a build order: Particles → Form → Motion → Colour →
+// Depth & light → Reacts to → Finish → Perform. Every Studio card has one home
+// layer (LAYER_OF). Build is a route through the same settings, so nothing is
+// lost or duplicated: picks set the common cases, Fine-tune opens the cards.
+type LayerId = 'particles' | 'form' | 'motion' | 'colour' | 'depth' | 'reacts' | 'finish' | 'perform';
+// Each card's home layer. Room setup (quality, screen fit, recording) is the
+// device's, not the scene's, so it has none.
+const LAYER_OF: Record<string, LayerId | null> = {
+  look: 'particles',
+  shape: 'form', life: 'form', camshape: 'form',
+  particles: 'motion', flow: 'motion', forces: 'motion', swarm: 'motion', obstacles: 'motion',
+  colour: 'colour',
+  depth: 'depth',
+  audio: 'reacts', vibe: 'reacts', mgmusic: 'reacts', drums: 'reacts', drops: 'reacts', bands: 'reacts', mcolour: 'reacts', camera: 'reacts', viewfx: 'reacts', mmotion: 'reacts', mwords: 'reacts', rapflow: 'reacts', gfxmusic: 'reacts',
+  pointer: 'reacts', cam: 'reacts', mgcam: 'reacts', facefx: 'reacts', hands: 'reacts', caminputs: 'reacts', sound: 'reacts', links: 'reacts',
+  lens: 'finish', gfxlooks: 'finish', gfxlight: 'finish', gfxfeed: 'finish', gfxecho: 'finish', gfxlens: 'finish', gfxdisplace: 'finish', gfxglitch: 'finish', gfxsurface: 'finish', gfxgrade: 'finish', mirror: 'finish',
+  presets: 'perform', mine: 'perform', timeline: 'perform', xfader: 'perform', transitions: 'perform', macros: 'perform', play: 'perform', anim: 'perform', vj: 'perform',
+  quality: null, view: null, record: null, actions: null,
+};
+type BPick = { name: string; on: () => boolean; patch?: Partial<Settings>; go?: () => void };
+type BGroup = { label?: string; picks: BPick[]; tune?: string };
+type BLayer = {
+  id: LayerId;
+  name: string;
+  color: string;
+  q: string;
+  about: string;
+  used: () => boolean;
+  sum: () => string;
+  groups: () => BGroup[];
+  // The one or two sliders (and a pick's follow-up) under the picks.
+  extras: () => (keyof Settings)[];
+  // What hiding the layer sets (absent: it can't be hidden).
+  off?: () => Partial<Settings>;
+};
+const bHas = (p: Partial<Settings>) => Object.entries(p).every(([k, v]) => (settings as unknown as Record<string, unknown>)[k] === v);
+const bPick = (name: string, patch: Partial<Settings>): BPick => ({ name, patch, on: () => bHas(patch) });
+const secSum = (id: string) => (CONTROLS.find((c) => c.kind === 'section' && c.id === id) as Extract<Control, { kind: 'section' }> | undefined)?.summary?.() ?? '';
+const MOTION_PICKS: [string, Partial<Settings>][] = [
+  ['Still', { flow: 0, gravity: 0, wind: 0, flock: 0 }],
+  ['Drift', { flow: 0.3, flowType: 'waves', gravity: 0, wind: 0, flock: 0 }],
+  ['Swirl', { flow: 0.7, flowType: 'vortex', gravity: 0, wind: 0, flock: 0 }],
+  ['Currents', { flow: 0.8, flowType: 'curl', gravity: 0, wind: 0, flock: 0 }],
+  ['Swarm', { flock: 0.8, flow: 0.1, flowType: 'waves', gravity: 0, wind: 0 }],
+  ['Rain', { gravity: 0.5, flow: 0.1, flowType: 'wind', wind: 0, flock: 0 }],
+];
+const motionName = () => MOTION_PICKS.find(([, p]) => bHas(p))?.[0] ?? null;
+const neutralMood = () => MACRO_KEYS.every((k) => Math.abs(settings[k] - 0.5) < 0.005);
+const lensUsed = () => settings.audioKaleido > 0 || settings.audioKaleidoDrop || lensOn();
+const LENS_OFF = (CONTROLS.find((c) => c.kind === 'section' && c.id === 'lens') as Extract<Control, { kind: 'section' }>).power!.off;
+const LAYERS: BLayer[] = [
+  {
+    id: 'particles', name: 'Particles', color: '#ecebf5', q: 'What is each particle?', about: 'Dots, glyphs, threads: what one particle is, and how many.',
+    used: () => true,
+    sum: () => `${label(RENDERS, settings.render)} · ${settings.count.toLocaleString()}`,
+    groups: () => [{ picks: [bPick('Dots', { render: 'dots' }), bPick('Glyphs', { render: 'glyphs' }), bPick('Threads', { render: 'threads' }), bPick('Ribbons', { render: 'ribbons' }), bPick('Sparkles', { render: 'sparkles' }), bPick('Comets', { render: 'comets' })] }],
+    extras: () => ['glyphSet', 'count', 'size'],
+  },
+  {
+    id: 'form', name: 'Form', color: '#7be0c3', q: 'Do they form something?', about: 'A word, an icon, a 3D solid or you: a shape the particles are pulled home to.',
+    used: () => hasShape() || hasEmitter() || settings.lifespan > 0,
+    sum: () => {
+      const sh = hasShape() ? secSum('shape') : 'Free field';
+      const life = secSum('life');
+      return life && life !== 'off' ? `${sh} · ${life}` : sh;
+    },
+    groups: () => [{
+      picks: [
+        bPick('Free', { shape: 'none', emitter: 'none' }),
+        bPick('A word', { shape: 'text' }),
+        bPick('An icon', { shape: 'icon' }),
+        bPick('A pattern', { shape: 'pattern' }),
+        bPick('3D solid', { shape: 'solid' }),
+        { name: 'An image', on: () => settings.shape === 'image', go: () => {
+          bApply({ shape: 'image' });
+          if (!shapeImage) imageInput.click();
+        } },
+        { name: 'You', on: () => settings.shape === 'camera', patch: { shape: 'camera' } },
+        { name: 'Drawing', on: () => settings.shape === 'drawing', go: () => {
+          bApply({ shape: 'drawing' });
+          if (!drawStrokes.length && !drawMode) toggleDraw();
+        } },
+        { name: 'Fountain', on: () => !hasShape() && hasEmitter(), patch: { shape: 'none', emitter: 'point', emitMode: 'steady', emitX: 0.5, emitY: 0.75, lifespan: 5, lifeFade: 'swell', launchSpeed: 2.5, launchDir: 270, launchSpread: 50 } },
+      ],
+    }],
+    extras: () => ['shapeText', 'shapeIcon', 'shapePattern', 'shapeSolid', 'shapeSize', 'homeStrength'],
+    off: () => ({ shape: 'none', emitter: 'none', lifespan: 0, launchSpeed: 0 }),
+  },
+  {
+    id: 'motion', name: 'Motion', color: '#6fb6ff', q: 'How do they move?', about: 'Currents, gravity, flocking: what carries the particles around.',
+    used: () => motionName() !== 'Still' || !!settings.wells,
+    sum: () => `${motionName() ?? 'Custom'} · ${settings.speed.toFixed(1)}× speed`,
+    groups: () => [{ picks: MOTION_PICKS.map(([n, p]) => bPick(n, p)) }],
+    extras: () => ['speed', 'flow'],
+    off: () => ({ flow: 0, gravity: 0, wind: 0, flock: 0, wells: '' }),
+  },
+  {
+    id: 'colour', name: 'Colour', color: '#ffd166', q: 'What colours?', about: 'A palette, and what picks each particle’s colour from it.',
+    used: () => true,
+    sum: () => secSum('colour'),
+    groups: () => [
+      { label: 'Palette', picks: (['aurora', 'ice', 'ember', 'neon', 'mono', 'toxic'] as Settings['palette'][]).map((p) => bPick(PALETTES[p as keyof typeof PALETTES].label, { palette: p })) },
+      { label: 'Colour by', picks: ([['palette', 'Random'], ['speed', 'Speed'], ['direction', 'Heading'], ['vertical', 'Height'], ['radial', 'Centre glow'], ['cycle', 'Waves']] as [Settings['colorBy'], string][]).map(([k, n]) => bPick(n, { colorBy: k })) },
+    ],
+    extras: () => ['hueShift'],
+  },
+  {
+    id: 'depth', name: 'Depth & light', color: '#b48cff', q: 'Flat or deep?', about: 'Near and far layers: near particles glow, far ones sink into fog. 3D solids get light and shade.',
+    used: () => settings.depth > 0,
+    sum: () => (settings.depth > 0 ? `Deep · ${secSum('depth')}` : 'Flat'),
+    groups: () => [{ picks: [bPick('Flat', { depth: 0 }), bPick('Deep', { depth: 0.7, depthFog: 0 }), bPick('Deep with fog', { depth: 0.9, depthFog: 0.6 })] }],
+    extras: () => ['depth', 'depthParallax', 'solidLight', 'shapeTilt'],
+    off: () => ({ depth: 0 }),
+  },
+  {
+    id: 'reacts', name: 'Reacts to', color: '#ff9b5c', q: 'What moves it?', about: 'Music, your touch, your hands on camera, or the field’s own sound.',
+    used: () => audio.source !== 'off' || settings.pointerMode !== 'none' || settings.camHands !== 'off' || settings.sndVol > 0 || parseLinks(settings.links).length > 0,
+    sum: () => {
+      const parts = [audio.source !== 'off' ? 'Music' : '', settings.pointerMode !== 'none' ? `touch: ${label(BUILD_TOUCH, settings.pointerMode).toLowerCase()}` : '', settings.camHands !== 'off' ? 'hands' : '', settings.sndVol > 0 ? 'its own sound' : ''].filter(Boolean);
+      const n = parseLinks(settings.links).length;
+      if (n) parts.push(`${n} connection${n > 1 ? 's' : ''}`);
+      return parts.join(' · ') || 'Nothing';
+    },
+    groups: () => [
+      { label: 'Music', tune: 'audio', picks: [
+        { name: 'Not listening', on: () => audio.source === 'off', go: () => {
+          audio.stop();
+          refresh();
+        } },
+        { name: 'Listen', on: () => audio.source !== 'off', go: () => {
+          if (audio.source === 'off') audio.start('mic').catch(() => showToast('The microphone is blocked: allow it in the browser’s site settings')).finally(() => refresh());
+        } },
+      ] },
+      { label: 'Your touch', tune: 'pointer', picks: BUILD_TOUCH.map(([k, n]) => bPick(n, { pointerMode: k as Settings['pointerMode'] })) },
+      { label: 'Your hands (camera)', tune: 'hands', picks: [bPick('Off', { camHands: 'off' }), bPick('Push away', { camHands: 'repel' }), bPick('Pull in', { camHands: 'attract' }), bPick('Swirl', { camHands: 'vortex' })] },
+      { label: 'Its own sound', tune: 'sound', picks: [{ name: 'Silent', on: () => settings.sndVol === 0, patch: { sndVol: 0 } }, { name: 'Plays', on: () => settings.sndVol > 0, go: () => settings.sndVol === 0 && bApply({ sndVol: 0.6 }) }] },
+      { label: 'Wiring', tune: 'links', picks: [] },
+    ],
+    extras: () => ['audioIntensity', 'force', 'sndVol'],
+  },
+  {
+    id: 'finish', name: 'Finish', color: '#ff8fc8', q: 'Any finish over the picture?', about: 'A lens or an FX look over the whole picture: bloom, tunnel, VHS, halftone.',
+    used: () => gfxOn() || lensUsed(),
+    sum: () => [fxLookName() ?? (gfxOn() ? 'Custom FX' : ''), lensUsed() ? `Lens: ${secSum('lens')}` : ''].filter(Boolean).join(' · ') || 'Nothing',
+    groups: () => [{
+      picks: [
+        { name: 'None', on: () => !gfxOn() && !lensUsed(), go: () => bApply({ ...fxLookOf({}), ...LENS_OFF }) },
+        ...FX_LOOKS.filter(([n]) => ['Dreamy', 'VHS night', 'Terminal', 'Warp tunnel', 'Kaleidoscope', 'Neon sign', 'Ghost trails', 'Film noir'].includes(n)).map(([n, l]): BPick => ({ name: n, on: () => fxLookName() === n, go: () => bApply(fxLookOf(l)) })),
+      ],
+    }],
+    extras: () => ['gfxBloom'],
+    off: () => ({ ...fxLookOf({}), ...LENS_OFF }),
+  },
+  {
+    id: 'perform', name: 'Perform', color: '#c7b8ff', q: 'How will you play it?', about: 'A mood over the whole scene, knobs on the field, a timeline of scenes.',
+    used: () => !neutralMood() || settings.playOn || tlActive() || settings.audioVj > 0,
+    sum: () => [neutralMood() ? '' : `${moodNow() ?? 'Custom'} mood`, settings.playOn ? 'knobs on the field' : '', tlActive() ? 'timeline' : '', settings.audioVj > 0 ? 'auto VJ' : ''].filter(Boolean).join(' · ') || 'Nothing',
+    groups: () => [
+      { label: 'Mood', picks: [{ name: 'As built', on: neutralMood, go: () => setMood({}) }, ...MOODS.map(([n, m]): BPick => ({ name: n, on: () => moodNow() === n, go: () => setMood(m) }))] },
+      { label: 'Knobs on the field', picks: [bPick('Off', { playOn: false }), bPick('On', { playOn: true })] },
+    ],
+    extras: () => ['morph'],
+    off: () => ({ ...moodOf({}), playOn: false }),
+  },
+];
+const BUILD_TOUCH: [string, string][] = [['repel', 'Push away'], ['attract', 'Pull in'], ['vortex', 'Swirl'], ['none', 'Off']];
+const layerById = (id: LayerId) => LAYERS.find((l) => l.id === id)!;
+// The cards a layer's Fine-tune lists (those the Studio shows right now).
+const layerCards = (id: LayerId) =>
+  CONTROLS.filter((c): c is Extract<Control, { kind: 'section' }> => c.kind === 'section' && LAYER_OF[c.id] === id && !document.querySelector<HTMLElement>(`section[data-sec="${c.id}"]`)?.hidden);
+function bApply(patch: Partial<Settings>) {
+  Object.assign(settings, patch);
+  const keys = new Set(Object.keys(patch) as (keyof Settings)[]);
+  changed(keys);
+  tlHold(keys);
+}
+
+// What a hidden layer had, so showing it again puts it back.
+const buildHidden = new Map<LayerId, Partial<Settings>>();
+function hideLayer(l: BLayer, hide: boolean) {
+  if (!l.off) return;
+  if (hide) {
+    const off = l.off();
+    buildHidden.set(l.id, Object.fromEntries(Object.keys(off).map((k) => [k, settings[k as keyof Settings]])) as Partial<Settings>);
+    bApply(off);
+  } else {
+    const was = buildHidden.get(l.id);
+    buildHidden.delete(l.id);
+    if (was) bApply(was);
+  }
+}
+
+let buildMode: 'stack' | 'steps' = 'stack';
+let buildStep = 0;
+let buildOpen: LayerId | null = null;
+let buildSig = '';
+let buildHeld = false;
+function openBuild() {
+  if (buildEl) return;
+  buildEl = document.createElement('section');
+  buildEl.className = 'build-sheet';
+  buildEl.setAttribute('aria-label', 'Build');
+  // While a finger or the mouse is down in it, nothing is rebuilt under it.
+  buildEl.addEventListener('pointerdown', () => (buildHeld = true));
+  addEventListener('pointerup', buildRelease);
+  addEventListener('pointercancel', buildRelease);
+  document.body.append(buildEl);
+  document.body.classList.add('building');
+  buildSig = '';
+  buildPaint();
+}
+function buildRelease() {
+  if (!buildHeld) return;
+  buildHeld = false;
+  setTimeout(buildPaint, 0);
+}
+function closeBuild() {
+  if (!buildEl) return;
+  buildEl.remove();
+  buildEl = null;
+  document.body.classList.remove('building');
+  removeEventListener('pointerup', buildRelease);
+  removeEventListener('pointercancel', buildRelease);
+  if (buildMode === 'steps') buildMode = 'stack';
+}
+// A blank start walks the layers one at a time; Done leaves the stack.
+function buildFromBlank() {
+  const was = snapshot();
+  playPreset('Blank', BLANK_SCENE);
+  bApply({ ...fxLookOf({}), ...LENS_OFF, ...moodOf({}), playOn: false });
+  buildHidden.clear();
+  buildMode = 'steps';
+  buildStep = 0;
+  buildOpen = null;
+  buildPaint();
+  showToast('A blank scene: build it layer by layer', ['Undo', () => {
+    Object.assign(settings, was);
+    changed(new Set(Object.keys(was) as (keyof Settings)[]));
+    buildMode = 'stack';
+    buildPaint();
+  }]);
+}
+function buildSave() {
+  if (currentMine) return updateMine(currentMine);
+  const name = prompt('Name this scene', lastSceneName ? `My ${lastSceneName}` : `My scene ${myPresets.length + 1}`)?.trim().slice(0, 40);
+  if (!name) return;
+  const at = myPresets.findIndex((p) => p.name === name);
+  if (at >= 0) myPresets[at].settings = snapshot();
+  else myPresets.push({ name, settings: snapshot() });
+  currentMine = myPresets[at >= 0 ? at : myPresets.length - 1];
+  writeJson(MY_PRESETS_KEY, myPresets);
+  redrawMine();
+  showToast(`Saved “${name}” to My scenes`);
+}
+// The controls under a layer's picks, as the Studio defines them.
+function buildCtl(k: keyof Settings) {
+  return CONTROLS.find((c): c is Extract<Control, { kind: 'range' | 'select' | 'text' }> => (c.kind === 'range' || c.kind === 'select' || c.kind === 'text') && c.key === k && (!c.show || c.show()));
+}
+function buildStructure() {
+  const S = settings as unknown as Record<string, unknown>;
+  const ls = LAYERS.map((l) => `${l.id}:${l.used() ? 1 : 0}${buildHidden.has(l.id) ? 'h' : ''}`).join(',');
+  const open = buildMode === 'steps' ? LAYERS[buildStep] : buildOpen ? layerById(buildOpen) : null;
+  const ex = open ? open.extras().filter((k) => buildCtl(k)).join(',') + `|${open.groups().map((g) => g.picks.length).join(',')}` : '';
+  return `${buildMode}|${buildStep}|${buildOpen}|${ls}|${ex}|${gpuFx.ok}|${!!currentMine}|${S.shape === 'text'}`;
+}
+function buildPaint() {
+  if (!buildEl) return;
+  const sig = buildStructure();
+  if (sig !== buildSig && !buildHeld) {
+    buildSig = sig;
+    buildDraw();
+  }
+  buildUpdate();
+}
+function buildDraw() {
+  const el = buildEl!;
+  el.innerHTML = '';
+  el.classList.toggle('steps', buildMode === 'steps');
+  const grip = document.createElement('i');
+  grip.className = 'bd-grip';
+  grip.setAttribute('aria-hidden', 'true');
+  el.append(grip);
+  if (buildMode === 'steps') return buildDrawStep(el);
+  const head = document.createElement('div');
+  head.className = 'bd-head';
+  head.innerHTML = '<div><small></small><b></b></div>';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'bd-save';
+  save.textContent = currentMine ? 'Save changes' : 'Save scene';
+  save.addEventListener('click', buildSave);
+  head.append(save);
+  el.append(head);
+  const list = document.createElement('div');
+  list.className = 'bd-list';
+  for (const l of LAYERS) {
+    const used = l.used() || buildHidden.has(l.id);
+    if (buildOpen === l.id) {
+      list.append(buildCard(l));
+      continue;
+    }
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'bd-row';
+    row.dataset.layer = l.id;
+    row.classList.toggle('unused', !used);
+    row.classList.toggle('hidden', buildHidden.has(l.id));
+    row.classList.toggle('small', !!buildOpen);
+    row.style.setProperty('--lc', l.color);
+    row.innerHTML = '<i></i><span><b></b><small></small></span><em></em>';
+    row.querySelector('b')!.textContent = l.name;
+    row.querySelector('em')!.textContent = buildHidden.has(l.id) ? 'Hidden' : used ? '' : 'Add';
+    row.addEventListener('click', () => {
+      buildOpen = l.id;
+      buildPaint();
+      el.querySelector(`.bd-card`)?.scrollIntoView({ block: 'nearest' });
+    });
+    list.append(row);
+  }
+  el.append(list);
+  const foot = document.createElement('div');
+  foot.className = 'bd-foot';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.textContent = '+ Add layer';
+  const next = LAYERS.find((l) => !l.used() && !buildHidden.has(l.id));
+  add.disabled = !next;
+  add.title = next ? `Next in order: ${next.name}` : 'Every layer is in this scene';
+  add.addEventListener('click', () => {
+    if (!next) return;
+    buildOpen = next.id;
+    buildPaint();
+  });
+  const blank = document.createElement('button');
+  blank.type = 'button';
+  blank.textContent = 'Start blank';
+  blank.title = 'Clear the field and build a scene one layer at a time';
+  blank.addEventListener('click', buildFromBlank);
+  const play = document.createElement('button');
+  play.type = 'button';
+  play.className = 'bd-play';
+  play.textContent = 'Play';
+  play.addEventListener('click', () => uGo('stage'));
+  foot.append(add, blank, play);
+  el.append(foot);
+}
+function buildDrawStep(el: HTMLElement) {
+  const l = LAYERS[buildStep];
+  const head = document.createElement('div');
+  head.className = 'bd-head';
+  head.innerHTML = `<div><small>Step ${buildStep + 1} of ${LAYERS.length} · ${l.name}</small><b></b></div>`;
+  head.querySelector('b')!.textContent = l.q;
+  const done = document.createElement('button');
+  done.type = 'button';
+  done.className = 'bd-save';
+  done.textContent = 'Done';
+  done.addEventListener('click', () => {
+    buildMode = 'stack';
+    buildOpen = null;
+    buildPaint();
+  });
+  head.append(done);
+  const dots = document.createElement('div');
+  dots.className = 'bd-dots';
+  LAYERS.forEach((x, i) => {
+    const d = document.createElement('button');
+    d.type = 'button';
+    d.style.setProperty('--lc', x.color);
+    d.title = x.name;
+    d.setAttribute('aria-label', `Step ${i + 1}: ${x.name}`);
+    d.classList.toggle('on', i === buildStep);
+    d.classList.toggle('done', i < buildStep);
+    d.addEventListener('click', () => {
+      buildStep = i;
+      buildPaint();
+    });
+    dots.append(d);
+  });
+  el.append(head, dots);
+  const about = document.createElement('p');
+  about.className = 'bd-about';
+  about.textContent = l.about;
+  el.append(about, buildBody(l));
+  const foot = document.createElement('div');
+  foot.className = 'bd-foot';
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.textContent = 'Back';
+  back.disabled = buildStep === 0;
+  back.addEventListener('click', () => {
+    buildStep--;
+    buildPaint();
+  });
+  const next = document.createElement('button');
+  next.type = 'button';
+  next.className = 'bd-play';
+  next.textContent = buildStep === LAYERS.length - 1 ? 'Done' : `Next: ${LAYERS[buildStep + 1].name}`;
+  next.addEventListener('click', () => {
+    if (buildStep < LAYERS.length - 1) buildStep++;
+    else {
+      buildMode = 'stack';
+      buildOpen = null;
+    }
+    buildPaint();
+    buildEl?.querySelector('.bd-body')?.scrollTo(0, 0);
+  });
+  foot.append(back, next);
+  el.append(foot);
+}
+// An open layer in the stack: its picks in place, the rest folded small.
+function buildCard(l: BLayer) {
+  const card = document.createElement('div');
+  card.className = 'bd-card';
+  card.dataset.layer = l.id;
+  card.style.setProperty('--lc', l.color);
+  const top = document.createElement('div');
+  top.className = 'bd-ctop';
+  top.innerHTML = '<i></i><b></b>';
+  top.querySelector('b')!.textContent = l.name;
+  if (l.off) {
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'bd-icon bd-eye';
+    const hidden = buildHidden.has(l.id);
+    eye.setAttribute('aria-label', hidden ? `Show ${l.name}` : `Hide ${l.name}`);
+    eye.title = hidden ? `Show ${l.name} again` : `Hide ${l.name}: see the scene without it`;
+    eye.setAttribute('aria-pressed', String(hidden));
+    eye.innerHTML = hidden ? svg('<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.6 6.6C3.9 8.4 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/>') : svg('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
+    eye.addEventListener('click', () => {
+      hideLayer(l, !buildHidden.has(l.id));
+      buildPaint();
+    });
+    top.append(eye);
+  }
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'bd-icon';
+  close.setAttribute('aria-label', `Close ${l.name}`);
+  close.innerHTML = svg('<path d="M6 15l6-6 6 6"/>');
+  close.addEventListener('click', () => {
+    buildOpen = null;
+    buildPaint();
+  });
+  top.append(close);
+  card.append(top, buildBody(l));
+  return card;
+}
+function buildBody(l: BLayer) {
+  const body = document.createElement('div');
+  body.className = 'bd-body';
+  for (const g of l.groups()) {
+    const box = document.createElement('div');
+    box.className = 'bd-group';
+    if (g.label || g.tune) {
+      const h = document.createElement('div');
+      h.className = 'bd-glabel';
+      h.innerHTML = '<span></span>';
+      h.querySelector('span')!.textContent = g.label ?? '';
+      if (g.tune) h.append(buildTune(g.tune, g.picks.length ? 'Fine-tune' : g.tune === 'links' ? 'Connections and moving settings' : 'Open'));
+      box.append(h);
+    }
+    if (g.picks.length) {
+      const grid = document.createElement('div');
+      grid.className = 'bd-picks';
+      for (const p of g.picks) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = p.name;
+        b.addEventListener('click', () => {
+          buildHidden.delete(l.id);
+          if (p.go) p.go();
+          else if (p.patch) bApply(p.patch);
+          buildPaint();
+        });
+        picksOn.push([b, p]);
+        grid.append(b);
+      }
+      box.append(grid);
+    }
+    body.append(box);
+  }
+  for (const k of l.extras()) {
+    const c = buildCtl(k);
+    if (c) body.append(buildExtra(c));
+  }
+  // Fine-tune: the layer's cards in the Studio (Reacts to tunes per input).
+  if (l.id !== 'reacts') {
+    const cards = layerCards(l.id);
+    if (cards.length) {
+      const ft = document.createElement('div');
+      ft.className = 'bd-tune';
+      const t = document.createElement('span');
+      t.textContent = 'Fine-tune';
+      ft.append(t);
+      for (const c of cards) ft.append(buildTune(c.id, c.label));
+      body.append(ft);
+    }
+  }
+  return body;
+}
+function buildTune(id: string, text: string) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'bd-link';
+  b.textContent = `${text} ›`;
+  b.addEventListener('click', () => {
+    closeBuild();
+    openSection(id);
+    uPaint(true);
+  });
+  return b;
+}
+const picksOn: [HTMLButtonElement, BPick][] = [];
+const extrasOn: [HTMLElement, () => void][] = [];
+function buildExtra(c: Extract<Control, { kind: 'range' | 'select' | 'text' }>) {
+  const row = document.createElement('label');
+  row.className = `bd-x bd-x-${c.kind}`;
+  const name = document.createElement('span');
+  name.textContent = c.label;
+  row.append(name);
+  const S = settings as unknown as Record<string, unknown>;
+  if (c.kind === 'range') {
+    const inp = document.createElement('input');
+    inp.type = 'range';
+    inp.min = String(c.min);
+    inp.max = String(c.max);
+    inp.step = String(c.step);
+    const val = document.createElement('b');
+    inp.addEventListener('input', () => set(c.key, Number(inp.value) as never));
+    row.append(inp, val);
+    extrasOn.push([inp, () => {
+      if (!buildHeld) inp.value = String(S[c.key]);
+      const v = Number(S[c.key]);
+      val.textContent = c.format ? c.format(v) : c.key === 'count' ? v.toLocaleString() : String(v);
+    }]);
+  } else if (c.kind === 'select') {
+    const sel = document.createElement('select');
+    for (const [v, t] of c.options) sel.add(new Option(t, v));
+    sel.addEventListener('change', () => set(c.key, sel.value as never));
+    row.append(sel);
+    extrasOn.push([sel, () => (sel.value = String(S[c.key]))]);
+  } else {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = c.placeholder ?? '';
+    inp.addEventListener('input', () => set(c.key, inp.value as never));
+    row.append(inp);
+    extrasOn.push([inp, () => document.activeElement !== inp && (inp.value = String(S[c.key]))]);
+  }
+  return row;
+}
+// Cheap pass on every change: summaries, which picks are on, slider values.
+function buildUpdate() {
+  if (!buildEl) return;
+  for (let i = picksOn.length - 1; i >= 0; i--) {
+    const [b, p] = picksOn[i];
+    if (!b.isConnected) picksOn.splice(i, 1);
+    else {
+      const on = p.on();
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+  }
+  for (let i = extrasOn.length - 1; i >= 0; i--) {
+    const [x, f] = extrasOn[i];
+    if (!x.isConnected) extrasOn.splice(i, 1);
+    else f();
+  }
+  const head = buildEl.querySelector('.bd-head');
+  if (head && buildMode === 'stack') {
+    const n = LAYERS.filter((l) => l.used()).length;
+    head.querySelector('small')!.textContent = `${currentMine ? 'My scene' : lastSceneName && lastSceneName !== 'Blank' ? 'Scene library' : 'Build'} · ${n} layers`;
+    head.querySelector('b')!.textContent = currentMine?.name || (lastSceneName === 'Blank' ? 'New scene' : lastSceneName) || 'Your mix';
+  }
+  for (const row of buildEl.querySelectorAll<HTMLElement>('.bd-row')) {
+    const l = layerById(row.dataset.layer as LayerId);
+    row.querySelector('small')!.textContent = buildHidden.has(l.id) ? 'Hidden: tap to open, the eye shows it' : l.used() ? l.sum() : 'Not used';
+  }
+}
+refreshers.push(buildPaint);
+
 resize();
 refresh();
 presetFromUrl(true);
