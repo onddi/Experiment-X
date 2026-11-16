@@ -2778,9 +2778,10 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .bd-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .bd-picks button { min-height: 44px; padding: 4px 6px; border-radius: 12px; border: 1px solid rgb(255 255 255 / 0.1); background: rgb(255 255 255 / 0.03); font-size: 13px; font-weight: 600; line-height: 1.2; }
 .bd-picks button:hover { background: rgb(255 255 255 / 0.08); }
-.bd-picks.many { grid-template-columns: none; grid-template-rows: repeat(2, auto); grid-auto-flow: column; grid-auto-columns: minmax(96px, max-content); overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; scroll-padding: 0 12px; }
+.bd-picks.many { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; scroll-padding: 0 12px; }
 .bd-picks.many::-webkit-scrollbar { display: none; }
-.bd-picks.many button { padding: 4px 12px; white-space: nowrap; }
+.bd-prow { display: flex; gap: 6px; width: max-content; }
+.bd-prow button { flex: none; min-width: 96px; max-width: 220px; padding: 4px 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bd-picks button i { display: block; height: 6px; margin: 0 auto 5px; width: 100%; min-width: 64px; border-radius: 3px; }
 .bd-more { font-weight: 600 !important; }
 .bd-cards { display: flex; flex-direction: column; gap: 8px; margin: 2px -4px 0; }

@@ -18972,7 +18972,8 @@ const secSum = (id: string) => (CONTROLS.find((c) => c.kind === 'section' && c.i
 // Every option of a choice, the popular ones first.
 function bAll<K extends keyof Settings>(key: K, options: [string, string][], first: string[] = [], names: Record<string, string> = {}): BPick[] {
   const order = [...first.filter((v) => options.some(([k]) => k === v)), ...options.map(([k]) => k).filter((k) => !first.includes(k))];
-  return order.map((v) => bPick(names[v] ?? label(options, v), { [key]: v } as Partial<Settings>));
+  // Chips keep to the name: the Studio's "(with an image)" hints are dropped.
+  return order.map((v) => bPick(names[v] ?? label(options, v).replace(/\s*\([^)]*\)$/, ''), { [key]: v } as Partial<Settings>));
 }
 const palSwatch = (p: PaletteDef) => `linear-gradient(90deg, ${p.stops.map(([h, s, l]) => `hsl(${h} ${s}% ${l}%)`).join(', ')})`;
 const MOTION_PICKS: [string, Partial<Settings>][] = [
@@ -19485,8 +19486,16 @@ function buildBody(l: BLayer) {
       const grid = document.createElement('div');
       grid.className = 'bd-picks';
       // A long list scrolls sideways in two rows, so the sheet stays short.
-      grid.classList.toggle('many', g.picks.length > 9);
-      for (const p of g.picks) {
+      // Two flex rows rather than a grid: Safari squeezes auto-sized grid
+      // columns in a scroller, so long names ran into each other.
+      const many = g.picks.length > 9;
+      grid.classList.toggle('many', many);
+      const rows = many ? [document.createElement('div'), document.createElement('div')] : [];
+      for (const r of rows) {
+        r.className = 'bd-prow';
+        grid.append(r);
+      }
+      for (const [pi, p] of g.picks.entries()) {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = p.name;
@@ -19502,7 +19511,7 @@ function buildBody(l: BLayer) {
           buildPaint();
         });
         picksOn.push([b, p]);
-        grid.append(b);
+        (many ? rows[pi % 2] : grid).append(b);
       }
       box.append(grid);
     }
@@ -19523,7 +19532,7 @@ function buildBody(l: BLayer) {
   // Scroll each sideways list to its current pick.
   requestAnimationFrame(() => body.querySelectorAll<HTMLElement>('.bd-picks.many').forEach((g) => {
     const on = g.querySelector<HTMLElement>('button.on');
-    if (on) g.scrollLeft = on.offsetLeft - g.clientWidth / 2 + on.offsetWidth / 2;
+    if (on) g.scrollLeft += on.getBoundingClientRect().left - g.getBoundingClientRect().left - g.clientWidth / 2 + on.offsetWidth / 2;
   }));
   return body;
 }
