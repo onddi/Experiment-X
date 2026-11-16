@@ -16214,26 +16214,26 @@ function renderDrumLib() {
 // --- The Sound page: Style, then one row per instrument, then Song and Mix ---
 // Built from the card's own rows (each setting rendered as usual), moved into
 // place: a track's settings sit under its row and open one track at a time.
-type SndTrack = { name: string; key: keyof Settings; dot: string; sub: () => string; keys: (keyof Settings)[]; notes?: string[]; beats?: boolean };
+type SndTrack = { name: string; key: keyof Settings; dot: string; sub: () => string; keys: (keyof Settings)[]; notes?: string[]; beats?: boolean; how: string };
 const optLabel = (opts: readonly (readonly [string, string])[], v: string) => (opts.find(([k]) => k === v)?.[1] ?? v).replace(/ \(.*\)$/, '');
 const TIMBRES: [string, string][] = [['colour', 'Chimes band'], ['lounge', 'Lounge band'], ['world', 'World band'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth']];
 
 const SND_TRACKS: SndTrack[] = [
-  { name: 'Drums', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndKit', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
+  { name: 'Drums', how: 'The screen is read left to right in 16 columns, one per sixteenth note. Particles crowding low in a column add a kick, in the middle a snare, high up a hi-hat, and a faster field plays more. A beat from the library plays as written, and a lively field adds to it.', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndKit', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
     sub: () => {
       const g = drumGenre(settings.sndGenre);
       const kit = optLabel(KIT_OPTIONS, settings.sndKit);
       return g ? `${g.beats[settings.sndBeat]?.name ?? g.name} · ${kit}` : `follows the field · ${kit}`;
     } },
-  { name: 'Bass', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassSound', 'sndBassTone'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
-  { name: 'Strings', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndOctave', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
-  { name: 'Pad', key: 'sndDrone', dot: '#b48cff', keys: ['sndPadSound', 'sndPadPump'], sub: () => optLabel(PAD_SOUNDS, settings.sndPadSound) + (settings.sndPadPump > 0 ? ' · pumping' : '') },
-  { name: 'Steps', key: 'sndSeq', dot: '#6fd3b0', keys: [], sub: () => `a rhythm on ${optLabel(TIMBRES, settings.sndTimbre).toLowerCase()}` },
-  { name: 'Chimes', key: 'sndHits', dot: '#9fe3f0', keys: ['sndHitSound'], notes: ['Chimes need'], sub: () => (settings.sndHitSound === 'same' ? 'when particles bounce' : `${optLabel(CHIME_SOUNDS, settings.sndHitSound)} · on bounces`) },
-  { name: 'Grains', key: 'sndGrain', dot: '#7c8aa6', keys: [], sub: () => 'a crackle from the crowd' },
-  { name: 'Scanline', key: 'sndScan', dot: '#8fa8ff', keys: ['sndScanSecs'], sub: () => `sweeps every ${settings.sndScanSecs} s` },
-  { name: 'Touch', key: 'sndTouch', dot: '#ef6fa8', keys: ['sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct'], notes: ['Each finger'], sub: () => optLabel(TOUCH_SOUNDS, settings.sndTouchSound) },
-  { name: 'Accents', key: 'sndAccents', dot: '#f3d36b', keys: [], sub: () => 'births and bursts' },
+  { name: 'Bass', how: 'Plays the root of the chord, low. A calm field holds one long note a bar. As the particles speed up it walks between root and fifth, then plays eighth notes.', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassSound', 'sndBassTone'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
+  { name: 'Strings', how: 'Invisible strings run up and down the screen. A particle crossing one plucks it. Strings further right play higher in the chord, and the top half of the screen plays higher still. The more particles cross at once, the louder the note.', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndOctave', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
+  { name: 'Pad', how: 'Holds the chord underneath. It swells as the field gets busier, spreads wider in stereo as the particles spread out, and gets brighter as they speed up. Births and bursts make it bloom.', key: 'sndDrone', dot: '#b48cff', keys: ['sndPadSound', 'sndPadPump'], sub: () => optLabel(PAD_SOUNDS, settings.sndPadSound) + (settings.sndPadPump > 0 ? ' · pumping' : '') },
+  { name: 'Steps', how: 'A step sequencer that reads the screen left to right, one column per sixteenth note. Where particles crowd in the current column, that height plays a note: higher on the screen, higher note.', key: 'sndSeq', dot: '#6fd3b0', keys: [], sub: () => `a rhythm on ${optLabel(TIMBRES, settings.sndTimbre).toLowerCase()}` },
+  { name: 'Chimes', how: 'A note each time particles bounce off an edge or an obstacle. Only the hardest bounces play, louder the harder they hit, and higher near the top of the screen.', key: 'sndHits', dot: '#9fe3f0', keys: ['sndHitSound'], notes: ['Chimes need'], sub: () => (settings.sndHitSound === 'same' ? 'when particles bounce' : `${optLabel(CHIME_SOUNDS, settings.sndHitSound)} · on bounces`) },
+  { name: 'Grains', how: 'Tiny clicks from random particles, more of them the faster the field moves. A particle high on the screen crackles brighter, and each click pans to where its particle is.', key: 'sndGrain', dot: '#7c8aa6', keys: [], sub: () => 'a crackle from the crowd' },
+  { name: 'Scanline', how: 'A line sweeps across the screen once a bar (or every few seconds). Particles it passes play a note, higher near the top, panned to where they are.', key: 'sndScan', dot: '#8fa8ff', keys: ['sndScanSecs'], sub: () => `sweeps every ${settings.sndScanSecs} s` },
+  { name: 'Touch', how: 'Your fingers play. Each finger is its own voice: where you touch sets the pitch (up or across), and moving glides or steps through the scale.', key: 'sndTouch', dot: '#ef6fa8', keys: ['sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct'], notes: ['Each finger'], sub: () => optLabel(TOUCH_SOUNDS, settings.sndTouchSound) },
+  { name: 'Accents', how: 'One-off sounds for events: a strum when the scene changes, a whoosh for a new shape, and a sparkle when many particles are born at once.', key: 'sndAccents', dot: '#f3d36b', keys: [], sub: () => 'births and bursts' },
 ];
 const SONG_KEYS: (keyof Settings)[] = ['sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
 const MIX_KEYS: (keyof Settings)[] = ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndReverb', 'sndEcho', 'sndSweep', 'sndBright', 'sndDrive', 'sndLofi', 'sndChorus', 'sndDepth', 'sndShow'];
@@ -16460,6 +16460,8 @@ function renderSoundPage(body: HTMLElement) {
     chev.setAttribute('aria-label', `${t.name} settings`);
     row.append(dot, name, lv, val, chev);
     const det = mk('div', 'sndp-det');
+    // What drives it: how the particles play this part.
+    det.append(mk('p', 'sndp-how', t.how));
     if (t.beats) det.append(beatChips());
     for (const k of t.keys) {
       const e = take(k);
