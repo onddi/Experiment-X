@@ -19050,6 +19050,72 @@ let buildStep = 0;
 let buildOpen: LayerId | null = null;
 let buildSig = '';
 let buildHeld = false;
+// Folded to a slim strip, so the whole field shows; the step and the layer stay.
+let buildPeek = false;
+const buildPeekLayer = () => (buildMode === 'steps' ? LAYERS[buildStep] : buildOpen ? layerById(buildOpen) : null);
+// Step through a layer's main picks from the strip, to compare them full screen.
+function buildCycle(l: BLayer, d: number) {
+  const g = l.groups().find((x) => x.picks.length > 1);
+  if (!g) return;
+  const i = g.picks.findIndex((p) => p.on());
+  const p = g.picks[(i + d + g.picks.length) % g.picks.length];
+  buildHidden.delete(l.id);
+  if (p.go) p.go();
+  else if (p.patch) bApply(p.patch);
+  buildPaint();
+}
+function buildHideBtn() {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'bd-icon bd-fold';
+  b.setAttribute('aria-label', 'Hide Build to see the whole field');
+  b.title = 'Hide to see the whole field';
+  b.innerHTML = svg('<path d="M6 9l6 6 6-6"/>');
+  b.addEventListener('click', () => {
+    buildPeek = true;
+    buildPaint();
+  });
+  return b;
+}
+function buildDrawPeek(el: HTMLElement) {
+  const l = buildPeekLayer();
+  const bar = document.createElement('div');
+  bar.className = 'bd-peek';
+  if (l) bar.style.setProperty('--lc', l.color);
+  const info = document.createElement('button');
+  info.type = 'button';
+  info.className = 'bd-pinfo';
+  info.innerHTML = '<i></i><span><small></small><b></b></span>';
+  info.querySelector('small')!.textContent = buildMode === 'steps' ? `Step ${buildStep + 1} of ${LAYERS.length} · ${l!.name}` : l ? l.name : 'Build';
+  info.addEventListener('click', () => {
+    buildPeek = false;
+    buildPaint();
+  });
+  bar.append(info);
+  if (l && l.groups().some((g) => g.picks.length > 1)) {
+    for (const [d, path, name] of [[-1, 'M15 5l-7 7 7 7', 'Previous'], [1, 'M9 5l7 7-7 7', 'Next']] as const) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'bd-icon';
+      b.setAttribute('aria-label', `${name} pick`);
+      b.innerHTML = svg(`<path d="${path}"/>`);
+      b.addEventListener('click', () => buildCycle(l, d));
+      bar.append(b);
+    }
+  }
+  const up = document.createElement('button');
+  up.type = 'button';
+  up.className = 'bd-icon';
+  up.setAttribute('aria-label', 'Show Build');
+  up.title = 'Show Build';
+  up.innerHTML = svg('<path d="M6 15l6-6 6 6"/>');
+  up.addEventListener('click', () => {
+    buildPeek = false;
+    buildPaint();
+  });
+  bar.append(up);
+  el.append(bar);
+}
 function openBuild() {
   if (buildEl) return;
   buildEl = document.createElement('section');
@@ -19061,6 +19127,7 @@ function openBuild() {
   addEventListener('pointercancel', buildRelease);
   document.body.append(buildEl);
   document.body.classList.add('building');
+  buildPeek = false;
   buildSig = '';
   buildPaint();
 }
@@ -19076,7 +19143,7 @@ function closeBuild() {
   document.body.classList.remove('building');
   removeEventListener('pointerup', buildRelease);
   removeEventListener('pointercancel', buildRelease);
-  if (buildMode === 'steps') buildMode = 'stack';
+  document.body.style.removeProperty('--build-shift');
 }
 // A blank start walks the layers one at a time; Done leaves the stack.
 function buildFromBlank() {
@@ -19116,7 +19183,7 @@ function buildStructure() {
   const ls = LAYERS.map((l) => `${l.id}:${l.used() ? 1 : 0}${buildHidden.has(l.id) ? 'h' : ''}`).join(',');
   const open = buildMode === 'steps' ? LAYERS[buildStep] : buildOpen ? layerById(buildOpen) : null;
   const ex = open ? open.extras().filter((k) => buildCtl(k)).join(',') + `|${open.groups().map((g) => g.picks.length).join(',')}` : '';
-  return `${buildMode}|${buildStep}|${buildOpen}|${ls}|${ex}|${gpuFx.ok}|${!!currentMine}|${S.shape === 'text'}`;
+  return `${buildPeek}|${buildMode}|${buildStep}|${buildOpen}|${ls}|${ex}|${gpuFx.ok}|${!!currentMine}|${S.shape === 'text'}`;
 }
 function buildPaint() {
   if (!buildEl) return;
@@ -19131,6 +19198,8 @@ function buildDraw() {
   const el = buildEl!;
   el.innerHTML = '';
   el.classList.toggle('steps', buildMode === 'steps');
+  el.classList.toggle('peek', buildPeek);
+  if (buildPeek) return buildDrawPeek(el);
   const grip = document.createElement('i');
   grip.className = 'bd-grip';
   grip.setAttribute('aria-hidden', 'true');
@@ -19144,7 +19213,7 @@ function buildDraw() {
   save.className = 'bd-save';
   save.textContent = currentMine ? 'Save changes' : 'Save scene';
   save.addEventListener('click', buildSave);
-  head.append(save);
+  head.append(buildHideBtn(), save);
   el.append(head);
   const list = document.createElement('div');
   list.className = 'bd-list';
@@ -19214,7 +19283,7 @@ function buildDrawStep(el: HTMLElement) {
     buildOpen = null;
     buildPaint();
   });
-  head.append(done);
+  head.append(buildHideBtn(), done);
   const dots = document.createElement('div');
   dots.className = 'bd-dots';
   LAYERS.forEach((x, i) => {
@@ -19407,6 +19476,15 @@ function buildExtra(c: Extract<Control, { kind: 'range' | 'select' | 'text' }>) 
 // Cheap pass on every change: summaries, which picks are on, slider values.
 function buildUpdate() {
   if (!buildEl) return;
+  const pk = buildEl.querySelector('.bd-pinfo b');
+  if (pk) {
+    const l = buildPeekLayer();
+    const on = l?.groups().find((g) => g.picks.length > 1)?.picks.find((p) => p.on());
+    pk.textContent = l ? (on?.name ?? l.sum()) : `${currentMine?.name || lastSceneName || 'Your mix'} · ${LAYERS.filter((x) => x.used()).length} layers`;
+  }
+  // Phones: the field's middle moves up to the middle of what the sheet leaves.
+  const top = buildEl.getBoundingClientRect().top;
+  document.body.style.setProperty('--build-shift', `${Math.min(0, Math.round(top / 2 - innerHeight / 2))}px`);
   for (let i = picksOn.length - 1; i >= 0; i--) {
     const [b, p] = picksOn[i];
     if (!b.isConnected) picksOn.splice(i, 1);
