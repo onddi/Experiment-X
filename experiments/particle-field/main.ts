@@ -787,13 +787,15 @@ function drawObstacles(fade: number, light: boolean) {
     ctx.translate(-w / 2, -h / 2);
   }
   const S = settings;
+  // Pulse: dim between hits, bright on the music's loud moments.
+  const pulse = S.obsPulse > 0 ? 1 - S.obsPulse * 0.75 + S.obsPulse * Math.min(1.6, (reacting() ? audio.levels.level : 0.3 + 0.3 * Math.sin(performance.now() / 400)) * 2.2) : 1;
   if (S.obsStyle === 'faint' && S.obsColour === 'white') {
-    ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.07 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.06 * fade).toFixed(4)})`;
+    ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.07 * fade * pulse).toFixed(4)})` : `rgb(255 255 255 / ${(0.06 * fade * pulse).toFixed(4)})`;
     traceObstacles(ctx);
   } else {
     const sp = obSprite(light);
     if (sp) {
-      ctx.globalAlpha = Math.min(1, (S.obsStyle === 'faint' ? 0.15 : 1) * S.obsAlpha * Math.max(0.05, fade) * 1.6);
+      ctx.globalAlpha = Math.min(1, (S.obsStyle === 'faint' ? 0.15 : 1) * S.obsAlpha * Math.max(0.05, fade) * 1.6 * pulse);
       ctx.drawImage(sp, 0, 0, w, h);
     }
   }
@@ -803,9 +805,33 @@ function drawObstacles(fade: number, light: boolean) {
 // drawn once into a picture and redrawn only when the obstacle changes.
 let obSpriteC: HTMLCanvasElement | null = null;
 let obSpriteKey = '';
+const OB_TINTS: Partial<Record<Settings['obsColour'], string>> = { gold: '#ffd166', amber: '#ff9f43', red: '#ff5a5f', pink: '#ff7ad9', violet: '#b388ff', blue: '#5b8cff', ice: '#bff3ff', mint: '#7dffc4' };
+// A small repeating tile for Stripes and Dots.
+function obTile(kind: 'stripes' | 'dots', g: CanvasRenderingContext2D): CanvasPattern | null {
+  const t = document.createElement('canvas');
+  t.width = t.height = 14;
+  const tg = t.getContext('2d')!;
+  tg.fillStyle = '#fff';
+  if (kind === 'dots') {
+    tg.beginPath();
+    tg.arc(7, 7, 3.4, 0, Math.PI * 2);
+    tg.fill();
+  } else {
+    tg.lineWidth = 4;
+    tg.strokeStyle = '#fff';
+    tg.beginPath();
+    for (const o of [-14, 0, 14]) {
+      tg.moveTo(o, 14);
+      tg.lineTo(o + 14, 0);
+    }
+    tg.stroke();
+  }
+  return g.createPattern(t, 'repeat');
+}
 function obSprite(light: boolean): HTMLCanvasElement | null {
   const S = settings;
-  const col = S.obsColour === 'scene' ? shades[Math.floor(shades.length * 0.7)] ?? '#fff' : (S.obsColour === 'dark') !== light ? '#000' : '#fff';
+  const tint = OB_TINTS[S.obsColour];
+  const col = tint ?? (S.obsColour === 'scene' ? shades[Math.floor(shades.length * 0.7)] ?? '#fff' : S.obsColour === 'palette' ? `pal:${shades.join(',')}` : (S.obsColour === 'dark') !== light ? '#000' : '#fff');
   const key = [obKey, S.obsStyle, col, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
   if (key === obSpriteKey && obSpriteC) return obSpriteC;
   obSpriteKey = key;
@@ -817,19 +843,67 @@ function obSprite(light: boolean): HTMLCanvasElement | null {
   };
   const m = mk();
   const mg = m.getContext('2d')!;
-  mg.fillStyle = col;
+  if (S.obsColour === 'palette' && shades.length) {
+    // The scene's whole palette, swept across the screen.
+    const gr = mg.createLinearGradient(0, 0, w, h);
+    shades.forEach((c, k) => gr.addColorStop(shades.length > 1 ? k / (shades.length - 1) : 0, c));
+    mg.fillStyle = gr;
+  } else mg.fillStyle = col;
   traceObstacles(mg);
   if (S.obsStyle === 'solid' || S.obsStyle === 'faint') return (obSpriteC = m);
   const out = mk();
   const g = out.getContext('2d')!;
-  if (S.obsStyle === 'outline') {
-    // Grow the shape a little in every direction, then cut the shape out.
+  // The shape's edge: grown a little in every direction, the shape cut out.
+  const ring = (px: number) => {
+    const r = mk();
+    const rg = r.getContext('2d')!;
     for (let k = 0; k < 12; k++) {
       const a = (k / 12) * Math.PI * 2;
-      g.drawImage(m, Math.cos(a) * 3, Math.sin(a) * 3);
+      rg.drawImage(m, Math.cos(a) * px, Math.sin(a) * px);
     }
-    g.globalCompositeOperation = 'destination-out';
+    rg.globalCompositeOperation = 'destination-out';
+    rg.drawImage(m, 0, 0);
+    return r;
+  };
+  if (S.obsStyle === 'outline') {
+    g.drawImage(ring(3), 0, 0);
+  } else if (S.obsStyle === 'neon') {
+    // A tube of light: the edge, a wide haze round it and a hot core.
+    const r = ring(2.5);
+    g.filter = 'blur(10px)';
+    g.drawImage(r, 0, 0);
+    g.drawImage(r, 0, 0);
+    g.filter = 'blur(3px)';
+    g.drawImage(r, 0, 0);
+    g.filter = 'none';
+    g.drawImage(r, 0, 0);
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = 0.6;
+    g.drawImage(r, 0, 0);
+  } else if (S.obsStyle === 'glass') {
+    // See-through body with a lit rim.
+    g.globalAlpha = 0.18;
     g.drawImage(m, 0, 0);
+    g.globalAlpha = 1;
+    g.drawImage(ring(1.5), 0, 0);
+    g.globalAlpha = 0.5;
+    g.drawImage(ring(1.5), -1, -1);
+  } else if (S.obsStyle === 'shadow') {
+    // Lifted off the field: a soft shadow below it.
+    g.shadowColor = light ? 'rgb(0 0 0 / 0.35)' : 'rgb(0 0 0 / 0.85)';
+    g.shadowBlur = 22;
+    g.shadowOffsetY = 12;
+    g.drawImage(m, 0, 0);
+  } else if (S.obsStyle === 'stripes' || S.obsStyle === 'dots') {
+    g.drawImage(m, 0, 0);
+    const pat = obTile(S.obsStyle, g);
+    if (pat) {
+      g.globalCompositeOperation = 'destination-in';
+      g.fillStyle = pat;
+      g.fillRect(0, 0, out.width, out.height);
+    }
+    g.globalCompositeOperation = 'source-over';
+    g.drawImage(ring(1.5), 0, 0);
   } else {
     // Glow: a soft halo with a dimmer core.
     g.filter = 'blur(14px)';
@@ -9899,7 +9973,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
 
-  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont', 'obsStyle', 'obsColour', 'obsAlpha', 'obsMore', 'obsSpin', 'obsDrift', 'obsInside'],
+  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont', 'obsStyle', 'obsColour', 'obsAlpha', 'obsMore', 'obsSpin', 'obsDrift', 'obsInside', 'obsPulse'],
     power: { on: () => settings.obstacles !== 'none', off: { obstacles: 'none' }, start: { obstacles: 'circles' } },
     summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'wall' ? 'a wall' : settings.obstacles === 'ring' ? 'a ring' : settings.obstacles === 'body' ? 'your silhouette' : 'off') + (settings.obstacles !== 'none' && obMore().length ? ` + ${obMore().length} more` : '') },
   { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['body', 'Your silhouette (camera)']] },
@@ -9918,9 +9992,10 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'obsInside', label: 'Keep particles inside the shapes' },
   { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
-  { kind: 'select', key: 'obsStyle', label: 'Look', options: [['faint', 'Faint'], ['solid', 'Solid'], ['outline', 'Outline'], ['glow', 'Glow']], show: () => settings.obsShow },
-  { kind: 'select', key: 'obsColour', label: 'Colour', options: [['white', 'White'], ['scene', 'Scene colours'], ['dark', 'Dark (a cut-out)']], show: () => settings.obsShow },
+  { kind: 'select', key: 'obsStyle', label: 'Look', options: [['faint', 'Faint'], ['solid', 'Solid'], ['outline', 'Outline'], ['glow', 'Glow'], ['neon', 'Neon'], ['glass', 'Glass'], ['shadow', 'Lifted (shadow)'], ['stripes', 'Stripes'], ['dots', 'Dots']], show: () => settings.obsShow },
+  { kind: 'select', key: 'obsColour', label: 'Colour', options: [['white', 'White'], ['scene', 'Scene colour'], ['palette', 'Scene palette (gradient)'], ['dark', 'Dark (a cut-out)'], ['gold', 'Gold'], ['amber', 'Amber'], ['red', 'Red'], ['pink', 'Pink'], ['violet', 'Violet'], ['blue', 'Blue'], ['ice', 'Ice'], ['mint', 'Mint']], show: () => settings.obsShow },
   { kind: 'range', key: 'obsAlpha', label: 'Strength', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.obsShow && !(settings.obsStyle === 'faint' && settings.obsColour === 'white') },
+  { kind: 'range', key: 'obsPulse', label: 'Pulse with the music', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.obsShow },
   { kind: 'oblist', show: () => settings.obstacles !== 'none' },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
 

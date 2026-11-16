@@ -307,8 +307,9 @@ export interface Settings {
   obsY: number;
   obsAngle: number;
   obsFont: 'bold' | 'serif' | 'mono' | 'round' | 'script';
-  obsStyle: 'faint' | 'solid' | 'outline' | 'glow';
-  obsColour: 'white' | 'scene' | 'dark';
+  obsStyle: 'faint' | 'solid' | 'outline' | 'glow' | 'neon' | 'glass' | 'shadow' | 'stripes' | 'dots';
+  obsColour: 'white' | 'scene' | 'palette' | 'dark' | 'gold' | 'amber' | 'red' | 'pink' | 'violet' | 'blue' | 'ice' | 'mint';
+  obsPulse: number; // 0 … 1, brightens with the music
   obsAlpha: number;
   obsMore: string; // JSON list of extra pieces (ObPiece[])
   obsSpin: number; // degrees a second
@@ -876,6 +877,7 @@ export const DEFAULTS: Settings = {
   obsFont: 'bold',
   obsStyle: 'faint',
   obsColour: 'white',
+  obsPulse: 0,
   obsAlpha: 0.5,
   obsMore: '',
   obsSpin: 0,
