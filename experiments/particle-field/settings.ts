@@ -208,6 +208,10 @@ export interface Settings {
   sndScan: number;
   sndScanSecs: number;
   sndTouch: number;
+  sndMBusy: number;
+  sndMBright: number;
+  sndMSpace: number;
+  sndMGroove: number;
   sndTouchSound: 'theremin' | 'lead' | 'pad' | 'organ' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
   sndTouchMode: 'glide' | 'notes' | 'chord';
   sndTouchGlide: number;
@@ -718,6 +722,10 @@ export const DEFAULTS: Settings = {
   sndScan: 0,
   sndScanSecs: 4,
   sndTouch: 0.6,
+  sndMBusy: 0.5,
+  sndMBright: 0.5,
+  sndMSpace: 0.5,
+  sndMGroove: 0.5,
   sndTouchSound: 'theremin',
   sndTouchMode: 'glide',
   sndTouchGlide: 0.15,

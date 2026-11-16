@@ -2836,5 +2836,16 @@ body.no-glass *, body.no-glass *::before, body.no-glass *::after { backdrop-filt
 .mp-chip b { opacity: 0.5; padding: 0 2px; font-weight: 400; }
 .mp-chip.on { border-color: var(--accent); }
 
+.snd-presets .fx-look-chips { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.snd-presets .fx-look-chips::-webkit-scrollbar { display: none; }
+.snd-prow { display: flex; gap: 6px; width: max-content; }
+.snd-prow .fx-look { flex: none; white-space: nowrap; }
+.bd-cards .ft-hide { display: none !important; }
+.snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
+.snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
+.snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.snd-chips button { min-height: 34px; padding: 4px 13px; border-radius: 17px; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; font-size: 13px; font-weight: 500; opacity: 0.75; }
+.snd-chips button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); opacity: 1; }
+
 /* A dark color-scheme makes the browser paint the iframe opaque over a light parent page. */
 html:has(body.see-through) { color-scheme: normal; }
