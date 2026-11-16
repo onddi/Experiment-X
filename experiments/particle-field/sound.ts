@@ -667,13 +667,18 @@ export class ParticleSound {
 
   /** Fade out and stop using the CPU (Pause, a hidden tab, Sound off). */
   sleep() {
+    this.dozing = true;
     this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+    // Suspend once the fade is done (unless woken meanwhile). Not gated on the
+    // gain's value: in a hidden tab that can lag, and the pad kept humming.
     window.setTimeout(() => {
-      if (this.master.gain.value < 0.01) void this.ctx.suspend().catch(() => {});
+      if (this.dozing) void this.ctx.suspend().catch(() => {});
     }, 300);
   }
+  private dozing = false;
 
   wake() {
+    this.dozing = false;
     this.resume();
     this.set(this.p);
   }

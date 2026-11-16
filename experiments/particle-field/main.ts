@@ -11040,6 +11040,14 @@ const keepSceneName = () => {
 };
 addEventListener('pagehide', keepSceneName);
 document.addEventListener('visibilitychange', () => document.hidden && keepSceneName());
+// A hidden tab stops the frame loop, so the sound's own check (in the loop)
+// never runs: put it to sleep here. The loop wakes it when the tab is back.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && snd && !sndAsleep) {
+    snd.sleep();
+    sndAsleep = true;
+  }
+});
 
 // Options (tempo, ring, …) don't touch the list: redrawing it under a click
 // that blurred the tempo box would swallow the click.
