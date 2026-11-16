@@ -314,6 +314,7 @@ export interface Settings {
   topOpacity: number;
   topBlend: 'normal' | 'screen' | 'lighten' | 'plus-lighter' | 'difference';
   topPointer: boolean;
+  topSaved: string; // the top layer's own settings (JSON), kept with a saved scene
   obsCircles: string;
   obsRadius: number;
   obsText: string;
@@ -871,6 +872,7 @@ export const DEFAULTS: Settings = {
   topOpacity: 1,
   topBlend: 'normal',
   topPointer: true,
+  topSaved: '',
   obsForce: 1,
   obsPlace: true,
   obsShow: true,

@@ -8116,7 +8116,7 @@ function topTick() {
       topMusic = false;
     }
   }
-  const sig = `${S.topScene}|${S.topOpacity}|${S.topBlend}`;
+  const sig = `${S.topScene}|${S.topOpacity}|${S.topBlend}|${S.topSaved.length}`;
   if (sig === topSig) return;
   topSig = sig;
   if (!S.topScene) {
@@ -8143,11 +8143,19 @@ function topTick() {
   }
   topFrame.style.opacity = String(S.topOpacity);
   topFrame.style.mixBlendMode = S.topBlend;
-  if (topSent !== S.topScene && topFrame.contentWindow) {
-    const p = topScenePatch(S.topScene);
+  // A saved scene brings the top layer as it was edited; else the scene itself.
+  const want = S.topSaved ? `${S.topScene}#${S.topSaved.length}:${S.topSaved.slice(-24)}` : S.topScene;
+  if (topSent !== want && topFrame.contentWindow) {
+    let p: Partial<Settings> | null = null;
+    try {
+      p = S.topSaved ? (JSON.parse(S.topSaved) as Partial<Settings>) : null;
+    } catch {
+      p = null;
+    }
+    p ??= topScenePatch(S.topScene);
     if (p) {
-      topPost({ apply: p, name: S.topScene });
-      topSent = S.topScene;
+      topPost({ apply: p, name: want });
+      topSent = want;
     }
   }
 }
@@ -8516,7 +8524,10 @@ const RENDERS: [string, string][] = [
 ];
 const PAL_BGS: [string, string][] = [['own', 'Its own'], ['black', 'Black'], ['tinted', 'Tinted'], ['light', 'Light']];
 // Palettes in vibe order (Warm, Cool, Neon …), each vibe in its listed order.
-const palKeys = () => (Object.keys(PALETTES) as (keyof typeof PALETTES)[]).sort((a, b) => PAL_GROUPS.indexOf((PALETTES[a] as PaletteDef).group ?? 'Warm') - PAL_GROUPS.indexOf((PALETTES[b] as PaletteDef).group ?? 'Warm'));
+// Grouped (warm, cool …), A–Z inside each group.
+const palKeys = () => (Object.keys(PALETTES) as (keyof typeof PALETTES)[]).sort((a, b) => PAL_GROUPS.indexOf((PALETTES[a] as PaletteDef).group ?? 'Warm') - PAL_GROUPS.indexOf((PALETTES[b] as PaletteDef).group ?? 'Warm') || PALETTES[a].label.localeCompare(PALETTES[b].label));
+// A–Z, for the Palette list.
+const palKeysAZ = () => (Object.keys(PALETTES) as (keyof typeof PALETTES)[]).sort((a, b) => PALETTES[a].label.localeCompare(PALETTES[b].label));
 // Palettes you made or generated and kept, on this device.
 type MyPal = { name: string; colors: string; bg: string };
 const MY_PALS_KEY = 'particle-field:my-palettes';
@@ -9446,7 +9457,7 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', id: 'colour', label: 'Colour', tab: 'look', lock: ['palette', 'colorBy', 'customColors', 'customBg', 'palSat', 'palLight', 'palBg'],
     summary: () => `${pal().label}, ${label(COLOR_BY, settings.colorBy)}` },
-  { kind: 'select', key: 'palette', label: 'Palette', options: [...palKeys().map((k) => [k, PALETTES[k].label] as [string, string]), ['custom', 'Custom…']] },
+  { kind: 'select', key: 'palette', label: 'Palette', options: [...palKeysAZ().map((k) => [k, PALETTES[k].label] as [string, string]), ['custom', 'Custom…']] },
   { kind: 'mypals' },
   { kind: 'colors', key: 'customColors', label: 'Colours (calm → hot)', show: () => settings.palette === 'custom' },
   { kind: 'color', key: 'customBg', label: 'Background', show: () => settings.palette === 'custom' },
@@ -10171,6 +10182,8 @@ function set<K extends keyof Settings>(k: K, v: Settings[K]) {
   settings[k] = v;
   changed(new Set([k]));
   tlHold([k]);
+  // A new scene on top starts from that scene, not the saved edits.
+  if (k === 'topScene') settings.topSaved = '';
   // Picking the image shape (one already loaded): take its colours.
   if (k === 'shape' && v === 'image' && (shapeImage || shapeMedia)) imageColoursOn(!!shapeMedia);
 }
@@ -19044,6 +19057,14 @@ function selectScene(d: { key?: string; name?: string }) {
 function snapshot(): Partial<Settings> {
   // Mid-morph, save where the look is heading, not the halfway values.
   const { audioFineTune: _skip, ...rest } = { ...withBases(settings), ...(morphState?.to ?? {}) } as Settings;
+  // The top layer's edits travel with the scene.
+  if (rest.topScene) {
+    try {
+      rest.topSaved = localStorage.getItem('pftop:particle-field:settings') ?? '';
+    } catch {
+      // Private mode: the scene keeps just its name.
+    }
+  }
   return { ...rest };
 }
 
