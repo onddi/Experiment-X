@@ -3204,7 +3204,9 @@ function cameraTick(now: number) {
     camLast = now;
     if (settings.camMode === 'body' && !bodyObs()) cam.segmentBody(now);
     camFrameNo++;
+    liveShape = true;
     buildShape();
+    liveShape = false;
   }
 }
 
@@ -3976,7 +3978,9 @@ function buildShape() {
     tx[i] = x + (Math.random() - 0.5) * 2;
     ty[i] = y + (Math.random() - 0.5) * 2;
   }
-  const owner = matchNearest(tx, ty);
+  // A live picture (camera or video) re-shapes several times a second: the
+  // quick match keeps up where the careful one would eat the frame.
+  const owner = liveShape ? matchCurve(tx, ty) : matchNearest(tx, ty);
   shapeInfo = { targets: pts.length, ms: performance.now() - tShape };
   for (let t = 0; t < n; t++) {
     hx[owner[t]] = tx[t];
@@ -4059,6 +4063,48 @@ function playEntrance() {
   const dur = S.entranceTime * 1000;
   homeGlide = { fx: sx, fy: sy, tx: hx.slice(0, n), ty: hy.slice(0, n), start: now, dur, dl };
   entrance = { start: now, dur };
+}
+
+// The quick match: walk the screen along one curve that keeps nearby spots
+// together (a Hilbert curve), list particles and targets in that order, and
+// pair them off. Close to nearest for frame-to-frame changes, at a fraction
+// of the cost. Returns owner[target] = particle.
+let liveShape = false;
+function hilbert(x: number, y: number) {
+  let d = 0;
+  for (let s = 512; s > 0; s >>= 1) {
+    const rx = x & s ? 1 : 0;
+    const ry = y & s ? 1 : 0;
+    d += s * s * ((3 * rx) ^ ry);
+    if (ry === 0) {
+      if (rx === 1) {
+        x = 1023 - x;
+        y = 1023 - y;
+      }
+      const t = x;
+      x = y;
+      y = t;
+    }
+  }
+  return d;
+}
+function matchCurve(tx: Float32Array, ty: Float32Array): Int32Array {
+  const m = tx.length;
+  const kx = 1023 / Math.max(1, w);
+  const ky = 1023 / Math.max(1, h);
+  const B = 262144; // more than the most particles: key = place × B + index
+  const cl = (v: number) => (v < 0 ? 0 : v > 1023 ? 1023 : v | 0);
+  const a = new Float64Array(m);
+  const b = new Float64Array(m);
+  for (let i = 0; i < m; i++) {
+    a[i] = hilbert(cl(px[i] * kx), cl(py[i] * ky)) * B + i;
+    b[i] = hilbert(cl(tx[i] * kx), cl(ty[i] * ky)) * B + i;
+  }
+  a.sort();
+  b.sort();
+  const owner = new Int32Array(m);
+  for (let r = 0; r < m; r++) owner[b[r] % B] = a[r] % B;
+  return owner;
 }
 
 // Pairs each particle with a target spot so the total travel is small:
