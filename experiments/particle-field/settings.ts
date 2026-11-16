@@ -26,7 +26,7 @@ export type HatAction = 'sparkle' | 'none';
 export type SubAction = 'size' | 'flow' | 'speed' | 'none';
 export type WaveAt = 'centre' | 'pointer' | 'random' | 'orbit' | 'mirror' | 'corners';
 export type BeatAction = 'ripple' | 'shockwave' | 'implode' | 'twist' | 'star' | 'sweep' | 'mix' | 'random' | 'none';
-export type ColorBy = 'face' | 'camera' | 'image' | 'band' | 'depth' | 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle';
+export type ColorBy = 'face' | 'camera' | 'image' | 'band' | 'depth' | 'age' | 'audio' | 'palette' | 'speed' | 'direction' | 'pointer' | 'horizontal' | 'vertical' | 'radial' | 'cycle' | 'spectrum';
 export type Palette = keyof typeof PALETTES | 'custom';
 export type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
 export type GlyphPick = 'random' | 'speed' | 'heading' | 'size' | 'sequence';
@@ -93,6 +93,13 @@ export interface Settings {
   shapeGeo: string;
   shapeSolid: string;
   shapeLive: 'bars' | 'ring' | 'clock' | 'tempo';
+  specLayout: 'centre' | 'floor' | 'mirror' | 'line';
+  specBands: number;
+  specGap: number;
+  specRise: number;
+  specFall: number;
+  specGain: number;
+  specPeaks: boolean;
   shapePattern: 'sunflower' | 'grid' | FillPattern;
   patScale: number;
   patForm: number;
@@ -554,6 +561,13 @@ export const DEFAULTS: Settings = {
   shapeGeo: 'star5',
   shapeSolid: 'sphere',
   shapeLive: 'bars',
+  specLayout: 'centre',
+  specBands: 40,
+  specGap: 0.4,
+  specRise: 0.5,
+  specFall: 0.12,
+  specGain: 1,
+  specPeaks: false,
   shapePattern: 'sunflower',
   patScale: 1,
   patForm: 0.5,

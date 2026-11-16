@@ -803,4 +803,4 @@ export function solidPoint(type: string, u: number, v: number): [number, number,
   }
 }
 
-export const LIVE_SHAPES: [string, string][] = [['bars', 'The music: bars'], ['ring', 'The music: a ring'], ['clock', 'A clock'], ['tempo', 'The tempo (BPM)']];
+export const LIVE_SHAPES: [string, string][] = [['bars', 'Music spectrum'], ['ring', 'Music spectrum ring'], ['clock', 'A clock'], ['tempo', 'The tempo (BPM)']];

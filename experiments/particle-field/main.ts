@@ -3453,10 +3453,32 @@ function reshape(ms = 700) {
   if (shapeKey !== before && !paramShape) homeGlide = { fx, fy, tx: hx.slice(0, n), ty: hy.slice(0, n), start: performance.now(), dur: ms };
 }
 
-// The spectrum, in a few bands from low to high, smoothed.
-const SPEC_N = 40;
-const specRaw = new Float32Array(SPEC_N);
-const spec = new Float32Array(SPEC_N);
+// The spectrum, in 16 to 96 bands from low to high, smoothed, with peak
+// caps that hold the highest level for a moment and then fall.
+const SPEC_MAX = 96;
+const specRaw = new Float32Array(SPEC_MAX);
+const spec = new Float32Array(SPEC_MAX);
+const specPeak = new Float32Array(SPEC_MAX);
+const specN = () => Math.max(4, Math.min(SPEC_MAX, Math.round(settings.specBands)));
+// The share of a band's particles that make its peak cap.
+const SPEC_CAP = 0.9;
+function updateSpectrum() {
+  const S = settings;
+  const N = specN();
+  audio.spectrum(specRaw.subarray(0, N));
+  const up = 0.05 + S.specRise * 0.95;
+  const down = 0.01 + S.specFall * 0.6;
+  for (let b = 0; b < N; b++) {
+    const r = Math.min(1, specRaw[b] * S.specGain);
+    spec[b] += (r - spec[b]) * (r > spec[b] ? up : down);
+    specPeak[b] = Math.max(spec[b], specPeak[b] - 0.004 - down * 0.02);
+  }
+}
+// Where a point sits along the spectrum (0 low, 1 high), for colouring by band.
+function specPos(kind: string, u: number) {
+  if (kind === 'ring') return Math.abs(((u * 2) % 2) - 1);
+  return settings.specLayout === 'centre' ? Math.abs(u - 0.5) * 2 : u;
+}
 function paramPoint(kind: string, u: number, v: number, t: number, R: number, out: number[]) {
   const S = settings;
   const cx = w / 2;
@@ -3513,22 +3535,61 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
       }
     }
   } else if (kind === 'bars') {
-    // Mirrored bars from the middle: bass in the centre, highs at the sides.
-    const side = u < 0.5 ? -1 : 1;
-    const f = Math.abs(u - 0.5) * 2;
-    const b = Math.min(SPEC_N - 1, (f * SPEC_N) | 0);
-    const span = Math.min(w * 0.46, R * 1.6);
-    const bw = span / SPEC_N;
-    const hgt = (0.03 + spec[b] * 0.97) * R * 0.9;
-    out[0] = cx + side * (b + 0.5 + (v * 7919 % 1 - 0.5) * 0.6) * bw;
-    out[1] = cy + (v * 2 - 1) * hgt;
+    const N = specN();
+    const lay = S.specLayout;
+    const cap = S.specPeaks && v >= SPEC_CAP;
+    const vv = cap ? (v - SPEC_CAP) / (1 - SPEC_CAP) : S.specPeaks ? v / SPEC_CAP : v;
+    const jit = ((v * 7919) % 1) - 0.5;
+    const fill = 1 - S.specGap;
+    if (lay === 'line') {
+      // One curve, low to high from left to right, smooth between bands.
+      const W = Math.min(w * 0.92, R * 3.2);
+      const fb = Math.min(N - 1.001, Math.max(0, u * N - 0.5));
+      const b0 = fb | 0;
+      const k = fb - b0;
+      const lv = (cap ? specPeak : spec)[b0] * (1 - k) + (cap ? specPeak : spec)[b0 + 1] * k;
+      const base = cy + R * 0.7;
+      out[0] = cx - W / 2 + u * W;
+      out[1] = base - (0.02 + lv * 0.98) * R * 1.5 + jit * (cap ? 2 : 3 + S.specGap * 6) - (cap ? 10 : 0);
+      out[2] = -1;
+      return;
+    }
+    let b: number;
+    let x: number;
+    if (lay === 'centre') {
+      // Bass in the centre, highs out to both sides, growing up and down.
+      const side = u < 0.5 ? -1 : 1;
+      b = Math.min(N - 1, (Math.abs(u - 0.5) * 2 * N) | 0);
+      const bw = Math.min(w * 0.46, R * 1.6) / N;
+      x = cx + side * (b + 0.5 + jit * fill) * bw;
+    } else {
+      b = Math.min(N - 1, (u * N) | 0);
+      const W = Math.min(w * 0.92, R * 3.2);
+      x = cx - W / 2 + (b + 0.5 + jit * fill) * (W / N);
+    }
+    const lv = cap ? specPeak[b] : spec[b];
+    out[0] = x;
     out[2] = -1;
+    if (lay === 'floor') {
+      const base = cy + R * 0.9;
+      const hgt = (0.03 + lv * 0.97) * R * 1.8;
+      out[1] = cap ? base - hgt - 6 - vv * 3 : base - vv * hgt;
+    } else {
+      const hgt = (0.03 + lv * 0.97) * R * 0.9;
+      out[1] = cap ? cy + (vv < 0.5 ? -1 : 1) * (hgt + 6 + (vv % 0.5) * 6) : cy + (vv * 2 - 1) * hgt;
+    }
   } else {
-    // A ring: each angle reaches out as far as its band is loud.
-    const a = u * Math.PI * 2 + shapeT * S.shapeSpin * 0.4;
-    const f = Math.abs(((u * 2) % 2) - 1);
-    const b = Math.min(SPEC_N - 1, (f * SPEC_N) | 0);
-    const r = R * (0.5 + v * (0.04 + spec[b] * 0.5));
+    // A ring: each angle reaches out as far as its band is loud, the bands
+    // mirrored so bass sits at the bottom and the highs meet at the top.
+    const N = specN();
+    const cap = S.specPeaks && v >= SPEC_CAP;
+    const vv = cap ? (v - SPEC_CAP) / (1 - SPEC_CAP) : S.specPeaks ? v / SPEC_CAP : v;
+    const slots = N * 2;
+    const slot = Math.min(slots - 1, (u * slots) | 0);
+    const b = slot < N ? N - 1 - slot : slot - N;
+    const fr = u * slots - slot;
+    const a = ((slot + 0.5 + (fr - 0.5) * (1 - S.specGap)) / slots) * Math.PI * 2 + shapeT * S.shapeSpin * 0.4 - Math.PI / 2;
+    const r = cap ? R * (0.54 + specPeak[b] * 0.5) + 5 + vv * 3 : R * (0.5 + vv * (0.04 + spec[b] * 0.5));
     out[0] = cx + Math.cos(a) * r;
     out[1] = cy + Math.sin(a) * r;
     out[2] = -1;
@@ -3610,10 +3671,7 @@ function animateShape(now: number) {
     }
     return;
   }
-  if (ps.kind === 'bars' || ps.kind === 'ring') {
-    audio.spectrum(specRaw);
-    for (let b = 0; b < SPEC_N; b++) spec[b] += (specRaw[b] - spec[b]) * (specRaw[b] > spec[b] ? 0.5 : 0.12);
-  }
+  if (ps.kind === 'bars' || ps.kind === 'ring') updateSpectrum();
   const R = (Math.min(w, h) / 2) * S.shapeSize;
   const t = shapeTime();
   const o = [0, 0, 0, 1];
@@ -4325,6 +4383,14 @@ function shadeIndex(i: number) {
       // Young particles at the calm end, old ones at the hot end.
       u = span[i] > 0 ? Math.min(1, age[i] / span[i]) : tone[i];
       break;
+    case 'spectrum': {
+      // Low to high along the music spectrum, a little hotter when loud.
+      const ps = paramShape;
+      if (!ps || (ps.kind !== 'bars' && ps.kind !== 'ring') || i >= ps.u.length) { u = tone[i]; break; }
+      const f = specPos(ps.kind, ps.u[i]);
+      u = Math.min(1, f * 0.85 + spec[Math.min(specN() - 1, (f * specN()) | 0)] * 0.15);
+      break;
+    }
     case 'band': {
       // Bass at the calm end, highs at the hot end; each brightens with its band.
       const L = audio.levels;
@@ -6582,7 +6648,9 @@ const RENDERS: [string, string][] = [
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'],
   ['mixed', 'Mixed'],
 ];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)']];
+const isSpectrum = () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring');
+const SPEC_LAYOUTS: [string, string][] = [['centre', 'Centre out'], ['floor', 'Floor'], ['mirror', 'Mirrored'], ['line', 'Line']];
+const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Camera colours (camera)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)'], ['spectrum', 'Spectrum band (music spectrum)']];
 
 const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
@@ -7583,7 +7651,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'solidLight', label: 'Light and shade', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)), show: () => settings.shape === 'solid' },
   { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -7601,7 +7669,16 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
   { kind: 'note', text: '3D shapes look best with depth on; it turns on with them. Tilt, light and shade and facing are in Depth & light (Look tab).', show: () => settings.shape === 'solid' },
-  { kind: 'note', text: 'The bars and the ring follow the sound source on the Music tab; without sound they rest flat.', show: () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring') },
+  { kind: 'sub', label: 'Spectrum', show: isSpectrum },
+  { kind: 'choice', key: 'specLayout', label: 'Layout', options: SPEC_LAYOUTS, show: () => isSpectrum() && settings.shapeLive === 'bars' },
+  { kind: 'range', key: 'specBands', label: 'Bands', min: 16, max: 96, step: 4, format: (v) => `${v}`, show: isSpectrum },
+  { kind: 'range', key: 'specGap', label: 'Gaps', min: 0, max: 0.8, step: 0.05, format: (v) => (v === 0 ? 'none' : pct(v)), show: isSpectrum },
+  { kind: 'range', key: 'specGain', label: 'Sensitivity', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: isSpectrum },
+  { kind: 'range', key: 'specRise', label: 'Rise', min: 0, max: 1, step: 0.05, format: (v) => (v >= 0.95 ? 'instant' : pct(v)), show: isSpectrum },
+  { kind: 'range', key: 'specFall', label: 'Fall', min: 0, max: 1, step: 0.02, format: (v) => (v < 0.05 ? 'slow' : pct(v)), show: isSpectrum },
+  { kind: 'toggle', key: 'specPeaks', label: 'Peak caps', show: isSpectrum },
+  { kind: 'buttons', buttons: [['Colour by band', () => set('colorBy', settings.colorBy === 'spectrum' ? 'palette' : 'spectrum')]], active: () => settings.colorBy === 'spectrum', show: isSpectrum },
+  { kind: 'note', text: 'The spectrum follows the sound source on the Music tab; without sound it rests flat.', show: isSpectrum },
   { kind: 'text', key: 'shapeSeq', label: 'Sequence', placeholder: 'heart, star, LOVE', show: () => settings.shape === 'sequence' },
   { kind: 'select', key: 'shapeSeqEvery', label: 'Next one', options: [['bar', 'Every bar'], ['2bars', 'Every 2 bars'], ['4bars', 'Every 4 bars'], ['8bars', 'Every 8 bars'], ['drop', 'Only on drops']], show: () => settings.shape === 'sequence' },
   { kind: 'range', key: 'shapeSeqSec', label: 'Hold each (no music)', min: 1, max: 20, step: 0.5, format: (v) => `${v}s`, show: () => settings.shape === 'sequence' },
@@ -10328,7 +10405,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['morph', 'beatSnap'],
   look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow'],
   colour: ['palette', 'colorBy', 'customColors'],
-  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
+  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['speed', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
@@ -18951,7 +19028,7 @@ const LAYERS: BLayer[] = [
         { name: 'Fountain', on: () => !hasShape() && hasEmitter(), patch: { shape: 'none', emitter: 'point', emitMode: 'steady', emitX: 0.5, emitY: 0.75, lifespan: 5, lifeFade: 'swell', launchSpeed: 2.5, launchDir: 270, launchSpread: 50 } },
       ],
     },
-    ...(({ icon: [{ label: 'Icon', picks: bAll('shapeIcon', ICON_SHAPES) }], solid: [{ label: 'Solid', picks: bAll('shapeSolid', SOLID_SHAPES) }], pattern: [{ label: 'Pattern', picks: bAll('shapePattern', PATTERNS) }], geo: [{ label: 'Shape', picks: bAll('shapeGeo', GEO_SHAPES) }], live: [{ label: 'Show', picks: bAll('shapeLive', LIVE_SHAPES) }] } as Record<string, BGroup[]>)[settings.shape] ?? []),
+    ...(({ icon: [{ label: 'Icon', picks: bAll('shapeIcon', ICON_SHAPES) }], solid: [{ label: 'Solid', picks: bAll('shapeSolid', SOLID_SHAPES) }], pattern: [{ label: 'Pattern', picks: bAll('shapePattern', PATTERNS) }], geo: [{ label: 'Shape', picks: bAll('shapeGeo', GEO_SHAPES) }], live: [{ label: 'Show', picks: bAll('shapeLive', LIVE_SHAPES) }, ...(settings.shapeLive === 'bars' ? [{ label: 'Layout', picks: bAll('specLayout', SPEC_LAYOUTS) }] : [])] } as Record<string, BGroup[]>)[settings.shape] ?? []),
     ...(!hasShape() && hasEmitter() ? [{ label: 'Born from', picks: bAll('emitter', EMITTERS.filter(([k]) => k !== 'none')) }] : []),
     ],
     extras: () => ['shapeText', 'shapeSeq', 'imageMode', 'shapeSize', 'homeStrength'],
