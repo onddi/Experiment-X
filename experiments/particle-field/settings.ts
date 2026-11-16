@@ -186,7 +186,7 @@ export interface Settings {
   sndChorus: number;
   sndDepth: number;
   sndBass: number;
-  sndBassSound: 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked' | '808';
+  sndBassSound: import('./sound.ts').BassSound;
   sndDrums: number;
   sndKit: DrumKit;
   /** A beat from the library: genre id ('' = the field plays the drums) and which of its beats. */

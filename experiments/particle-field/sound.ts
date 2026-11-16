@@ -20,7 +20,7 @@ export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano
 export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
-export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked' | '808';
+export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808';
 import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
 export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer';
@@ -110,33 +110,53 @@ const VOICES: Record<Voice, VoiceDef> = {
   koto: { type: 'sawtooth', ratio: 2, level: 0.2, fade: 0.15, decay: 1.1, sweep: [2600, 500], bend: 40, gain: 1 },
 };
 
-// Bass sounds: the body wave, how its low-pass sweeps (from × cut down to
-// cut Hz, opening with the energy), how much sine underneath, and how it rings.
+// Bass sounds, built like a synth patch: a few oscillators (detuned for
+// width, an octave down for weight), optional FM, saturation before a
+// 2- or 4-pole low-pass whose envelope snaps open and closes, an amp
+// envelope, and a clean mono sine underneath so the low end stays solid.
+type BassOsc = [type: OscillatorType, ratio: number, cents: number, gain: number, pan?: number];
 interface BassDef {
-  type: OscillatorType;
-  cut: number;
-  from: number;
-  sweep: number;
-  open: number;
+  osc: BassOsc[];
+  sub: number; // clean sine underneath (mono)
+  subOct?: number; // the sine's octave (-1 = an octave down)
+  cut: number; // filter resting point, Hz (at A1, tracks the note)
+  env: number; // filter starts this many times higher…
+  fdec: number; // …and falls back in about this many seconds
   q: number;
-  sub: number;
+  poles: 2 | 4;
+  open: number; // the field's energy opens the filter this much
+  drive?: number; // saturation before the filter (harmonics phones can play)
+  fuzz?: number; // saturation after it
+  fm?: [ratio: number, index: number, decay: number]; // a sine modulator: the FM growl or slap
+  wob?: number; // filter wobble, cycles per beat
+  drift?: number; // random cents per note, like an old analog synth
   attack: number;
-  hold: number; // level after the attack, as a share of the peak
+  decay: number;
+  sustain: number; // 0..1 of the peak
+  release: number;
   ring?: number; // the longest a note rings (plucked strings die away)
-  click?: number; // pick noise, band Hz
+  click?: number; // pick or finger noise, band Hz
   drop?: number; // cents the note starts sharp
   punch?: number; // starts this many times higher and falls fast (an 808's thump)
-  dist?: number; // saturation, so a deep sine is heard on small speakers
   gain: number;
 }
 const BASSES: Record<BassSound, BassDef> = {
-  synth: { type: 'sawtooth', cut: 250, from: 4, sweep: 0.12, open: 2.8, q: 3, sub: 0.9, attack: 0.008, hold: 0.62, gain: 1 },
-  sub: { type: 'sine', cut: 400, from: 1, sweep: 0.05, open: 0, q: 0.5, sub: 0, attack: 0.012, hold: 0.85, gain: 1.35 },
-  round: { type: 'triangle', cut: 500, from: 1.6, sweep: 0.2, open: 1, q: 0.7, sub: 0.7, attack: 0.02, hold: 0.8, gain: 0.95 },
-  upright: { type: 'triangle', cut: 900, from: 2.5, sweep: 0.08, open: 0.6, q: 1, sub: 0.6, attack: 0.004, hold: 0.35, ring: 0.9, click: 900, drop: 25, gain: 1.3 },
-  acid: { type: 'sawtooth', cut: 220, from: 12, sweep: 0.18, open: 4, q: 14, sub: 0.4, attack: 0.004, hold: 0.7, gain: 1.15 },
-  picked: { type: 'square', cut: 700, from: 3.5, sweep: 0.1, open: 1.5, q: 2, sub: 0.6, attack: 0.003, hold: 0.45, ring: 1.4, click: 2500, gain: 0.8 },
-  '808': { type: 'sine', cut: 1400, from: 1, sweep: 0.05, open: 0, q: 0.5, sub: 0, attack: 0.003, hold: 0.8, punch: 2.2, dist: 3, gain: 1.5 },
+  synth: { osc: [['sawtooth', 1, -7, 0.5], ['sawtooth', 1, 7, 0.5]], sub: 0.7, cut: 260, env: 6, fdec: 0.12, q: 2.5, poles: 4, open: 2.5, drive: 1.5, attack: 0.005, decay: 0.3, sustain: 0.6, release: 0.08, gain: 1.25 },
+  sub: { osc: [['sine', 1, 0, 1]], sub: 0, cut: 1200, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, drive: 1.8, attack: 0.01, decay: 0.4, sustain: 0.9, release: 0.1, gain: 0.9 },
+  round: { osc: [['triangle', 1, 0, 0.7], ['sine', 2, 0, 0.15]], sub: 0.6, cut: 600, env: 2, fdec: 0.2, q: 0.7, poles: 2, open: 1, attack: 0.015, decay: 0.5, sustain: 0.75, release: 0.12, gain: 1 },
+  upright: { osc: [['triangle', 1, 0, 0.6], ['sine', 2, 3, 0.2], ['sine', 3, -4, 0.06]], sub: 0.5, cut: 900, env: 3, fdec: 0.07, q: 1.2, poles: 2, open: 0.5, attack: 0.004, decay: 0.35, sustain: 0.35, release: 0.15, ring: 0.9, click: 900, drop: 30, gain: 1.7 },
+  fingered: { osc: [['triangle', 1, 0, 0.7], ['sawtooth', 1, 0, 0.12]], sub: 0.5, cut: 500, env: 2.5, fdec: 0.06, q: 0.9, poles: 2, open: 0.6, drive: 1.3, attack: 0.006, decay: 0.5, sustain: 0.4, release: 0.2, ring: 1.2, click: 700, drop: 15, gain: 1.7 },
+  picked: { osc: [['sawtooth', 1, 0, 0.45], ['triangle', 1, 3, 0.35]], sub: 0.5, cut: 700, env: 4, fdec: 0.08, q: 2, poles: 2, open: 1.5, drive: 1.5, attack: 0.002, decay: 0.25, sustain: 0.4, release: 0.1, ring: 1.4, click: 2500, gain: 1.6 },
+  slap: { osc: [['sine', 1, 0, 1]], fm: [2, 5, 0.03], sub: 0.3, cut: 5000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, attack: 0.001, decay: 0.18, sustain: 0.3, release: 0.08, ring: 0.8, click: 3200, drop: 40, gain: 1.9 },
+  fm: { osc: [['sine', 1, 0, 1]], fm: [1, 3.5, 0.08], sub: 0.4, cut: 4000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, drive: 1.2, attack: 0.002, decay: 0.3, sustain: 0.45, release: 0.1, gain: 1.2 },
+  moog: { osc: [['sawtooth', 1, -5, 0.45], ['sawtooth', 1, 5, 0.45], ['square', 0.5, 0, 0.3]], sub: 0.4, cut: 220, env: 8, fdec: 0.25, q: 4, poles: 4, open: 2, drive: 2.2, drift: 6, attack: 0.004, decay: 0.4, sustain: 0.55, release: 0.1, gain: 1.1 },
+  pulse: { osc: [['square', 1, -4, 0.5], ['square', 1, 4, 0.4]], sub: 0.6, cut: 400, env: 5, fdec: 0.15, q: 3, poles: 4, open: 2, drift: 4, drive: 1.5, attack: 0.004, decay: 0.35, sustain: 0.6, release: 0.08, gain: 1.1 },
+  acid: { osc: [['sawtooth', 1, 0, 1]], sub: 0.3, cut: 200, env: 14, fdec: 0.16, q: 12, poles: 4, open: 4, drive: 2, fuzz: 1.5, attack: 0.003, decay: 0.2, sustain: 0.7, release: 0.05, gain: 1.1 },
+  reese: { osc: [['sawtooth', 1, -18, 0.35, -0.5], ['sawtooth', 1, 0, 0.35], ['sawtooth', 1, 19, 0.35, 0.5]], sub: 0.9, cut: 700, env: 1.5, fdec: 0.4, q: 1.5, poles: 4, open: 1.5, drive: 2.5, attack: 0.01, decay: 0.6, sustain: 0.85, release: 0.12, gain: 1 },
+  wobble: { osc: [['sawtooth', 1, -9, 0.5], ['square', 1, 9, 0.4]], sub: 0.9, cut: 300, env: 1, fdec: 0.1, q: 8, poles: 2, open: 1, wob: 2, drive: 2, fuzz: 2, attack: 0.005, decay: 0.4, sustain: 0.9, release: 0.08, gain: 1 },
+  fuzz: { osc: [['sawtooth', 1, 0, 0.6], ['square', 0.5, 0, 0.4]], sub: 0.7, cut: 900, env: 3, fdec: 0.1, q: 1, poles: 2, open: 1, drive: 6, fuzz: 3, attack: 0.003, decay: 0.3, sustain: 0.8, release: 0.06, gain: 0.8 },
+  house: { osc: [['sine', 1, 0, 0.7], ['sine', 2, 0, 0.35], ['sine', 3, 0, 0.12]], sub: 0.5, cut: 2500, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, attack: 0.006, decay: 0.2, sustain: 0.7, release: 0.06, click: 1500, gain: 1.1 },
+  '808': { osc: [['sine', 1, 0, 1]], sub: 0, cut: 2000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, drive: 3, punch: 2.2, attack: 0.002, decay: 1.2, sustain: 0.6, release: 0.2, gain: 1.0 },
 };
 
 const satCurves = new Map<number, Float32Array<ArrayBuffer>>();
@@ -1117,46 +1137,104 @@ export class ParticleSound {
     while (f < 38) f *= 2;
     while (f > 200) f /= 2;
     if (B.ring) len = Math.min(len, B.ring);
-    const end = t + len + 0.1;
-    const o = ctx.createOscillator();
-    o.type = B.type;
+    const end = t + len + B.release * 3 + 0.1;
     const from = this.bassF;
     this.bassF = f;
-    if (slide && from > 0 && from !== f) {
-      o.frequency.setValueAtTime(from, t);
-      o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.14, len * 0.5));
-    } else if (B.punch) {
-      o.frequency.setValueAtTime(f * B.punch, t);
-      o.frequency.exponentialRampToValueAtTime(f, t + 0.03);
-    } else o.frequency.value = f;
-    if (B.drop) {
-      o.detune.setValueAtTime(B.drop, t);
-      o.detune.linearRampToValueAtTime(0, t + 0.05);
+    // Pitch: slide in from the last note, or an 808's thump, or straight on.
+    const pitch = (p: AudioParam, k: number) => {
+      if (slide && from > 0 && from !== f) {
+        p.setValueAtTime(from * k, t);
+        p.exponentialRampToValueAtTime(f * k, t + Math.min(0.14, len * 0.5));
+      } else if (B.punch) {
+        p.setValueAtTime(f * k * B.punch, t);
+        p.exponentialRampToValueAtTime(f * k, t + 0.03);
+      } else p.setValueAtTime(f * k, t);
+    };
+    const nodes: AudioScheduledSourceNode[] = [];
+    const mix = ctx.createGain();
+    const drift = (B.drift ?? 0) * (Math.random() * 2 - 1);
+    const voices: OscillatorNode[] = [];
+    for (const [type, ratio, cents, gain, pan] of B.osc) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      pitch(o.frequency, ratio);
+      o.detune.setValueAtTime(cents + drift + (B.drop ?? 0), t);
+      if (B.drop) o.detune.linearRampToValueAtTime(cents + drift, t + 0.05);
+      const og = ctx.createGain();
+      og.gain.value = gain;
+      o.connect(og);
+      if (pan) {
+        const pn = ctx.createStereoPanner();
+        pn.pan.value = pan;
+        og.connect(pn).connect(mix);
+      } else og.connect(mix);
+      voices.push(o);
+      nodes.push(o);
     }
-    const sub = ctx.createOscillator();
-    sub.frequency.value = f;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.Q.value = B.q;
-    const cut = B.cut * (1 + this.energy * B.open) * 2 ** (this.p.bassTone * 1.5);
-    lp.frequency.setValueAtTime(Math.min(15000, cut * B.from), t);
-    lp.frequency.exponentialRampToValueAtTime(cut, t + B.sweep);
-    const g = ctx.createGain();
-    const lvl = vel * B.gain;
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(lvl * 0.24, t + B.attack);
-    g.gain.setTargetAtTime(lvl * B.hold * 0.24, t + B.attack + 0.02, B.ring ? B.ring * 0.35 : 0.15);
-    g.gain.setTargetAtTime(0.0001, t + len, 0.04);
-    const sg = ctx.createGain();
-    sg.gain.value = B.sub;
-    if (B.dist) {
+    if (B.fm) {
+      // A sine modulator on every oscillator's pitch, its depth dying away.
+      const [r, idx, dec] = B.fm;
+      const m = ctx.createOscillator();
+      pitch(m.frequency, r);
+      const mg = ctx.createGain();
+      mg.gain.setValueAtTime(f * idx * (0.6 + vel * 0.6), t);
+      mg.gain.setTargetAtTime(f * idx * 0.12, t, dec);
+      m.connect(mg);
+      for (const o of voices) mg.connect(o.frequency);
+      nodes.push(m);
+    }
+    let pre: AudioNode = mix;
+    if (B.drive) {
       const ws = ctx.createWaveShaper();
-      ws.curve = satCurve(B.dist);
-      o.connect(ws).connect(lp).connect(g);
-    } else o.connect(lp).connect(g);
-    sub.connect(sg).connect(g);
-    this.send(g, 0.12, false);
-    const nodes: AudioScheduledSourceNode[] = [o, sub];
+      ws.curve = satCurve(B.drive);
+      ws.oversample = '2x';
+      pre = mix.connect(ws);
+    }
+    // The filter: snaps open with the note (harder when played harder) and closes.
+    const cut = Math.min(12000, B.cut * Math.sqrt(f / 55) * (1 + this.energy * B.open) * 2 ** (this.p.bassTone * 1.5));
+    const top = Math.min(16000, cut * (1 + (B.env - 1) * (0.5 + vel * 0.6)));
+    const filters: BiquadFilterNode[] = [];
+    let out: AudioNode = pre;
+    for (let k = 0; k < (B.poles === 4 ? 2 : 1); k++) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.Q.value = k === 0 ? B.q : 0.7;
+      lp.frequency.setValueAtTime(top, t);
+      lp.frequency.setTargetAtTime(cut, t + 0.003, B.fdec);
+      out = out.connect(lp);
+      filters.push(lp);
+    }
+    if (B.wob) {
+      // Wobble: the filter swings in time with the beat.
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = (this.bpmNow / 60) * B.wob;
+      const lg = ctx.createGain();
+      lg.gain.value = cut * 2.5;
+      lfo.connect(lg);
+      for (const lp of filters) lg.connect(lp.frequency);
+      nodes.push(lfo);
+    }
+    if (B.fuzz) {
+      const ws = ctx.createWaveShaper();
+      ws.curve = satCurve(B.fuzz);
+      out = out.connect(ws);
+    }
+    const g = ctx.createGain();
+    const lvl = vel * B.gain * 0.24;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(lvl, t + B.attack);
+    g.gain.setTargetAtTime(lvl * B.sustain, t + B.attack, B.decay / 3);
+    g.gain.setTargetAtTime(0.0001, t + len, B.release / 3);
+    out.connect(g);
+    if (B.sub > 0) {
+      // Clean, mono weight underneath.
+      const s = ctx.createOscillator();
+      pitch(s.frequency, 2 ** (B.subOct ?? 0));
+      const sg = ctx.createGain();
+      sg.gain.value = B.sub * 0.6;
+      s.connect(sg).connect(g);
+      nodes.push(s);
+    }
     if (B.click) {
       // A finger or pick on the string: a tiny burst of filtered noise.
       const src = ctx.createBufferSource();
@@ -1165,18 +1243,21 @@ export class ParticleSound {
       bp.type = 'bandpass';
       bp.frequency.value = B.click;
       const cg = ctx.createGain();
-      cg.gain.setValueAtTime(lvl * 0.25, t);
+      cg.gain.setValueAtTime(lvl * 1.2, t);
       cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
-      src.connect(bp).connect(cg).connect(g);
+      src.connect(bp).connect(cg);
+      this.send(cg, 0.12, false);
       src.start(t, Math.random() * 0.8, 0.04);
     }
+    this.send(g, 0.12, false);
     for (const nd of nodes) {
       nd.start(t);
       nd.stop(end);
     }
-    o.onended = () => {
+    nodes[0].onended = () => {
       this.voices--;
       g.disconnect();
+      mix.disconnect();
     };
   }
 

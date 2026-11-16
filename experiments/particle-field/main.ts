@@ -6718,6 +6718,12 @@ type ControlBody =
   | { kind: 'swatch' }
   | { kind: 'audio' };
 
+const BASS_SOUNDS: [string, string][] = [
+  ['synth', 'Synth (two saws)'], ['moog', 'Analog (fat)'], ['pulse', 'Pulse (hollow)'], ['sub', 'Sub (deep)'], ['808', '808 (long, slides)'],
+  ['round', 'Round (warm)'], ['house', 'Organ (house)'], ['fm', 'FM (80s punch)'], ['slap', 'Slap (funk)'],
+  ['upright', 'Upright (woody)'], ['fingered', 'Fingered (vintage)'], ['picked', 'Picked (electric)'],
+  ['acid', 'Acid (squelchy)'], ['reese', 'Reese (DnB)'], ['wobble', 'Wobble (dubstep)'], ['fuzz', 'Fuzz (distorted)'],
+];
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const GFX_LENSES: [string, string][] = [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort'], ['twirl', 'Whirlpool'], ['pinch', 'Pinch'], ['bulge', 'Bulge'], ['tilt', 'Tilt-shift'], ['mirrorx', 'Mirror ←→'], ['mirrory', 'Mirror ↑↓'], ['quad', 'Mirror four ways']];
 const GFX_SURFACES: [string, string][] = [['off', 'Off'], ['led', 'LED wall'], ['halftone', 'Halftone'], ['ascii', 'ASCII'], ['crt', 'CRT'], ['thermal', 'Thermal'], ['mosaic', 'Mosaic'], ['stitch', 'Cross-stitch'], ['lego', 'Toy bricks'], ['vhs', 'VHS'], ['oil', 'Oil paint'], ['neon', 'Neon outline']];
@@ -7989,7 +7995,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Each finger plays its own note (up to five). Pitch runs one way, tone and stereo the other; moving faster plays louder.', show: () => settings.sndTouch > 0 },
   { kind: 'sub', label: 'Rhythm section' },
   { kind: 'range', key: 'sndBass', label: 'Bass line', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'select', key: 'sndBassSound', label: 'Bass sound', options: [['synth', 'Synth'], ['sub', 'Sub (deep)'], ['round', 'Round (warm)'], ['upright', 'Upright (woody)'], ['acid', 'Acid (squelchy)'], ['picked', 'Picked (electric)'], ['808', '808 (long, slides)']], show: () => settings.sndBass > 0 },
+  { kind: 'select', key: 'sndBassSound', label: 'Bass sound', options: BASS_SOUNDS, show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassTone', label: 'Bass tone', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'normal' : v < 0 ? `darker ${pct(-v)}` : `brighter ${pct(v)}`), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'drumlib', show: () => settings.sndDrums > 0 || settings.sndBass > 0 },

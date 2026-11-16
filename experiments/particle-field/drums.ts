@@ -118,14 +118,14 @@ export interface Genre {
   bpm: number;
   swing: number;
   kit: DrumKit;
-  bass: 'synth' | 'sub' | 'round' | 'upright' | 'acid' | 'picked' | '808';
+  bass: import('./sound.ts').BassSound;
   fill: FillStyle;
   beats: Beat[];
 }
 
 export const GENRES: Genre[] = [
   {
-    id: 'techno', name: 'Techno', bpm: 130, swing: 0, kit: 'techno', bass: 'sub', fill: 'roll', beats: [
+    id: 'techno', name: 'Techno', bpm: 130, swing: 0, kit: 'techno', bass: 'moog', fill: 'roll', beats: [
       { name: 'Four to the floor', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', b: '..b...b...b...b.' },
       { name: 'Rumble', k: 'X...X...X...X...', h: '..X...X...X...X.', t: '.o.o.o.o.o.o.o.o', b: '.obb.obb.obb.obb' },
       { name: 'Offbeat', k: 'X...X...X...X...', c: '....x.......x...', h: 'x.x.x.x.x.x.x.x.', o: '..X...X...X...X.', b: '..b...b...b..fb.' },
@@ -137,7 +137,7 @@ export const GENRES: Genre[] = [
     ],
   },
   {
-    id: 'house', name: 'House', bpm: 124, swing: 0.15, kit: '909', bass: 'round', fill: 'roll', beats: [
+    id: 'house', name: 'House', bpm: 124, swing: 0.15, kit: '909', bass: 'house', fill: 'roll', beats: [
       { name: 'Classic', k: 'X...X...X...X...', c: '....X.......X...', h: 'x...x...x...x...', o: '..X...X...X...X.', b: '..b..ob...b..ob.' },
       { name: 'Deep', k: 'X...X...X...X...', c: '....x.......x...', h: 'o.xoo.xoo.xoo.xo', r: '...o......o.....', b: 'b.....b.f.....u.' },
       { name: 'Disco', k: 'X...X...X...X...', s: '....X.......X...', h: 'xo.oxo.oxo.oxo.o', o: '..X...X...X...X.', b: 'b.u.b.u.b.u.b.u.' },
@@ -158,7 +158,7 @@ export const GENRES: Genre[] = [
     ],
   },
   {
-    id: 'dubstep', name: 'Dubstep', bpm: 140, swing: 0, kit: 'punchy', bass: 'sub', fill: 'drop', beats: [
+    id: 'dubstep', name: 'Dubstep', bpm: 140, swing: 0, kit: 'punchy', bass: 'wobble', fill: 'drop', beats: [
       { name: 'Halfstep', k: 'X.........X.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'B.....b...b.....' },
       { name: 'Wobble', k: 'X......x..X.....', s: '........X.......', h: '..x...x...x...x.', b: 'B.b.b.b.b.b.b.b.' },
       { name: 'Tribal', k: 'X.....x...x.....', s: '........X.......', t: '..o...x.....x.o.', p: 'x..x..x..x..x...', h: 'o.o.o.o.o.o.o.o.' },
@@ -176,7 +176,7 @@ export const GENRES: Genre[] = [
     ],
   },
   {
-    id: 'rap', name: 'Rap & boom bap', bpm: 90, swing: 0.45, kit: 'lofi', bass: 'round', fill: 'toms', beats: [
+    id: 'rap', name: 'Rap & boom bap', bpm: 90, swing: 0.45, kit: 'lofi', bass: 'fingered', fill: 'toms', beats: [
       { name: 'Boom bap', k: 'X......x.x......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b......b.b......' },
       { name: 'Golden era', k: 'X.....x...X..x..', s: '....X..o.o..X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.....b...b..f..' },
       { name: 'Lazy', k: 'X.......X.x.....', s: '....X.......X..o', h: 'x.x.x.x.x.x.x.x.', b: 'b.......b.b.....' },
@@ -205,7 +205,7 @@ export const GENRES: Genre[] = [
     ],
   },
   {
-    id: 'dnb', name: 'Drum & bass', bpm: 172, swing: 0, kit: 'jungle', bass: 'sub', fill: 'roll', beats: [
+    id: 'dnb', name: 'Drum & bass', bpm: 172, swing: 0, kit: 'jungle', bass: 'reese', fill: 'roll', beats: [
       { name: 'Two-step', k: 'X.........X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.........b.....' },
       { name: 'Amen chop', k: 'X.X.......XX....', s: '....X..o.o..X..o', h: 'x.x.x.x.x.x.x.x.', b: 'B.........B.....' },
       { name: 'Rollers', k: 'X.........X.....', s: '....X..o....X.o.', h: 'xoxoxoxoxoxoxoxo', b: 'B.b.....b.b.....' },
@@ -215,7 +215,7 @@ export const GENRES: Genre[] = [
     ],
   },
   {
-    id: 'idm', name: 'IDM', bpm: 110, swing: 0, kit: 'glitch', bass: 'synth', fill: 'glitch', beats: [
+    id: 'idm', name: 'IDM', bpm: 110, swing: 0, kit: 'glitch', bass: 'fm', fill: 'glitch', beats: [
       { name: 'Polymeter', k: 'X..x.', s: '...X...', h: 'x.?', p: 'o..?..o.?..o.', b: 'b....f...' },
       { name: 'Stutter', k: 'X.....x2..X.....', s: '....X..3....X.4.', h: 'x?x?x?x?x?x?x?x?', b: 'b.....b...b.....' },
       { name: 'Broken', k: 'X..x...x..X.....', s: '....X.....?.X...', h: '2.x.?.x.x.?.3.x.', r: '.o.....o.....o..', b: 'b..b......f..b..' },
@@ -235,7 +235,7 @@ export const GENRES: Genre[] = [
     ],
   },
   {
-    id: 'breaks', name: 'Breaks & funk', bpm: 100, swing: 0.2, kit: 'linn', bass: 'picked', fill: 'toms', beats: [
+    id: 'breaks', name: 'Breaks & funk', bpm: 100, swing: 0.2, kit: 'linn', bass: 'slap', fill: 'toms', beats: [
       { name: 'Funk break', k: 'X.X.......X..X..', s: '....X..o.o.oX..o', h: 'xxxxxxxoxxxxxxxx', b: 'b.b.......b..f..' },
       { name: 'Big beat', k: 'X.........X.X...', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', o: '..............X.', b: 'B.........b.b...' },
       { name: 'Electro', k: 'X......X..X.....', c: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', b: 'b......b..b..b..' },
