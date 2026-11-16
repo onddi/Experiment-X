@@ -19207,6 +19207,12 @@ function presetFromUrl(first: boolean) {
 
 const KEY_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 let redrawMine = () => {};
+// A scene saved on the other layer (the Top layer's Studio): the list follows.
+addEventListener('storage', (e) => {
+  if (e.key !== MY_PRESETS_KEY) return;
+  myPresets = readJson<MyPreset[]>(MY_PRESETS_KEY, []).map((p) => ({ ...p, settings: migrateLegacy(p.settings) }));
+  redrawMine();
+});
 
 function playMine(p: MyPreset) {
   noteRecent(p.name);

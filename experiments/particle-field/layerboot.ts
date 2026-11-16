@@ -6,7 +6,10 @@
 export const TOP_LAYER = new URLSearchParams(location.search).get('layer') === 'top';
 
 if (TOP_LAYER) {
-  const own = (k: string) => (/^(particle-field|pf-)/.test(k) ? `pftop:${k}` : k);
+  // Your saved scenes (and palettes) are one list for both layers: a scene
+  // saved while editing the top layer shows up on the base too.
+  const SHARED = new Set(['particle-field:my-presets', 'particle-field:my-palettes']);
+  const own = (k: string) => (/^(particle-field|pf-)/.test(k) && !SHARED.has(k) ? `pftop:${k}` : k);
   const S = Storage.prototype;
   const get = S.getItem;
   const put = S.setItem;
