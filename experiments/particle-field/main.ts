@@ -375,7 +375,7 @@ function clear() {
 const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
-const SND_KEYS = ['sndVol', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndPadSound', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -7724,6 +7724,7 @@ const CONTROLS: Control[] = [
   { kind: 'sndpresets' },
   { kind: 'buttons', buttons: [['Open the sound studio (M)', () => openStudioFromMenu()]], show: () => settings.sndVol > 0 },
   { kind: 'range', key: 'sndVol', label: 'Volume', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndField', label: 'Field drive', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'steady' : v >= 0.85 ? `the field leads ${pct(v)}` : pct(v)) },
   { kind: 'select', key: 'sndScale', label: 'Scale', options: [['pentatonic', 'Pentatonic'], ['major', 'Major'], ['minor', 'Minor'], ['dorian', 'Dorian'], ['blues', 'Blues'], ['japanese', 'Japanese'], ['whole', 'Whole tone (dreamy)']] },
   { kind: 'select', key: 'sndKey', label: 'Key', options: [['auto', 'Auto (palette, or the song)'], ...SND_NOTES.map((k): [string, string] => [k, k])] },
   { kind: 'select', key: 'sndTimbre', label: 'Instrument', options: [['colour', 'By colour: chimes band'], ['lounge', 'By colour: lounge band'], ['world', 'By colour: world band'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth']] },
@@ -15450,7 +15451,7 @@ function sndParams(): SoundParams {
   return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
-    echo: S.sndEcho, sweep: S.sndSweep, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };
+    echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, padSound: S.sndPadSound, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };
 }
 // Your chords: "1 5 6 4" (or 1-5-6-4, I V vi IV) to scale degrees from 0.
 const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };

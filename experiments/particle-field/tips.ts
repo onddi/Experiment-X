@@ -87,6 +87,7 @@ export const TIPS: Record<string, string> = {
   sndBend: 'Notes slide into pitch from the particle’s motion: moving right slides down from above, moving left slides up from below. Faster means a wider slide.',
   sndArp: 'Sometimes a string rolls up (or down) the chord in quick notes instead of ringing one. Higher is more often and faster.',
   sndEcho: 'Repeats notes in time with the beat (a dotted eighth), each repeat darker. Bass and drums stay dry.',
+  sndField: 'How much the particles lead the music. Low: steady, the preset rules. High: more particles play denser and longer, a faster field opens the filter and pushes hats and echo, a tight crowd makes the chords tense (sevenths) and a spread-out field opens them up, and the field can break a written beat.',
   sndSweep: 'A filter over everything that opens with the field: muffled and dark when calm, bright as it speeds up (and on the music’s kicks).',
   sndChorus: 'Two slightly wobbling copies left and right, for a wider, shimmering sound.',
   sndDepth: 'In 3D, near particles play louder and wider, far ones quieter and further into the reverb.',

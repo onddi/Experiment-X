@@ -144,6 +144,7 @@ export interface SoundParams {
   // Effects.
   echo: number;
   sweep: number; // a low-pass that opens with the energy
+  field: number; // Field drive: how much count, speed and clumping lead (0 = none)
   chorus: number;
   depth: number; // near particles louder and wider, far ones quieter and roomier
   // Rhythm section.
@@ -235,6 +236,12 @@ export class ParticleSound {
   private echoIn: GainNode | null = null;
   private echoDelay: DelayNode | null = null;
   private echoFb: GainNode | null = null;
+  // Field drive state.
+  private voicing = 0; // 1 tense, -1 open
+  private spreadS = 0.6;
+  private lenK = 1;
+  private swept = false;
+  private echoFbNow = 0;
   private chorusOut: GainNode | null = null;
   // The end of the effects chain (feeds the compressor); Drive and Lo-fi are
   // spliced in here the first time they're turned up.
@@ -393,6 +400,7 @@ export class ParticleSound {
     if (this.echoIn && this.echoFb) {
       this.echoIn.gain.setTargetAtTime(p.echo * 0.55, t, 0.1);
       this.echoFb.gain.setTargetAtTime(0.25 + p.echo * 0.35, t, 0.1);
+      this.echoFbNow = 0;
     }
     if (p.chorus > 0) this.ensureChorus();
     if (this.chorusOut) this.chorusOut.gain.setTargetAtTime(p.chorus * 0.8, t, 0.1);
@@ -666,7 +674,12 @@ export class ParticleSound {
   private chordTone(k: number) {
     // Stack every other step of the scale on the root: root, third, fifth.
     const oct = Math.floor(k / 3);
-    return this.chordRoot() + (k - oct * 3) * 2 + oct * this.L;
+    const r = k - oct * 3;
+    // Field drive voicings: a tight crowd swaps the octave root for the
+    // seventh (tense); a spread-out field lifts the third an octave (open).
+    if (this.voicing > 0 && r === 0 && oct > 0) return this.chordRoot() + 6 + (oct - 1) * this.L;
+    if (this.voicing < 0 && r === 1) return this.chordRoot() + 2 + (oct + 1) * this.L;
+    return this.chordRoot() + r * 2 + oct * this.L;
   }
 
   // Snap a degree to the nearest chord tone.
@@ -705,7 +718,7 @@ export class ParticleSound {
     this.tokens--;
     const Vd = VOICES[voice];
     const fl = this.freq(deg) * 2 ** (Vd.octave ?? 0);
-    this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * (this.bpmNow / 60), when);
+    this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * this.lenK * (this.bpmNow / 60), when);
     if (!this.audible(this.cur)) return;
     this.voices++;
     const V = VOICES[voice];
@@ -713,7 +726,7 @@ export class ParticleSound {
     const t = ctx.currentTime + when;
     const f = this.freq(deg) * 2 ** (V.octave ?? 0);
     // Low notes ring longer, like real bars and strings.
-    const decay = V.decay * (1.3 - Math.min(1, f / 1600) * 0.6) * P.length;
+    const decay = V.decay * (1.3 - Math.min(1, f / 1600) * 0.6) * P.length * this.lenK;
     const end = t + decay + 0.05;
     const o1 = ctx.createOscillator();
     const o2 = ctx.createOscillator();
@@ -1091,6 +1104,18 @@ export class ParticleSound {
     const room = fit ? 1 - Math.min(1, F.pulse * 1.3) : 1;
     const onKick = fit && F.pulse > 0.55;
     this.energy += (F.speed - this.energy) * Math.min(1, F.dt * 1.5);
+    // Field drive: count sets density, speed pushes the filter, hats and
+    // echo, clumping moves the voicing. At 0 none of it; speed only pushes
+    // past the middle (0.5).
+    const D = P.field;
+    this.spreadS += (F.spread - this.spreadS) * Math.min(1, F.dt);
+    const dens = Math.max(-1, Math.min(1, Math.log2(Math.max(1, F.n) / 1500) / 3));
+    this.lenK = Math.pow(2, 0.8 * D * dens);
+    const busyK = Math.pow(2, 1.4 * D * dens);
+    const tilt = D * ((1 - this.spreadS) * 2.4 - 1.2);
+    if (this.voicing === 0) this.voicing = tilt > 0.3 ? 1 : tilt < -0.3 ? -1 : 0;
+    else if (this.voicing > 0 ? tilt < 0.12 : tilt > -0.12) this.voicing = 0;
+    const drumE = (e: number) => Math.min(1, e * Math.max(0.4, 1 + 1.6 * (D - 0.5)));
 
     // Clock: the song's tempo when playing along, else the Tempo setting.
     const bpm = P.music === 'along' && F.musicOn && F.bpm > 40 ? F.bpm : P.tempo;
@@ -1116,10 +1141,24 @@ export class ParticleSound {
       if (Math.abs(this.echoDelay.delayTime.value - d) > 0.002) this.echoDelay.delayTime.setTargetAtTime(d, t, 0.2);
     }
     // Filter sweep: closed and dark when calm, opening as the field speeds up.
-    if (P.sweep > 0) {
+    const sweep = Math.max(P.sweep, (D - 0.5) * 0.9);
+    if (sweep > 0) {
       const fE = 280 * Math.pow(45, Math.min(1, this.energy * 2.2 + (fit ? F.pulse * 0.25 : 0)));
-      this.tone.frequency.setTargetAtTime(Math.exp(Math.log(20000) * (1 - P.sweep) + Math.log(fE) * P.sweep), t, 0.25);
-      this.tone.Q.value = 0.7 + P.sweep * 3.5;
+      this.tone.frequency.setTargetAtTime(Math.exp(Math.log(20000) * (1 - sweep) + Math.log(fE) * sweep), t, 0.25);
+      this.tone.Q.value = 0.7 + sweep * 3.5;
+      this.swept = true;
+    } else if (this.swept) {
+      this.swept = false;
+      this.tone.frequency.setTargetAtTime(20000, t, 0.25);
+      this.tone.Q.value = 0.7;
+    }
+    // A fast field feeds the echo back longer.
+    if (this.echoFb && P.echo > 0) {
+      const fb = Math.min(0.85, 0.25 + P.echo * 0.35 + Math.max(0, D - 0.5) * this.energy * 0.6);
+      if (Math.abs(fb - this.echoFbNow) > 0.01) {
+        this.echoFbNow = fb;
+        this.echoFb.gain.setTargetAtTime(fb, t, 0.2);
+      }
     }
     // Phrases and rests: a busier field plays longer and rests less.
     this.phraseLeft -= beats;
@@ -1146,7 +1185,7 @@ export class ParticleSound {
     }
 
     // Pad: the chord, swelling with energy and a slow breath, silent when still.
-    const chordKey = `${P.scale}${P.root}${this.chordRoot()}`;
+    const chordKey = `${P.scale}${P.root}${this.chordRoot()}${this.voicing}`;
     if (chordKey !== this.padChord) {
       this.padChord = chordKey;
       [0, 1, 2, 3].forEach((k) => this.padOsc[k].frequency.setTargetAtTime(this.freq(this.chordTone(k), 48), t, 0.5));
@@ -1154,7 +1193,7 @@ export class ParticleSound {
     this.padLfo += F.dt * 0.6;
     const breath = 0.65 + 0.35 * Math.sin(this.padLfo);
     const lively = Math.max(0, Math.min(1, (this.energy - 0.04) * 3));
-    const padLvl = P.pad * lively * breath * (0.4 + 0.6 * room);
+    const padLvl = P.pad * lively * breath * (0.4 + 0.6 * room) * Math.min(1.8, Math.sqrt(busyK));
     this.levels[LI.pad] = Math.max(this.levels[LI.pad], padLvl * 0.8);
     this.padGain.gain.setTargetAtTime(this.audible('pad') ? padLvl * 0.3 * PAD_GAIN[P.padSound] : 0, t, 0.4);
     if (P.pad > 0) {
@@ -1195,7 +1234,7 @@ export class ParticleSound {
       }
       // Each string rings about rate times a second (more when the field is
       // busy), and more often while more particles than usual cross it.
-      const rate = 0.6 + this.energy * 2;
+      const rate = (0.6 + this.energy * 2) * busyK;
       if (mvN) this.moveAvg = this.moveAvg * 0.95 + (mvSum / mvN) * 0.05;
       for (let k = 0; k < N; k++) {
         const c = count[k] * stride;
@@ -1251,8 +1290,8 @@ export class ParticleSound {
         let played = 0;
         if (tot && gate()) {
           const dyn = 1 + P.dyn * (0.4 + this.energy * 1.4 - 1);
-          for (let r = 0; r < ROWS && played < 2; r++) {
-            if (this.grid[r] < mean * 1.8 || this.grid[r] < 2) continue;
+          for (let r = 0; r < ROWS && played < (busyK > 1.7 ? 3 : busyK < 0.6 ? 1 : 2); r++) {
+            if (this.grid[r] < (mean * 1.8) / Math.sqrt(busyK) || this.grid[r] < 2) continue;
             const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * this.p.range * 0.85)));
             this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room * dyn, (s / STEPS) * 1.6 - 0.8, this.voiceFor(0), sw);
             played++;
@@ -1269,7 +1308,8 @@ export class ParticleSound {
       // Beat grid edits: '+' forces a hit on that step, '-' silences it.
       const ed = (row: number, nat: boolean) => {
         const c = P.grid.charCodeAt(row * 16 + s);
-        return c === 43 ? true : c === 45 ? false : nat;
+        // At high Field drive the particles can break a written silence.
+        return c === 43 ? true : c === 45 ? nat && D > 0.6 && Math.random() < ((D - 0.6) / 0.4) * 0.7 : nat;
       };
       // Bass: the chord's root, low. Calm fields hold one long note a bar;
       // busier ones walk root and fifth, then eighths with pickups.
@@ -1285,7 +1325,7 @@ export class ParticleSound {
         if (play && deg === -999) (deg = this.chordRoot()), (len = stepDur * 1.5);
         if (play) {
           this.gridNow[48 + s] = 1;
-          this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * (s % 8 === 0 ? 1 : 0.8), len * P.length, sw);
+          this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * (s % 8 === 0 ? 1 : 0.8), len * P.length * this.lenK, sw);
         }
       }
 
@@ -1296,9 +1336,10 @@ export class ParticleSound {
         const m2 = Math.max(1, mean * 2);
         const low = this.grid[6] + this.grid[7], mid = this.grid[3] + this.grid[4], top = this.grid[0] + this.grid[1];
         const live = e > 0.03;
-        const kick = ed(0, live && !onKick && (s === 0 || (s === 8 && e > 0.12) || (s % 2 === 0 && e > 0.25 && low > m2 * 1.6)));
-        const snare = ed(1, live && (s === 4 || s === 12) && (e > 0.18 || mid > m2 * 1.2));
-        const hat = ed(2, live && (s % 2 === 0 ? e > 0.08 || top > m2 : e > 0.45 && top > m2 * 0.8));
+        const de = drumE(e);
+        const kick = ed(0, live && !onKick && (s === 0 || (s === 8 && de > 0.12) || (s % 2 === 0 && de > 0.25 && low > m2 * 1.6)));
+        const snare = ed(1, live && (s === 4 || s === 12) && (de > 0.18 || mid > m2 * 1.2));
+        const hat = ed(2, live && (s % 2 === 0 ? de > 0.08 || top > m2 : de > 0.45 && top > m2 * 0.8));
         if (kick) (this.gridNow[s] = 1), this.kick(k * (s === 0 ? 1 : 0.8), sw);
         if (snare) (this.gridNow[16 + s] = 1), this.snare(k * (0.6 + Math.min(0.4, mid / (m2 * 4))), sw);
         if (hat) (this.gridNow[32 + s] = 1), this.hat(k * (s % 4 === 0 ? 0.5 : 0.32) * (0.6 + e * 0.6), sw, s === 14 && e > 0.5);

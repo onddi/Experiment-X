@@ -171,6 +171,7 @@ export interface Settings {
   sndArp: number;
   sndEcho: number;
   sndSweep: number;
+  sndField: number;
   sndChorus: number;
   sndDepth: number;
   sndBass: number;
@@ -623,6 +624,7 @@ export const DEFAULTS: Settings = {
   sndArp: 0,
   sndEcho: 0,
   sndSweep: 0,
+  sndField: 0.5,
   sndChorus: 0,
   sndDepth: 0.6,
   sndBass: 0,
