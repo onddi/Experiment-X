@@ -732,14 +732,65 @@ function drawObstacles(fade: number, light: boolean) {
   if (glOnly) glDirty2d = true;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.07 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.06 * fade).toFixed(4)})`;
   if (camA !== 0) {
     ctx.translate(w / 2, h / 2);
     ctx.rotate(camA);
     ctx.translate(-w / 2, -h / 2);
   }
-  traceObstacles(ctx);
+  const S = settings;
+  if (S.obsStyle === 'faint' && S.obsColour === 'white') {
+    ctx.fillStyle = light ? `rgb(0 0 0 / ${(0.07 * fade).toFixed(4)})` : `rgb(255 255 255 / ${(0.06 * fade).toFixed(4)})`;
+    traceObstacles(ctx);
+  } else {
+    const sp = obSprite(light);
+    if (sp) {
+      ctx.globalAlpha = Math.min(1, (S.obsStyle === 'faint' ? 0.15 : 1) * S.obsAlpha * Math.max(0.05, fade) * 1.6);
+      ctx.drawImage(sp, 0, 0, w, h);
+    }
+  }
   ctx.restore();
+}
+// Styled obstacles (Look: solid, outline, glow; white, scene colours or dark),
+// drawn once into a picture and redrawn only when the obstacle changes.
+let obSpriteC: HTMLCanvasElement | null = null;
+let obSpriteKey = '';
+function obSprite(light: boolean): HTMLCanvasElement | null {
+  const S = settings;
+  const col = S.obsColour === 'scene' ? shades[Math.floor(shades.length * 0.7)] ?? '#fff' : (S.obsColour === 'dark') !== light ? '#000' : '#fff';
+  const key = [obKey, S.obsStyle, col, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
+  if (key === obSpriteKey && obSpriteC) return obSpriteC;
+  obSpriteKey = key;
+  const mk = () => {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w));
+    c.height = Math.max(1, Math.round(h));
+    return c;
+  };
+  const m = mk();
+  const mg = m.getContext('2d')!;
+  mg.fillStyle = col;
+  traceObstacles(mg);
+  if (S.obsStyle === 'solid' || S.obsStyle === 'faint') return (obSpriteC = m);
+  const out = mk();
+  const g = out.getContext('2d')!;
+  if (S.obsStyle === 'outline') {
+    // Grow the shape a little in every direction, then cut the shape out.
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      g.drawImage(m, Math.cos(a) * 3, Math.sin(a) * 3);
+    }
+    g.globalCompositeOperation = 'destination-out';
+    g.drawImage(m, 0, 0);
+  } else {
+    // Glow: a soft halo with a dimmer core.
+    g.filter = 'blur(14px)';
+    g.drawImage(m, 0, 0);
+    g.drawImage(m, 0, 0);
+    g.filter = 'none';
+    g.globalAlpha = 0.45;
+    g.drawImage(m, 0, 0);
+  }
+  return (obSpriteC = out);
 }
 
 function drawThumb(fade: number, light: boolean) {
@@ -9522,7 +9573,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
 
-  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont'],
+  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont', 'obsStyle', 'obsColour', 'obsAlpha'],
     power: { on: () => settings.obstacles !== 'none', off: { obstacles: 'none' }, start: { obstacles: 'circles' } },
     summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'wall' ? 'a wall' : settings.obstacles === 'ring' ? 'a ring' : settings.obstacles === 'body' ? 'your silhouette' : 'off') },
   { kind: 'select', key: 'obstacles', label: 'Obstacle', options: [['circles', 'Circles'], ['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['body', 'Your silhouette (camera)']] },
@@ -9538,6 +9589,9 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['Move it on the field', () => placeObstacle()]], show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsForce', label: 'Push', min: 0.2, max: 2, step: 0.1, format: (v) => `${v.toFixed(1)}×` },
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
+  { kind: 'select', key: 'obsStyle', label: 'Look', options: [['faint', 'Faint'], ['solid', 'Solid'], ['outline', 'Outline'], ['glow', 'Glow']], show: () => settings.obsShow },
+  { kind: 'select', key: 'obsColour', label: 'Colour', options: [['white', 'White'], ['scene', 'Scene colours'], ['dark', 'Dark (a cut-out)']], show: () => settings.obsShow },
+  { kind: 'range', key: 'obsAlpha', label: 'Strength', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.obsShow && !(settings.obsStyle === 'faint' && settings.obsColour === 'white') },
   { kind: 'note', text: 'Works best with Flow or Wind on, so there is a current to part around them.' },
 
   { kind: 'section', about: 'A floor, walls or a bowl, and what particles do when they hit: bounce, slide, stick or pile up.', id: 'collide', label: 'Collisions', tab: 'motion',

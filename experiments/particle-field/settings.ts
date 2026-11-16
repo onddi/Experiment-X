@@ -307,6 +307,9 @@ export interface Settings {
   obsY: number;
   obsAngle: number;
   obsFont: 'bold' | 'serif' | 'mono' | 'round' | 'script';
+  obsStyle: 'faint' | 'solid' | 'outline' | 'glow';
+  obsColour: 'white' | 'scene' | 'dark';
+  obsAlpha: number;
   obsCircles: string;
   obsRadius: number;
   obsText: string;
@@ -857,6 +860,9 @@ export const DEFAULTS: Settings = {
   obsY: 0.5,
   obsAngle: 0,
   obsFont: 'bold',
+  obsStyle: 'faint',
+  obsColour: 'white',
+  obsAlpha: 0.5,
   obsForce: 1,
   obsPlace: true,
   obsShow: true,
