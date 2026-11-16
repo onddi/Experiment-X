@@ -214,7 +214,7 @@ let dpr = 1;
 const countNow = () => {
   const c = settings.count * densityK;
   // Small counts stay exact (a seed of 7); larger ones move in tens.
-  const v = Math.max(3, Math.min(10000, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
+  const v = Math.max(3, Math.min(25000, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
   return Math.min(v, growCap(v));
 };
 // Grow transition: the count is held down, then let out over a bar or two.
@@ -7549,7 +7549,7 @@ const CONTROLS: Control[] = [
     summary: () => `${label(RENDERS, settings.render)}, ${settings.count.toLocaleString()}` },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
-  { kind: 'range', key: 'count', label: 'Count', min: 1, max: 8000, step: 1 },
+  { kind: 'range', key: 'count', label: 'Count', min: 1, max: 20000, step: 1 },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
