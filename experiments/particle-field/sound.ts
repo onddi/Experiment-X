@@ -19,6 +19,8 @@ export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | '
 export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop';
 // The chimes' own sound, or 'same' to play whatever the strings play.
 export type HitSound = 'same' | Voice;
+// What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
+export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood';
 export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
@@ -219,6 +221,9 @@ export interface SoundParams {
   hits: number;
   hitSound: HitSound;
   grain: number;
+  grainSound: GrainSound;
+  grainRate: number; // 0 … 1, 0.5 = as before
+  grainLen: number; // 0 … 1, 0.5 = as before
   scan: number;
   scanSecs: number;
   touch: number;
@@ -1138,6 +1143,88 @@ export class ParticleSound {
     src.onended = () => pn.disconnect();
   }
 
+  // One grain in the chosen sound. Height sets the pitch or brightness, x the pan.
+  private grainOf(x: number, y: number, w: number, h: number, amt: number, speed: number) {
+    const P = this.p;
+    const lenK = Math.pow(8, (P.grainLen ?? 0.5) - 0.5);
+    const kind = P.grainSound ?? 'dust';
+    if (kind === 'dust') return this.grain(x, y, w, h, amt, speed, (0.006 + (1 - speed) * 0.03) * lenK);
+    const ctx = this.ctx;
+    const t = ctx.currentTime + Math.random() * 0.016;
+    const pn = ctx.createStereoPanner();
+    pn.pan.value = (x / w) * 1.6 - 0.8;
+    const g = ctx.createGain();
+    g.connect(pn);
+    const hi = 1 - Math.min(1, Math.max(0, y / h));
+    let stop = t;
+    if (kind === 'vinyl') {
+      // A dusty record: a sharp click, sometimes a pop.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const lp = ctx.createBiquadFilter();
+      lp.type = Math.random() < 0.3 ? 'lowpass' : 'highpass';
+      lp.frequency.value = lp.type === 'lowpass' ? 900 : 2500;
+      const len = 0.0025 * lenK;
+      g.gain.setValueAtTime(amt * (0.2 + Math.random() * 0.45), t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      src.connect(lp).connect(g);
+      src.start(t, Math.random() * 0.9, len + 0.01);
+      stop = t + len;
+      src.onended = () => pn.disconnect();
+    } else if (kind === 'rain') {
+      // A drop: a bright tick that falls a little in pitch.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      const f0 = 1800 + hi * 5500;
+      bp.frequency.setValueAtTime(f0, t);
+      bp.frequency.exponentialRampToValueAtTime(f0 * 0.6, t + 0.02 * lenK);
+      bp.Q.value = 9;
+      const len = 0.02 * lenK;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amt * 1.2, t + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      src.connect(bp).connect(g);
+      src.start(t, Math.random() * 0.9, len + 0.01);
+      stop = t + len;
+      src.onended = () => pn.disconnect();
+    } else if (kind === 'wood') {
+      // A knock: noise through a ringing filter, tuned to the scale.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = Math.min(5000, this.freq(Math.round(hi * (this.L * 2)), 60));
+      bp.Q.value = 28;
+      const len = 0.06 * lenK;
+      g.gain.setValueAtTime(amt * 4, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      src.connect(bp).connect(g);
+      src.start(t, Math.random() * 0.9, 0.012);
+      stop = t + len;
+      src.onended = () => setTimeout(() => pn.disconnect(), len * 1000 + 50);
+    } else {
+      // Notes: a tiny tone on the scale (granular glitter); bubbles rise in pitch.
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      const f = Math.min(6000, this.freq(Math.round(hi * (this.L * 2.5)), 72));
+      const len = (kind === 'bubbles' ? 0.05 : 0.04) * lenK;
+      o.frequency.setValueAtTime(f, t);
+      if (kind === 'bubbles') o.frequency.exponentialRampToValueAtTime(f * 2.4, t + len);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amt * (kind === 'bubbles' ? 0.15 : 0.13) * (0.5 + Math.random() * 0.5), t + Math.min(0.006, len * 0.2));
+      g.gain.exponentialRampToValueAtTime(0.0005, t + len);
+      o.connect(g);
+      o.start(t);
+      o.stop(t + len + 0.01);
+      stop = t + len;
+      o.onended = () => pn.disconnect();
+    }
+    void stop;
+    this.send(pn, 0.4);
+  }
+
   private thump(k: number) {
     const ctx = this.ctx;
     const t = ctx.currentTime;
@@ -2018,14 +2105,15 @@ export class ParticleSound {
 
     // Grains: a rate that grows with how busy the field is, capped.
     if (P.grain > 0 && F.n > 0) {
-      this.grainDebt += F.dt * P.grain * (15 + F.speed * 140) * room;
-      let g = Math.min(8, Math.floor(this.grainDebt));
+      const rateK = Math.pow(16, (P.grainRate ?? 0.5) - 0.5);
+      this.grainDebt += F.dt * P.grain * (15 + F.speed * 140) * room * rateK;
+      let g = Math.min(rateK > 1.5 ? 16 : 8, Math.floor(this.grainDebt));
       this.grainDebt -= g;
       while (g-- > 0) {
         const i = (Math.random() * F.n) | 0;
         if (F.dead && F.dead[i]) continue;
         this.levels[LI.grains] = Math.max(this.levels[LI.grains], P.grain * 0.6);
-        if (this.audible('grains')) this.grain(F.px[i], F.py[i], w, h, P.grain, F.speed);
+        if (this.audible('grains')) this.grainOf(F.px[i], F.py[i], w, h, P.grain, F.speed);
       }
     } else this.grainDebt = 0;
 

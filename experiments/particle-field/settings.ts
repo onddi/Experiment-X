@@ -223,6 +223,9 @@ export interface Settings {
   sndSeq: number;
   sndAccents: number;
   sndHits: number;
+  sndGrainSound: import('./sound.ts').GrainSound;
+  sndGrainRate: number;
+  sndGrainLen: number;
   sndHitSound: import('./sound.ts').HitSound;
   sndDrone: number;
   sndGrain: number;
@@ -774,6 +777,9 @@ export const DEFAULTS: Settings = {
   sndSeq: 0,
   sndAccents: 0.6,
   sndHits: 0.5,
+  sndGrainSound: 'dust',
+  sndGrainRate: 0.5,
+  sndGrainLen: 0.5,
   sndHitSound: 'same',
   sndDrone: 0.4,
   sndGrain: 0,
