@@ -4271,7 +4271,9 @@ const SPEC_CAP = 0.9;
 function updateSpectrum() {
   const S = settings;
   const N = specN();
-  audio.spectrum(specRaw.subarray(0, N));
+  // Music coming in if any, else the particle sound itself.
+  if (audio.source === 'off' && snd && sndOn) snd.spectrum(specRaw.subarray(0, N));
+  else audio.spectrum(specRaw.subarray(0, N));
   const up = 0.05 + S.specRise * 0.95;
   const down = 0.01 + S.specFall * 0.6;
   for (let b = 0; b < N; b++) {

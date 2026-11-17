@@ -25,6 +25,7 @@ export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
 export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808';
+import { bandsOf } from './audio.ts';
 import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
 export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air';
@@ -392,6 +393,16 @@ export class ParticleSound {
   private tremSide: GainNode | null = null;
   private shimGain: GainNode | null = null;
   private makeup: GainNode;
+  private ana: AnalyserNode | null = null;
+  private anaBins: Uint8Array<ArrayBuffer> | null = null;
+  /** The sound's own spectrum in `out.length` bands (as AudioInput.spectrum). */
+  spectrum(out: Float32Array) {
+    const a = this.ana;
+    if (!a || !this.running) return out.fill(0);
+    const F = (this.anaBins ??= new Uint8Array(a.frequencyBinCount));
+    a.getByteFrequencyData(F);
+    return bandsOf(F, this.ctx.sampleRate / a.fftSize, out);
+  }
   private tapeDelay: DelayNode | null = null;
   private tapeGain: GainNode | null = null;
   private lastTape = 0;
@@ -485,6 +496,11 @@ export class ParticleSound {
     // Make-up gain after the compressor: Glue squeezes harder and lifts it back.
     this.makeup = ctx.createGain();
     comp.connect(this.makeup).connect(ctx.destination);
+    // A tap on the final mix, for the spectrum shapes to show this sound.
+    this.ana = ctx.createAnalyser();
+    this.ana.fftSize = 2048;
+    this.ana.smoothingTimeConstant = 0.6;
+    this.makeup.connect(this.ana);
     this.comp = comp;
     this.master = ctx.createGain();
     this.master.gain.value = 0;

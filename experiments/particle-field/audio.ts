@@ -423,19 +423,7 @@ export class AudioInput {
     const F = this.freq;
     const hz = this.hzBin;
     if (!F.length || !hz || this.source === 'off') return out.fill(0);
-    const lo = Math.log(40);
-    const hi = Math.log(12000);
-    for (let b = 0; b < out.length; b++) {
-      const f0 = Math.exp(lo + ((hi - lo) * b) / out.length);
-      const f1 = Math.exp(lo + ((hi - lo) * (b + 1)) / out.length);
-      const k0 = Math.max(0, Math.floor(f0 / hz));
-      const k1 = Math.min(F.length - 1, Math.max(k0, Math.ceil(f1 / hz)));
-      let m = 0;
-      for (let k = k0; k <= k1; k++) m = Math.max(m, F[k]);
-      // A little lift for the highs, which are always quieter.
-      out[b] = Math.min(1, Math.max(0, (m / 255 - 0.25) / 0.7) * (1 + b / out.length * 0.6));
-    }
-    return out;
+    return bandsOf(F, hz, out);
   }
   private hzBin = 0;
 
@@ -946,3 +934,20 @@ function estimateBpm(times: number[], [lo, hi]: [number, number]) {
 }
 
 export const tabAudioSupported = () => typeof navigator.mediaDevices?.getDisplayMedia === 'function';
+
+/** Frequency bins (0–255, `hz` apart) in `out.length` bands, low to high on a log scale (0–1). */
+export function bandsOf(F: ArrayLike<number>, hz: number, out: Float32Array) {
+  const lo = Math.log(40);
+  const hi = Math.log(12000);
+  for (let b = 0; b < out.length; b++) {
+    const f0 = Math.exp(lo + ((hi - lo) * b) / out.length);
+    const f1 = Math.exp(lo + ((hi - lo) * (b + 1)) / out.length);
+    const k0 = Math.max(0, Math.floor(f0 / hz));
+    const k1 = Math.min(F.length - 1, Math.max(k0, Math.ceil(f1 / hz)));
+    let m = 0;
+    for (let k = k0; k <= k1; k++) m = Math.max(m, F[k]);
+    // A little lift for the highs, which are always quieter.
+    out[b] = Math.min(1, Math.max(0, (m / 255 - 0.25) / 0.7) * (1 + b / out.length * 0.6));
+  }
+  return out;
+}
