@@ -17067,12 +17067,21 @@ const SONG_KEYS: (keyof Settings)[] = ['sndKey', 'sndScale', 'sndProg', 'sndProg
 const MIX_KEYS: (keyof Settings)[] = ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndReverb', 'sndShimmer', 'sndEcho', 'sndPing', 'sndSweep', 'sndBright', 'sndDrive', 'sndLofi', 'sndChorus', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndGlue', 'sndTape', 'sndDepth', 'sndShow'];
 const SND_OPEN_KEY = 'particle-field:sound-open';
 // A style's whole sound: the preset's setup, and the genre's drums, bass and tempo.
+// A genre with a beat lists its beats (UK drill, NY drill …); each plays with
+// the genre's sound. Genres without a beat list their sounds.
+function styleVars(st: Style): string[] {
+  const g = st.beat ? drumGenre(st.beat) : null;
+  return g ? g.beats.map((b) => b.name) : st.vars;
+}
 function styleLook(st: Style | null, v: string): Partial<Settings> {
-  const preset = [...mySoundPresets(), ...SOUND_PRESETS].find(([n]) => n === v)?.[1] ?? {};
-  const look = soundOf(preset);
   const g = st?.beat ? drumGenre(st.beat) : null;
+  const bi = g ? g.beats.findIndex((b) => b.name === v) : -1;
+  // A beat plays with the genre's own sound. (Older picks named the sound.)
+  const soundName = st && bi >= 0 ? st.vars[0] : v;
+  const preset = [...mySoundPresets(), ...SOUND_PRESETS].find(([n]) => n === soundName)?.[1] ?? {};
+  const look = soundOf(preset);
   if (g) {
-    Object.assign(look, { sndGenre: g.id, sndBeat: 0, sndKit: g.kit, sndTempo: g.bpm, sndSwing: g.swing, sndBassSound: g.bass, sndGrid: '' });
+    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: g.kit, sndTempo: g.bpm, sndSwing: g.swing, sndBassSound: g.bass, sndGrid: '' });
     look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.55);
     look.sndBass = Math.max(Number(look.sndBass) || 0, 0.5);
   }
@@ -17090,7 +17099,7 @@ function randomStyle() {
   let st: Style, v: string;
   do {
     st = pick(STYLES);
-    v = pick(st.vars);
+    v = pick(styleVars(st));
   } while (`${st.id}/${v}` === cur);
   useStyle(st, v);
 }
@@ -17188,7 +17197,7 @@ function renderSoundPage(body: HTMLElement) {
     }
     pick.append(grid);
     const st = styleById(browse) ?? null;
-    const vars = browse === 'yours' ? mine.map(([n]) => n) : st?.vars ?? [];
+    const vars = browse === 'yours' ? mine.map(([n]) => n) : st ? styleVars(st) : [];
     if (vars.length) {
       const list = mk('div', 'sndp-vars');
       for (const v of vars) {
