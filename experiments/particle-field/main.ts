@@ -17183,6 +17183,7 @@ function renderSoundPage(body: HTMLElement) {
     const row = mk('div', 'sndp-row');
     const dot = mk('button', 'sndp-dot');
     dot.style.setProperty('--c', t.dot);
+    wrap.style.setProperty('--c', t.dot);
     dot.setAttribute('aria-label', `${t.name} on or off`);
     if (TRACK_LAYER[t.key]) trackLights.push({ el: dot, layer: TRACK_LAYER[t.key], v: 0 });
     dot.addEventListener('click', () => {

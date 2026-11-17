@@ -3048,6 +3048,13 @@ html.top-layer.top-edit .top-back { display: block !important; position: fixed; 
 .link-act > .arrow { display: none; }
 .link-bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; margin-top: 6px; }
 #panel[data-view='list'] .link-bottom { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+/* Sound page: an open track or group stands apart from the closed ones, a lifted
+   panel edged in its own colour, its settings set off below the header. */
+.sndp-trk.open, .sndp-line.open { background: rgb(255 255 255 / 0.05); box-shadow: inset 3px 0 0 var(--c, var(--accent)); border-bottom-color: rgb(255 255 255 / 0.1); }
+.sndp-trk.open:has(+ *), .sndp-line.open:has(+ *) { margin-bottom: 6px; }
+.sndp-trk:has(+ .open), .sndp-line:has(+ .open) { margin-bottom: 6px; border-bottom-color: transparent; }
+.sndp-trk.open > .sndp-row, .sndp-line.open > .sndp-lrow { border-bottom: 1px solid rgb(255 255 255 / 0.07); }
+.sndp-trk.open > .sndp-det, .sndp-line.open > .sndp-det { padding-top: 10px; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
