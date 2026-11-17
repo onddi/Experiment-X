@@ -15403,7 +15403,7 @@ function renderControls() {
       continue;
     }
     if (ctl.kind === 'sndpresets') {
-      searchItem(body, renderSoundPresets(), 'sound presets shuffle random lounge harp arcade');
+      searchItem(body, renderSoundPresets(), 'sound presets lounge harp arcade');
       continue;
     }
     if (ctl.kind === 'fxlooks') {
@@ -17469,50 +17469,6 @@ function useSound(look: Partial<Settings>) {
   if (settings.sndVol === 0) settings.sndVol = 0.7;
   changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
 }
-// Shuffle sound: a random but musical setup (one or two main layers, the rest quiet).
-function shuffleSound() {
-  const pick = <T,>(a: readonly T[]) => a[(Math.random() * a.length) | 0];
-  const r = (lo: number, hi: number, st = 0.05) => Math.round((lo + Math.random() * (hi - lo)) / st) * st;
-  const look: Partial<Settings> = {
-    sndTimbre: pick(['colour', 'lounge', 'world', 'marimba', 'bell', 'glass', 'pluck', 'harp', 'koto', 'kalimba', 'steel', 'epiano', 'vibes', 'musicbox', 'flute', 'synth'] as const),
-    sndScale: pick(['pentatonic', 'pentatonic', 'major', 'minor', 'dorian', 'blues', 'japanese', 'whole'] as const),
-    sndProg: pick(['drift', 'pop', 'calm', 'mystic', 'still'] as const),
-    sndTempo: Math.round(r(60, 130, 1)),
-    sndOctave: pick([-1, 0, 0, 0, 1]),
-    sndRange: pick([1, 2, 2, 3]),
-    sndStrings: Math.random() < 0.75 ? r(0.3, 0.9) : 0,
-    sndStringCount: Math.round(r(4, 10, 1)),
-    sndDrone: Math.random() < 0.5 ? r(0.15, 0.6) : 0,
-    sndSeq: Math.random() < 0.4 ? r(0.3, 0.8) : 0,
-    sndGrain: Math.random() < 0.2 ? r(0.2, 0.5) : 0,
-    sndScan: Math.random() < 0.2 ? r(0.3, 0.7) : 0,
-    sndHits: Math.random() < 0.3 ? r(0.3, 0.8) : 0,
-    sndReverb: r(0.2, 0.85),
-    sndChordMove: pick(['bars', 'bars', 'energy', 'burst'] as const),
-    sndChordBars: pick([1, 2, 2, 4]),
-    sndLength: pick([0.6, 1, 1, 1.5, 2]),
-    sndDyn: Math.random() < 0.5 ? r(0.3, 0.8) : 0,
-    sndBend: Math.random() < 0.25 ? r(0.2, 0.6) : 0,
-    sndSwing: Math.random() < 0.35 ? r(0.2, 0.6) : 0,
-    sndArp: Math.random() < 0.3 ? r(0.3, 0.7) : 0,
-    sndEcho: Math.random() < 0.4 ? r(0.15, 0.55) : 0,
-    sndSweep: Math.random() < 0.35 ? r(0.3, 0.7) : 0,
-    sndChorus: Math.random() < 0.35 ? r(0.2, 0.6) : 0,
-    sndBass: Math.random() < 0.4 ? r(0.3, 0.7) : 0,
-    sndBassSound: pick(['synth', 'sub', 'round', 'upright', 'acid', 'picked'] as const),
-    sndDrums: Math.random() < 0.3 ? r(0.25, 0.6) : 0,
-    sndKit: pick(['soft', '808', 'punchy', 'brush', 'hand'] as const),
-    sndPadSound: pick(['soft', 'soft', 'strings', 'organ', 'choir', 'shimmer'] as const),
-    sndBassTone: Math.random() < 0.4 ? r(-0.6, 0.6) : 0,
-    sndAttack: Math.random() < 0.25 ? r(0.3, 0.9) : 0,
-    sndBright: Math.random() < 0.4 ? r(-0.5, 0.5) : 0,
-    sndDrive: Math.random() < 0.2 ? r(0.2, 0.6) : 0,
-    sndLofi: Math.random() < 0.15 ? r(0.2, 0.6) : 0,
-  };
-  if (!look.sndStrings && !look.sndSeq && !look.sndScan) look.sndStrings = 0.6;
-  useSound(look);
-  showToast(`Sound: ${look.sndTimbre === 'colour' ? 'chimes band' : look.sndTimbre}, ${look.sndScale}`);
-}
 function renderSoundPresets(): HTMLElement {
   const box = document.createElement('div');
   box.className = 'fx-looks snd-presets';
@@ -17557,10 +17513,6 @@ function renderSoundPresets(): HTMLElement {
     for (const [n, l] of SOUND_PRESETS) add(n, l, false);
     const acts = document.createElement('div');
     acts.className = 'fx-look-acts';
-    const shuf = document.createElement('button');
-    shuf.type = 'button';
-    shuf.textContent = '⚄ Shuffle';
-    shuf.addEventListener('click', shuffleSound);
     const save = document.createElement('button');
     save.type = 'button';
     save.textContent = '+ Save';
@@ -17587,7 +17539,7 @@ function renderSoundPresets(): HTMLElement {
         changed(new Set(SND_LOOK_KEYS));
       }]);
     });
-    acts.append(shuf, save, clear);
+    acts.append(save, clear);
     box.append(chips, acts);
     requestAnimationFrame(() => {
       const on = chips.querySelector<HTMLElement>('.fx-look.on');
