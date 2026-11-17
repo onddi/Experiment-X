@@ -19628,20 +19628,34 @@ function renderMyPresets() {
         });
         const copy = document.createElement('button');
         copy.type = 'button';
-        copy.className = 'del';
-        copy.textContent = '⧉';
-        copy.title = `Copy “${p.name}” as text (paste it into the name box to import)`;
-        copy.addEventListener('click', () => {
-          // Only what differs from the defaults keeps it short.
-          const diff = Object.fromEntries(Object.entries(p.settings).filter(([k, v]) => DEFAULTS[k as keyof Settings] !== v));
-          const text = JSON.stringify({ name: p.name, ...diff });
-          void navigator.clipboard?.writeText(text).then(() => showToast('Copied'), () => prompt('Copy this:', text));
-        });
+        copy.className = 'del share';
+        copy.innerHTML = SHARE_ICON;
+        copy.title = `Share “${p.name}”: a link that opens it on any device`;
+        copy.setAttribute('aria-label', `Share ${p.name}`);
+        copy.addEventListener('click', () => void shareScene(p.name, p.settings));
         item.append(key, b, copy, del);
         list.append(item);
       });
       wrap.append(h, list);
     }
+    // All your scenes as one file: a backup, or to carry them to another device.
+    const io = document.createElement('div');
+    io.className = 'buttons mine-io';
+    const exp = document.createElement('button');
+    exp.type = 'button';
+    exp.textContent = 'Export all';
+    exp.disabled = !myPresets.length;
+    exp.addEventListener('click', exportScenes);
+    const imp = document.createElement('button');
+    imp.type = 'button';
+    imp.textContent = 'Import…';
+    imp.addEventListener('click', () => scenesInput.click());
+    const cur = document.createElement('button');
+    cur.type = 'button';
+    cur.innerHTML = `${SHARE_ICON} Share what's on`;
+    cur.title = 'A link to the scene as it is now, saved or not';
+    cur.addEventListener('click', () => void shareScene(currentMine?.name || (lastSceneName && lastSceneName !== 'Blank' ? lastSceneName : 'My scene'), snapshot()));
+    io.append(cur, exp, imp);
     if (currentMine && myPresets.includes(currentMine)) {
       const cur = currentMine;
       const up = document.createElement('button');
@@ -19659,7 +19673,14 @@ function renderMyPresets() {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const raw = input.value.trim();
-      // Pasted preset text (from the copy button) imports it.
+      // A pasted share link: open it (and offer to keep it).
+      const link = /[#&]scene=([A-Za-z0-9_-]+)/.exec(raw);
+      if (link) {
+        input.value = '';
+        void openSharedScene(link[1]);
+        return;
+      }
+      // Pasted preset text (the old copy button) imports it.
       if (raw.startsWith('{')) {
         try {
           const { name: nm, ...rest } = JSON.parse(raw) as Partial<Settings> & { name?: string };
@@ -19680,12 +19701,147 @@ function renderMyPresets() {
       writeJson(MY_PRESETS_KEY, myPresets);
       draw();
     });
-    wrap.append(form);
+    wrap.append(form, io);
   };
   draw();
   redrawMine = draw;
   return wrap;
 }
+
+// --- Sharing scenes -------------------------------------------------------------
+// A share link carries the whole scene in its address (#scene=…): only what
+// differs from the defaults, squeezed, so it fits in a message or a QR code.
+// Images, videos and your drawing aren't in it (they stay on this device).
+const SHARE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>';
+const b64url = (b: Uint8Array) => btoa(Array.from(b, (c) => String.fromCharCode(c)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = (t: string) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+async function squeeze(text: string, how: 'compress' | 'decompress'): Promise<Uint8Array> {
+  const S = how === 'compress' ? new CompressionStream('deflate-raw') : new DecompressionStream('deflate-raw');
+  const data = how === 'compress' ? new TextEncoder().encode(text) : unb64url(text);
+  const out = new Response(new Blob([data]).stream().pipeThrough(S));
+  return new Uint8Array(await out.arrayBuffer());
+}
+function sceneDiff(p: Partial<Settings>) {
+  return Object.fromEntries(Object.entries(p).filter(([k, v]) => k in DEFAULTS && DEFAULTS[k as keyof Settings] !== v));
+}
+async function sceneLink(name: string, p: Partial<Settings>): Promise<string> {
+  const json = JSON.stringify({ name, ...sceneDiff(p) });
+  let code: string;
+  try {
+    code = 'z' + b64url(await squeeze(json, 'compress'));
+  } catch {
+    code = 'j' + b64url(new TextEncoder().encode(json));
+  }
+  return `${location.origin}${location.pathname}#scene=${code}`;
+}
+async function shareScene(name: string, p: Partial<Settings>) {
+  const url = await sceneLink(name, p);
+  // Phones: the share sheet (Messages, AirDrop …). Else the clipboard.
+  if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+    try {
+      await navigator.share({ title: name, text: `${name} · Particle field`, url });
+      return;
+    } catch (e) {
+      if ((e as DOMException).name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast(`Link to “${name}” copied: open it on any device`);
+  } catch {
+    prompt('Copy this link:', url);
+  }
+}
+async function readSceneCode(code: string): Promise<{ name: string; settings: Partial<Settings> } | null> {
+  try {
+    const json = code[0] === 'z' ? new TextDecoder().decode(await squeeze(code.slice(1), 'decompress')) : new TextDecoder().decode(unb64url(code.slice(1)));
+    const { name, ...rest } = JSON.parse(json) as Partial<Settings> & { name?: string };
+    const settings = Object.fromEntries(Object.entries(rest).filter(([k]) => k in DEFAULTS)) as Partial<Settings>;
+    return { name: String(name ?? 'Shared scene').slice(0, 40), settings };
+  } catch {
+    return null;
+  }
+}
+// Opening a link: the scene plays at once, and a toast offers to keep it.
+async function openSharedScene(code: string, first = false) {
+  const got = await readSceneCode(code);
+  if (!got) return showToast('That scene link is broken or cut short');
+  const full = { ...DEFAULTS, ...got.settings };
+  if (first) {
+    const { morph, beatSnap } = settings;
+    settings.morph = 0;
+    settings.beatSnap = false;
+    apply(full, false);
+    settings.morph = morph;
+    settings.beatSnap = beatSnap;
+  } else apply(full, false);
+  lastSceneName = got.name;
+  const have = myPresets.find((m) => m.name === got.name && JSON.stringify(sceneDiff(m.settings)) === JSON.stringify(sceneDiff(full)));
+  if (have) {
+    currentMine = have;
+    redrawMine();
+    return showToast(`${got.name} (already in My scenes)`);
+  }
+  showToast(`Shared scene: ${got.name}`, ['Save to My scenes', () => {
+    let name = got.name;
+    for (let k = 2; myPresets.some((m) => m.name === name); k++) name = `${got.name} (${k})`;
+    myPresets.push({ name, settings: full });
+    currentMine = myPresets[myPresets.length - 1];
+    writeJson(MY_PRESETS_KEY, myPresets);
+    redrawMine();
+    showToast(`Saved to My scenes as “${name}”`);
+  }]);
+}
+function sceneFromUrl(first: boolean) {
+  const code = new URLSearchParams(location.hash.slice(1)).get('scene');
+  if (!code) return;
+  // Once opened, the address goes back to plain so a reload doesn't redo it.
+  history.replaceState(null, '', location.pathname + location.search);
+  void openSharedScene(code, first);
+}
+function exportScenes() {
+  const data = JSON.stringify({ app: 'particle-field', version: 1, scenes: myPresets.map((m) => ({ ...m, settings: sceneDiff(m.settings) })) }, null, 1);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  a.download = `particle-field-scenes-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  showToast(`Exported ${myPresets.length} scene${myPresets.length === 1 ? '' : 's'}`);
+}
+const scenesInput = document.createElement('input');
+scenesInput.type = 'file';
+scenesInput.accept = '.json,application/json';
+scenesInput.addEventListener('change', async () => {
+  const f = scenesInput.files?.[0];
+  scenesInput.value = '';
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text()) as { scenes?: { name?: string; key?: string; top?: boolean; settings?: Partial<Settings> }[] };
+    let added = 0;
+    let same = 0;
+    for (const sc of data.scenes ?? []) {
+      if (!sc?.settings) continue;
+      const full = { ...DEFAULTS, ...Object.fromEntries(Object.entries(sc.settings).filter(([k]) => k in DEFAULTS)) } as Settings;
+      const base = String(sc.name ?? 'Imported').slice(0, 40);
+      // Skip ones you already have (same name and same settings).
+      if (myPresets.some((m) => m.name === base && JSON.stringify(sceneDiff(m.settings)) === JSON.stringify(sceneDiff(full)))) {
+        same++;
+        continue;
+      }
+      let name = base;
+      for (let k = 2; myPresets.some((m) => m.name === name); k++) name = `${base} (${k})`;
+      // Number keys stay with the scenes already here.
+      const key = sc.key && !myPresets.some((m) => m.key === sc.key) ? sc.key : undefined;
+      myPresets.push({ name, settings: full, ...(key ? { key } : {}), ...(sc.top ? { top: true } : {}) });
+      added++;
+    }
+    writeJson(MY_PRESETS_KEY, myPresets);
+    redrawMine();
+    showToast(added ? `Imported ${added} scene${added === 1 ? '' : 's'}${same ? ` (${same} you already had)` : ''}` : same ? 'You already have all of these' : 'No scenes in that file');
+  } catch {
+    showToast('That file is not a scenes export');
+  }
+});
 
 // Open into a preset: ?preset=3 (a key of yours), ?preset=Obi%20glow (one of
 // your names) or ?preset=Smoke (a built-in), also as #preset=… . Your own
@@ -23095,6 +23251,7 @@ refreshers.push(buildPaint);
 resize();
 refresh();
 presetFromUrl(true);
+sceneFromUrl(true);
 playEntrance();
 // Safari refuses a camera asked for without a tap (and then keeps refusing
 // until a reload), so on load only start it straight away when it's already
@@ -23114,7 +23271,10 @@ if (camWanted() && !cam.on) {
   if (q) q.then((st) => (st.state === 'granted' ? void startCamera() : wait()), wait);
   else wait();
 }
-window.addEventListener('hashchange', () => presetFromUrl(false));
+window.addEventListener('hashchange', () => {
+  presetFromUrl(false);
+  sceneFromUrl(false);
+});
 requestAnimationFrame(frame);
 
 // Hovering a label that is cut short (an ellipsis or a two-line clamp) shows
