@@ -242,6 +242,11 @@ export interface SoundParams {
   touchAxis: 'up' | 'across'; // which way pitch runs
   touchOctave: number;
   accents: number;
+  accScene?: boolean; // a strum when the scene changes
+  accShape?: boolean; // a whoosh when a shape forms
+  accBirth?: boolean; // a sparkle when many are born at once
+  accBurst?: boolean; // a low boom on an explosion
+  accVoice?: Voice; // what the strum and sparkle play
   reverb: number;
   music: SndMusic;
   // Steering the chords.
@@ -354,6 +359,7 @@ export class ParticleSound {
   private tokens = NOTE_RATE;
   private grainDebt = 0;
   private lastThump = 0;
+  private lastBoom = 0;
   private p: SoundParams;
   // Harmony and phrasing.
   private beat = 0; // beats since start, fractional
@@ -1472,7 +1478,7 @@ export class ParticleSound {
     this.cur = 'accents';
     const save = this.tokens;
     this.tokens = 99;
-    for (let j = 0; j < 5; j++) this.note(this.chordTone(j + 1), 0.55 * k, -0.6 + j * 0.3, 'bell', j * 0.07);
+    for (let j = 0; j < 5; j++) this.note(this.chordTone(j + 1), 0.55 * k, -0.6 + j * 0.3, this.p.accVoice ?? 'bell', j * 0.07);
     this.tokens = save;
   }
 
@@ -2119,14 +2125,20 @@ export class ParticleSound {
 
     // Accents.
     if (P.accents > 0) {
-      if (F.scene) this.strum(P.accents);
-      if (F.shape) this.whoosh(P.accents);
-      if (F.born > Math.max(24, F.n * 0.02) && now - this.lastSparkle > 250) {
+      if (F.scene && P.accScene !== false) this.strum(P.accents);
+      if (F.shape && P.accShape !== false) this.whoosh(P.accents);
+      if (P.accBurst && F.thump > 0.45 && now - this.lastBoom > 400) {
+        this.lastBoom = now;
+        this.cur = 'accents';
+        this.log('accents', Math.min(1, F.thump), 0.02, 0.5);
+        if (this.audible('accents')) this.thump(Math.min(1, F.thump) * P.accents);
+      }
+      if (P.accBirth !== false && F.born > Math.max(24, F.n * 0.02) && now - this.lastSparkle > 250) {
         this.lastSparkle = now;
         this.cur = 'accents';
         const save = this.tokens;
         this.tokens = 99;
-        for (let j = 0; j < 3; j++) this.note(this.chordTone(6 + ((Math.random() * 4) | 0)), 0.35 * P.accents, Math.random() * 1.6 - 0.8, 'glass', j * 0.05);
+        for (let j = 0; j < 3; j++) this.note(this.chordTone(6 + ((Math.random() * 4) | 0)), 0.35 * P.accents, Math.random() * 1.6 - 0.8, P.accVoice === 'bell' || !P.accVoice ? 'glass' : P.accVoice, j * 0.05);
         this.tokens = save;
       }
     }

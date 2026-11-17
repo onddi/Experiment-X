@@ -237,6 +237,11 @@ export interface Settings {
   sndRange: number;
   sndSeq: number;
   sndAccents: number;
+  sndAccScene: boolean;
+  sndAccShape: boolean;
+  sndAccBirth: boolean;
+  sndAccBurst: boolean;
+  sndAccVoice: import('./sound.ts').Voice;
   sndHits: number;
   sndGrainSound: import('./sound.ts').GrainSound;
   sndGrainRate: number;
@@ -881,6 +886,11 @@ export const DEFAULTS: Settings = {
   sndRange: 2,
   sndSeq: 0,
   sndAccents: 0.6,
+  sndAccScene: true,
+  sndAccShape: true,
+  sndAccBirth: true,
+  sndAccBurst: false,
+  sndAccVoice: 'bell',
   sndHits: 0.5,
   sndGrainSound: 'dust',
   sndGrainRate: 0.5,
