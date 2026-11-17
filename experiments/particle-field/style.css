@@ -1777,17 +1777,17 @@ svg.ink.outline path.gone { opacity: 0.85; stroke: rgb(255 255 255 / 0.9); strok
 #panel[data-view='list'] :is(.group-body, .ess-body, .more-body, .sndp-det) > :is(.prow:has(> .kn), .row.kn) + .buttons:has(> button:only-child) > button { min-height: 32px; padding: 4px 10px; }
 #panel[data-view='list'] .prow:has(> :is(.rk, .kn)) .pin { top: 6px; left: 3px; width: 20px; height: 20px; }
 #panel[data-view='list'] .prow:has(> :is(.rk, .kn)) :is(.rack-knob, .rack-row) { padding-left: 24px !important; }
-#panel[data-view='list'] .rack-knob { width: auto; display: grid; grid-template-columns: minmax(96px, 40%) minmax(0, 1fr) minmax(58px, auto); align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--tile); }
-#panel[data-view='list'] :is(.rk, .kn) .rack-knob { background: #141418; border: 0; }
-#panel[data-view='list'] .rack-knob span { white-space: nowrap; }
-#panel[data-view='list'] .rack-knob svg { display: none; }
-#panel[data-view='list'] .rack-knob b { font-size: 12px; font-weight: 400; color: var(--label); text-align: left; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset; }
-#panel[data-view='list'] .rack-knob span { font-size: 12px; text-align: right; }
-#panel[data-view='list'] .rack-knob.moved b { color: var(--text); }
-#panel[data-view='list'] .rack-knob:is(.turning, .tuning) { background: var(--accent-bg); }
-#panel[data-view='list'] .rack-bar { display: block; position: relative; height: 4px; border-radius: 2px; background: var(--track); }
-#panel[data-view='list'] .rack-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--accent); }
-#panel[data-view='list'] .rack-bar u { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: #fff; opacity: 0.7; }
+:is(#panel[data-view='list'], .std-fill) .rack-knob { width: auto; display: grid; grid-template-columns: minmax(96px, 40%) minmax(0, 1fr) minmax(58px, auto); align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--tile); }
+:is(#panel[data-view='list'] :is(.rk, .kn), .std-fill) .rack-knob { background: #141418; border: 0; }
+:is(#panel[data-view='list'], .std-fill) .rack-knob span { white-space: nowrap; }
+:is(#panel[data-view='list'], .std-fill) .rack-knob svg { display: none; }
+:is(#panel[data-view='list'], .std-fill) .rack-knob b { font-size: 12px; font-weight: 400; color: var(--label); text-align: left; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset; }
+:is(#panel[data-view='list'], .std-fill) .rack-knob span { font-size: 12px; text-align: right; }
+:is(#panel[data-view='list'], .std-fill) .rack-knob.moved b { color: var(--text); }
+:is(#panel[data-view='list'], .std-fill) .rack-knob:is(.turning, .tuning) { background: var(--accent-bg); }
+:is(#panel[data-view='list'], .std-fill) .rack-bar { display: block; position: relative; height: 4px; border-radius: 2px; background: var(--track); }
+:is(#panel[data-view='list'], .std-fill) .rack-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--accent); }
+:is(#panel[data-view='list'], .std-fill) .rack-bar u { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: #fff; opacity: 0.7; }
 #panel[data-view='list'] .rk .rack-row,
 #panel[data-view='list'] .rk.select .rack-row,
 #panel[data-view='list'] .rk.toggle .rack-row { grid-template-columns: minmax(0, 1fr) 26px minmax(60px, auto) 26px; grid-template-rows: none; row-gap: 0; gap: 0; min-height: 32px; height: 32px; padding: 0 0 0 10px; border-radius: 8px; font-size: 12px; }
@@ -2316,28 +2316,28 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .rack-lens button.lens-anim:not(.on) { color: var(--accent-soft); border-color: var(--accent-line); }
 @media (pointer: coarse) { .rack-knob.anim .rk-anim { display: flex; pointer-events: none; } .rack-knob.anim::after { display: none; } }
 /* Strips / list: an accent edge, an accent bar and the icon before the name. */
-.overview[data-density='strips'] .rack-knob.anim, #panel[data-view='list'] .rack-knob.anim { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--tile)); }
-.overview[data-density='strips'] .rack-knob.anim .rack-bar i, #panel[data-view='list'] .rack-knob.anim .rack-bar i { background: var(--accent-soft); }
-.overview[data-density='strips'] .rack-knob.anim .rk-anim, #panel[data-view='list'] .rack-knob.anim .rk-anim { top: 50%; right: auto; left: calc(40% - 18px); transform: translateY(-50%); }
+.overview[data-density='strips'] .rack-knob.anim, :is(#panel[data-view='list'], .std-fill) .rack-knob.anim { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--tile)); }
+.overview[data-density='strips'] .rack-knob.anim .rack-bar i, :is(#panel[data-view='list'], .std-fill) .rack-knob.anim .rack-bar i { background: var(--accent-soft); }
+.overview[data-density='strips'] .rack-knob.anim .rk-anim, :is(#panel[data-view='list'], .std-fill) .rack-knob.anim .rk-anim { top: 50%; right: auto; left: calc(40% - 18px); transform: translateY(-50%); }
 .overview[data-density='strips'] .rack-knob.anim .rk-anim svg { display: block; }
 .overview[data-density='strips'] .rack-knob.anim .rk-anim { left: 100px; }
 /* Fill rows (Strips, List): the whole 36 px row is the slider. The tint is
    the value with a 2 px edge at it, the faint tick is the scene's value, and
    the name and value sit on top. Drag anywhere; off the row up or down is
    fine control (main.ts fillStep). */
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-knob { position: relative; grid-template-columns: minmax(0, 1fr) auto; height: 36px; overflow: hidden; cursor: ew-resize; touch-action: pan-y; }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-knob > :is(b, span) { position: relative; z-index: 1; }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-knob { position: relative; grid-template-columns: minmax(0, 1fr) auto; height: 36px; overflow: hidden; cursor: ew-resize; touch-action: pan-y; }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-knob > :is(b, span) { position: relative; z-index: 1; }
 /* Only the name shows its help (and the ? cursor); the rest of the row is the slider. */
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-knob > b { justify-self: start; max-width: 100%; }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-knob > b { justify-self: start; max-width: 100%; }
 .rack-knob [data-tip] { cursor: inherit; }
 .rack-knob > b[data-tip]:hover { cursor: help; }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-knob .rk-anim { z-index: 2; }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-bar { position: absolute; inset: 0; height: auto; border-radius: 0; background: none; pointer-events: none; }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-bar i { border-radius: 0; background: color-mix(in oklch, var(--accent) 16%, transparent); box-shadow: inset -2px 0 0 var(--accent); }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-knob:is(.turning, .tuning) .rack-bar i { background: color-mix(in oklch, var(--accent) 28%, transparent); }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-knob.anim .rack-bar i { background: color-mix(in oklch, var(--accent-soft) 20%, transparent); box-shadow: inset -2px 0 0 var(--accent-soft); }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-bar u { top: 9px; bottom: 9px; height: auto; width: 1px; margin-left: 0; opacity: 0.35; }
-:is(.overview[data-density='strips'], #panel[data-view='list']) .rack-knob span { color: var(--value); font-variant-numeric: tabular-nums; }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-knob .rk-anim { z-index: 2; }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-bar { position: absolute; inset: 0; height: auto; border-radius: 0; background: none; pointer-events: none; }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-bar i { border-radius: 0; background: color-mix(in oklch, var(--accent) 16%, transparent); box-shadow: inset -2px 0 0 var(--accent); }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-knob:is(.turning, .tuning) .rack-bar i { background: color-mix(in oklch, var(--accent) 28%, transparent); }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-knob.anim .rack-bar i { background: color-mix(in oklch, var(--accent-soft) 20%, transparent); box-shadow: inset -2px 0 0 var(--accent-soft); }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-bar u { top: 9px; bottom: 9px; height: auto; width: 1px; margin-left: 0; opacity: 0.35; }
+:is(.overview[data-density='strips'], #panel[data-view='list'], .std-fill) .rack-knob span { color: var(--value); font-variant-numeric: tabular-nums; }
 .rack-knob.fine span::before, .cmb-fillrow.fine .cmb-val::before, .sndp-lv.fine::after { content: 'fine'; margin-right: 6px; font: 600 10px system-ui, sans-serif; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 /* Arrange: record a move. */
 .ar-rec { display: flex; align-items: center; gap: 4px; }

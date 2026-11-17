@@ -16287,7 +16287,7 @@ function fillStep(el: HTMLElement, y0: number, e: PointerEvent, lastX: number) {
   el.classList.toggle('fine', fine);
   return ((e.clientX - lastX) / Math.max(80, el.getBoundingClientRect().width)) * (fine ? FINE_RATE : 1);
 }
-const isFillRow = (el: HTMLElement) => !!el.closest(".overview[data-density='strips'], #panel[data-view='list']");
+const isFillRow = (el: HTMLElement) => !!el.closest(".overview[data-density='strips'], #panel[data-view='list'], .std-fill");
 // The app's one slider and one picker, for use outside the cards too: the
 // rack's knob (a fill bar in List view) and the rack's ‹ › / switch row.
 // valSrc lets either drive a value that isn't a single setting.
@@ -16296,7 +16296,7 @@ function valSrc(get: () => unknown, put: (v: unknown) => void): RackSrc {
 }
 function stdRange(c: Extract<Control, { kind: 'range' }>, src: RackSrc = RACK_LIVE, home: () => number = () => Number((sceneBase ?? DEFAULTS)[c.key])) {
   const row = document.createElement('div');
-  row.className = 'row kn';
+  row.className = 'row kn std-fill';
   row.dataset.key = c.key;
   const kb = rackKnob(c, home, src);
   row.append(kb.el);
