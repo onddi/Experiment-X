@@ -210,6 +210,13 @@ export interface Settings {
   sndPadSound: import('./sound.ts').PadSound;
   sndPadPump: number;
   sndBassTone: number;
+  sndBassMove: number;
+  sndBassPattern: 'beat' | 'hold' | 'pump' | 'walk' | 'arp' | 'offbeat';
+  sndBassWalk: number;
+  sndBassOct: 'sub' | 'low' | 'mid';
+  sndBassGlide: number;
+  sndBassLen: number;
+  sndBassGhost: number;
   sndAttack: number;
   sndBright: number;
   sndDrive: number;
@@ -847,6 +854,13 @@ export const DEFAULTS: Settings = {
   sndPadSound: 'soft',
   sndPadPump: 0,
   sndBassTone: 0,
+  sndBassMove: 0.3,
+  sndBassPattern: 'beat',
+  sndBassWalk: 0.5,
+  sndBassOct: 'low',
+  sndBassGlide: 0,
+  sndBassLen: 1,
+  sndBassGhost: 0,
   sndAttack: 0,
   sndBright: 0,
   sndDrive: 0,

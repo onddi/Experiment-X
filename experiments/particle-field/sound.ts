@@ -264,6 +264,13 @@ export interface SoundParams {
   bass: number;
   bassSound: BassSound;
   bassTone: number; // -1 dark … 1 bright
+  bassMove?: number; // 0 root only … 1 octave jumps, fifths and passing notes
+  bassPattern?: 'beat' | 'hold' | 'pump' | 'walk' | 'arp' | 'offbeat';
+  bassWalk?: number; // how often it steps into the next chord
+  bassOct?: number; // -1 sub, 0 low, 1 mid
+  bassGlide?: number; // how often notes slide into each other
+  bassLen?: number; // note length, ×
+  bassGhost?: number; // soft extra notes between the main ones
   drums: number;
   kit: DrumKit;
   padSound: PadSound;
@@ -1520,15 +1527,76 @@ export class ParticleSound {
     }
   }
 
+  // The bass line, shaped. `n` is the note the beat (or the field) asked for.
+  private bassShape(n: { deg: number; vel: number; len: number; slide: boolean; up: number } | null, pat: string, s: number, e: number, stepDur: number, ed: (row: number, nat: boolean) => boolean) {
+    const P = this.p;
+    const R = this.chordRoot();
+    const live = e > 0.03;
+    // A pattern of its own instead of the beat's line.
+    if (pat !== 'beat') {
+      n = null;
+      let deg = -999, len = stepDur * 1.8, vel = 0.85, up = 0;
+      if (pat === 'hold') {
+        if (s === 0) (deg = R), (len = stepDur * 15), (vel = 1);
+        else if (s === 8 && e > 0.3) (deg = R), (len = stepDur * 7);
+      } else if (pat === 'pump') {
+        if (s % 2 === 0) (deg = R), (up = s % 4 === 2 ? 1 : 0), (len = stepDur * 1.4), (vel = s % 4 === 0 ? 1 : 0.75);
+      } else if (pat === 'walk') {
+        if (s % 4 === 0) (deg = R + [0, 2, 4, 5][s / 4]), (len = stepDur * 3.6), (vel = s === 0 ? 1 : 0.8);
+      } else if (pat === 'arp') {
+        if (s % 2 === 0) (deg = this.chordTone([0, 1, 2, 3, 2, 1, 2, 1][s / 2])), (len = stepDur * 1.7), (vel = s % 4 === 0 ? 0.95 : 0.75);
+      } else if (pat === 'offbeat') {
+        if (s % 4 === 2) (deg = R), (len = stepDur * 1.2), (vel = 0.9);
+      }
+      if (!live && s !== 0) deg = -999;
+      const play = ed(3, deg > -999);
+      if (play && deg === -999) (deg = R), (len = stepDur * 1.5);
+      if (play) n = { deg, vel, len, slide: false, up };
+    }
+    const move = P.bassMove ?? 0;
+    // Movement: some notes jump an octave or go to the fifth, and empty
+    // eighths fill with chord tones, more as the field gets busier.
+    if (n && s !== 0 && move > 0 && Math.random() < move * 0.55) {
+      const r = Math.random();
+      if (r < 0.45) n.up = Math.min(1, n.up + 1);
+      else if (r < 0.8) n.deg = this.chordTone(2);
+      else n.deg = this.chordTone(1);
+    }
+    if (!n && live && s % 2 === 0 && s !== 0 && move > 0 && Math.random() < move * (0.15 + e * 0.35)) {
+      n = { deg: this.chordTone([0, 1, 2][(Math.random() * 3) | 0]), vel: 0.7, len: stepDur * 1.3, slide: false, up: Math.random() < move * 0.4 ? 1 : 0 };
+    }
+    // Walk in: the last beat before the chord changes steps into the new root.
+    const walk = P.bassWalk ?? 0;
+    const left = this.beatsToChange();
+    if (walk > 0 && live && left > 0 && left <= 1 && (s === 12 || s === 14) && Math.random() < walk) {
+      const pr = this.progression();
+      const next = pr[(this.chord + 1) % pr.length];
+      if (next !== R) {
+        const lo = next - 1, hi = next + 1;
+        const deg = s === 12 ? (Math.abs(lo - R) < Math.abs(hi - R) ? lo - 1 : hi + 1) : Math.abs(lo - R) < Math.abs(hi - R) ? lo : hi;
+        n = { deg, vel: 0.8, len: stepDur * 1.7, slide: false, up: 0 };
+      }
+    }
+    // Ghost notes: soft, short, on the sixteenths in between.
+    const ghost = P.bassGhost ?? 0;
+    if (!n && live && s % 2 === 1 && ghost > 0 && Math.random() < ghost * 0.4) n = { deg: R, vel: 0.32, len: stepDur * 0.6, slide: false, up: 0 };
+    // Glide: some notes slide in from the last one.
+    if (n && !n.slide && (P.bassGlide ?? 0) > 0 && Math.random() < (P.bassGlide ?? 0) * 0.7) n.slide = true;
+    return n;
+  }
+
   // Bass: one body oscillator through a low-pass (its sweep makes the
   // character) with a sine underneath for weight.
   private bassF = 0; // the last bass note's pitch, for slides
-  private bassNote(deg: number, vel: number, len: number, when: number, slide = false) {
+  private bassNote(deg: number, vel: number, len: number, when: number, slide = false, up = 0) {
     if (this.voices >= MAX_VOICES) return;
+    // Octave: the setting, plus the line's own jumps.
+    const oct = 2 ** Math.max(-1, Math.min(2, (this.p.bassOct ?? 0) + up));
     {
       let f0 = this.freq(deg, 36);
       while (f0 < 38) f0 *= 2;
       while (f0 > 200) f0 /= 2;
+      f0 *= oct;
       this.log('bass', vel, Math.log2(f0 / 55) / 6, len * (this.bpmNow / 60), when);
     }
     if (!this.audible('bass')) return;
@@ -1539,6 +1607,7 @@ export class ParticleSound {
     let f = this.freq(deg, 36);
     while (f < 38) f *= 2;
     while (f > 200) f /= 2;
+    f *= oct;
     if (B.ring) len = Math.min(len, B.ring);
     const end = t + len + B.release * 3 + 0.1;
     const from = this.bassF;
@@ -1547,7 +1616,7 @@ export class ParticleSound {
     const pitch = (p: AudioParam, k: number) => {
       if (slide && from > 0 && from !== f) {
         p.setValueAtTime(from * k, t);
-        p.exponentialRampToValueAtTime(f * k, t + Math.min(0.14, len * 0.5));
+        p.exponentialRampToValueAtTime(f * k, t + Math.min(0.08 + (this.p.bassGlide ?? 0) * 0.14, len * 0.6));
       } else if (B.punch) {
         p.setValueAtTime(f * k * B.punch, t);
         p.exponentialRampToValueAtTime(f * k, t + 0.03);
@@ -2248,47 +2317,52 @@ export class ParticleSound {
       // A beat from the library, when one is picked.
       const tick = Math.floor(this.beat * 4);
       const B = this.beatOf(P, tick, s);
-      // Bass: the beat's bass row, when it has one.
-      if (P.bass > 0 && B?.beat.b) {
-        const row = B.beat.b;
-        const i = tick % row.length;
-        let deg = -999, vel = 0.8, slide = false;
-        switch (row[i]) {
-          case 'B': (deg = this.chordRoot()), (vel = 1); break;
-          case 'b': deg = this.chordRoot(); break;
-          case 'o': (deg = this.chordRoot()), (vel = 0.45); break;
-          case 'f': deg = this.chordTone(2); break;
-          case 't': deg = this.chordTone(1); break;
-          case 'u': deg = this.chordTone(3); break;
-          case '~': (deg = this.chordRoot()), (vel = 0.85), (slide = true); break;
-          case '?': if (Math.random() < 0.5) (deg = this.chordRoot()), (vel = 0.6); break;
+      // Bass: the beat's own line (or the field's), then shaped by the Bass
+      // settings: a pattern, movement, a walk into the next chord, ghosts.
+      let bq: { deg: number; vel: number; len: number; slide: boolean; up: number } | null = null;
+      const pat = P.bassPattern ?? 'beat';
+      if (pat === 'beat') {
+        // Bass: the beat's bass row, when it has one.
+        if (P.bass > 0 && B?.beat.b) {
+          const row = B.beat.b;
+          const i = tick % row.length;
+          let deg = -999, vel = 0.8, slide = false;
+          switch (row[i]) {
+            case 'B': (deg = this.chordRoot()), (vel = 1); break;
+            case 'b': deg = this.chordRoot(); break;
+            case 'o': (deg = this.chordRoot()), (vel = 0.45); break;
+            case 'f': deg = this.chordTone(2); break;
+            case 't': deg = this.chordTone(1); break;
+            case 'u': deg = this.chordTone(3); break;
+            case '~': (deg = this.chordRoot()), (vel = 0.85), (slide = true); break;
+            case '?': if (Math.random() < 0.5) (deg = this.chordRoot()), (vel = 0.6); break;
+          }
+          if (deg > -999 && i > 0 && (vel < 0.5 && Math.random() < P.vary * 0.6 || vel < P.follow * Math.max(0, 0.7 - e * 1.6))) deg = -999;
+          let gap = 1;
+          while (gap < row.length && row[(i + gap) % row.length] === '.') gap++;
+          let len = stepDur * Math.min(gap, P.bassSound === '808' ? 12 : 8) * 0.92;
+          const play = ed(3, deg > -999);
+          if (play && deg === -999) (deg = this.chordRoot()), (vel = 0.7), (len = stepDur * 1.5);
+          if (play) bq = { deg, vel, len: len * P.length, slide, up: 0 };
+        } else if (P.bass > 0) {
+          // Bass: the chord's root, low. Calm fields hold one long note a bar;
+          // busier ones walk root and fifth, then eighths with pickups.
+          let deg = -999, len = stepDur * 2;
+          if (e > 0.03) {
+            if (s === 0) (deg = this.chordRoot()), (len = e < 0.15 ? stepDur * 14 : stepDur * 3.5);
+            else if (e >= 0.15 && s === 8) (deg = e < 0.4 ? this.chordTone(2) : this.chordRoot()), (len = stepDur * 3);
+            else if (e >= 0.4 && (s === 4 || s === 12)) (deg = s === 12 ? this.chordTone(3) : this.chordRoot()), (len = stepDur * 1.6);
+            else if (e >= 0.65 && s % 4 === 2) (deg = this.chordTone(s === 14 ? 1 : 0)), (len = stepDur * 0.9);
+          }
+          const play = ed(3, deg > -999);
+          if (play && deg === -999) (deg = this.chordRoot()), (len = stepDur * 1.5);
+          if (play) bq = { deg, vel: s % 8 === 0 ? 1 : 0.8, len: len * P.length * this.lenK, slide: false, up: 0 };
         }
-        if (deg > -999 && i > 0 && (vel < 0.5 && Math.random() < P.vary * 0.6 || vel < P.follow * Math.max(0, 0.7 - e * 1.6))) deg = -999;
-        let gap = 1;
-        while (gap < row.length && row[(i + gap) % row.length] === '.') gap++;
-        let len = stepDur * Math.min(gap, P.bassSound === '808' ? 12 : 8) * 0.92;
-        const play = ed(3, deg > -999);
-        if (play && deg === -999) (deg = this.chordRoot()), (vel = 0.7), (len = stepDur * 1.5);
-        if (play) {
-          this.gridNow[48 + s] = 1;
-          this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * vel, len * P.length, sw, slide);
-        }
-      } else if (P.bass > 0) {
-        // Bass: the chord's root, low. Calm fields hold one long note a bar;
-        // busier ones walk root and fifth, then eighths with pickups.
-        let deg = -999, len = stepDur * 2;
-        if (e > 0.03) {
-          if (s === 0) (deg = this.chordRoot()), (len = e < 0.15 ? stepDur * 14 : stepDur * 3.5);
-          else if (e >= 0.15 && s === 8) (deg = e < 0.4 ? this.chordTone(2) : this.chordRoot()), (len = stepDur * 3);
-          else if (e >= 0.4 && (s === 4 || s === 12)) (deg = s === 12 ? this.chordTone(3) : this.chordRoot()), (len = stepDur * 1.6);
-          else if (e >= 0.65 && s % 4 === 2) (deg = this.chordTone(s === 14 ? 1 : 0)), (len = stepDur * 0.9);
-        }
-        const play = ed(3, deg > -999);
-        if (play && deg === -999) (deg = this.chordRoot()), (len = stepDur * 1.5);
-        if (play) {
-          this.gridNow[48 + s] = 1;
-          this.bassNote(deg, P.bass * (fit ? 0.5 : 1) * (s % 8 === 0 ? 1 : 0.8), len * P.length * this.lenK, sw);
-        }
+      }
+      if (P.bass > 0) bq = this.bassShape(bq, pat, s, e, stepDur, ed);
+      if (bq) {
+        this.gridNow[48 + s] = 1;
+        this.bassNote(bq.deg, P.bass * (fit ? 0.5 : 1) * bq.vel, bq.len * (P.bassLen ?? 1), sw, bq.slide, bq.up);
       }
 
       this.stepNow = s;
