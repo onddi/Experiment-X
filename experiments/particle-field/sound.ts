@@ -548,6 +548,10 @@ export class ParticleSound {
   resume() {
     if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
   }
+  /** False while the browser holds the audio (iOS after another app), until a tap. */
+  get running() {
+    return this.ctx.state === 'running';
+  }
 
   set(p: SoundParams) {
     this.p = p;

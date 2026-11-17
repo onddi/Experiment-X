@@ -19309,7 +19309,18 @@ setInterval(() => {
 }, 1000);
 
 // Browsers keep audio silent until a tap: wake the sound on the next one.
-for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, () => { if (snd && sndOn) snd.resume(); }, true);
+// Only some events count as a tap that lets audio start: on touch screens
+// that's the finger lifting (touchend / pointerup), not it landing.
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const) window.addEventListener(ev, () => { if (snd && sndOn) snd.resume(); }, true);
+// Back from another app: try to carry on. iOS keeps the audio held until the
+// next tap, so say so if it stays quiet.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !snd || !sndOn) return;
+  snd.resume();
+  setTimeout(() => {
+    if (!document.hidden && snd && sndOn && settings.sndVol > 0 && !paused && !snd.running) showToast('Tap anywhere to bring the sound back');
+  }, 700);
+});
 
 function togglePause() {
   paused = !paused;
