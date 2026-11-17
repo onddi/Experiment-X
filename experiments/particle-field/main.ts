@@ -412,9 +412,15 @@ let seeThrough = LAYER_ROLE === 'top';
 function clear() {
   const [r, g, b] = bgNow();
   ctx.globalCompositeOperation = 'source-over';
+  if (glr) glr.clearAlpha = seeThrough ? 0 : 1;
   if (seeThrough) {
     ctx.clearRect(0, 0, w, h);
     document.body.style.background = 'transparent';
+    // The GPU picture starts empty too (see-through only: layers).
+    if (glOnly && glr) {
+      glDirty2d = false;
+      glr.reset(canvas.width, canvas.height, 0, 0, 0);
+    }
     return;
   }
   document.body.style.background = `rgb(${r} ${g} ${b})`;
@@ -5863,7 +5869,6 @@ function glOnlyWanted() {
 function glWhy() {
   if (!glr) return 'no WebGL';
   if (RENDERER !== 'only') return 'chosen';
-  if (seeThrough) return 'see-through';
   if (gfxOn()) return 'FX';
   return '';
 }
@@ -7670,7 +7675,9 @@ function draw() {
   }
   if (only) {
     // The GPU keeps the picture and fades it for the trails.
-    glr!.fill(canvas.width, canvas.height, r, g, b, fadeA);
+    // See-through (a layer): fade to transparent instead of to the background.
+    if (seeThrough) glr!.erase(canvas.width, canvas.height, fadeA);
+    else glr!.fill(canvas.width, canvas.height, r, g, b, fadeA);
   } else {
     ctx.globalCompositeOperation = seeThrough ? 'destination-out' : 'source-over';
     ctx.fillStyle = seeThrough ? `rgb(0 0 0 / ${fadeA.toFixed(3)})` : `rgb(${r} ${g} ${b} / ${fadeA.toFixed(3)})`;
@@ -18528,7 +18535,8 @@ if (xframe.inFrame) {
   window.addEventListener('pointerdown', sharePointer('down'), true);
   window.addEventListener('pointermove', sharePointer('move'), true);
   xframe.onLayer((layer) => {
-    seeThrough = layer.role === 'stacked';
+    // A layer copy (or a field over a bottom layer) stays see-through whatever X-Frame says.
+    seeThrough = layer.role === 'stacked' || LAYER_ROLE === 'top' || !!LAYERS_ON[1].frame;
     document.body.classList.toggle('see-through', seeThrough);
     document.body.classList.toggle('no-input', !layer.input);
     if (!layer.input && !panel.classList.contains('collapsed')) toggle.click();

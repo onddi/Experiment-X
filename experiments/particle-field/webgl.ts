@@ -313,9 +313,26 @@ export class GLSprites {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
+  /** Erase the picture by this much (see-through trails: fades to transparent, not to a colour). */
+  erase(cw: number, ch: number, a: number) {
+    const gl = this.gl;
+    if (this.toPic(cw, ch)) this.clearPic(0, 0, 0);
+    gl.useProgram(this.fillProg);
+    gl.bindVertexArray(this.quadVao);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1f(this.uFlipFill, 0);
+    gl.uniform4f(this.uCol, 0, 0, 0, a);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  /** 0 while the field is see-through (a layer): the picture starts empty, not on a colour. */
+  clearAlpha = 1;
+
   private clearPic(r: number, g: number, b: number) {
     const gl = this.gl;
-    gl.clearColor(r / 255, g / 255, b / 255, 1);
+    const a = this.clearAlpha;
+    gl.clearColor((r / 255) * a, (g / 255) * a, (b / 255) * a, a);
     gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
