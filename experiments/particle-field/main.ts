@@ -17039,7 +17039,8 @@ function paintTrackLights(s: ParticleSound) {
   trackLights = trackLights.filter((t) => t.el.isConnected);
   for (const t of trackLights) {
     if (!t.el.offsetParent) continue;
-    const v = Math.round(Math.min(1, s.levelOf(t.layer) * 1.3) * 20) / 20;
+    // Dark while the browser holds the audio, so the lights don't claim sound.
+    const v = s.running ? Math.round(Math.min(1, s.levelOf(t.layer) * 1.3) * 20) / 20 : 0;
     if (v === t.v) continue;
     t.v = v;
     t.el.style.setProperty('--lit', String(v));
@@ -19311,11 +19312,20 @@ setInterval(() => {
 // Browsers keep audio silent until a tap: wake the sound on the next one.
 // Only some events count as a tap that lets audio start: on touch screens
 // that's the finger lifting (touchend / pointerup), not it landing.
-for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const) window.addEventListener(ev, () => { if (snd && sndOn) snd.resume(); }, true);
+// After being away, the first tap restarts the audio outright (see restart).
+let sndStale = false;
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const) window.addEventListener(ev, () => {
+  if (!snd || !sndOn) return;
+  if (sndStale && ev !== 'pointerdown') {
+    sndStale = false;
+    snd.restart();
+  } else snd.resume();
+}, true);
 // Back from another app: try to carry on. iOS keeps the audio held until the
 // next tap, so say so if it stays quiet.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden || !snd || !sndOn) return;
+  sndStale = true;
   snd.resume();
   setTimeout(() => {
     if (!document.hidden && snd && sndOn && settings.sndVol > 0 && !paused && !snd.running) showToast('Tap anywhere to bring the sound back');

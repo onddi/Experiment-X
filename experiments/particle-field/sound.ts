@@ -548,6 +548,12 @@ export class ParticleSound {
   resume() {
     if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
   }
+  /** iOS can come back from another app saying it runs while nothing is
+   *  heard: stop and start the audio again (call from a tap). */
+  restart() {
+    const c = this.ctx;
+    void c.suspend().then(() => c.resume()).catch(() => this.resume());
+  }
   /** False while the browser holds the audio (iOS after another app), until a tap. */
   get running() {
     return this.ctx.state === 'running';
