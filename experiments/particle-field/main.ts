@@ -3997,7 +3997,10 @@ function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number)
 // particles), then pick points with probability proportional to it, like a
 // stipple drawing.
 let sampleCanvas: HTMLCanvasElement | null = null;
+// The last frame's weights, so a live picture can keep particles that still sit on it.
+let imgWt: { wt: Float32Array; ix: number; iy: number; iw: number; ih: number; step: number } | null = null;
 function sampleImage(): [number, number][] {
+  imgWt = null;
   const camOn = settings.shape === 'camera';
   if (camOn) grabCamera();
   const src: { width: number; height: number } | null = camOn ? (cam.ready ? camCanvas : null) : (mediaFrame() ?? shapeImage);
@@ -4058,6 +4061,7 @@ function sampleImage(): [number, number][] {
         const my = Math.min(m.h - 1, ((y / ih) * m.h) | 0);
         wt[y * iw + x] = m.data[my * m.w + mx] > 0.5 ? 1 : 0;
       }
+    imgWt = { wt, ix, iy, iw, ih, step };
     const pts: [number, number][] = [];
     for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
       const k = (Math.random() * N) | 0;
@@ -4100,6 +4104,7 @@ function sampleImage(): [number, number][] {
     if (camOn) for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 1.6) ** 2.2;
     else for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 2.5) ** 0.8;
   }
+  imgWt = { wt, ix, iy, iw, ih, step };
   const pts: [number, number][] = [];
   for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
     const k = (Math.random() * N) | 0;
@@ -4725,7 +4730,10 @@ function buildShape() {
     }
     return false;
   });
-  if (S.shape === 'image' || S.shape === 'camera') pts.push(...sampleImage());
+  if (S.shape === 'image' || S.shape === 'camera') {
+    pts.push(...sampleImage());
+    if (liveShape && imgWt && pts.length && keepOnPicture(pts)) return;
+  }
   if (!pts.length) {
     for (let i = 0; i < n; i++) {
       hx[i] = px[i];
@@ -4834,6 +4842,40 @@ function playEntrance() {
   entrance = { start: now, dur };
 }
 
+// A new video or camera frame: a particle whose spot is still on the picture
+// keeps it (as likely as the picture there draws particles), and only the rest
+// take new spots from this frame, each the one nearest along the curve. So a
+// still part stays put and only what moved re-forms. (Giving every particle a
+// fresh random spot ten times a second kept them all travelling: the shape
+// never filled in and swirled.) Returns false to rebuild from scratch.
+function keepOnPicture(pts: [number, number][]): boolean {
+  const M = imgWt!;
+  const free: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = Math.floor(hx[i] / M.step) - M.ix;
+    const y = Math.floor(hy[i] / M.step) - M.iy;
+    const v = x >= 0 && y >= 0 && x < M.iw && y < M.ih ? M.wt[y * M.iw + x] : 0;
+    if (!(Math.random() < Math.min(1, v * 1.5))) free.push(i);
+  }
+  if (free.length > n * 0.9) return false;
+  const m = free.length;
+  if (!m) return true;
+  const fx = new Float32Array(m), fy = new Float32Array(m), tx = new Float32Array(m), ty = new Float32Array(m);
+  for (let j = 0; j < m; j++) {
+    fx[j] = hx[free[j]];
+    fy[j] = hy[free[j]];
+    const [x, y] = pts[(Math.random() * pts.length) | 0];
+    tx[j] = x;
+    ty[j] = y;
+  }
+  const owner = matchCurve(tx, ty, fx, fy);
+  for (let t = 0; t < m; t++) {
+    hx[free[owner[t]]] = tx[t];
+    hy[free[owner[t]]] = ty[t];
+  }
+  return true;
+}
+
 // The quick match: walk the screen along one curve that keeps nearby spots
 // together (a Hilbert curve), list particles and targets in that order, and
 // pair them off. Close to nearest for frame-to-frame changes, at a fraction
@@ -4857,7 +4899,7 @@ function hilbert(x: number, y: number) {
   }
   return d;
 }
-function matchCurve(tx: Float32Array, ty: Float32Array): Int32Array {
+function matchCurve(tx: Float32Array, ty: Float32Array, fx: ArrayLike<number> = px, fy: ArrayLike<number> = py): Int32Array {
   const m = tx.length;
   const kx = 1023 / Math.max(1, w);
   const ky = 1023 / Math.max(1, h);
@@ -4866,7 +4908,7 @@ function matchCurve(tx: Float32Array, ty: Float32Array): Int32Array {
   const a = new Float64Array(m);
   const b = new Float64Array(m);
   for (let i = 0; i < m; i++) {
-    a[i] = hilbert(cl(px[i] * kx), cl(py[i] * ky)) * B + i;
+    a[i] = hilbert(cl(fx[i] * kx), cl(fy[i] * ky)) * B + i;
     b[i] = hilbert(cl(tx[i] * kx), cl(ty[i] * ky)) * B + i;
   }
   a.sort();
