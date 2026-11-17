@@ -16901,7 +16901,7 @@ function renderDrumLib() {
     };
   };
   const draw = () => {
-    const next = `${settings.sndGenre}|${settings.sndBeat}`;
+    const next = `${settings.sndGenre}|${settings.sndBeat}|${settings.sndStyle}`;
     if (next === sig && box.childElementCount) return;
     sig = next;
     box.innerHTML = '';
@@ -16915,7 +16915,7 @@ function renderDrumLib() {
       const n = g.beats.length;
       pickBeat((settings.sndBeat + 1 + Math.floor(Math.random() * (n - 1))) % n);
     }, 'dice');
-    g.beats.forEach((b, i) => addB(b.name, settings.sndBeat === i, () => pickBeat(i)));
+    for (const c of beatChoices(g, pickBeat)) addB(c.name, c.on, c.go);
   };
   refreshers.push(draw);
   draw();
@@ -17349,6 +17349,23 @@ function levelBar(key: keyof Settings, label: string): HTMLElement {
   });
   return lv;
 }
+// A genre's beats for the drum pickers, each followed by its versions (the
+// subgenres in Style). A beat sets just the pattern; a version is the whole style.
+function beatChoices(g: NonNullable<ReturnType<typeof drumGenre>>, pickBeat: (i: number) => void) {
+  const st = STYLES.find((x) => x.beat === g.id) ?? null;
+  const [sid, sv = ''] = settings.sndStyle.split('/');
+  const ver = st && sid === st.id ? g.versions?.find((x) => x.name === sv) : undefined;
+  return g.beats.flatMap((b, i) => [
+    { name: b.name, on: !ver && settings.sndBeat === i, go: () => {
+      if (ver && st) {
+        settings.sndStyle = `${st.id}/${b.name}`; // leave the version
+        changed(new Set<keyof Settings>(['sndStyle']));
+      }
+      pickBeat(i);
+    } },
+    ...(g.versions ?? []).filter((x) => x.from === b.name).map((x) => ({ name: x.name, on: ver === x, go: () => useStyle(st, x.name) })),
+  ]);
+}
 // The Drums track's beats: the genre's beats as chips, Random first.
 function beatChips(): HTMLElement {
   const box = document.createElement('div');
@@ -17356,7 +17373,7 @@ function beatChips(): HTMLElement {
   let sig = '';
   const draw = () => {
     const g = drumGenre(settings.sndGenre);
-    const next = `${settings.sndGenre}|${settings.sndBeat}`;
+    const next = `${settings.sndGenre}|${settings.sndBeat}|${settings.sndStyle}`;
     if (next === sig) return;
     sig = next;
     box.innerHTML = '';
@@ -17381,7 +17398,7 @@ function beatChips(): HTMLElement {
       const n = g.beats.length;
       set('sndBeat', (settings.sndBeat + 1 + Math.floor(Math.random() * (n - 1))) % n);
     });
-    g.beats.forEach((b, i) => add(b.name, settings.sndBeat === i, () => set('sndBeat', i)));
+    for (const c of beatChoices(g, (i) => set('sndBeat', i))) add(c.name, c.on, c.go);
   };
   refreshers.push(draw);
   draw();
