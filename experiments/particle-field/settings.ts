@@ -311,7 +311,27 @@ export interface Settings {
   obsColour: 'white' | 'scene' | 'palette' | 'dark' | 'gold' | 'amber' | 'red' | 'pink' | 'violet' | 'blue' | 'ice' | 'mint';
   obsPulse: number; // 0 … 1, brightens with the music
   obsAlpha: number;
-  obsMore: string; // JSON list of extra pieces (ObPiece[])
+  ob2Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 2
+  ob2Text: string;
+  ob2Font: Settings['obsFont'];
+  ob2Size: number;
+  ob2Angle: number;
+  ob2X: number;
+  ob2Y: number;
+  ob3Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 3
+  ob3Text: string;
+  ob3Font: Settings['obsFont'];
+  ob3Size: number;
+  ob3Angle: number;
+  ob3X: number;
+  ob3Y: number;
+  ob4Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 4
+  ob4Text: string;
+  ob4Font: Settings['obsFont'];
+  ob4Size: number;
+  ob4Angle: number;
+  ob4X: number;
+  ob4Y: number;
   obsSpin: number; // degrees a second
   obsDrift: number; // 0 … 1
   obsInside: boolean; // keep particles inside the shapes
@@ -879,7 +899,27 @@ export const DEFAULTS: Settings = {
   obsColour: 'white',
   obsPulse: 0,
   obsAlpha: 0.5,
-  obsMore: '',
+  ob2Kind: 'none',
+  ob2Text: 'Hello',
+  ob2Font: 'bold',
+  ob2Size: 0.4,
+  ob2Angle: 0,
+  ob2X: 0.5,
+  ob2Y: 0.25,
+  ob3Kind: 'none',
+  ob3Text: 'World',
+  ob3Font: 'bold',
+  ob3Size: 0.4,
+  ob3Angle: 0,
+  ob3X: 0.5,
+  ob3Y: 0.75,
+  ob4Kind: 'none',
+  ob4Text: 'Flow',
+  ob4Font: 'bold',
+  ob4Size: 0.4,
+  ob4Angle: 0,
+  ob4X: 0.25,
+  ob4Y: 0.5,
   obsSpin: 0,
   obsDrift: 0,
   obsInside: false,
