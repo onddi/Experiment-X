@@ -9,6 +9,7 @@ export const ICON_SHAPES: [string, string][] = [
   ['smile', 'Smile'], ['peace', 'Peace'], ['infinity', 'Infinity'], ['planet', 'Planet'], ['diamond', 'Diamond'],
   ['crown', 'Crown'], ['snowflake', 'Snowflake'], ['tree', 'Pine tree'], ['fish', 'Fish'], ['rocket', 'Rocket'], ['butterfly', 'Butterfly'],
   ['flame', 'Flame'], ['cat', 'Cat'], ['yinyang', 'Yin yang'], ['anchor', 'Anchor'], ['key', 'Key'], ['house', 'House'], ['shades', 'Sunglasses'], ['pixelshades', 'Pixel shades'],
+  ['ankh', 'Ankh'], ['radiation', 'Radiation'], ['triskele', 'Triskele'], ['compass', 'Compass star'], ['lotus', 'Lotus'],
 ];
 export const isIcon = (id: string) => ICON_SHAPES.some(([k]) => k === id);
 
@@ -345,6 +346,71 @@ export function drawIcon(g: CanvasRenderingContext2D, id: string, cx: number, cy
       });
       break;
     }
+    case 'ankh':
+      g.lineWidth = s * 0.2;
+      g.beginPath();
+      g.ellipse(cx, cy - s * 0.5, s * 0.26, s * 0.36, 0, 0, Math.PI * 2);
+      g.moveTo(cx, cy - s * 0.14);
+      g.lineTo(cx, cy + s * 0.95);
+      g.moveTo(cx - s * 0.6, cy - s * 0.02);
+      g.lineTo(cx + s * 0.6, cy - s * 0.02);
+      g.stroke();
+      break;
+    case 'radiation':
+      // The trefoil: three blades and a centre dot.
+      circle(g, cx, cy, s * 0.17);
+      for (let k = 0; k < 3; k++) {
+        const a = -Math.PI / 2 + (k * Math.PI * 2) / 3;
+        g.beginPath();
+        g.arc(cx, cy, s * 0.95, a - Math.PI / 6, a + Math.PI / 6);
+        g.arc(cx, cy, s * 0.3, a + Math.PI / 6, a - Math.PI / 6, true);
+        g.closePath();
+        g.fill();
+      }
+      break;
+    case 'triskele':
+      // Three spiral arms turning out from the middle.
+      g.lineWidth = s * 0.13;
+      for (let k = 0; k < 3; k++) {
+        const a0 = (k * Math.PI * 2) / 3;
+        g.beginPath();
+        for (let j = 0; j <= 60; j++) {
+          const u = j / 60;
+          const a = a0 + u * Math.PI * 2.4;
+          const r = s * (0.08 + u * 0.46);
+          const ox = cx + Math.cos(a0) * s * 0.45;
+          const oy = cy + Math.sin(a0) * s * 0.45;
+          const x = ox + Math.cos(a + Math.PI) * r;
+          const y = oy + Math.sin(a + Math.PI) * r;
+          if (j) g.lineTo(x, y);
+          else g.moveTo(x, y);
+        }
+        g.stroke();
+      }
+      break;
+    case 'compass':
+      // An eight-point star: long points north, south, east and west.
+      poly(g, Array.from({ length: 16 }, (_, j) => {
+        const a = -Math.PI / 2 + (j * Math.PI) / 8;
+        const r = j % 2 ? 0.2 : j % 4 === 0 ? 1 : 0.55;
+        return [Math.cos(a) * r, Math.sin(a) * r];
+      }), cx, cy, s * 0.97);
+      break;
+    case 'lotus':
+      // Five petals rising from a base.
+      for (const [a, len, wd] of [[0, 0.95, 0.26], [-0.55, 0.8, 0.22], [0.55, 0.8, 0.22], [-1.15, 0.62, 0.18], [1.15, 0.62, 0.18]]) {
+        g.save();
+        g.translate(cx, cy + s * 0.55);
+        g.rotate(a);
+        g.beginPath();
+        g.moveTo(0, 0);
+        g.quadraticCurveTo(s * wd * 2, -s * len * 0.55, 0, -s * len * 1.2);
+        g.quadraticCurveTo(-s * wd * 2, -s * len * 0.55, 0, 0);
+        g.fill();
+        g.restore();
+      }
+      g.fillRect(cx - s * 0.7, cy + s * 0.6, s * 1.4, s * 0.09);
+      break;
     case 'pixelshades': {
       // Pixel-art shades, on a 16×5 grid (1 = black): a bar, then two stepped lenses.
       const rows = ['1111111111111111', '0111111001111110', '0111111001111110', '0011110000111100', '0001100000011000'];
