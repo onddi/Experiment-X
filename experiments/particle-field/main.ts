@@ -2625,10 +2625,13 @@ function drumLevels(dt: number) {
   const fall = Math.exp(-dt * 7);
   drumLv.pulse *= fall;
   drumLv.snareEnv *= fall;
-  drumLv.level = drumLv.level * Math.exp(-dt * 2);
+  // Loudness: a slow average of how much the drums play, like a song's level.
+  let energy = 0;
+  for (const e of hits) energy += Math.min(1, e.k * 1.4) * (e.kind === 'hat' ? 0.3 : 1);
+  drumLv.level += ((energy / Math.max(dt, 0.001)) * 0.08 - drumLv.level) * Math.min(1, dt * 0.8);
+  drumLv.level = Math.min(0.8, Math.max(0, drumLv.level));
   for (const e of hits) {
     const k = Math.min(1, e.k * 1.4);
-    drumLv.level = Math.max(drumLv.level, k * 0.7);
     if (e.kind === 'kick') {
       L.beat = true;
       drumLv.pulse = Math.max(drumLv.pulse, k);
@@ -16522,7 +16525,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     if (start && e.type === 'pointerup' && onValue && !start.turned && performance.now() - start.t < 500) {
       start = null;
       el.classList.remove('turning');
-      typeValue(c, out, () => src.get(c.key) as number, put, update);
+      typeValue(c, out, () => src.get(c.key) as number, (v) => src.put(c.key, +v.toFixed(6)), update);
       return;
     }
     const tap = !!start && e.type === 'pointerup' && e.pointerType === 'touch' && !start.turned && performance.now() - start.t < 500;
@@ -18211,7 +18214,8 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
     sync();
   };
   input.addEventListener('input', () => put(Number(input.value)));
-  const typeIt = () => typeValue(c, out, () => src.get(c.key) as number, put, sync);
+  // A typed value is kept as typed, not rounded to the slider's steps.
+  const typeIt = () => typeValue(c, out, () => src.get(c.key) as number, (v) => src.put(c.key, +v.toFixed(6)), sync);
   comboDrag(combo.el, el, () => pos(src.get(c.key) as number), (p) => put(c.min + p * (c.max - c.min)), typeIt, true);
   el.querySelector('.tuner-home')!.addEventListener('click', () => put(home()));
   el.querySelector('.tuner-close')!.addEventListener('click', closeTuner);
