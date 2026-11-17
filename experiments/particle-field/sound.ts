@@ -224,8 +224,16 @@ export interface SoundParams {
   grainSound: GrainSound;
   grainRate: number; // 0 … 1, 0.5 = as before
   grainLen: number; // 0 … 1, 0.5 = as before
+  seqSound?: HitSound; // Steps' own instrument ('same' = the main one)
+  seqRate?: number; // play every 1, 2 or 4 sixteenths
+  seqNotes?: number; // most notes a step, 0 = by how busy the music is
+  seqSens?: number; // 0 … 1: how small a crowd still plays (0.5 = as before)
+  seqTick?: boolean; // the soft pulse tick
   scan: number;
   scanSecs: number;
+  scanDir?: 'across' | 'down' | 'bounce' | 'radar';
+  scanSound?: HitSound; // its own instrument ('same' = the main one)
+  scanNotes?: number; // most notes per frame of the sweep (4 = as before)
   touch: number;
   touchSound: TouchSound;
   touchMode: TouchMode;
@@ -426,8 +434,9 @@ export class ParticleSound {
   // Touch.
   private touchVoices: TouchVoice[] = [];
   private lastSparkle = 0;
-  /** Where the scanline is, 0..1 across the screen. */
+  /** Where the scanline is in its sweep, 0..1 (scanPos: where it is drawn, 0..1). */
   scanX = 0;
+  scanPos = 0;
 
   constructor(p: SoundParams) {
     this.p = p;
@@ -2001,14 +2010,19 @@ export class ParticleSound {
       // tone), with a soft tick for the pulse.
       if (P.seq > 0) {
         this.cur = 'steps';
-        if (s % 2 === 0 && !onKick && this.audible('steps')) this.grain(x0, h * 0.15, w, h, P.seq * (s % 4 === 0 ? 0.35 : 0.18), 0.9, 0.012, 0.1);
+        if (s % 2 === 0 && !onKick && P.seqTick !== false && this.audible('steps')) this.grain(x0, h * 0.15, w, h, P.seq * (s % 4 === 0 ? 0.35 : 0.18), 0.9, 0.012, 0.1);
         let played = 0;
-        if (tot && gate()) {
+        const every = P.seqRate ?? 1;
+        if (tot && s % every === 0 && gate()) {
           const dyn = 1 + P.dyn * (0.4 + this.energy * 1.4 - 1);
-          for (let r = 0; r < ROWS && played < (busyK > 1.7 ? 3 : busyK < 0.6 ? 1 : 2); r++) {
-            if (this.grid[r] < (mean * 1.8) / Math.sqrt(busyK) || this.grid[r] < 2) continue;
+          const most = P.seqNotes || (busyK > 1.7 ? 3 : busyK < 0.6 ? 1 : 2);
+          // Sensitivity: up, a thinner crowd still plays; down, only the thickest.
+          const thr = ((mean * 1.8) / Math.sqrt(busyK)) * Math.pow(4, 0.5 - (P.seqSens ?? 0.5));
+          const voice = P.seqSound && P.seqSound !== 'same' ? P.seqSound : this.voiceFor(0);
+          for (let r = 0; r < ROWS && played < most; r++) {
+            if (this.grid[r] < thr || this.grid[r] < 2) continue;
             const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * this.p.range * 0.85)));
-            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room * dyn, (s / STEPS) * 1.6 - 0.8, this.voiceFor(0), sw);
+            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room * dyn, (s / STEPS) * 1.6 - 0.8, voice, sw);
             played++;
           }
         }
@@ -2122,26 +2136,41 @@ export class ParticleSound {
     this.cur = 'scan';
     if (P.scan > 0 && F.n > 0) {
       const secs = P.music === 'along' && F.musicOn && F.bpm > 40 ? (4 * 60) / F.bpm : P.scanSecs;
+      const dir = P.scanDir ?? 'across';
+      // Back and forth takes two sweeps' time for the round trip.
+      const posOf = (ph: number) => (dir === 'bounce' ? (ph < 0.5 ? ph * 2 : 2 - ph * 2) : ph);
       const before = this.scanX;
-      this.scanX += F.dt / secs;
-      const wrapped = this.scanX >= 1;
+      this.scanX += F.dt / (dir === 'bounce' ? secs * 2 : secs);
+      let wrapped = this.scanX >= 1;
       if (wrapped) this.scanX -= 1;
-      const a = before * w, b = this.scanX * w;
+      let a = posOf(before), b = (this.scanPos = posOf(this.scanX));
+      if (dir === 'bounce') {
+        wrapped = false;
+        if (a > b) [a, b] = [b, a];
+      }
+      // Where each particle is along the sweep, 0..1, and the note it gets.
+      const cx = w / 2, cy = h / 2, far = Math.hypot(cx, cy);
+      const along = (i: number) => (dir === 'down' ? F.py[i] / h : dir === 'radar' ? (Math.atan2(F.py[i] - cy, F.px[i] - cx) / (Math.PI * 2) + 1.25) % 1 : F.px[i] / w);
+      // Across: height sets the note. Down: left low, right high. Radar: nearer the middle, higher.
+      const pitchY = (i: number) => (dir === 'down' ? h - (F.px[i] / w) * h : dir === 'radar' ? (Math.hypot(F.px[i] - cx, F.py[i] - cy) / far) * h : F.py[i]);
+      const voiceOf = (i: number) => (P.scanSound && P.scanSound !== 'same' ? P.scanSound : this.voiceFor(F.tone[i] ?? 0.5));
+      const most = P.scanNotes ?? 4;
       const seen = new Set<number>();
       let found = 0;
       const step = Math.max(1, Math.floor(F.n / 3000));
-      for (let i = (Math.random() * step) | 0; i < F.n && found < 4; i += step) {
+      for (let i = (Math.random() * step) | 0; i < F.n && found < most; i += step) {
         if (F.dead && F.dead[i]) continue;
         const x = F.px[i];
-        if (wrapped ? x >= a || x < b : x >= a && x < b) {
-          const d = this.degAt(F.py[i], h);
+        const u = along(i);
+        if (wrapped ? u >= a || u < b : u >= a && u < b) {
+          const d = this.degAt(pitchY(i), h);
           if (seen.has(d)) continue;
           seen.add(d);
           found++;
           if (gate()) {
             const mv = F.px[i] - F.ox[i];
             const vrel = Math.abs(mv) / Math.max(1e-3, this.moveAvg);
-            this.note(d, P.scan * 0.45 * this.dynOf(vrel), (x / w) * 1.6 - 0.8, this.voiceFor(F.tone[i] ?? 0.5), 0, { z: F.pz[i], bend: this.bendOf(vrel, mv >= 0 ? 1 : -1) });
+            this.note(d, P.scan * 0.45 * this.dynOf(vrel) * Math.min(1, Math.sqrt(4 / Math.max(1, most))), (x / w) * 1.6 - 0.8, voiceOf(i), 0, { z: F.pz[i], bend: this.bendOf(vrel, mv >= 0 ? 1 : -1) });
           }
         }
       }

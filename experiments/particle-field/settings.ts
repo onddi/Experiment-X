@@ -227,6 +227,14 @@ export interface Settings {
   sndGrainRate: number;
   sndGrainLen: number;
   sndHitSound: import('./sound.ts').HitSound;
+  sndSeqSound: import('./sound.ts').HitSound;
+  sndSeqRate: '1' | '2' | '4';
+  sndSeqNotes: number;
+  sndSeqSens: number;
+  sndSeqTick: boolean;
+  sndScanDir: 'across' | 'down' | 'bounce' | 'radar';
+  sndScanSound: import('./sound.ts').HitSound;
+  sndScanNotes: number;
   sndDrone: number;
   sndGrain: number;
   sndScan: number;
@@ -823,6 +831,14 @@ export const DEFAULTS: Settings = {
   sndGrainRate: 0.5,
   sndGrainLen: 0.5,
   sndHitSound: 'same',
+  sndSeqSound: 'same',
+  sndSeqRate: '1',
+  sndSeqNotes: 0,
+  sndSeqSens: 0.5,
+  sndSeqTick: true,
+  sndScanDir: 'across',
+  sndScanSound: 'same',
+  sndScanNotes: 4,
   sndDrone: 0.4,
   sndGrain: 0,
   sndScan: 0,

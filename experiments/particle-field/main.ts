@@ -446,7 +446,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -8693,6 +8693,9 @@ const TOP_BLENDS: [Settings['topBlend'], string][] = [
 const OB_FONT_OPTS: [string, string][] = [['bold', 'Bold'], ['serif', 'Serif'], ['mono', 'Mono'], ['round', 'Rounded'], ['script', 'Script']];
 const OB_PIECE_KINDS: [string, string][] = [['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['circle', 'A circle']];
 const GRAIN_SOUNDS: [string, string][] = [['dust', 'Dust'], ['notes', 'Glitter notes'], ['rain', 'Rain'], ['bubbles', 'Bubbles'], ['vinyl', 'Vinyl crackle'], ['wood', 'Wood knocks']];
+const STEP_SOUNDS: [string, string][] = [['same', 'Main'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth'], ['celesta', 'Celesta'], ['crystal', 'Crystal'], ['wood', 'Wood block'], ['drop', 'Water drops']];
+const SCAN_DIRS: [string, string][] = [['across', 'Left to right'], ['down', 'Top to bottom'], ['bounce', 'Back and forth'], ['radar', 'Radar']];
+const STEP_RATES: [string, string][] = [['1', '1/16'], ['2', '1/8'], ['4', '1/4']];
 const CHIME_SOUNDS: [string, string][] = [['same', 'Like the strings'], ['wind', 'Wind chimes'], ['celesta', 'Celesta'], ['tubular', 'Tubular bells'], ['crystal', 'Crystal'], ['tri', 'Triangle'], ['gong', 'Gong'], ['drop', 'Water drops'], ['wood', 'Wood block'], ['bell', 'Bell'], ['glass', 'Glass'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['kalimba', 'Kalimba'], ['marimba', 'Marimba'], ['steel', 'Steel drum']];
 const PAD_SOUNDS: [string, string][] = [['soft', 'Soft'], ['warm', 'Warm analog'], ['strings', 'Strings'], ['bowed', 'Bowed'], ['tape', 'Tape (wobbly)'], ['glass', 'Glass'], ['shimmer', 'Shimmer'], ['air', 'Air'], ['choir', 'Choir'], ['organ', 'Organ'], ['dark', 'Dark drone']];
 const BASS_SOUNDS: [string, string][] = [
@@ -10079,6 +10082,11 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndAccents', label: 'Accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndHits', label: 'Bounce chimes', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndHitSound', label: 'Chime sound', options: CHIME_SOUNDS, show: () => settings.sndHits > 0 },
+  { kind: 'select', key: 'sndSeqSound', label: 'Sound', options: STEP_SOUNDS, show: () => settings.sndSeq > 0 },
+  { kind: 'select', key: 'sndSeqRate', label: 'Rate', options: STEP_RATES, show: () => settings.sndSeq > 0 },
+  { kind: 'range', key: 'sndSeqNotes', label: 'Notes', min: 0, max: 4, step: 1, format: (v) => (v === 0 ? 'auto' : String(v)), show: () => settings.sndSeq > 0 },
+  { kind: 'range', key: 'sndSeqSens', label: 'Sensitivity', min: 0, max: 1, step: 0.05, format: (v) => (v < 0.3 ? `crowds only ${pct(v)}` : v > 0.7 ? `a few will do ${pct(v)}` : pct(v)), show: () => settings.sndSeq > 0 },
+  { kind: 'toggle', key: 'sndSeqTick', label: 'Pulse tick', show: () => settings.sndSeq > 0 },
   { kind: 'note', text: 'Chimes need something to bounce off: Off-screen set to Bounce, or obstacles.', show: () => settings.sndHits > 0 && settings.edges !== 'bounce' && settings.obstacles === 'none' },
   { kind: 'range', key: 'sndGrain', label: 'Grains', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndGrainSound', label: 'Grain sound', options: GRAIN_SOUNDS, show: () => settings.sndGrain > 0 },
@@ -10086,6 +10094,9 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndGrainLen', label: 'Grain length', min: 0, max: 1, step: 0.05, format: (v) => (v < 0.3 ? 'tiny' : v < 0.7 ? 'short' : 'long'), show: () => settings.sndGrain > 0 },
   { kind: 'range', key: 'sndScan', label: 'Scanline', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndScanSecs', label: 'Sweep time', min: 1, max: 16, step: 0.5, format: (v) => `${v} s`, show: () => settings.sndScan > 0 && settings.sndMusic !== 'along' },
+  { kind: 'select', key: 'sndScanDir', label: 'Sweeps', options: SCAN_DIRS, show: () => settings.sndScan > 0 },
+  { kind: 'select', key: 'sndScanSound', label: 'Sound', options: STEP_SOUNDS, show: () => settings.sndScan > 0 },
+  { kind: 'range', key: 'sndScanNotes', label: 'Notes', min: 1, max: 8, step: 1, format: (v) => String(v), show: () => settings.sndScan > 0 },
   { kind: 'range', key: 'sndTouch', label: 'Touch instrument', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndTouchSound', label: 'Touch sound', options: TOUCH_SOUNDS, show: () => settings.sndTouch > 0 },
   { kind: 'choice', key: 'sndTouchMode', label: 'Touch plays', options: [['glide', 'Glide'], ['notes', 'Notes'], ['chord', 'Chords']], show: () => settings.sndTouch > 0 },
@@ -16835,10 +16846,10 @@ const SND_TRACKS: SndTrack[] = [
   { name: 'Bass', how: 'Plays the root of the chord, low. A calm field holds one long note a bar. As the particles speed up it walks between root and fifth, then plays eighth notes.', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassSound', 'sndBassTone'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
   { name: 'Strings', how: 'Invisible strings run up and down the screen. A particle crossing one plucks it. Strings further right play higher in the chord, and the top half of the screen plays higher still. The more particles cross at once, the louder the note.', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndOctave', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
   { name: 'Pad', how: 'Holds the chord underneath. It swells as the field gets busier, spreads wider in stereo as the particles spread out, and gets brighter as they speed up. Births and bursts make it bloom.', key: 'sndDrone', dot: '#b48cff', keys: ['sndPadSound', 'sndPadPump'], sub: () => optLabel(PAD_SOUNDS, settings.sndPadSound) + (settings.sndPadPump > 0 ? ' · pumping' : '') },
-  { name: 'Steps', how: 'A step sequencer that reads the screen left to right, one column per sixteenth note. Where particles crowd in the current column, that height plays a note: higher on the screen, higher note.', key: 'sndSeq', dot: '#6fd3b0', keys: [], sub: () => `a rhythm on ${optLabel(TIMBRES, settings.sndTimbre).toLowerCase()}` },
+  { name: 'Steps', how: 'A step sequencer that reads the screen left to right, one column per sixteenth note. Where particles crowd in the current column, that height plays a note: higher on the screen, higher note.', key: 'sndSeq', dot: '#6fd3b0', keys: ['sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTick'], sub: () => `${optLabel(STEP_RATES, settings.sndSeqRate)} notes on ${(settings.sndSeqSound === 'same' ? optLabel(TIMBRES, settings.sndTimbre) : optLabel(STEP_SOUNDS, settings.sndSeqSound)).toLowerCase()}` },
   { name: 'Chimes', how: 'A note each time particles bounce off an edge or an obstacle. Only the hardest bounces play, louder the harder they hit, and higher near the top of the screen.', key: 'sndHits', dot: '#9fe3f0', keys: ['sndHitSound'], notes: ['Chimes need'], sub: () => (settings.sndHitSound === 'same' ? 'when particles bounce' : `${optLabel(CHIME_SOUNDS, settings.sndHitSound)} · on bounces`) },
   { name: 'Grains', how: 'Tiny clicks from random particles, more of them the faster the field moves. A particle high on the screen crackles brighter, and each click pans to where its particle is.', key: 'sndGrain', dot: '#7c8aa6', keys: ['sndGrainSound', 'sndGrainRate', 'sndGrainLen'], sub: () => (settings.sndGrainSound === 'dust' ? 'a crackle from the crowd' : optLabel(GRAIN_SOUNDS, settings.sndGrainSound)) },
-  { name: 'Scanline', how: 'A line sweeps across the screen once a bar (or every few seconds). Particles it passes play a note, higher near the top, panned to where they are.', key: 'sndScan', dot: '#8fa8ff', keys: ['sndScanSecs'], sub: () => `sweeps every ${settings.sndScanSecs} s` },
+  { name: 'Scanline', how: 'A line sweeps the screen once a bar (or every few seconds): across, down, back and forth, or round like a radar. Particles it passes play a note: higher near the top (going down: further right; radar: nearer the middle), panned to where they are.', key: 'sndScan', dot: '#8fa8ff', keys: ['sndScanDir', 'sndScanSecs', 'sndScanSound', 'sndScanNotes'], sub: () => `${optLabel(SCAN_DIRS, settings.sndScanDir).toLowerCase()}${settings.sndMusic === 'along' ? ', once a bar' : `, every ${settings.sndScanSecs} s`}` },
   { name: 'Touch', how: 'Your fingers play. Each finger is its own voice: where you touch sets the pitch (up or across), and moving glides or steps through the scale.', key: 'sndTouch', dot: '#ef6fa8', keys: ['sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct'], notes: ['Each finger'], sub: () => optLabel(TOUCH_SOUNDS, settings.sndTouchSound) },
   { name: 'Accents', how: 'One-off sounds for events: a strum when the scene changes, a whoosh for a new shape, and a sparkle when many particles are born at once.', key: 'sndAccents', dot: '#f3d36b', keys: [], sub: () => 'births and bursts' },
 ];
@@ -18693,7 +18704,7 @@ function sndParams(): SoundParams {
     sndReverb: cl(R.sndReverb * space), sndEcho: cl(R.sndEcho * space), sndChorus: cl(R.sndChorus * space),
     sndBass: cl(R.sndBass * groove + lift), sndDrums: cl(R.sndDrums * groove + lift), sndSwing: cl(R.sndSwing + (R.sndMGroove - 0.5) * 0.4),
   });
-  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, hitSound: S.sndHitSound, grainSound: S.sndGrainSound, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
+  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, hits: S.sndHits, hitSound: S.sndHitSound, seqSound: S.sndSeqSound, seqRate: Number(S.sndSeqRate), seqNotes: S.sndSeqNotes, seqSens: S.sndSeqSens, seqTick: S.sndSeqTick, grainSound: S.sndGrainSound, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, scanDir: S.sndScanDir, scanSound: S.sndScanSound, scanNotes: S.sndScanNotes, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
     echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, grid: S.sndGrid };
@@ -18910,7 +18921,17 @@ function soundTick(dt: number) {
       sndScanEl.className = 'snd-scan';
       canvas.parentElement!.append(sndScanEl);
     }
-    sndScanEl.style.transform = `translateX(${(snd.scanX * canvas.clientWidth).toFixed(1)}px)`;
+    // The line: upright across, flat going down, a hand round the middle for radar.
+    const dir = settings.sndScanDir;
+    sndScanEl.dataset.dir = dir;
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
+    if (dir === 'down') sndScanEl.style.transform = `translateY(${(snd.scanPos * ch).toFixed(1)}px)`;
+    else if (dir === 'radar') {
+      sndScanEl.style.width = `${Math.hypot(cw, ch) / 2}px`;
+      sndScanEl.style.transform = `rotate(${(snd.scanPos * 360 - 90).toFixed(2)}deg)`;
+    } else sndScanEl.style.transform = `translateX(${(snd.scanPos * cw).toFixed(1)}px)`;
+    if (dir !== 'radar') sndScanEl.style.width = '';
   }
 }
 // Drag to turn a solid: one finger (or the mouse) turns it; let go and it
