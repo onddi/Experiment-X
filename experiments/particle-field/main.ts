@@ -2998,21 +2998,16 @@ function renderLinks() {
   const list = document.createElement('div');
   const meters: [string, HTMLElement][] = [];
   let drawn = '\u0000';
+  // The standard picker (‹ ›, tap the value for the whole list).
   const select = (opts: [string, string, string][], value: string, change: (v: string) => void, label: string) => {
-    const sel = document.createElement('select');
-    sel.setAttribute('aria-label', label);
-    let group: HTMLOptGroupElement | null = null;
-    for (const [v, text, g] of opts) {
-      if (g && group?.label !== g) {
-        group = document.createElement('optgroup');
-        group.label = g;
-        sel.append(group);
-      }
-      (group ?? sel).append(new Option(text, v));
-    }
-    sel.value = value;
-    sel.addEventListener('change', () => change(sel.value));
-    return sel;
+    const c = { kind: 'select', key: 'links', label, options: opts.map(([v, t]) => [v, t] as [string, string]) } as unknown as Extract<Control, { kind: 'select' }>;
+    let cur = value;
+    const pk = stdPick(c, valSrc(() => cur, (v) => {
+      cur = String(v);
+      change(cur);
+    }), () => value);
+    pk.update();
+    return pk.el;
   };
   const srcOpts: [string, string, string][] = SOURCES.map((d) => [d.id, d.label, d.group]);
   const KIND_GROUP = { moment: 'Moment', while: 'While held', amount: 'Amount' } as const;
@@ -3054,26 +3049,19 @@ function renderLinks() {
       const bottom = document.createElement('div');
       bottom.className = 'link-bottom';
       if (actionDef(l.act)?.kind === 'amount') {
-        const amt = document.createElement('input');
-        Object.assign(amt, { type: 'range', min: -1, max: 1, step: 0.05, value: String(l.amt) });
-        amt.setAttribute('aria-label', 'Strength');
-        const out = document.createElement('output');
         const fmt = (v: number) => (v < 0 ? `−${Math.round(-v * 100)}% (opposite)` : `${Math.round(v * 100)}%`);
-        out.textContent = fmt(l.amt);
-        amt.addEventListener('input', () => {
-          links[k] = { ...l, amt: Number(amt.value) };
-          out.textContent = fmt(links[k].amt);
+        const ac = { kind: 'range', key: 'links', label: 'Strength', min: -1, max: 1, step: 0.05, format: fmt } as unknown as Extract<Control, { kind: 'range' }>;
+        let cur = l.amt;
+        const std = stdRange(ac, valSrc(() => cur, (v) => {
+          cur = Number(v);
+          links[k] = { ...links[k], amt: cur };
           drawn = formatLinks(links);
           set('links', drawn as never);
-        });
-        const sw = document.createElement('div');
-        sw.className = 'link-amt';
-        const nm = document.createElement('span');
-        nm.textContent = 'Strength';
-        sw.append(nm, amt, out);
-        bottom.append(fillRange(sw, amt));
+        }), () => 1);
+        std.update();
+        bottom.append(std.el);
       }
-      bottom.append(select(whenOpts, l.when, (v) => upd({ when: v }), 'Only while'));
+      bottom.append(select(whenOpts, l.when, (v) => upd({ when: v }), 'When'));
       row.append(top, bottom);
       list.append(row);
     });
@@ -13634,8 +13622,8 @@ const MUSIC_GRID: MgGrid = {
           mgKick('pulse', 'Pulse', 'audioPulse', 2),
           mgKick('wave', 'Wave', 'audioWaveForce', 3, { fine: ['audioBeat', 'audioWaveAt', 'audioWaveEvery', 'audioWaveSpeed', 'audioWaveReach', 'audioWaveWidth', 'audioWaveFeel', 'audioWaveRings', 'audioWaveAccent'] }),
         ],
-        [mgRange('Flash', 'audioBgFlash', 1), hueAmt('beat', 'Shift')],
-        [mgRange('Punch', 'audioCam', 1.5), mgRange('Echo', 'audioEcho', 1)],
+        [mgRange('Flash', 'audioBgFlash', 1), hueAmt('beat', 'Shift'), mgMode('FX light', 'gfxLightBy', 'kick', 'off', 'gfxLightAmt', 1, { home: 'FX and music', note: 'With an FX look on, its bloom, grade and exposure pulse on the kick. Also in FX › FX and music, where All FX scales it.' })],
+        [mgRange('Punch', 'audioCam', 1.5), mgRange('Echo', 'audioEcho', 1), mgMode('FX lenses', 'gfxLensBy', 'kick', 'off', 'gfxLensAmt', 1, { home: 'FX and music', note: 'With a lens on, it kicks on the beat. Also in FX › FX and music.' })],
         null,
         [mgRange('Pulse', 'audioWordPulse', 1), mgRange('Hop', 'audioLetterHop', 1)],
         [X_SNAP, X_GLYPH],
@@ -14651,80 +14639,26 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
     const fineKeys = new Set<keyof Settings>();
     const notes = new Set<string>();
     for (const f of fl) {
-      const fb = document.createElement('div');
-      fb.className = 'mg-fbar';
-      fb.innerHTML = '<i></i><span></span><b></b>';
-      fb.querySelector('span')!.textContent = f.label;
-      const paint = () => {
-        const v = f.get();
-        fb.querySelector<HTMLElement>('i')!.style.width = `${Math.round(v * 100)}%`;
-        fb.querySelector('b')!.textContent = v <= 0.02 ? 'off' : `${Math.round(v * 100)}%`;
-        fb.classList.toggle('on', v > 0.02);
-      };
-      paint();
-      dDraws.push(paint);
-      // Drag along the bar to set; a tap toggles off / mid.
-      let down = false;
-      let moved = false;
-      let sx = 0;
-      let sy = 0;
-      let fv = 0;
-      const at = (e: PointerEvent) => {
-        fv = clamp01(fv + fillStep(fb, sy, e, sx));
-        sx = e.clientX;
-        f.put(fv);
+      // Its strength: the standard slider, on the reaction's 0–100%.
+      const fk = (f.keys?.find((x) => x !== 'audioKick' && x !== 'audioSnare' && x !== 'audioHats') ?? f.keys?.[0] ?? 'audioIntensity') as keyof Settings;
+      const fctl = { kind: 'range', key: fk, label: f.label, min: 0, max: 1, step: 0.01, format: (v: number) => (v <= 0.02 ? 'off' : `${Math.round(v * 100)}%`) } as Extract<Control, { kind: 'range' }>;
+      const std = stdRange(fctl, valSrc(f.get, (v) => {
+        f.put(clamp01(Number(v)));
         redraw();
-      };
-      fb.addEventListener('pointerdown', (e) => {
-        down = true;
-        moved = false;
-        sx = e.clientX;
-        sy = e.clientY;
-        fv = f.get();
-        try {
-          fb.setPointerCapture(e.pointerId);
-        } catch {
-          /* fine */
-        }
-      });
-      fb.addEventListener('pointermove', (e) => {
-        if (!down) return;
-        if (!moved && Math.abs(e.clientX - sx) < 6) return;
-        moved = true;
-        at(e);
-      });
-      fb.addEventListener('pointerup', () => {
-        if (down && !moved) {
-          f.put(f.get() > 0.02 ? 0 : 2 / 3);
-          redraw();
-        }
-        down = false;
-      });
-      fb.addEventListener('pointercancel', () => (down = false));
-      fb.tabIndex = 0;
-      fb.setAttribute('role', 'slider');
-      fb.setAttribute('aria-label', f.label);
-      fb.addEventListener('keydown', (e) => {
-        const step = e.key === 'ArrowRight' ? 0.05 : e.key === 'ArrowLeft' ? -0.05 : 0;
-        if (!step) return;
-        e.preventDefault();
-        f.put(clamp01(f.get() + step));
-        redraw();
-      });
+      }), () => 0);
+      const fb = std.el;
+      dDraws.push(std.update);
       if (f.fixed) dDraws.push(() => (fb.hidden = !!f.fixed?.()));
       detail.append(fb);
       if (f.choice && f.choice.options.length > 6) {
-        const sel = document.createElement('select');
-        sel.className = 'mg-pick';
-        for (const [o, t] of f.choice.options) sel.append(new Option(t, o));
-        sel.addEventListener('change', () => {
-          f.choice!.put(sel.value);
+        const ch = f.choice;
+        const pc = { kind: 'select', key: fk, label: 'Kind', options: ch.options } as Extract<Control, { kind: 'select' }>;
+        const pk = stdPick(pc, valSrc(ch.get, (v) => {
+          ch.put(String(v));
           redraw();
-        });
-        dDraws.push(() => {
-          if (document.activeElement !== sel) sel.value = f.choice!.get();
-        });
-        detail.append(sel);
+        }), () => ch.options[0][0]);
+        dDraws.push(pk.update);
+        detail.append(pk.el);
       } else if (f.choice) {
         const seg = document.createElement('div');
         seg.className = 'mg-seg';
@@ -14802,42 +14736,22 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
 }
 
 // One fine setting, drawn small, from the classic control's own definition.
-function mgFine(k: keyof Settings, draws: (() => void)[]) {
+function mgFine(k: keyof Settings, draws: (() => void)[]): HTMLElement {
   const c = ctlOf(k);
+  // Numbers, choices and switches: the same controls as the cards.
+  if (c && (c.kind === 'range' || c.kind === 'select' || c.kind === 'choice' || c.kind === 'toggle')) {
+    const std = c.kind === 'range' ? stdRange(c) : stdPick(c);
+    draws.push(std.update);
+    return std.el;
+  }
   const row = document.createElement('label');
   row.className = 'mg-fine';
   const name = document.createElement('span');
   name.textContent = c?.label ?? String(k);
   row.append(name);
   if (!c) return row;
-  if (c.kind === 'range') {
-    const out = document.createElement('b');
-    const inp = document.createElement('input');
-    inp.type = 'range';
-    inp.min = String(c.min);
-    inp.max = String(c.max);
-    inp.step = String(c.step);
-    inp.addEventListener('input', () => set(k, +inp.value as never));
-    draws.push(() => {
-      inp.value = String(settings[k]);
-      out.textContent = c.format ? c.format(num(k)) : String(settings[k]);
-    });
-    row.classList.add('range');
-    row.append(out, inp);
-    fillRange(row, inp);
-  } else if (c.kind === 'select' || c.kind === 'choice') {
-    const sel = document.createElement('select');
-    for (const [v, t] of c.options) sel.append(new Option(t, v));
-    sel.addEventListener('change', () => set(k, sel.value as never));
-    draws.push(() => (sel.value = String(settings[k])));
-    row.append(sel);
-  } else if (c.kind === 'toggle') {
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.addEventListener('change', () => set(k, cb.checked as never));
-    draws.push(() => (cb.checked = !!settings[k]));
-    row.classList.add('toggle');
-    row.prepend(cb);
+  if (false) {
+    // (numbers, choices and switches are handled above)
   } else if (c.kind === 'text' && k === 'shapeSeq') {
     const ed = seqEditor(() => String(settings[k]), (v) => set(k, v as never));
     draws.push(ed.update);
@@ -16374,58 +16288,27 @@ function fillStep(el: HTMLElement, y0: number, e: PointerEvent, lastX: number) {
   return ((e.clientX - lastX) / Math.max(80, el.getBoundingClientRect().width)) * (fine ? FINE_RATE : 1);
 }
 const isFillRow = (el: HTMLElement) => !!el.closest(".overview[data-density='strips'], #panel[data-view='list']");
-// Any native range as a fill row: `row` (holding the name and the value)
-// becomes the slider and the input stays, hidden, for the value, its events
-// and the keyboard. Setting input.value from code repaints the tint.
-const RANGE_VALUE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!;
-function fillRange(row: HTMLElement, inp: HTMLInputElement, colour?: string) {
-  row.classList.add('fr');
-  if (colour) row.style.setProperty('--fc', colour);
-  inp.classList.add('fr-input');
-  const fill = document.createElement('i');
-  fill.className = 'fr-fill';
-  row.prepend(fill);
-  const lo = () => (inp.min === '' ? 0 : Number(inp.min));
-  const hi = () => (inp.max === '' ? 100 : Number(inp.max));
-  const draw = () => (fill.style.width = `${Math.max(0, Math.min(1, (Number(RANGE_VALUE.get!.call(inp)) - lo()) / (hi() - lo() || 1))) * 100}%`);
-  Object.defineProperty(inp, 'value', {
-    get: () => RANGE_VALUE.get!.call(inp),
-    set: (v: string) => {
-      RANGE_VALUE.set!.call(inp, v);
-      draw();
-    },
-  });
-  inp.addEventListener('input', draw);
-  let st: { y: number; lx: number; v: number; moved: boolean } | null = null;
-  row.addEventListener('pointerdown', (e) => {
-    if ((e.target as HTMLElement).closest('select, button, input:not(.fr-input), a')) return;
-    st = { y: e.clientY, lx: e.clientX, v: Number(inp.value), moved: false };
-    try {
-      row.setPointerCapture(e.pointerId);
-    } catch {
-      /* fine */
-    }
-  });
-  row.addEventListener('pointermove', (e) => {
-    if (!st || !row.hasPointerCapture?.(e.pointerId)) return;
-    if (!st.moved && Math.abs(e.clientX - st.lx) < 4) return;
-    st.moved = true;
-    row.classList.add('turning');
-    st.v = Math.max(lo(), Math.min(hi(), st.v + fillStep(row, st.y, e, st.lx) * (hi() - lo())));
-    st.lx = e.clientX;
-    const before = inp.value;
-    inp.value = String(st.v);
-    if (inp.value !== before) inp.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  const end = () => {
-    if (st?.moved) inp.dispatchEvent(new Event('change', { bubbles: true }));
-    st = null;
-    row.classList.remove('turning', 'fine');
-  };
-  row.addEventListener('pointerup', end);
-  row.addEventListener('pointercancel', end);
-  draw();
-  return row;
+// The app's one slider and one picker, for use outside the cards too: the
+// rack's knob (a fill bar in List view) and the rack's ‹ › / switch row.
+// valSrc lets either drive a value that isn't a single setting.
+function valSrc(get: () => unknown, put: (v: unknown) => void): RackSrc {
+  return { get: () => get(), put: (_k, v) => put(v), base: null, settling: false };
+}
+function stdRange(c: Extract<Control, { kind: 'range' }>, src: RackSrc = RACK_LIVE, home: () => number = () => Number((sceneBase ?? DEFAULTS)[c.key])) {
+  const row = document.createElement('div');
+  row.className = 'row kn';
+  row.dataset.key = c.key;
+  const kb = rackKnob(c, home, src);
+  row.append(kb.el);
+  return { el: row, update: kb.update };
+}
+function stdPick(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, src: RackSrc = RACK_LIVE, home: () => unknown = () => (sceneBase ?? DEFAULTS)[c.key]) {
+  const row = document.createElement('div');
+  row.className = `row rk ${c.kind}`;
+  row.dataset.key = c.key;
+  const rr = rackRow(c, home, src);
+  row.append(rr.el);
+  return { el: row, update: rr.update };
 }
 function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, src: RackSrc) {
   const el = document.createElement('div');
@@ -16760,25 +16643,14 @@ function animPanel(c: Extract<Control, { kind: 'range' }>): HTMLElement {
         animPut(k, { ...a, s: v });
         draw();
       }, 'anim-shapes')));
-      const depth = document.createElement('input');
-      depth.type = 'range';
-      Object.assign(depth, { min: 0.02, max: 1, step: 0.01, value: String(a.d) });
-      depth.setAttribute('aria-label', 'How far it swings');
-      const out = document.createElement('output');
-      const say = () => (out.textContent = `± ${c.format ? c.format(+(a.d * span).toFixed(3)).replace(/^[+−-]/, '') : +(a.d * span).toFixed(2)}`);
-      say();
-      depth.addEventListener('input', () => {
-        a.d = Number(depth.value);
+      const fmtD = (d: number) => `± ${c.format ? c.format(+(d * span).toFixed(3)).replace(/^[+−-]/, '') : +(d * span).toFixed(2)}`;
+      const dc = { kind: 'range', key: k, label: 'Swing', min: 0.02, max: 1, step: 0.01, format: fmtD } as Extract<Control, { kind: 'range' }>;
+      const std = stdRange(dc, valSrc(() => a.d, (v) => {
+        a.d = Number(v);
         animPut(k, { ...a });
-        say();
-      });
-      const dw = document.createElement('div');
-      dw.className = 'anim-depth';
-      const dn = document.createElement('span');
-      dn.textContent = 'Swing';
-      dw.append(dn, depth, out);
-      fillRange(dw, depth);
-      box.append(labelled('How far', dw));
+      }), () => 0.2);
+      std.update();
+      box.append(labelled('How far', std.el));
     }
     if (a || recording) {
       const b = a?.b ?? 4;
@@ -23394,35 +23266,22 @@ function buildCards(key: string) {
 }
 const picksOn: [HTMLButtonElement, BPick][] = [];
 const extrasOn: [HTMLElement, () => void][] = [];
-function buildExtra(c: Extract<Control, { kind: 'range' | 'select' | 'text' }>) {
+function buildExtra(c: Extract<Control, { kind: 'range' | 'select' | 'text' }>): HTMLElement {
+  // Numbers and choices: the same controls as the cards.
+  if (c.kind === 'range' || c.kind === 'select') {
+    const std = c.kind === 'range' ? stdRange(c) : stdPick(c);
+    extrasOn.push([std.el, () => {
+      if (!buildHeld) std.update();
+    }]);
+    return std.el;
+  }
   const row = document.createElement('label');
   row.className = `bd-x bd-x-${c.kind}`;
   const name = document.createElement('span');
   name.textContent = c.label;
   row.append(name);
   const S = settings as unknown as Record<string, unknown>;
-  if (c.kind === 'range') {
-    const inp = document.createElement('input');
-    inp.type = 'range';
-    inp.min = String(c.min);
-    inp.max = String(c.max);
-    inp.step = String(c.step);
-    const val = document.createElement('b');
-    inp.addEventListener('input', () => set(c.key, Number(inp.value) as never));
-    row.append(inp, val);
-    fillRange(row, inp);
-    extrasOn.push([inp, () => {
-      if (!buildHeld) inp.value = String(S[c.key]);
-      const v = Number(S[c.key]);
-      val.textContent = c.format ? c.format(v) : c.key === 'count' ? v.toLocaleString() : String(v);
-    }]);
-  } else if (c.kind === 'select') {
-    const sel = document.createElement('select');
-    for (const [v, t] of c.options) sel.add(new Option(t, v));
-    sel.addEventListener('change', () => set(c.key, sel.value as never));
-    row.append(sel);
-    extrasOn.push([sel, () => (sel.value = String(S[c.key]))]);
-  } else {
+  {
     const inp = document.createElement('input');
     inp.type = 'text';
     inp.placeholder = c.placeholder ?? '';
