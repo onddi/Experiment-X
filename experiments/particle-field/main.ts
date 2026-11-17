@@ -16967,17 +16967,19 @@ const SND_OPEN_KEY = 'particle-field:sound-open';
 // the genre's sound. Genres without a beat list their sounds.
 function styleVars(st: Style): string[] {
   const g = st.beat ? drumGenre(st.beat) : null;
-  return g ? g.beats.map((b) => b.name) : st.vars;
+  // Each beat, then the genre's other takes on it (see Version).
+  return g ? g.beats.flatMap((b) => [b.name, ...(g.versions ?? []).filter((x) => x.from === b.name).map((x) => x.name)]) : st.vars;
 }
 function styleLook(st: Style | null, v: string): Partial<Settings> {
   const g = st?.beat ? drumGenre(st.beat) : null;
-  const bi = g ? g.beats.findIndex((b) => b.name === v) : -1;
-  // A beat plays with the genre's own sound. (Older picks named the sound.)
-  const soundName = st && bi >= 0 ? st.vars[0] : v;
+  const ver = g?.versions?.find((x) => x.name === v);
+  const bi = g ? g.beats.findIndex((b) => b.name === (ver?.from ?? v)) : -1;
+  // A beat plays with the genre's own sound, a version with its own. (Older picks named the sound.)
+  const soundName = st && bi >= 0 ? (ver?.sound ?? st.vars[0]) : v;
   const preset = [...mySoundPresets(), ...SOUND_PRESETS].find(([n]) => n === soundName)?.[1] ?? {};
   const look = soundOf(preset);
   if (g) {
-    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: g.kit, sndTempo: g.bpm, sndSwing: g.swing, sndBassSound: g.bass, sndGrid: '' });
+    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
     look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.55);
     look.sndBass = Math.max(Number(look.sndBass) || 0, 0.5);
   }
