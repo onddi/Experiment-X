@@ -446,7 +446,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -1548,7 +1548,7 @@ function step(dt: number) {
   if (on && A.snare) swirlDir = -swirlDir;
   const swirl = S.audioSnare === 'swirl' ? dSnare * 2.2 * S.audioHits * I * swirlDir : 0;
   if (on && A.snare && S.audioSnare === 'wave') {
-    addWave('ripple', w * (0.15 + Math.random() * 0.7), h * (0.15 + Math.random() * 0.7), { life: 0.3 + 0.5 * S.audioHits * I, soft: true, ring: S.audioWaveRings });
+    addWave('ripple', w * (A.snareX ?? 0.15 + Math.random() * 0.7), h * (0.15 + Math.random() * 0.7), { life: 0.3 + 0.5 * S.audioHits * I, soft: true, ring: S.audioWaveRings });
   }
   // Hat sparkle: nudge a few random particles (only the high group, more
   // of them, with frequency groups on).
@@ -2614,7 +2614,36 @@ const bypass = new Set<Tab>((() => {
   }
 })());
 // The music moves the field (a source is on and the Music tab isn't off).
-const reacting = () => audio.source !== 'off' && !bypass.has('music');
+const reacting = () => (audio.source !== 'off' || drumsDrive()) && !bypass.has('music');
+// The particle drums stand in for music when none is playing (Drums move the field).
+const drumsDrive = () => settings.sndMove && settings.sndDrums > 0 && !!snd && sndOn && audio.source === 'off';
+const drumLv = { pulse: 0, snareEnv: 0, level: 0 };
+function drumLevels(dt: number) {
+  const hits = snd!.takeDrumHits();
+  const L = { ...audio.levels, beat: false, snare: false, hat: false, accent: false, drop: false, bar: false, note: false };
+  const fall = Math.exp(-dt * 7);
+  drumLv.pulse *= fall;
+  drumLv.snareEnv *= fall;
+  drumLv.level = drumLv.level * Math.exp(-dt * 2);
+  for (const e of hits) {
+    const k = Math.min(1, e.k * 1.4);
+    drumLv.level = Math.max(drumLv.level, k * 0.7);
+    if (e.kind === 'kick') {
+      L.beat = true;
+      drumLv.pulse = Math.max(drumLv.pulse, k);
+    } else if (e.kind === 'snare') {
+      L.snare = true;
+      L.snareX = (e.col + 0.5) / 16;
+      drumLv.snareEnv = Math.max(drumLv.snareEnv, k);
+    } else if (e.kind === 'hat') L.hat = true;
+    else L.accent = true;
+  }
+  L.pulse = drumLv.pulse;
+  L.snareEnv = drumLv.snareEnv;
+  L.level = drumLv.level;
+  L.bpm = snd!.bpmNow;
+  audio.levels = L;
+}
 // The on-field knobs are out (Knobs tab off) and the crossfader is still.
 const playing = () => settings.playOn && !bypass.has('knobs');
 const xfLive = () => xf.on && !bypass.has('xfader');
@@ -8483,6 +8512,7 @@ function frame(now: number) {
   audio.sync = settings.audioSync;
   audio.update(now);
   soundTick(rawMs / 1000);
+  if (drumsDrive()) drumLevels(Math.min(0.1, rawMs / 1000));
   if (dropNow) {
     // Double-tap: the music's drop, on demand.
     dropNow = false;
@@ -10182,6 +10212,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndKit', label: 'Drum kit', options: KIT_OPTIONS, show: () => settings.sndDrums > 0 },
   { kind: 'range', key: 'sndVary', label: 'Variation', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as written' : pct(v)), show: () => !!settings.sndGenre },
+  { kind: 'toggle', key: 'sndMove', label: 'Drums move the field', show: () => settings.sndDrums > 0 },
+  { kind: 'note', text: 'With no music playing, the drums play your Music reactions: the kick pumps or pulses, a snare ripples from the column that played it, hats sparkle and crashes burst.', show: () => settings.sndDrums > 0 && settings.sndMove },
   { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrums > 0 },
   { kind: 'range', key: 'sndFollow', label: 'Follow the field', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !!settings.sndGenre },
   { kind: 'range', key: 'sndBeatChange', label: 'New beat', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'stay' : `every ${v} bars`), show: () => !!settings.sndGenre },
@@ -16997,7 +17029,7 @@ function paintTrackLights(s: ParticleSound) {
   }
 }
 const SND_TRACKS: SndTrack[] = [
-  { name: 'Drums', how: 'The screen is read left to right in 16 columns, one per sixteenth note. Particles crowding low in a column add a kick, in the middle a snare, high up a hi-hat, and a faster field plays more. A beat from the library plays as written, and a lively field adds to it.', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndKit', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
+  { name: 'Drums', how: 'The screen is read left to right in 16 columns, one per sixteenth note. Particles crowding low in a column add a kick, in the middle a snare, high up a hi-hat, and a faster field plays more. A beat from the library plays as written, and a lively field adds to it.', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndMove', 'sndKit', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
     sub: () => {
       const g = drumGenre(settings.sndGenre);
       const kit = optLabel(KIT_OPTIONS, settings.sndKit);

@@ -625,6 +625,21 @@ export class ParticleSound {
     }
   }
 
+  // Drum hits as they're scheduled, for the field to move with (see takeDrumHits).
+  private drumQ: { kind: 'kick' | 'snare' | 'hat' | 'crash'; k: number; at: number; col: number }[] = [];
+  private stepNow = 0;
+  private drumEv(kind: 'kick' | 'snare' | 'hat' | 'crash', k: number, when: number) {
+    if (!this.audible('drums') || this.drumQ.length > 64) return;
+    this.drumQ.push({ kind, k, at: this.ctx.currentTime + when, col: this.stepNow });
+  }
+  /** The drum hits heard by now: kind, strength and the column (0..15) that played. */
+  takeDrumHits() {
+    const now = this.ctx.currentTime;
+    const due = this.drumQ.filter((e) => e.at <= now);
+    if (due.length) this.drumQ = this.drumQ.filter((e) => e.at > now);
+    return due;
+  }
+
   /** How loud a layer has just played, 0..1 (falls back between notes). */
   levelOf(l: Layer) {
     return this.levels[LI[l]];
@@ -1689,6 +1704,7 @@ export class ParticleSound {
 
   private kick(k: number, when: number) {
     this.log('drums', k, 0.02, 0.25, when);
+    this.drumEv('kick', k, when);
     if (!this.audible('drums')) return;
     this.pump(when, k);
     const K = KITS[this.p.kit];
@@ -1711,6 +1727,7 @@ export class ParticleSound {
 
   private snare(k: number, when: number) {
     this.log('drums', k, 0.12, 0.25, when);
+    this.drumEv('snare', k, when);
     if (!this.audible('drums')) return;
     const K = KITS[this.p.kit];
     if (K?.snare) {
@@ -1737,6 +1754,7 @@ export class ParticleSound {
 
   private hat(k: number, when: number, open: boolean) {
     this.log('drums', k * 0.6, open ? 0.24 : 0.22, 0.1, when);
+    this.drumEv('hat', k, when);
     if (!this.audible('drums')) return;
     const K = KITS[this.p.kit];
     if (K?.hat) {
@@ -1765,6 +1783,7 @@ export class ParticleSound {
   // The drums a beat adds: clap, rim, percussion, toms and a crash.
   private clap(k: number, when: number) {
     this.log('drums', k, 0.14, 0.2, when);
+    this.drumEv('snare', k, when);
     if (!this.audible('drums')) return;
     const K = KITS[this.p.kit] ?? KITS.soft;
     const C = K.clap;
@@ -1796,6 +1815,7 @@ export class ParticleSound {
 
   private crash(k: number, when: number) {
     this.log('drums', k * 0.7, 0.3, 1, when);
+    this.drumEv('crash', k, when);
     if (!this.audible('drums')) return;
     const K = KITS[this.p.kit] ?? KITS.soft;
     const [ty, f, q, a, d, amp] = K.crash;
@@ -2261,6 +2281,7 @@ export class ParticleSound {
         }
       }
 
+      this.stepNow = s;
       if (P.drums > 0 && B) this.beatDrums(P, B, tick, s, sw, stepDur, P.drums * (fit ? 0.4 : 1), e, onKick, ed);
       // Drums: the beat comes from the field. Particles low in this column
       // add kicks, in the middle snares, high up hi-hats; busier plays more.

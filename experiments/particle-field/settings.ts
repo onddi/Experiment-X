@@ -215,6 +215,7 @@ export interface Settings {
   sndDrive: number;
   sndLofi: number;
   sndPing: boolean;
+  sndMove: boolean; // the particle drums drive the Music reactions
   sndPhaser: number;
   sndTrem: number;
   sndTremMode: 'volume' | 'pan';
@@ -850,6 +851,7 @@ export const DEFAULTS: Settings = {
   sndDrive: 0,
   sndLofi: 0,
   sndPing: false,
+  sndMove: false,
   sndPhaser: 0,
   sndTrem: 0,
   sndTremMode: 'volume',

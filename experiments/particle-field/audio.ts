@@ -53,6 +53,8 @@ export const TUNING: Record<Genre, Tuning> = {
 };
 
 export interface AudioLevels {
+  // Where a snare came from, 0..1 across (only the particle drums say).
+  snareX?: number;
   // Smoothed loudness per band, auto-gained to 0..1. Good for meters and
   // colour, but a typical song sits high here most of the time.
   level: number;
