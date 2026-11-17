@@ -310,7 +310,8 @@ export interface Settings {
   wellRange: number;
   placeWell: PlaceWell;
   showWells: boolean;
-  obstacles: 'none' | 'circles' | 'text' | 'wall' | 'ring' | 'body';
+  obstacles: 'none' | 'circles' | 'text' | 'wall' | 'ring' | 'icon' | 'body';
+  obsIcon: string;
   obsX: number;
   obsY: number;
   obsAngle: number;
@@ -319,7 +320,8 @@ export interface Settings {
   obsColour: 'white' | 'scene' | 'palette' | 'dark' | 'gold' | 'amber' | 'red' | 'pink' | 'violet' | 'blue' | 'ice' | 'mint';
   obsPulse: number; // 0 … 1, brightens with the music
   obsAlpha: number;
-  ob2Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 2
+  ob2Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle' | 'icon'; // obstacle 2
+  ob2Icon: string;
   ob2Text: string;
   ob2Font: Settings['obsFont'];
   ob2Size: number;
@@ -331,7 +333,8 @@ export interface Settings {
   ob2Style: Settings['obsStyle'];
   ob2Colour: Settings['obsColour'];
   ob2Alpha: number;
-  ob3Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 3
+  ob3Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle' | 'icon'; // obstacle 3
+  ob3Icon: string;
   ob3Text: string;
   ob3Font: Settings['obsFont'];
   ob3Size: number;
@@ -343,7 +346,8 @@ export interface Settings {
   ob3Style: Settings['obsStyle'];
   ob3Colour: Settings['obsColour'];
   ob3Alpha: number;
-  ob4Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 4
+  ob4Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle' | 'icon'; // obstacle 4
+  ob4Icon: string;
   ob4Text: string;
   ob4Font: Settings['obsFont'];
   ob4Size: number;
@@ -918,6 +922,7 @@ export const DEFAULTS: Settings = {
   placeWell: 'off',
   showWells: true,
   obstacles: 'none',
+  obsIcon: 'heart',
   obsCircles: '0.3,0.42;0.52,0.62;0.72,0.38',
   obsRadius: 70,
   obsText: 'FLOW',
@@ -931,6 +936,7 @@ export const DEFAULTS: Settings = {
   obsPulse: 0,
   obsAlpha: 0.5,
   ob2Kind: 'none',
+  ob2Icon: 'star',
   ob2Text: 'Hello',
   ob2Font: 'bold',
   ob2Size: 0.4,
@@ -943,6 +949,7 @@ export const DEFAULTS: Settings = {
   ob2Colour: 'white',
   ob2Alpha: 0.5,
   ob3Kind: 'none',
+  ob3Icon: 'moon',
   ob3Text: 'World',
   ob3Font: 'bold',
   ob3Size: 0.4,
@@ -955,6 +962,7 @@ export const DEFAULTS: Settings = {
   ob3Colour: 'white',
   ob3Alpha: 0.5,
   ob4Kind: 'none',
+  ob4Icon: 'spark',
   ob4Text: 'Flow',
   ob4Font: 'bold',
   ob4Size: 0.4,

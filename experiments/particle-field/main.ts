@@ -592,17 +592,17 @@ function obCircleList(): { x: number; y: number }[] {
 
 // Obstacles 2–4: each its own kind, word, font, size, angle and place, set
 // with the same controls as the first. They share its look and push.
-type ObPiece = { kind: 'text' | 'wall' | 'ring' | 'circle'; text: string; font: Settings['obsFont']; size: number; angle: number; x: number; y: number; spin: number; drift: number };
+type ObPiece = { kind: 'text' | 'wall' | 'ring' | 'circle' | 'icon'; icon?: string; text: string; font: Settings['obsFont']; size: number; angle: number; x: number; y: number; spin: number; drift: number };
 const OB_SLOTS = [2, 3, 4] as const;
 type ObSlot = (typeof OB_SLOTS)[number];
-const obK = (n: ObSlot, f: 'Kind' | 'Text' | 'Font' | 'Size' | 'Angle' | 'X' | 'Y' | 'Spin' | 'Drift' | 'Style' | 'Colour' | 'Alpha') => `ob${n}${f}` as keyof Settings;
-const OB_SLOT_KEYS = OB_SLOTS.flatMap((n) => (['Kind', 'Text', 'Font', 'Size', 'Angle', 'X', 'Y', 'Spin', 'Drift'] as const).map((f) => obK(n, f)));
+const obK = (n: ObSlot, f: 'Kind' | 'Icon' | 'Text' | 'Font' | 'Size' | 'Angle' | 'X' | 'Y' | 'Spin' | 'Drift' | 'Style' | 'Colour' | 'Alpha') => `ob${n}${f}` as keyof Settings;
+const OB_SLOT_KEYS = OB_SLOTS.flatMap((n) => (['Kind', 'Icon', 'Text', 'Font', 'Size', 'Angle', 'X', 'Y', 'Spin', 'Drift'] as const).map((f) => obK(n, f)));
 const OB_SLOT_LOOK_KEYS = OB_SLOTS.flatMap((n) => (['Style', 'Colour', 'Alpha'] as const).map((f) => obK(n, f)));
 function obSlot(n: ObSlot): ObPiece | null {
   const S = settings as unknown as Record<string, unknown>;
   const kind = S[obK(n, 'Kind')] as ObPiece['kind'] | 'none';
   if (kind === 'none') return null;
-  return { kind, text: String(S[obK(n, 'Text')]), font: S[obK(n, 'Font')] as Settings['obsFont'], size: Number(S[obK(n, 'Size')]), angle: Number(S[obK(n, 'Angle')]), x: Number(S[obK(n, 'X')]), y: Number(S[obK(n, 'Y')]), spin: Number(S[obK(n, 'Spin')]), drift: Number(S[obK(n, 'Drift')]) };
+  return { kind, icon: String(S[obK(n, 'Icon')]), text: String(S[obK(n, 'Text')]), font: S[obK(n, 'Font')] as Settings['obsFont'], size: Number(S[obK(n, 'Size')]), angle: Number(S[obK(n, 'Angle')]), x: Number(S[obK(n, 'X')]), y: Number(S[obK(n, 'Y')]), spin: Number(S[obK(n, 'Spin')]), drift: Number(S[obK(n, 'Drift')]) };
 }
 const obSlotsOn = () => OB_SLOTS.filter((n) => obSlot(n));
 // Spin and drift: the time they're drawn at, in steps of 1/20 s so the
@@ -640,6 +640,12 @@ function onePiece(g: CanvasRenderingContext2D, p: ObPiece, k: number) {
     const T = Math.max(6, Math.min(24, L * 0.25));
     g.roundRect(-L / 2, -T / 2, L, T, T / 2);
     g.fill();
+  } else if (p.kind === 'icon') {
+    // A shape from the Shape library, in whatever colour this is drawn with.
+    const r = Math.max(6, Math.min(w, h) * 0.45 * p.size);
+    const px = Math.ceil(r * 2.2);
+    const t = obIconTint(p.icon ?? 'heart', px, g.fillStyle);
+    g.drawImage(t, 0, 0, px, px, -px / 2, -px / 2, px, px);
   } else if (p.kind === 'circle') {
     g.beginPath();
     g.arc(0, 0, Math.max(6, Math.min(w, h) * 0.3 * p.size), 0, Math.PI * 2);
@@ -658,6 +664,31 @@ function onePiece(g: CanvasRenderingContext2D, p: ObPiece, k: number) {
 }
 
 // Draws the obstacles in screen pixels (used for both the grid and the display).
+// Icons are drawn white by the Shape library: keep each one (per size), then
+// tint a copy in the obstacle's colour into one shared scratch canvas.
+const obIconBase = new Map<string, HTMLCanvasElement>();
+const obIconScratch = document.createElement('canvas');
+function obIconTint(id: string, px: number, fill: CanvasRenderingContext2D['fillStyle']): HTMLCanvasElement {
+  const key = `${id}|${px}`;
+  let base = obIconBase.get(key);
+  if (!base) {
+    if (obIconBase.size > 40) obIconBase.clear();
+    base = document.createElement('canvas');
+    base.width = base.height = px;
+    drawIcon(base.getContext('2d')!, id, px / 2, px / 2, px * 0.45);
+    obIconBase.set(key, base);
+  }
+  const t = obIconScratch;
+  if (t.width < px || t.height < px) t.width = t.height = Math.max(px, t.width);
+  const tg = t.getContext('2d')!;
+  tg.globalCompositeOperation = 'copy';
+  tg.drawImage(base, 0, 0);
+  tg.globalCompositeOperation = 'source-in';
+  tg.fillStyle = fill;
+  tg.fillRect(0, 0, px, px);
+  tg.globalCompositeOperation = 'source-over';
+  return t;
+}
 // only: just that obstacle (1 = the first, with its circles or silhouette).
 function traceObstacles(g: CanvasRenderingContext2D, only?: 1 | ObSlot) {
   const S = settings;
@@ -675,9 +706,9 @@ function traceObstacles(g: CanvasRenderingContext2D, only?: 1 | ObSlot) {
       g.arc(c.x * w, c.y * h, S.obsRadius, 0, Math.PI * 2);
     }
     g.fill();
-  } else if (S.obstacles === 'text' || S.obstacles === 'wall' || S.obstacles === 'ring') {
+  } else if (S.obstacles === 'text' || S.obstacles === 'wall' || S.obstacles === 'ring' || S.obstacles === 'icon') {
     // One piece, placed (Position, or dragged on the field) and turned.
-    onePiece(g, { kind: S.obstacles, text: S.obsText, font: S.obsFont, size: S.obsSize, angle: S.obsAngle, x: S.obsX, y: S.obsY, spin: S.obsSpin, drift: S.obsDrift }, 0);
+    onePiece(g, { kind: S.obstacles, icon: S.obsIcon, text: S.obsText, font: S.obsFont, size: S.obsSize, angle: S.obsAngle, x: S.obsX, y: S.obsY, spin: S.obsSpin, drift: S.obsDrift }, 0);
   } else if (S.obstacles === 'body') {
     // Your silhouette from the camera, where the camera shows you on screen.
     const m = cam.body;
@@ -694,7 +725,7 @@ function obstacleField(): ObField | null {
   const S = settings;
   if (S.obstacles === 'none') return null;
   obT = obMoving() ? Math.floor(performance.now() / 50) / 20 : 0;
-  const key = [S.obstacles, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, S.obsX, S.obsY, S.obsAngle, S.obsFont, OB_SLOT_KEYS.map((k) => S[k]).join(','), S.obsInside, obT, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
+  const key = [S.obstacles, S.obsIcon, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, S.obsX, S.obsY, S.obsAngle, S.obsFont, OB_SLOT_KEYS.map((k) => S[k]).join(','), S.obsInside, obT, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
   if (key === obKey) return obField;
   obKey = key;
   const W = Math.max(1, Math.ceil(w / OB_CELL));
@@ -8705,7 +8736,7 @@ const TOP_BLENDS: [Settings['topBlend'], string][] = [
 const OB_FONT_OPTS: [string, string][] = [['bold', 'Bold'], ['serif', 'Serif'], ['mono', 'Mono'], ['round', 'Rounded'], ['script', 'Script']];
 const OB_LOOKS: [string, string][] = [['faint', 'Faint'], ['solid', 'Solid'], ['outline', 'Outline'], ['glow', 'Glow'], ['neon', 'Neon'], ['glass', 'Glass'], ['shadow', 'Lifted (shadow)'], ['stripes', 'Stripes'], ['dots', 'Dots']];
 const OB_COLOURS: [string, string][] = [['white', 'White'], ['scene', 'Scene colour'], ['palette', 'Scene palette (gradient)'], ['dark', 'Dark (a cut-out)'], ['gold', 'Gold'], ['amber', 'Amber'], ['red', 'Red'], ['pink', 'Pink'], ['violet', 'Violet'], ['blue', 'Blue'], ['ice', 'Ice'], ['mint', 'Mint']];
-const OB_PIECE_KINDS: [string, string][] = [['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['circle', 'A circle']];
+const OB_PIECE_KINDS: [string, string][] = [['text', 'A word'], ['icon', 'A shape'], ['wall', 'A wall'], ['ring', 'A ring'], ['circle', 'A circle']];
 const GRAIN_SOUNDS: [string, string][] = [['dust', 'Dust'], ['notes', 'Glitter notes'], ['rain', 'Rain'], ['bubbles', 'Bubbles'], ['vinyl', 'Vinyl crackle'], ['wood', 'Wood knocks']];
 const STEP_SOUNDS: [string, string][] = [['same', 'Main'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth'], ['celesta', 'Celesta'], ['crystal', 'Crystal'], ['wood', 'Wood block'], ['drop', 'Water drops']];
 const SCAN_DIRS: [string, string][] = [['across', 'Left to right'], ['down', 'Top to bottom'], ['bounce', 'Back and forth'], ['radar', 'Radar']];
@@ -9989,22 +10020,23 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'flockRange', label: 'Sees as far as', min: 15, max: 100, step: 1, format: (v) => `${v}px`, show: () => settings.flock > 0 },
   { kind: 'range', key: 'spaceDist', label: 'Spacing', min: 4, max: 40, step: 1, format: (v) => `${v}px`, show: () => settings.space > 0 },
 
-  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont', 'obsStyle', 'obsColour', 'obsAlpha', ...OB_SLOT_KEYS, ...OB_SLOT_LOOK_KEYS, 'obsSpin', 'obsDrift', 'obsInside', 'obsPulse'],
+  { kind: 'section', about: 'Circles, a word, a wall or a ring the particles flow around.', id: 'obstacles', label: 'Obstacles', tab: 'motion', lock: ['obstacles', 'obsIcon', 'obsCircles', 'obsRadius', 'obsText', 'obsSize', 'obsForce', 'obsShow', 'obsX', 'obsY', 'obsAngle', 'obsFont', 'obsStyle', 'obsColour', 'obsAlpha', ...OB_SLOT_KEYS, ...OB_SLOT_LOOK_KEYS, 'obsSpin', 'obsDrift', 'obsInside', 'obsPulse'],
     power: { on: () => settings.obstacles !== 'none', off: { obstacles: 'none' }, start: { obstacles: 'circles' } },
-    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'wall' ? 'a wall' : settings.obstacles === 'ring' ? 'a ring' : settings.obstacles === 'body' ? 'your silhouette' : 'off') + (settings.obstacles !== 'none' && obSlotsOn().length ? ` + ${obSlotsOn().length} more` : '') },
-  { kind: 'select', key: 'obstacles', label: 'Kind', options: [['circles', 'Circles'], ['text', 'A word'], ['wall', 'A wall'], ['ring', 'A ring'], ['body', 'Your silhouette (camera)']] },
+    summary: () => (settings.obstacles === 'circles' ? `${obCircleList().length} circles` : settings.obstacles === 'text' ? `“${settings.obsText}”` : settings.obstacles === 'icon' ? label(ICON_SHAPES, settings.obsIcon).toLowerCase() : settings.obstacles === 'wall' ? 'a wall' : settings.obstacles === 'ring' ? 'a ring' : settings.obstacles === 'body' ? 'your silhouette' : 'off') + (settings.obstacles !== 'none' && obSlotsOn().length ? ` + ${obSlotsOn().length} more` : '') },
+  { kind: 'select', key: 'obstacles', label: 'Kind', options: [['circles', 'Circles'], ['text', 'A word'], ['icon', 'A shape'], ['wall', 'A wall'], ['ring', 'A ring'], ['body', 'Your silhouette (camera)']] },
+  { kind: 'select', key: 'obsIcon', label: 'Shape', options: ICON_SHAPES, show: () => settings.obstacles === 'icon' },
   { kind: 'range', key: 'camRate', label: 'Silhouette updates per second', min: 1, max: 15, step: 1, show: bodyObs },
   { kind: 'toggle', key: 'obsPlace', label: 'Tap adds or removes circles, drag moves them', show: () => settings.obstacles === 'circles' },
   { kind: 'range', key: 'obsRadius', label: 'Circle size', min: 15, max: 220, step: 5, format: (v) => `${v}px`, show: () => settings.obstacles === 'circles' },
   { kind: 'text', key: 'obsText', label: 'Word', placeholder: 'Type a word', show: () => settings.obstacles === 'text' },
   { kind: 'select', key: 'obsFont', label: 'Font', options: OB_FONT_OPTS, show: () => settings.obstacles === 'text' },
-  { kind: 'range', key: 'obsSize', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
-  { kind: 'range', key: 'obsAngle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
-  { kind: 'range', key: 'obsX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
-  { kind: 'range', key: 'obsY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
-  { kind: 'buttons', buttons: [['Move it on the field', () => placeObstacle()]], show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
-  { kind: 'range', key: 'obsSpin', label: 'Spin', min: -90, max: 90, step: 1, format: (v) => (v === 0 ? 'still' : `${v}°/s`), show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
-  { kind: 'range', key: 'obsDrift', label: 'Drift', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsSize', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsAngle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
+  { kind: 'buttons', buttons: [['Move it on the field', () => placeObstacle()]], show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsSpin', label: 'Spin', min: -90, max: 90, step: 1, format: (v) => (v === 0 ? 'still' : `${v}°/s`), show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsDrift', label: 'Drift', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
   { kind: 'select', key: 'obsStyle', label: 'Look', options: OB_LOOKS, show: () => settings.obsShow },
   { kind: 'select', key: 'obsColour', label: 'Colour', options: OB_COLOURS, show: () => settings.obsShow },
   { kind: 'range', key: 'obsAlpha', label: 'Strength', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.obsShow && !(settings.obsStyle === 'faint' && settings.obsColour === 'white') },
@@ -10013,6 +10045,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'obsShow', label: 'Show obstacles' },
   { kind: 'range', key: 'obsPulse', label: 'Pulse with the music', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.obsShow },
   { kind: 'select', key: 'ob2Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob2Kind !== 'none' },
+  { kind: 'select', key: 'ob2Icon', label: 'Shape', options: ICON_SHAPES, show: () => settings.ob2Kind === 'icon' },
   { kind: 'text', key: 'ob2Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob2Kind === 'text' },
   { kind: 'select', key: 'ob2Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob2Kind === 'text' },
   { kind: 'range', key: 'ob2Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob2Kind !== 'none' },
@@ -10025,6 +10058,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob2Colour', label: 'Colour', options: OB_COLOURS, show: () => settings.ob2Kind !== 'none' && settings.obsShow },
   { kind: 'range', key: 'ob2Alpha', label: 'Strength', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.ob2Kind !== 'none' && settings.obsShow && !(settings.ob2Style === 'faint' && settings.ob2Colour === 'white') },
   { kind: 'select', key: 'ob3Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob3Kind !== 'none' },
+  { kind: 'select', key: 'ob3Icon', label: 'Shape', options: ICON_SHAPES, show: () => settings.ob3Kind === 'icon' },
   { kind: 'text', key: 'ob3Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob3Kind === 'text' },
   { kind: 'select', key: 'ob3Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob3Kind === 'text' },
   { kind: 'range', key: 'ob3Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob3Kind !== 'none' },
@@ -10037,6 +10071,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob3Colour', label: 'Colour', options: OB_COLOURS, show: () => settings.ob3Kind !== 'none' && settings.obsShow },
   { kind: 'range', key: 'ob3Alpha', label: 'Strength', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.ob3Kind !== 'none' && settings.obsShow && !(settings.ob3Style === 'faint' && settings.ob3Colour === 'white') },
   { kind: 'select', key: 'ob4Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob4Kind !== 'none' },
+  { kind: 'select', key: 'ob4Icon', label: 'Shape', options: ICON_SHAPES, show: () => settings.ob4Kind === 'icon' },
   { kind: 'text', key: 'ob4Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob4Kind === 'text' },
   { kind: 'select', key: 'ob4Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob4Kind === 'text' },
   { kind: 'range', key: 'ob4Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob4Kind !== 'none' },
@@ -17663,7 +17698,7 @@ function renderObFolds(sec: HTMLElement): HTMLElement {
     chev.addEventListener('click', toggle);
     row.append(dot, name, chev);
     const det = mk('div', 'sndp-det');
-    for (const k of ['obstacles', 'obsPlace', 'obsRadius', 'camRate', 'obsText', 'obsFont', 'obsSize', 'obsAngle', 'obsX', 'obsY', 'obsSpin', 'obsDrift', 'obsStyle', 'obsColour', 'obsAlpha']) {
+    for (const k of ['obstacles', 'obsIcon', 'obsPlace', 'obsRadius', 'camRate', 'obsText', 'obsFont', 'obsSize', 'obsAngle', 'obsX', 'obsY', 'obsSpin', 'obsDrift', 'obsStyle', 'obsColour', 'obsAlpha']) {
       const e = take(k);
       if (e) det.append(e);
     }
@@ -17674,7 +17709,7 @@ function renderObFolds(sec: HTMLElement): HTMLElement {
     folds.push([1, wrap, det]);
     refreshers.push(() => {
       const o = settings.obstacles;
-      name.querySelector('small')!.textContent = o === 'circles' ? `${obCircleList().length} circles` : o === 'text' ? `“${settings.obsText.trim() || '…'}”` : o === 'wall' ? 'A wall' : o === 'ring' ? 'A ring' : o === 'body' ? 'Your silhouette' : 'off';
+      name.querySelector('small')!.textContent = o === 'circles' ? `${obCircleList().length} circles` : o === 'text' ? `“${settings.obsText.trim() || '…'}”` : o === 'icon' ? label(ICON_SHAPES, settings.obsIcon) : o === 'wall' ? 'A wall' : o === 'ring' ? 'A ring' : o === 'body' ? 'Your silhouette' : 'off';
     });
     wrap.append(row, det);
     list.append(wrap);
@@ -17710,7 +17745,7 @@ function renderObFolds(sec: HTMLElement): HTMLElement {
     chev.addEventListener('click', toggle);
     row.append(dot, name, chev);
     const det = mk('div', 'sndp-det');
-    for (const f of ['Kind', 'Text', 'Font', 'Size', 'Angle', 'X', 'Y'] as const) {
+    for (const f of ['Kind', 'Icon', 'Text', 'Font', 'Size', 'Angle', 'X', 'Y'] as const) {
       const e = take(obK(n, f));
       if (e) det.append(e);
     }
@@ -17740,6 +17775,7 @@ function renderObFolds(sec: HTMLElement): HTMLElement {
   return list;
 }
 function obPieceName(p: ObPiece) {
+  if (p.kind === 'icon') return label(ICON_SHAPES, p.icon ?? 'heart');
   return p.kind === 'text' ? `“${p.text.trim() || '…'}”` : p.kind === 'wall' ? 'A wall' : p.kind === 'ring' ? 'A ring' : 'A circle';
 }
 
