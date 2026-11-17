@@ -8,7 +8,7 @@ export const ICON_SHAPES: [string, string][] = [
   ['flower', 'Flower'], ['leaf', 'Leaf'], ['drop', 'Drop'], ['cloud', 'Cloud'], ['note', 'Music note'], ['eye', 'Eye'],
   ['smile', 'Smile'], ['peace', 'Peace'], ['infinity', 'Infinity'], ['planet', 'Planet'], ['diamond', 'Diamond'],
   ['crown', 'Crown'], ['snowflake', 'Snowflake'], ['tree', 'Pine tree'], ['fish', 'Fish'], ['rocket', 'Rocket'], ['butterfly', 'Butterfly'],
-  ['flame', 'Flame'], ['cat', 'Cat'], ['yinyang', 'Yin yang'], ['anchor', 'Anchor'], ['key', 'Key'], ['house', 'House'],
+  ['flame', 'Flame'], ['cat', 'Cat'], ['yinyang', 'Yin yang'], ['anchor', 'Anchor'], ['key', 'Key'], ['house', 'House'], ['shades', 'Sunglasses'], ['pixelshades', 'Pixel shades'],
 ];
 export const isIcon = (id: string) => ICON_SHAPES.some(([k]) => k === id);
 
@@ -321,6 +321,46 @@ export function drawIcon(g: CanvasRenderingContext2D, id: string, cx: number, cy
       poly(g, [[0, -0.95], [0.95, -0.05], [0.72, -0.05], [0.72, 0.85], [-0.72, 0.85], [-0.72, -0.05], [-0.95, -0.05]], cx, cy, s);
       cut(g, () => g.fillRect(cx - s * 0.18, cy + s * 0.3, s * 0.36, s * 0.56));
       break;
+    case 'shades': {
+      // Flat-topped, wraparound: one straight brow bar, two lenses that curve under.
+      const top = -0.32;
+      g.beginPath();
+      g.moveTo(cx - s, cy + top * s);
+      g.lineTo(cx + s, cy + top * s);
+      g.lineTo(cx + s, cy + (top + 0.16) * s);
+      g.lineTo(cx + s * 0.94, cy + (top + 0.16) * s);
+      g.bezierCurveTo(cx + s * 0.94, cy + 0.42 * s, cx + s * 0.16, cy + 0.42 * s, cx + s * 0.12, cy + (top + 0.2) * s);
+      g.quadraticCurveTo(cx, cy + (top + 0.12) * s, cx - s * 0.12, cy + (top + 0.2) * s);
+      g.bezierCurveTo(cx - s * 0.16, cy + 0.42 * s, cx - s * 0.94, cy + 0.42 * s, cx - s * 0.94, cy + (top + 0.16) * s);
+      g.lineTo(cx - s, cy + (top + 0.16) * s);
+      g.closePath();
+      g.fill();
+      // A glint on each lens.
+      cut(g, () => {
+        for (const sx of [-1, 1]) {
+          g.beginPath();
+          g.ellipse(cx + sx * s * 0.5 - s * 0.12, cy - s * 0.05, s * 0.025, s * 0.1, 0.7, 0, Math.PI * 2);
+          g.fill();
+        }
+      });
+      break;
+    }
+    case 'pixelshades': {
+      // Pixel-art shades, on a 16×5 grid (1 = black): a bar, then two stepped lenses.
+      const rows = ['1111111111111111', '0111111001111110', '0111111001111110', '0011110000111100', '0001100000011000'];
+      const u = (s * 2) / 16;
+      const x0 = cx - s;
+      const y0 = cy - u * 2.5;
+      for (let r = 0; r < rows.length; r++) for (let c = 0; c < 16; c++) if (rows[r][c] === '1') g.fillRect(x0 + c * u - 0.3, y0 + r * u - 0.3, u + 0.6, u + 0.6);
+      // The white pixel glints.
+      cut(g, () => {
+        for (const c of [2, 10]) {
+          g.fillRect(x0 + c * u, y0 + u, u, u);
+          g.fillRect(x0 + (c + 1) * u, y0 + 2 * u, u, u);
+        }
+      });
+      break;
+    }
     default:
       return false;
   }
