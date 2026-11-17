@@ -12985,6 +12985,23 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
   }
   // The scene sheet sits over the bar's menu: one at a time.
   if (open && sceneSheetEl) closeSceneSheet();
+  // Phones: what the Stage bar leaves out comes first in the menu.
+  dockMoreEl.querySelectorAll('.dm-ctx').forEach((e) => e.remove());
+  if (open && sheetMode() && uView() === 'stage') {
+    const ctx: [string, string, () => void][] = [['Field knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true)] as [string, string, () => void]] : [])];
+    for (const [t, ic, fn] of ctx.reverse()) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dm-ctx';
+      b.innerHTML = `${ic}<span></span>`;
+      b.querySelector('span')!.textContent = t;
+      b.addEventListener('click', () => {
+        toggleDockMore(false);
+        fn();
+      });
+      dockMoreEl.prepend(b);
+    }
+  }
   const rb = dockMoreEl.querySelector('.dm-rec span');
   if (rb) rb.textContent = recorder.on ? 'Stop recording (V)' : 'Record a clip (V)';
   dockMoreEl.classList.toggle('open', open);
@@ -20663,7 +20680,8 @@ function toggleMute(on = !sndMuted()) {
 }
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · hold to mute' : 'Close the sound studio (M) · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), ['Knobs', KNOB_ICON, openKnobPill], ...(hasShape() ? [['Arrange the shape', svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'), () => toggleArrange(true)] as [string, string, () => void]] : []), uMore()],
+  // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
+  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
