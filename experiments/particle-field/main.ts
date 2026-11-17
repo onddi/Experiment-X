@@ -1539,6 +1539,7 @@ function step(dt: number) {
   if (on && S.audioNoteRipple > 0 && A.note) addWave('ripple', w * (0.12 + (0.76 * A.notePc) / 11), h * (0.35 + Math.random() * 0.3), { force: 0.9 * S.audioNoteRipple * I, speed: 0.8, ring: S.audioWaveRings, audio: true });
 
   // Accents burst from the centre; rhymes send a ring from somewhere new.
+  if (on && S.audioCrash > 0 && A.crash) addWave('shockwave', w / 2, h / 2, { force: 1.6 * S.audioCrash * I, speed: 1.3, ring: S.audioWaveRings, audio: true });
   if (on && S.audioAccentBurst > 0 && A.accent) addWave('shockwave', w / 2, h / 2, { force: 1.3 * S.audioAccentBurst * I, speed: 1.2, ring: S.audioWaveRings, audio: true });
   if (on && S.audioRhymeRipple > 0 && A.rhyme) addWave('ripple', w * (0.2 + Math.random() * 0.6), h * (0.25 + Math.random() * 0.5), { force: 1.5 * S.audioRhymeRipple * I, speed: 0.9, ring: S.audioWaveRings, audio: true });
 
@@ -2620,7 +2621,7 @@ const drumsDrive = () => settings.sndMove && settings.sndDrums > 0 && !!snd && s
 const drumLv = { pulse: 0, snareEnv: 0, level: 0 };
 function drumLevels(dt: number) {
   const hits = snd!.takeDrumHits();
-  const L = { ...audio.levels, beat: false, snare: false, hat: false, accent: false, drop: false, bar: false, note: false };
+  const L = { ...audio.levels, beat: false, snare: false, hat: false, crash: false, accent: false, drop: false, bar: false, note: false };
   const fall = Math.exp(-dt * 7);
   drumLv.pulse *= fall;
   drumLv.snareEnv *= fall;
@@ -2636,7 +2637,7 @@ function drumLevels(dt: number) {
       L.snareX = (e.col + 0.5) / 16;
       drumLv.snareEnv = Math.max(drumLv.snareEnv, k);
     } else if (e.kind === 'hat') L.hat = true;
-    else L.accent = true;
+    else L.crash = true;
   }
   L.pulse = drumLv.pulse;
   L.snareEnv = drumLv.snareEnv;
@@ -10213,7 +10214,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'sndKit', label: 'Drum kit', options: KIT_OPTIONS, show: () => settings.sndDrums > 0 },
   { kind: 'range', key: 'sndVary', label: 'Variation', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as written' : pct(v)), show: () => !!settings.sndGenre },
   { kind: 'toggle', key: 'sndMove', label: 'Drums move the field', show: () => settings.sndDrums > 0 },
-  { kind: 'note', text: 'With no music playing, the drums play your Music reactions: the kick pumps or pulses, a snare ripples from the column that played it, hats sparkle and crashes burst.', show: () => settings.sndDrums > 0 && settings.sndMove },
+  { kind: 'note', text: 'With no music playing, the drums play your Music reactions (Music › When…): Kick hits, Snare hits (a ripple starts at the column that played it), Hats tick and A crash hits.', show: () => settings.sndDrums > 0 && settings.sndMove },
   { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrums > 0 },
   { kind: 'range', key: 'sndFollow', label: 'Follow the field', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !!settings.sndGenre },
   { kind: 'range', key: 'sndBeatChange', label: 'New beat', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'stay' : `every ${v} bars`), show: () => !!settings.sndGenre },
@@ -10385,7 +10386,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioVoxSwell', label: 'Shape swells with the vocals', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
 
   { kind: 'section', id: 'rapflow', label: 'Rap flow', tab: 'music', about: 'Reactions to the words: each syllable, the gaps between them, how fast the flow is, accents, the voice rising and falling, and rhymes.',
-    lock: ['audioSylPush', 'audioSylFlash', 'audioSylHop', 'audioPauseDim', 'audioPauseFreeze', 'audioFlowSpeed', 'audioFlowHue', 'audioAccentBurst', 'audioAccentPunch', 'audioPitchLift', 'audioPitchTilt', 'audioRhymeRipple', 'audioRhymeHue'],
+    lock: ['audioSylPush', 'audioSylFlash', 'audioSylHop', 'audioPauseDim', 'audioPauseFreeze', 'audioFlowSpeed', 'audioFlowHue', 'audioAccentBurst', 'audioCrash', 'audioAccentPunch', 'audioPitchLift', 'audioPitchTilt', 'audioRhymeRipple', 'audioRhymeHue'],
     power: { on: () => settings.audioSylPush > 0 || settings.audioSylFlash > 0 || settings.audioSylHop > 0 || settings.audioPauseDim > 0 || settings.audioPauseFreeze > 0 || settings.audioFlowSpeed > 0 || settings.audioFlowHue > 0 || settings.audioAccentBurst > 0 || settings.audioAccentPunch > 0 || settings.audioPitchLift > 0 || settings.audioPitchTilt > 0 || settings.audioRhymeRipple > 0 || settings.audioRhymeHue > 0,
       off: { audioSylPush: 0, audioSylFlash: 0, audioSylHop: 0, audioPauseDim: 0, audioPauseFreeze: 0, audioFlowSpeed: 0, audioFlowHue: 0, audioAccentBurst: 0, audioAccentPunch: 0, audioPitchLift: 0, audioPitchTilt: 0, audioRhymeRipple: 0, audioRhymeHue: 0 }, start: { audioSylPush: 0.5, audioPauseDim: 0.5 } },
     summary: () => [settings.audioSylPush > 0 || settings.audioSylFlash > 0 || settings.audioSylHop > 0 ? 'syllables' : '', settings.audioPauseDim > 0 || settings.audioPauseFreeze > 0 ? 'pauses' : '', settings.audioFlowSpeed > 0 || settings.audioFlowHue > 0 ? 'flow' : '', settings.audioAccentBurst > 0 || settings.audioAccentPunch > 0 ? 'accents' : '', settings.audioPitchLift > 0 || settings.audioPitchTilt > 0 ? 'pitch' : '', settings.audioRhymeRipple > 0 || settings.audioRhymeHue > 0 ? 'rhymes' : ''].filter(Boolean).join(' · ') || 'off' },
@@ -10398,6 +10399,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'audioPauseFreeze', label: 'Freeze for a beat at each pause', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioFlowSpeed', label: 'Speed with the flow (syllables a second)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioFlowHue', label: 'Colour drifts faster with the flow', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'audioCrash', label: 'Burst on crashes', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioAccentBurst', label: 'Burst on accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioAccentPunch', label: 'Punch in on accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'audioPitchLift', label: 'Rise and fall with the voice', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -10564,7 +10566,7 @@ const MUSIC_KEYS = [
   'audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop',
   'audioSnareFlash', 'audioSnareHop', 'audioHatTwinkle', 'audioHatShake', 'audioBassThrob', 'audioBassZoom', 'audioBassGlow', 'audioBuildScatter', 'audioEnergyShake', 'audioEnergyWords',
   'audioNoteRipple', 'audioNoteHue', 'audioNoteHop', 'audioVoxGlow', 'audioVoxZoom', 'audioVoxSwell',
-  'audioSylPush', 'audioSylFlash', 'audioSylHop', 'audioPauseDim', 'audioPauseFreeze', 'audioFlowSpeed', 'audioFlowHue', 'audioAccentBurst', 'audioAccentPunch', 'audioPitchLift', 'audioPitchTilt', 'audioRhymeRipple', 'audioRhymeHue',
+  'audioSylPush', 'audioSylFlash', 'audioSylHop', 'audioPauseDim', 'audioPauseFreeze', 'audioFlowSpeed', 'audioFlowHue', 'audioAccentBurst', 'audioCrash', 'audioAccentPunch', 'audioPitchLift', 'audioPitchTilt', 'audioRhymeRipple', 'audioRhymeHue',
 ] as const;
 const playSettings = (): Partial<Settings> => ({
   morph: settings.morph,
@@ -13645,6 +13647,12 @@ const MUSIC_GRID: MgGrid = {
       cells: [[mgMode('Sparkle', 'audioHats', 'sparkle', 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })], [mgRange('Twinkle', 'audioHatTwinkle', 1)], [mgRange('Shake', 'audioHatShake', 1)], null, null, null],
     },
     {
+      name: 'Crash',
+      when: 'A crash hits',
+      live: () => lit('crash', !!levelsNow().crash),
+      cells: [[mgRange('Burst', 'audioCrash', 1, { note: 'A burst from the centre on each crash cymbal: fills and the top of a phrase. Played by the Particle sound drums (Drums move the field); crashes in music aren’t picked out yet.' })], null, null, null, null, null],
+    },
+    {
       name: 'Bass',
       when: 'Bass rolls',
       live: () => levelsNow().sub > 0.55,
@@ -14232,7 +14240,7 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
     cap.innerHTML = grid === MUSIC_GRID ? '<span>When…</span><span>…the particles</span>' : '<span>When you…</span><span>…the particles</span>';
     if (!grid.chips) list.append(cap);
     let group = '';
-    const MUSIC_GROUPS: Record<string, string> = { Kick: 'Drums', Snare: 'Drums', 'Hi-hats': 'Drums', Bass: 'Tones', Melody: 'Tones', Vocals: 'Voice', Syllable: 'Voice', Pause: 'Voice', Flow: 'Voice', Accent: 'Voice', Pitch: 'Voice', Rhyme: 'Voice', Bars: 'The song', 'Build-up': 'The song', Drop: 'The song', Energy: 'The song' };
+    const MUSIC_GROUPS: Record<string, string> = { Kick: 'Drums', Snare: 'Drums', 'Hi-hats': 'Drums', Crash: 'Drums', Bass: 'Tones', Melody: 'Tones', Vocals: 'Voice', Syllable: 'Voice', Pause: 'Voice', Flow: 'Voice', Accent: 'Voice', Pitch: 'Voice', Rhyme: 'Voice', Bars: 'The song', 'Build-up': 'The song', Drop: 'The song', Energy: 'The song' };
     if (grid.all) {
       // How many are on, how many more there are, and what the colours mean.
       hint.textContent = 'Tap a dashed reaction to turn it on. Tap a lit one for its settings, slide it sideways for strength.';

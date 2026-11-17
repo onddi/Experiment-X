@@ -613,6 +613,7 @@ export interface Settings {
   audioFlowSpeed: number;
   audioFlowHue: number;
   audioAccentBurst: number;
+  audioCrash: number; // a burst from the centre on each crash
   audioAccentPunch: number;
   audioPitchLift: number;
   audioPitchTilt: number;
@@ -1227,6 +1228,7 @@ export const DEFAULTS: Settings = {
   audioFlowSpeed: 0,
   audioFlowHue: 0,
   audioAccentBurst: 0,
+  audioCrash: 0.6,
   audioAccentPunch: 0,
   audioPitchLift: 0,
   audioPitchTilt: 0,
