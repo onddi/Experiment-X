@@ -15286,7 +15286,7 @@ function renderControls() {
     }
     if (ctl.kind === 'obfolds') {
       const el = renderObFolds(body.closest('section') ?? body);
-      body.append(el);
+      body.prepend(el);
       conditional.push([el, () => settings.obstacles !== 'none']);
       continue;
     }
@@ -17592,7 +17592,7 @@ function renderFxLooks(): HTMLElement {
 // Obstacles 2–4 as folding rows, like the Sound tracks: the dot adds or
 // removes one, the name opens its settings (the same controls as the first
 // obstacle's, moved in from where the card drew them).
-let obFoldOpen = 0;
+let obFoldOpen = 1;
 function renderObFolds(sec: HTMLElement): HTMLElement {
   const take = (k: string) => {
     const el = sec.querySelector<HTMLElement>(`[data-key="${k}"]`);
@@ -17606,10 +17606,10 @@ function renderObFolds(sec: HTMLElement): HTMLElement {
     return e;
   };
   const list = mk('div', 'sndp-tracks ob-folds');
-  const folds: [ObSlot, HTMLElement, HTMLElement][] = [];
+  const folds: [1 | ObSlot, HTMLElement, HTMLElement][] = [];
   const paint = () => {
     for (const [n, wrap, det] of folds) {
-      const open = obFoldOpen === n && !!obSlot(n);
+      const open = obFoldOpen === n && (n === 1 || !!obSlot(n));
       det.hidden = !open;
       wrap.classList.toggle('open', open);
       wrap.querySelector('.sndp-chev')?.setAttribute('aria-expanded', String(open));
@@ -17617,6 +17617,37 @@ function renderObFolds(sec: HTMLElement): HTMLElement {
   };
   const S = settings as unknown as Record<string, unknown>;
   const mem: Partial<Record<ObSlot, ObPiece['kind']>> = {};
+  // Obstacle 1: the card's own (its switch is the card's), with every kind.
+  {
+    const wrap = mk('div', 'sndp-trk');
+    const row = mk('div', 'sndp-row');
+    const dot = mk('span', 'sndp-dot');
+    dot.style.setProperty('--c', 'var(--accent)');
+    const name = mk('button', 'sndp-name', '<b>Obstacle 1</b><small></small>');
+    const chev = mk('button', 'sndp-chev', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>');
+    chev.setAttribute('aria-label', 'Obstacle 1 settings');
+    const toggle = () => {
+      obFoldOpen = obFoldOpen === 1 ? 0 : 1;
+      paint();
+    };
+    name.addEventListener('click', toggle);
+    chev.addEventListener('click', toggle);
+    row.append(dot, name, chev);
+    const det = mk('div', 'sndp-det');
+    for (const k of ['obstacles', 'obsPlace', 'obsRadius', 'camRate', 'obsText', 'obsFont', 'obsSize', 'obsAngle', 'obsX', 'obsY']) {
+      const e = take(k);
+      if (e) det.append(e);
+    }
+    const move = [...sec.querySelectorAll<HTMLElement>('.buttons')].find((b) => b.textContent?.trim() === 'Move it on the field');
+    if (move) det.append(move.closest<HTMLElement>('.prow') ?? move);
+    folds.push([1, wrap, det]);
+    refreshers.push(() => {
+      const o = settings.obstacles;
+      name.querySelector('small')!.textContent = o === 'circles' ? `${obCircleList().length} circles` : o === 'text' ? `“${settings.obsText.trim() || '…'}”` : o === 'wall' ? 'A wall' : o === 'ring' ? 'A ring' : o === 'body' ? 'Your silhouette' : 'off';
+    });
+    wrap.append(row, det);
+    list.append(wrap);
+  }
   for (const n of OB_SLOTS) {
     const wrap = mk('div', 'sndp-trk');
     const row = mk('div', 'sndp-row');
