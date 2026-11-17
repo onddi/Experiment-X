@@ -19649,6 +19649,23 @@ function shuffle(again?: unknown) {
       keys.add(k as keyof Settings);
     }
   }
+  // A shuffle never needs the camera: whatever turned it on (an earlier
+  // shuffle, a scene played another way, the Camera card) goes, unless its
+  // card is locked. The camera then stops.
+  {
+    const D = DEFAULTS as unknown as Record<string, unknown>;
+    const locked = new Set<string>(lockedKeys());
+    for (const k of ['camMode', 'camPreview', 'camHands', 'gestOn', 'poseOn', 'maskFx', 'gaze', 'voice', 'camCentre', 'camSnap', 'camMix', 'camDepth']) {
+      if (k in patch || locked.has(k) || S[k] === D[k]) continue;
+      S[k] = D[k];
+      keys.add(k as keyof Settings);
+    }
+    if (settings.obstacles === 'body' && !('obstacles' in patch) && !locked.has('obstacles')) {
+      settings.obstacles = 'none';
+      keys.add('obstacles');
+    }
+    keys.add('camMode');
+  }
   // Macros belong to the look: a shuffle starts them at the middle, and a
   // Wild shuffle rolls a mood half the time. A locked Macros card keeps yours.
   if (!lockedKeys().includes('mEnergy')) {
