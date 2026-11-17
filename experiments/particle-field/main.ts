@@ -2509,9 +2509,11 @@ modelInput.addEventListener('change', async () => {
 const imageInput = document.createElement('input');
 imageInput.type = 'file';
 imageInput.accept = 'image/*,.svg,video/*';
+let mediaName = '';
 imageInput.addEventListener('change', async () => {
   const f = imageInput.files?.[0];
   if (!f) return;
+  mediaName = f.name;
   mediaStop();
   // A video, or an animated GIF: the shape follows it as it plays.
   if (f.type.startsWith('video/')) {
@@ -8686,6 +8688,7 @@ type ControlBody =
   | { kind: 'knobsmore' }
   | { kind: 'animlist' }
   | { kind: 'obfolds' }
+  | { kind: 'mediapick'; show?: () => boolean }
   | { kind: 'fxlooks' }
   | { kind: 'sndpresets' }
   | { kind: 'sndlayers' }
@@ -9913,7 +9916,7 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['Draw on the field', toggleDraw], ['Undo stroke', undoStroke], ['Clear', clearShapeDrawing]], active: (t) => t === 'Draw on the field' && drawMode, show: () => settings.shape === 'drawing' },
   { kind: 'toggle', key: 'drawOutline', label: 'Show the outline', show: () => settings.shape === 'drawing' },
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
-  { kind: 'buttons', buttons: [['Choose an image, video or GIF…', () => imageInput.click()]], show: () => settings.shape === 'image' },
+  { kind: 'mediapick', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
@@ -15348,6 +15351,12 @@ function renderControls() {
       searchItem(body, renderFxLooks(), 'fx looks presets save vhs thermal dreamy noir');
       continue;
     }
+    if (ctl.kind === 'mediapick') {
+      const el = renderMediaPick();
+      searchItem(dest, el, 'image video gif photo upload choose file picture');
+      if (ctl.show) conditional.push([el, ctl.show]);
+      continue;
+    }
     if (ctl.kind === 'obfolds') {
       const el = renderObFolds(body.closest('section') ?? body);
       body.prepend(el);
@@ -17777,6 +17786,50 @@ function renderObFolds(sec: HTMLElement): HTMLElement {
 function obPieceName(p: ObPiece) {
   if (p.kind === 'icon') return label(ICON_SHAPES, p.icon ?? 'heart');
   return p.kind === 'text' ? `“${p.text.trim() || '…'}”` : p.kind === 'wall' ? 'A wall' : p.kind === 'ring' ? 'A ring' : 'A circle';
+}
+
+// The picked image, video or GIF: a small preview (GIFs and videos play in
+// it), its name, and the button to choose another.
+function renderMediaPick(): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'media-pick';
+  const thumb = document.createElement('div');
+  thumb.className = 'media-thumb';
+  const txt = document.createElement('span');
+  txt.className = 'media-name';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.addEventListener('click', () => imageInput.click());
+  row.append(thumb, txt, btn);
+  let shown = '\u0000';
+  const draw = () => {
+    const src = shapeMedia ? shapeMedia.src : (shapeImage?.src ?? '');
+    if (src === shown) return;
+    shown = src;
+    thumb.innerHTML = '';
+    row.classList.toggle('empty', !src);
+    btn.textContent = src ? 'Change…' : 'Choose an image, video or GIF…';
+    txt.textContent = src ? mediaName || (shapeMedia?.video ? 'A video' : shapeMedia ? 'An animation' : 'An image') : '';
+    if (!src) return;
+    if (shapeMedia?.video) {
+      const v = document.createElement('video');
+      v.muted = true;
+      v.loop = true;
+      v.autoplay = true;
+      v.playsInline = true;
+      v.src = src;
+      thumb.append(v);
+      void v.play().catch(() => {});
+    } else {
+      const im = document.createElement('img');
+      im.alt = '';
+      im.src = src;
+      thumb.append(im);
+    }
+  };
+  draw();
+  const timer = window.setInterval(() => (row.isConnected ? draw() : clearInterval(timer)), 500);
+  return row;
 }
 
 function renderAnimList(): HTMLElement {
