@@ -214,6 +214,13 @@ export interface Settings {
   sndBright: number;
   sndDrive: number;
   sndLofi: number;
+  sndPing: boolean;
+  sndPhaser: number;
+  sndTrem: number;
+  sndTremMode: 'volume' | 'pan';
+  sndShimmer: number;
+  sndGlue: number;
+  sndTape: number;
   sndGrid: string;
   sndTempo: number;
   sndStrings: number;
@@ -842,6 +849,13 @@ export const DEFAULTS: Settings = {
   sndBright: 0,
   sndDrive: 0,
   sndLofi: 0,
+  sndPing: false,
+  sndPhaser: 0,
+  sndTrem: 0,
+  sndTremMode: 'volume',
+  sndShimmer: 0,
+  sndGlue: 0,
+  sndTape: 0,
   sndGrid: '',
   sndTempo: 90,
   sndStrings: 0.7,

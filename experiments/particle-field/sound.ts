@@ -272,6 +272,13 @@ export interface SoundParams {
   bright: number; // -1 dark … 1 bright, over everything
   drive: number; // warm saturation over everything
   lofi: number; // fewer bits, less top, tape hiss and crackle
+  ping?: boolean; // the echo bounces left and right
+  phaser?: number; // a slow swirl over everything
+  trem?: number; // volume or stereo pulsing in time
+  tremMode?: 'volume' | 'pan';
+  shimmer?: number; // a reverb tail an octave up
+  glue?: number; // a master compressor: tighter and louder
+  tape?: number; // bursts drag the pitch down like a tape stopping
   // Beats from the library: a genre and one of its beats ('' = the field plays the drums).
   genre: string;
   beat: number;
@@ -360,6 +367,21 @@ export class ParticleSound {
   private echoIn: GainNode | null = null;
   private echoDelay: DelayNode | null = null;
   private echoFb: GainNode | null = null;
+  private echoFb2: GainNode | null = null;
+  private echoPans: StereoPannerNode[] = [];
+  private echoDelay2: DelayNode | null = null;
+  private phaserWet: GainNode | null = null;
+  private phaserDry: GainNode | null = null;
+  private tremGain: GainNode | null = null;
+  private tremPan: StereoPannerNode | null = null;
+  private tremLfo: OscillatorNode | null = null;
+  private tremVol: GainNode | null = null;
+  private tremSide: GainNode | null = null;
+  private shimGain: GainNode | null = null;
+  private makeup: GainNode;
+  private tapeDelay: DelayNode | null = null;
+  private tapeGain: GainNode | null = null;
+  private lastTape = 0;
   // Field drive state.
   private voicing = 0; // 1 tense, -1 open
   private spreadS = 0.6;
@@ -447,7 +469,9 @@ export class ParticleSound {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
-    comp.connect(ctx.destination);
+    // Make-up gain after the compressor: Glue squeezes harder and lifts it back.
+    this.makeup = ctx.createGain();
+    comp.connect(this.makeup).connect(ctx.destination);
     this.comp = comp;
     this.master = ctx.createGain();
     this.master.gain.value = 0;
@@ -535,8 +559,33 @@ export class ParticleSound {
     if (this.echoIn && this.echoFb) {
       this.echoIn.gain.setTargetAtTime(p.echo * 0.55, t, 0.1);
       this.echoFb.gain.setTargetAtTime(0.25 + p.echo * 0.35, t, 0.1);
+      this.echoFb2?.gain.setTargetAtTime(0.25 + p.echo * 0.35, t, 0.1);
       this.echoFbNow = 0;
+      this.echoPans.forEach((pn, k) => pn.pan.setTargetAtTime(p.ping ? (k ? 0.85 : -0.85) : 0, t, 0.1));
     }
+    if ((p.phaser ?? 0) > 0) this.ensurePhaser();
+    if (this.phaserWet && this.phaserDry) {
+      this.phaserWet.gain.setTargetAtTime((p.phaser ?? 0) * 0.85, t, 0.1);
+      this.phaserDry.gain.setTargetAtTime(1 - (p.phaser ?? 0) * 0.25, t, 0.1);
+    }
+    if ((p.trem ?? 0) > 0) this.ensureTrem();
+    if (this.tremGain && this.tremVol && this.tremSide) {
+      const k = p.trem ?? 0;
+      const vol = p.tremMode !== 'pan';
+      this.tremGain.gain.setTargetAtTime(vol ? 1 - k * 0.45 : 1, t, 0.05);
+      this.tremVol.gain.setTargetAtTime(vol ? k * 0.45 : 0, t, 0.05);
+      this.tremSide.gain.setTargetAtTime(vol ? 0 : k * 0.85, t, 0.05);
+    }
+    if ((p.shimmer ?? 0) > 0) this.ensureShimmer();
+    this.shimGain?.gain.setTargetAtTime((p.shimmer ?? 0) * 0.9, t, 0.2);
+    // Glue: the master compressor squeezes harder, and the make-up lifts it.
+    const glue = p.glue ?? 0;
+    this.comp.threshold.setTargetAtTime(-14 - glue * 16, t, 0.1);
+    this.comp.ratio.setTargetAtTime(4 + glue * 4, t, 0.1);
+    this.comp.attack.setTargetAtTime(0.003 + glue * 0.012, t, 0.1);
+    this.comp.release.setTargetAtTime(0.25 - glue * 0.1, t, 0.1);
+    this.makeup.gain.setTargetAtTime(1 + glue * 0.6, t, 0.1);
+    if ((p.tape ?? 0) > 0) this.ensureTape();
     if (p.chorus > 0) this.ensureChorus();
     if (this.chorusOut) this.chorusOut.gain.setTargetAtTime(p.chorus * 0.8, t, 0.1);
     this.shelf.gain.setTargetAtTime(p.bright * 9, t, 0.1);
@@ -661,12 +710,119 @@ export class ParticleSound {
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 220;
+    // Two delays take turns: repeats alternate between them, so with
+    // Ping-pong each side gets every other repeat.
+    const d2 = (this.echoDelay2 = ctx.createDelay(2));
+    d2.delayTime.value = 0.5;
+    const fb2 = (this.echoFb2 = ctx.createGain());
+    const pA = ctx.createStereoPanner();
+    const pB = ctx.createStereoPanner();
+    this.echoPans = [pA, pB];
     this.echoIn.connect(d).connect(lp).connect(hp);
-    hp.connect(fb).connect(d);
-    hp.connect(this.master);
+    hp.connect(fb2).connect(d2);
+    d2.connect(fb).connect(d);
+    hp.connect(pA).connect(this.master);
+    d2.connect(pB).connect(this.master);
     const w = ctx.createGain();
     w.gain.value = 0.4;
     hp.connect(w).connect(this.wet);
+    d2.connect(w);
+  }
+
+  // Phaser: four all-pass filters swept slowly, mixed back with the dry sound.
+  private ensurePhaser() {
+    if (this.phaserWet) return;
+    const ctx = this.ctx;
+    const inp = ctx.createGain();
+    const out = ctx.createGain();
+    this.phaserDry = ctx.createGain();
+    this.phaserWet = ctx.createGain();
+    this.phaserWet.gain.value = 0;
+    inp.connect(this.phaserDry).connect(out);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.18;
+    let last: AudioNode = inp;
+    for (let k = 0; k < 4; k++) {
+      const ap = ctx.createBiquadFilter();
+      ap.type = 'allpass';
+      ap.frequency.value = 500 + k * 350;
+      ap.Q.value = 0.6;
+      const lg = ctx.createGain();
+      lg.gain.value = 300 + k * 260;
+      lfo.connect(lg).connect(ap.frequency);
+      last.connect(ap);
+      last = ap;
+    }
+    last.connect(this.phaserWet).connect(out);
+    lfo.start();
+    this.splice(inp, out);
+  }
+
+  // Tremolo / auto-pan: one wave in time with the tempo moves the volume, or
+  // the sound between left and right.
+  private ensureTrem() {
+    if (this.tremGain) return;
+    const ctx = this.ctx;
+    this.tremGain = ctx.createGain();
+    this.tremPan = ctx.createStereoPanner();
+    this.tremLfo = ctx.createOscillator();
+    this.tremLfo.frequency.value = 3;
+    this.tremVol = ctx.createGain();
+    this.tremVol.gain.value = 0;
+    this.tremSide = ctx.createGain();
+    this.tremSide.gain.value = 0;
+    this.tremLfo.connect(this.tremVol).connect(this.tremGain.gain);
+    this.tremLfo.connect(this.tremSide).connect(this.tremPan.pan);
+    this.tremLfo.start();
+    this.tremGain.connect(this.tremPan);
+    this.splice(this.tremGain, this.tremPan);
+  }
+
+  // Shimmer: the reverb send, folded an octave up (a full-wave rectifier
+  // doubles the pitch), cleaned up and fed to a long, bright tail.
+  private ensureShimmer() {
+    if (this.shimGain) return;
+    const ctx = this.ctx;
+    const rect = ctx.createWaveShaper();
+    const c = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) c[i] = Math.abs((i / 1023) * 2 - 1) * 1.6;
+    rect.curve = c;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 600;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 7000;
+    this.shimGain = ctx.createGain();
+    this.shimGain.gain.value = 0;
+    const verb = ctx.createConvolver();
+    verb.buffer = this.impulse(5.5);
+    this.wet.connect(rect).connect(hp).connect(lp).connect(this.shimGain).connect(verb).connect(this.master);
+  }
+
+  // Tape stop: a delay whose time is swept up drags the pitch down; swept
+  // back, it springs up again.
+  private ensureTape() {
+    if (this.tapeDelay) return;
+    this.tapeDelay = this.ctx.createDelay(1);
+    this.tapeDelay.delayTime.value = 0;
+    this.tapeGain = this.ctx.createGain();
+    this.tapeDelay.connect(this.tapeGain);
+    this.splice(this.tapeDelay, this.tapeGain);
+  }
+  private tapeStop(k: number, t: number) {
+    const d = this.tapeDelay?.delayTime;
+    const g = this.tapeGain?.gain;
+    if (!d || !g) return;
+    const depth = 0.12 + 0.22 * k;
+    d.cancelScheduledValues(t);
+    d.setValueAtTime(d.value, t);
+    d.linearRampToValueAtTime(depth, t + 0.45);
+    d.linearRampToValueAtTime(0, t + 0.8);
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(1 - k * 0.45, t + 0.45);
+    g.linearRampToValueAtTime(1, t + 0.8);
   }
 
   private splice(a: AudioNode, b: AudioNode) {
@@ -937,7 +1093,7 @@ export class ParticleSound {
     const ctx = this.ctx;
     if (!this.recDest) {
       this.recDest = ctx.createMediaStreamDestination();
-      this.comp.connect(this.recDest);
+      this.makeup.connect(this.recDest);
     }
     this.recMix?.disconnect();
     this.recMix = null;
@@ -1816,7 +1972,20 @@ export class ParticleSound {
     // Echo in time: a dotted eighth.
     if (this.echoDelay && P.echo > 0) {
       const d = Math.min(1.9, (60 / bpm) * 0.75);
-      if (Math.abs(this.echoDelay.delayTime.value - d) > 0.002) this.echoDelay.delayTime.setTargetAtTime(d, t, 0.2);
+      if (Math.abs(this.echoDelay.delayTime.value - d) > 0.002) {
+        this.echoDelay.delayTime.setTargetAtTime(d, t, 0.2);
+        this.echoDelay2?.delayTime.setTargetAtTime(d, t, 0.2);
+      }
+    }
+    // Tremolo in time: eighth notes for the volume, one sway a bar for the pan.
+    if (this.tremLfo && (P.trem ?? 0) > 0) {
+      const f = P.tremMode === 'pan' ? bpm / 240 : bpm / 30;
+      if (Math.abs(this.tremLfo.frequency.value - f) > 0.01) this.tremLfo.frequency.setTargetAtTime(f, t, 0.3);
+    }
+    // Tape stop on a burst, at most every couple of seconds.
+    if ((P.tape ?? 0) > 0 && F.thump > 0.45 && t - this.lastTape > 2) {
+      this.lastTape = t;
+      this.tapeStop(Math.min(1, F.thump) * (P.tape ?? 0), t);
     }
     // Filter sweep: closed and dark when calm, opening as the field speeds up.
     const sweep = Math.max(P.sweep, (D - 0.5) * 0.9);
@@ -1836,6 +2005,7 @@ export class ParticleSound {
       if (Math.abs(fb - this.echoFbNow) > 0.01) {
         this.echoFbNow = fb;
         this.echoFb.gain.setTargetAtTime(fb, t, 0.2);
+        this.echoFb2?.gain.setTargetAtTime(fb, t, 0.2);
       }
     }
     // Phrases and rests: a busier field plays longer and rests less.
