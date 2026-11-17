@@ -636,7 +636,9 @@ function onePiece(g: CanvasRenderingContext2D, p: ObPiece, k: number) {
   } else if (p.kind === 'wall') {
     const L = Math.max(w, h) * p.size;
     g.beginPath();
-    g.roundRect(-L / 2, -12, L, 24, 12);
+    // Thinner when small, so a short wall stays a wall.
+    const T = Math.max(6, Math.min(24, L * 0.25));
+    g.roundRect(-L / 2, -T / 2, L, T, T / 2);
     g.fill();
   } else if (p.kind === 'circle') {
     g.beginPath();
@@ -645,7 +647,7 @@ function onePiece(g: CanvasRenderingContext2D, p: ObPiece, k: number) {
   } else {
     // A ring with a gap (at the angle) for the flow to get in and out.
     const r = Math.min(w, h) * 0.45 * p.size;
-    g.lineWidth = 22;
+    g.lineWidth = Math.max(4, Math.min(22, r * 0.35));
     g.lineCap = 'round';
     g.strokeStyle = g.fillStyle;
     g.beginPath();
@@ -9996,7 +9998,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'obsRadius', label: 'Circle size', min: 15, max: 220, step: 5, format: (v) => `${v}px`, show: () => settings.obstacles === 'circles' },
   { kind: 'text', key: 'obsText', label: 'Word', placeholder: 'Type a word', show: () => settings.obstacles === 'text' },
   { kind: 'select', key: 'obsFont', label: 'Font', options: OB_FONT_OPTS, show: () => settings.obstacles === 'text' },
-  { kind: 'range', key: 'obsSize', label: 'Size', min: 0.1, max: 1, step: 0.05, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
+  { kind: 'range', key: 'obsSize', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsAngle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsY', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring'].includes(settings.obstacles) },
@@ -10013,7 +10015,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob2Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob2Kind !== 'none' },
   { kind: 'text', key: 'ob2Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob2Kind === 'text' },
   { kind: 'select', key: 'ob2Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob2Kind === 'text' },
-  { kind: 'range', key: 'ob2Size', label: 'Size', min: 0.1, max: 1, step: 0.05, format: pct, show: () => settings.ob2Kind !== 'none' },
+  { kind: 'range', key: 'ob2Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob2Kind !== 'none' },
   { kind: 'range', key: 'ob2Angle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => settings.ob2Kind !== 'none' },
   { kind: 'range', key: 'ob2X', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob2Kind !== 'none' },
   { kind: 'range', key: 'ob2Y', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob2Kind !== 'none' },
@@ -10025,7 +10027,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob3Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob3Kind !== 'none' },
   { kind: 'text', key: 'ob3Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob3Kind === 'text' },
   { kind: 'select', key: 'ob3Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob3Kind === 'text' },
-  { kind: 'range', key: 'ob3Size', label: 'Size', min: 0.1, max: 1, step: 0.05, format: pct, show: () => settings.ob3Kind !== 'none' },
+  { kind: 'range', key: 'ob3Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob3Kind !== 'none' },
   { kind: 'range', key: 'ob3Angle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => settings.ob3Kind !== 'none' },
   { kind: 'range', key: 'ob3X', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob3Kind !== 'none' },
   { kind: 'range', key: 'ob3Y', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob3Kind !== 'none' },
@@ -10037,7 +10039,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob4Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob4Kind !== 'none' },
   { kind: 'text', key: 'ob4Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob4Kind === 'text' },
   { kind: 'select', key: 'ob4Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob4Kind === 'text' },
-  { kind: 'range', key: 'ob4Size', label: 'Size', min: 0.1, max: 1, step: 0.05, format: pct, show: () => settings.ob4Kind !== 'none' },
+  { kind: 'range', key: 'ob4Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob4Kind !== 'none' },
   { kind: 'range', key: 'ob4Angle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => settings.ob4Kind !== 'none' },
   { kind: 'range', key: 'ob4X', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob4Kind !== 'none' },
   { kind: 'range', key: 'ob4Y', label: 'Position ↑↓', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob4Kind !== 'none' },
