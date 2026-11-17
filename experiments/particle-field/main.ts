@@ -17232,7 +17232,12 @@ function renderSoundPage(body: HTMLElement) {
           });
           row.append(x);
         }
-        row.addEventListener('click', () => useStyle(st, v));
+        // A pick closes the picker; the Style row shows what's playing.
+        row.addEventListener('click', () => {
+          useStyle(st, v);
+          pick.hidden = true;
+          sMain.setAttribute('aria-expanded', 'false');
+        });
         list.append(row);
       }
       pick.append(list);
