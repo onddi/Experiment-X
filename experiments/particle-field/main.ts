@@ -9703,6 +9703,10 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'spriteRow', label: 'Animation (row)', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? 'each its own' : `row ${Math.min(v, spriteRowsIdx.length)}`), show: () => isSprite() && !!spriteSheet && spriteRowsIdx.length > 1 },
   { kind: 'note', text: 'A single image, a sprite sheet or an animated GIF. A sheet’s grid is found by the clear gaps between frames (set columns and rows if not); with one animation per row, play one row or let each particle play its own. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
   { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
+  { kind: 'toggle', key: 'adaptScreen', label: 'Same look on every screen' },
+  { kind: 'range', key: 'adaptCount', label: 'Fit the count', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.adaptScreen },
+  { kind: 'range', key: 'adaptSize', label: 'Fit size and reach', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.adaptScreen },
+  { kind: 'note', text: 'Scenes you save or share remember the screen they were made on. Opened on a smaller or bigger one, count, size and pixel distances are fitted to it. 100% fits as measured, 0% keeps the scene as saved; drag to fine-tune the scene that’s open.', show: () => settings.adaptScreen },
   { kind: 'range', key: 'trail', label: 'Trails', min: 0, max: 1, step: 0.01, format: pct },
   { kind: 'toggle', key: 'glow', label: 'Additive glow' },
   { kind: 'range', key: 'linkDist', label: 'Link distance', min: 20, max: 160, step: 5, format: (v) => `${v}px`, show: () => settings.render === 'links' },
@@ -10540,9 +10544,70 @@ const playSettings = (): Partial<Settings> => ({
 });
 
 // Presets go through here: they glide over (Morph) and can wait for the beat.
+// --- Same look on every screen ---------------------------------------------------
+// Saved and shared scenes remember the screen they were made on. Opened on a
+// smaller (or bigger) one, what is measured in pixels is fitted once, as the
+// scene is applied: fewer particles on a phone, smaller dots, shorter reaches
+// and gentler pushes, so it looks like it did. Nothing runs per frame.
+const FIT_LENGTHS = ['radius', 'linkDist', 'flockRange', 'spaceDist', 'wellRange', 'obsRadius', 'emitSize', 'camHandReach'] as const;
+const FIT_PUSHES = ['flow', 'jitter', 'wind', 'gravity', 'launchSpeed', 'force'] as const;
+let fitNote = '';
+// The scene as saved, so the fit sliders can redo the fit live.
+let fitSource: Partial<Settings> | null = null;
+function fitToScreen(p: Partial<Settings>): Partial<Settings> {
+  fitNote = '';
+  const w0 = Number(p.sceneW) || 0;
+  const h0 = Number(p.sceneH) || 0;
+  fitSource = w0 && h0 ? p : null;
+  if (!settings.adaptScreen || !w0 || !h0) return p;
+  const area0 = (innerWidth * innerHeight) / (w0 * h0);
+  if (Math.abs(area0 - 1) < 0.15) return p;
+  // The sliders: 0 = as saved, 100% = as measured, 200% = twice as far.
+  const area = Math.pow(area0, settings.adaptCount);
+  const L = Math.max(0.1, Math.min(6, Math.pow(area0, settings.adaptSize / 2)));
+  const q = { ...p } as Record<string, unknown>;
+  const D = DEFAULTS as unknown as Record<string, unknown>;
+  const num = (k: string) => (typeof q[k] === 'number' ? (q[k] as number) : (D[k] as number));
+  const count0 = num('count');
+  // Count follows the area, but less than all the way: phones draw crisper.
+  q.count = Math.max(1, Math.min(MAX_COUNT, Math.round(count0 * Math.pow(area, 0.6))));
+  // Dots shrink with the screen, but not below a pixel (they'd just blur).
+  const size0 = num('size');
+  q.size = Math.max(0.5, Math.min(6, Math.round(size0 * L * 10) / 10));
+  for (const k of FIT_LENGTHS) q[k] = Math.round(num(k) * L);
+  for (const k of FIT_PUSHES) q[k] = num(k) * L;
+  if (num('lensDots') > 0) q.lensDots = Math.max(1, Math.round(num('lensDots') * L));
+  q.gfxCell = Math.max(4, Math.round(num('gfxCell') * L));
+  q.sceneW = innerWidth;
+  q.sceneH = innerHeight;
+  const k = (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v));
+  fitNote = q.count !== count0 ? `fitted to this screen (${k(count0)} → ${k(q.count as number)})` : 'fitted to this screen';
+  return q as Partial<Settings>;
+}
+// Moving a fit slider redoes the fit on the scene that's open.
+function refit() {
+  const src = fitSource;
+  if (!src) return;
+  const q = fitToScreen(src) as Record<string, unknown>;
+  const D = DEFAULTS as unknown as Record<string, unknown>;
+  const S0 = settings as unknown as Record<string, unknown>;
+  const keys = new Set<keyof Settings>();
+  for (const k of ['count', 'size', 'lensDots', 'gfxCell', ...FIT_LENGTHS, ...FIT_PUSHES]) {
+    const v = k in q ? q[k] : D[k];
+    if (S0[k] !== v) {
+      S0[k] = v;
+      keys.add(k as keyof Settings);
+    }
+  }
+  if (keys.size) {
+    refresh();
+    changed(keys);
+  }
+}
+
 function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
   const blank = p === BLANK_SCENE;
-  p = upgradeShape(p);
+  p = fitToScreen(upgradeShape(p));
   qualityRetry();
   // The scene playing until now: what it switched on goes when it does.
   const prev = currentMine?.settings ?? PRESETS.find(([n]) => n === lastSceneName)?.[1] ?? null;
@@ -10567,7 +10632,7 @@ function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; mo
 // you play, your on-screen knobs and locked cards.
 function blankTarget(): Settings {
   const S0 = settings as unknown as Record<string, unknown>;
-  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall', 'tiltLook', 'shapeDrag', ...SND_KEYS];
+  const keep = [...VIEW_KEYS, 'morph', 'beatSnap', 'shuffleCards', 'homeStrength', 'xfPos', 'audioSync', 'audioVox', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'adaptScreen', 'adaptCount', 'adaptSize', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall', 'tiltLook', 'shapeDrag', ...SND_KEYS];
   const target = { ...DEFAULTS, ...BLANK_SCENE, ...Object.fromEntries(keep.map((k) => [k, S0[k]])) } as unknown as Record<string, unknown>;
   for (const k of lockedKeys()) target[k] = S0[k];
   return target as unknown as Settings;
@@ -10588,7 +10653,7 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // Hands are an input like the pointer: they stay as they are unless the
   // preset itself sets them.
   // Drawing and spraying belong to their look, so they don't carry over.
-  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
+  const hands: Partial<Settings> = Object.fromEntries((['camHands', 'camHandReach', 'camHandForce', 'camPreview', 'gestOn', 'twoDist', 'twoAngle', 'poseOn', 'poseSweep', 'links', 'densityMode', 'playOn', 'playLeft', 'playWheel3', 'playWheel4', 'playRight', 'playWheel5', 'knobsMore', 'knobsPick', 'knobsFollow', 'numberKeys', 'adaptScreen', 'adaptCount', 'adaptSize', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'] as const).filter((k) => !(k in p) && !fromScene(k)).map((k) => [k, settings[k]]));
   if (hands.camHands === 'draw' || hands.camHands === 'spray') hands.camHands = 'off';
   // The on-field knobs are yours to switch on: no scene turns them on.
   hands.playOn = settings.playOn;
@@ -12729,6 +12794,7 @@ let prevEmitter: Emitter = settings.emitter;
 let dragHinted = false;
 function changed(keys: Set<keyof Settings>, morphing = false) {
   save();
+  if (keys.has('adaptScreen') || keys.has('adaptCount') || keys.has('adaptSize')) refit();
   if (keys.has('count')) setCount(countNow());
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
   if (keys.has('shape') && settings.shape === 'solid' && settings.depth === 0) {
@@ -19580,6 +19646,13 @@ function snapshot(): Partial<Settings> {
       // Private mode: the scene keeps just its name.
     }
   }
+  rest.sceneW = innerWidth;
+  rest.sceneH = innerHeight;
+  // How much to fit is this device's choice, not the scene's.
+  const R = rest as Partial<Settings>;
+  delete R.adaptScreen;
+  delete R.adaptCount;
+  delete R.adaptSize;
   return { ...rest };
 }
 
@@ -19780,9 +19853,9 @@ async function openSharedScene(code: string, first = false) {
   if (have) {
     currentMine = have;
     redrawMine();
-    return showToast(`${got.name} (already in My scenes)`);
+    return showToast(`${got.name} (already in My scenes)${fitNote ? ` · ${fitNote}` : ''}`);
   }
-  showToast(`Shared scene: ${got.name}`, ['Save to My scenes', () => {
+  showToast(`Shared scene: ${got.name}${fitNote ? ` · ${fitNote}` : ''}`, ['Save to My scenes', () => {
     let name = got.name;
     for (let k = 2; myPresets.some((m) => m.name === name); k++) name = `${got.name} (${k})`;
     myPresets.push({ name, settings: full });
@@ -19892,7 +19965,7 @@ function playMine(p: MyPreset) {
   currentMine = p;
   redrawMine();
   const nk = knobPicks().length;
-  showToast(`${keyTag(p)}${p.name}${nk && typeof p.settings.knobsPick === 'string' ? ` · ${nk} knob${nk > 1 ? 's' : ''}` : ''}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
+  showToast(`${keyTag(p)}${p.name}${fitNote ? ` · ${fitNote}` : ''}${nk && typeof p.settings.knobsPick === 'string' ? ` · ${nk} knob${nk > 1 ? 's' : ''}` : ''}${settings.beatSnap && audio.source !== 'off' ? ' · on the beat' : ''}`);
 }
 
 const keyTag = (p: MyPreset) => (p.key && settings.numberKeys === 'mine' ? p.key + '  ' : '');

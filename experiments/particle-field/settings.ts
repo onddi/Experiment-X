@@ -269,6 +269,11 @@ export interface Settings {
   knobsFollow: boolean;
   /** Number keys 1–8: hold to turn that field knob, or play My scenes. */
   numberKeys: 'knobs' | 'mine';
+  adaptScreen: boolean;
+  adaptCount: number; // how far the count follows the screen, 1 = as measured
+  adaptSize: number; // how far size and reaches follow it // scenes made on another screen size are fitted to this one
+  sceneW: number; // the screen (CSS px) a saved scene was made on, 0 = unknown
+  sceneH: number;
   shapeSize: number;
   /** Where the shape sits: offset from the centre as a share of the screen. */
   shapeX: number;
@@ -886,6 +891,11 @@ export const DEFAULTS: Settings = {
   knobsScene: '',
   knobsFollow: true,
   numberKeys: 'knobs',
+  adaptScreen: true,
+  adaptCount: 1,
+  adaptSize: 1,
+  sceneW: 0,
+  sceneH: 0,
   shapeSize: 0.8,
   shapeX: 0,
   shapeY: 0,
