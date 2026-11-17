@@ -326,6 +326,11 @@ export interface Settings {
   ob2Angle: number;
   ob2X: number;
   ob2Y: number;
+  ob2Spin: number;
+  ob2Drift: number;
+  ob2Style: Settings['obsStyle'];
+  ob2Colour: Settings['obsColour'];
+  ob2Alpha: number;
   ob3Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 3
   ob3Text: string;
   ob3Font: Settings['obsFont'];
@@ -333,6 +338,11 @@ export interface Settings {
   ob3Angle: number;
   ob3X: number;
   ob3Y: number;
+  ob3Spin: number;
+  ob3Drift: number;
+  ob3Style: Settings['obsStyle'];
+  ob3Colour: Settings['obsColour'];
+  ob3Alpha: number;
   ob4Kind: 'none' | 'text' | 'wall' | 'ring' | 'circle'; // obstacle 4
   ob4Text: string;
   ob4Font: Settings['obsFont'];
@@ -340,6 +350,11 @@ export interface Settings {
   ob4Angle: number;
   ob4X: number;
   ob4Y: number;
+  ob4Spin: number;
+  ob4Drift: number;
+  ob4Style: Settings['obsStyle'];
+  ob4Colour: Settings['obsColour'];
+  ob4Alpha: number;
   obsSpin: number; // degrees a second
   obsDrift: number; // 0 … 1
   obsInside: boolean; // keep particles inside the shapes
@@ -922,6 +937,11 @@ export const DEFAULTS: Settings = {
   ob2Angle: 0,
   ob2X: 0.5,
   ob2Y: 0.25,
+  ob2Spin: 0,
+  ob2Drift: 0,
+  ob2Style: 'faint',
+  ob2Colour: 'white',
+  ob2Alpha: 0.5,
   ob3Kind: 'none',
   ob3Text: 'World',
   ob3Font: 'bold',
@@ -929,6 +949,11 @@ export const DEFAULTS: Settings = {
   ob3Angle: 0,
   ob3X: 0.5,
   ob3Y: 0.75,
+  ob3Spin: 0,
+  ob3Drift: 0,
+  ob3Style: 'faint',
+  ob3Colour: 'white',
+  ob3Alpha: 0.5,
   ob4Kind: 'none',
   ob4Text: 'Flow',
   ob4Font: 'bold',
@@ -936,6 +961,11 @@ export const DEFAULTS: Settings = {
   ob4Angle: 0,
   ob4X: 0.25,
   ob4Y: 0.5,
+  ob4Spin: 0,
+  ob4Drift: 0,
+  ob4Style: 'faint',
+  ob4Colour: 'white',
+  ob4Alpha: 0.5,
   obsSpin: 0,
   obsDrift: 0,
   obsInside: false,
