@@ -16975,6 +16975,20 @@ type SndTrack = { name: string; key: keyof Settings; dot: string; sub: () => str
 const optLabel = (opts: readonly (readonly [string, string])[], v: string) => (opts.find(([k]) => k === v)?.[1] ?? v).replace(/ \(.*\)$/, '');
 const TIMBRES: [string, string][] = [['colour', 'Chimes band'], ['lounge', 'Lounge band'], ['world', 'World band'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth']];
 
+// Each track's dot lights up as its notes play.
+const TRACK_LAYER: Record<string, Layer> = { sndDrums: 'drums', sndBass: 'bass', sndStrings: 'strings', sndDrone: 'pad', sndSeq: 'steps', sndHits: 'chimes', sndGrain: 'grains', sndScan: 'scan', sndTouch: 'touch', sndAccents: 'accents' };
+let trackLights: { el: HTMLElement; layer: Layer; v: number }[] = [];
+function paintTrackLights(s: ParticleSound) {
+  if (!trackLights.length) return;
+  trackLights = trackLights.filter((t) => t.el.isConnected);
+  for (const t of trackLights) {
+    if (!t.el.offsetParent) continue;
+    const v = Math.round(Math.min(1, s.levelOf(t.layer) * 1.3) * 20) / 20;
+    if (v === t.v) continue;
+    t.v = v;
+    t.el.style.setProperty('--lit', String(v));
+  }
+}
 const SND_TRACKS: SndTrack[] = [
   { name: 'Drums', how: 'The screen is read left to right in 16 columns, one per sixteenth note. Particles crowding low in a column add a kick, in the middle a snare, high up a hi-hat, and a faster field plays more. A beat from the library plays as written, and a lively field adds to it.', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndKit', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
     sub: () => {
@@ -17199,6 +17213,7 @@ function renderSoundPage(body: HTMLElement) {
     const dot = mk('button', 'sndp-dot');
     dot.style.setProperty('--c', t.dot);
     dot.setAttribute('aria-label', `${t.name} on or off`);
+    if (TRACK_LAYER[t.key]) trackLights.push({ el: dot, layer: TRACK_LAYER[t.key], v: 0 });
     dot.addEventListener('click', () => {
       const v = Number(settings[t.key]);
       const m = mem();
@@ -19136,6 +19151,7 @@ function soundTick(dt: number) {
   sndBorn = 0;
   if (guidesOn) drawSoundGuides(snd);
   if (studio && studio.mode !== 'off') studio.frame(performance.now());
+  paintTrackLights(snd);
   if (scanOn) {
     if (!sndScanEl) {
       sndScanEl = document.createElement('div');

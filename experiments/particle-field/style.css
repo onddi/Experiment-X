@@ -3038,6 +3038,9 @@ html.top-layer.top-edit .top-back { display: block !important; position: fixed; 
 /* My scenes: share link per scene, export / import of the whole list. */
 .mine .share { display: inline-flex; align-items: center; justify-content: center; }
 .mine-io { margin-top: 8px; }
+/* Sound tracks: the dot lights up while the track plays. */
+.sndp-dot::before { transform: scale(calc(1 + var(--lit, 0) * 0.3)); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.04), 0 0 calc(var(--lit, 0) * 12px) calc(var(--lit, 0) * 2px) var(--c); }
+.sndp-trk.off .sndp-dot::before { transform: none; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

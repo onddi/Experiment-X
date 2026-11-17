@@ -576,6 +576,11 @@ export class ParticleSound {
     }
   }
 
+  /** How loud a layer has just played, 0..1 (falls back between notes). */
+  levelOf(l: Layer) {
+    return this.levels[LI[l]];
+  }
+
   audible(l: Layer) {
     return this.solo ? this.solo === l : !this.muted.has(l);
   }
