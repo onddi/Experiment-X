@@ -225,6 +225,7 @@ export interface Settings {
   sndLofi: number;
   sndPing: boolean;
   sndMove: boolean; // the particle drums drive the Music reactions
+  sndBassDrive: boolean; // the particle bass drives the bass reactions
   sndPhaser: number;
   sndTrem: number;
   sndTremMode: 'volume' | 'pan';
@@ -878,6 +879,7 @@ export const DEFAULTS: Settings = {
   sndLofi: 0,
   sndPing: false,
   sndMove: false,
+  sndBassDrive: false,
   sndPhaser: 0,
   sndTrem: 0,
   sndTremMode: 'volume',
@@ -1139,7 +1141,7 @@ export const DEFAULTS: Settings = {
   audioIntensity: 1,
   audioFineTune: false,
   audioVibe: '',
-  audioVibeLook: true,
+  audioVibeLook: false,
   audioDrop: 1,
   audioDropBuild: true,
   audioVj: 0,

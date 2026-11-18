@@ -698,7 +698,7 @@ export class ParticleSound {
   }
 
   // Drum hits as they're scheduled, for the field to move with (see takeDrumHits).
-  private drumQ: { kind: 'kick' | 'snare' | 'hat' | 'crash'; k: number; at: number; col: number }[] = [];
+  private drumQ: { kind: 'kick' | 'snare' | 'hat' | 'crash' | 'bass'; k: number; at: number; col: number; len?: number }[] = [];
   private stepNow = 0;
   private drumEv(kind: 'kick' | 'snare' | 'hat' | 'crash', k: number, when: number) {
     if (!this.audible('drums') || this.drumQ.length > 64) return;
@@ -1655,6 +1655,8 @@ export class ParticleSound {
       this.log('bass', vel, Math.log2(f0 / 55) / 6, len * (this.bpmNow / 60), when);
     }
     if (!this.audible('bass')) return;
+    // The bass note too, for the field's bass reactions (Bass moves the field).
+    if (this.drumQ.length <= 64) this.drumQ.push({ kind: 'bass', k: vel, at: this.ctx.currentTime + when, col: this.stepNow, len });
     this.voices++;
     const B = BASSES[this.p.bassSound] ?? BASSES.synth;
     const ctx = this.ctx;

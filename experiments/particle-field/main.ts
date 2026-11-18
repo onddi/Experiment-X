@@ -80,6 +80,16 @@ try {
     localStorage.setItem('particle-field:two-speed-v1', '1');
   }
 } catch {}
+// Vibes used to change the look too, which upset a picture you'd built (and
+// its sound). Now they only change the reactions unless you switch it on: once.
+try {
+  if (!localStorage.getItem('particle-field:vibe-look-off-v1')) {
+    settings.audioVibeLook = false;
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    if (saved && typeof saved === 'object') localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, audioVibeLook: false }));
+    localStorage.setItem('particle-field:vibe-look-off-v1', '1');
+  }
+} catch {}
 
 function load(): Partial<Settings> {
   try {
@@ -447,7 +457,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -2687,10 +2697,23 @@ function demoLevels(dt: number) {
   audio.levels = L;
 }
 // The particle drums stand in for music when none is playing (Drums move the field).
-const drumsDrive = () => settings.sndMove && settings.sndDrums > 0 && !!snd && sndOn && audio.source === 'off';
-const drumLv = { pulse: 0, snareEnv: 0, level: 0 };
+const drumsOn = () => settings.sndMove && settings.sndDrums > 0;
+const bassOn = () => settings.sndBassDrive && settings.sndBass > 0;
+const drumsDrive = () => (drumsOn() || bassOn()) && !!snd && sndOn && audio.source === 'off';
+const drumLv = { pulse: 0, snareEnv: 0, level: 0, sub: 0, hold: 0 };
 function drumLevels(dt: number) {
-  const hits = snd!.takeDrumHits();
+  const all = snd!.takeDrumHits();
+  const hits = drumsOn() ? all.filter((e) => e.kind !== 'bass') : [];
+  // The bass: each note swells the low end and holds while it rings, then fades.
+  drumLv.hold = Math.max(0, drumLv.hold - dt);
+  if (drumLv.hold <= 0) drumLv.sub *= Math.exp(-dt * 5);
+  if (bassOn()) {
+    for (const e of all) {
+      if (e.kind !== 'bass') continue;
+      drumLv.sub = Math.max(drumLv.sub, Math.min(1, 0.45 + e.k * 0.6));
+      drumLv.hold = Math.min(0.6, (e.len ?? 0.2) * 0.6);
+    }
+  }
   const L = { ...audio.levels, beat: false, snare: false, hat: false, crash: false, accent: false, drop: false, bar: false, note: false };
   const fall = Math.exp(-dt * 7);
   drumLv.pulse *= fall;
@@ -2714,7 +2737,10 @@ function drumLevels(dt: number) {
   }
   L.pulse = drumLv.pulse;
   L.snareEnv = drumLv.snareEnv;
-  L.level = drumLv.level;
+  L.level = drumsOn() ? drumLv.level : Math.max(drumLv.level * 0.98, drumLv.sub * 0.5);
+  L.sub = drumLv.sub;
+  L.bass = Math.max(drumLv.sub * 0.85, drumLv.pulse * 0.6);
+  L.liftLevel = drumLv.sub * 0.6;
   L.bpm = snd!.bpmNow;
   audio.levels = L;
 }
@@ -10370,6 +10396,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndSub', label: 'Sub', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassGlide', label: 'Glide', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassLen', label: 'Length', min: 0.3, max: 2, step: 0.05, format: (v) => (v === 1 ? 'normal' : v < 1 ? `short ${pct(v)}` : `long ${pct(v)}`), show: () => settings.sndBass > 0 },
+  { kind: 'toggle', key: 'sndBassDrive', label: 'Bass moves the field', show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassGhost', label: 'Ghost notes', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndKit', label: 'Drum kit', options: KIT_OPTIONS, show: () => settings.sndDrums > 0 },

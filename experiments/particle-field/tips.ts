@@ -392,6 +392,7 @@ Object.assign(TIPS, {
   sndBassGlide: 'Slides from one bass note to the next instead of jumping.',
   sndBassLen: 'How long each bass note rings: short and punchy or long and smooth.',
   sndBassGhost: 'Quiet extra notes between the main ones, for a funkier line.',
+  sndBassDrive: 'With no music coming in, each particle bass note drives your bass reactions (bass glow, throb, zoom and sway), like a song’s low end.',
   // Sound: drums and pads
   sndKickPunch: 'Adds a deep, slightly driven thump under the kit’s kick, and ducks the bass and pad on it.',
   sndMove: 'With no music coming in, the particle drums play your Music reactions, so the field moves with the beat you hear.',
