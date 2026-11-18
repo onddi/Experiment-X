@@ -29,6 +29,18 @@ export const STYLES: Style[] = [
   { id: 'afro', name: 'Afro & Latin', beat: 'afro', vars: ['Bossa nova', 'Marimba party', 'Gamelan'] },
   { id: 'breaks', name: 'Funk', beat: 'breaks', vars: ['Fuzz garage', 'Arcade'] },
   { id: 'idm', name: 'IDM', beat: 'idm', vars: ['Scanner', 'Rain on glass'] },
+  { id: 'trance', name: 'Trance', beat: 'trance', vars: ['Trance'] },
+  { id: 'triphop', name: 'Trip-hop', beat: 'triphop', vars: ['Trip-hop'] },
+  { id: 'phonk', name: 'Phonk', beat: 'phonk', vars: ['Phonk'] },
+  { id: 'jersey', name: 'Jersey club', beat: 'jersey', vars: ['Jersey club'] },
+  { id: 'synthwave', name: 'Synthwave', beat: 'synthwave', vars: ['Synthwave'] },
+  { id: 'jazz', name: 'Jazz', beat: 'jazz', vars: ['Jazz club'] },
+  { id: 'garage', name: 'UK garage', beat: 'garage', vars: ['UK garage'] },
+  { id: 'hard', name: 'Hard dance', beat: 'hard', vars: ['Hardstyle'] },
+  { id: 'disco', name: 'Disco', beat: 'disco', vars: ['Disco'] },
+  { id: 'hyperpop', name: 'Hyperpop', beat: 'hyperpop', vars: ['Hyperpop'] },
+  { id: 'baile', name: 'Baile funk', beat: 'baile', vars: ['Baile funk'] },
+  { id: 'gqom', name: 'Gqom', beat: 'gqom', vars: ['Gqom'] },
 ];
 
 export const styleById = (id: string) => STYLES.find((s) => s.id === id);

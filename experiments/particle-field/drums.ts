@@ -10,11 +10,11 @@
 // Bass row:  B  root, accented   b  root   o  root, soft   f  fifth
 //            t  third   u  root an octave up   ~  root, sliding in from the last note
 
-export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand' | '909' | 'linn' | 'lofi' | 'dub' | 'techno' | 'trap' | 'jungle' | 'glitch' | 'minimal';
+export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand' | '909' | 'linn' | 'lofi' | 'dub' | 'techno' | 'trap' | 'jungle' | 'glitch' | 'minimal' | 'hard';
 export const KIT_OPTIONS: [DrumKit, string][] = [
   ['soft', 'Soft'], ['808', '808 (boom and clap)'], ['punchy', 'Punchy (club)'], ['brush', 'Brushes (jazz)'], ['hand', 'Hand percussion'],
   ['909', '909 (house)'], ['linn', '80s drum machine'], ['lofi', 'Lo-fi (dusty)'], ['dub', 'Dub (rim and spring)'], ['techno', 'Techno (hard)'],
-  ['trap', 'Trap (long 808)'], ['jungle', 'Jungle (breaks)'], ['glitch', 'Glitch (IDM)'], ['minimal', 'Minimal (ticks)'],
+  ['trap', 'Trap (long 808)'], ['jungle', 'Jungle (breaks)'], ['glitch', 'Glitch (IDM)'], ['minimal', 'Minimal (ticks)'], ['hard', 'Hard (distorted kick)'],
 ];
 
 /** A pitched body: start and end pitch, how fast it drops, how long it rings, loudness, wave. */
@@ -104,6 +104,14 @@ export const KITS: Record<DrumKit, KitDef> = {
     hat: { type: 'highpass', f: 10000, q: 1, closed: 0.015, open: 0.12, amp: 0.22 },
     clap: { f: 2000, decay: 0.08, amp: 0.28, n: 2 }, rim: [2400, 2350, 0.005, 0.025, 0.3, 'triangle'],
     perc: [[900, 880, 0.005, 0.03, 0.14]], tom: [320, 260, 0.03, 0.12, 0.4], crash: ['highpass', 8000, 1, 0.001, 0.5, 0.12], wet: 0.3,
+  },
+  // Hardstyle and hard techno: a square-wave kick that pitches down hard (it reads as distorted).
+  hard: {
+    kick: { body: [260, 46, 0.03, 0.45, 0.8, 'square'], click: 0.5, sub: [70, 44, 0.1, 0.55, 0.55] },
+    snare: { body: [300, 210, 0.02, 0.08, 0.28, 'square'], noise: ['highpass', 2000, 0.8, 0.001, 0.16, 0.45] },
+    hat: { type: 'highpass', f: 9000, q: 1, closed: 0.03, open: 0.22, amp: 0.28, ping: 0.6 },
+    clap: { f: 1600, decay: 0.2, amp: 0.45, n: 4 }, rim: [2200, 2100, 0.01, 0.03, 0.3, 'square'],
+    perc: [[640, 620, 0.01, 0.08, 0.1, 'square']], tom: [240, 140, 0.05, 0.22, 0.55, 'square'], crash: ['highpass', 6500, 0.8, 0.001, 1.4, 0.18], wet: 0.3,
   },
 };
 
@@ -317,6 +325,148 @@ export const GENRES: Genre[] = [
     versions: [
       { name: 'Café', from: 'Chillhop', sound: 'Vibes café', bpm: 84, kit: 'brush', bass: 'upright', pat: 'walk' },
       { name: 'Foggy tape', from: 'Tape', sound: 'Fog machine', bpm: 72, pat: 'hold' },
+    ],
+  },
+  {
+    id: 'trance', name: 'Trance', bpm: 138, swing: 0, kit: 'techno', bass: 'synth', fill: 'roll', beats: [
+      { name: 'Uplifting', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', o: '..X...X...X...X.', b: '..bu..bu..bu..bu' },
+      { name: 'Psytrance', k: 'X...X...X...X...', h: '..x...x...x...x.', r: '...o...o...o...o', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Progressive', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', r: '......x.......x.', b: '..b...b...b..fb.' },
+      { name: 'Breakdown', h: '....x.......x...', r: '..............o.', b: 'B...............' },
+      { name: 'Rolling', k: 'X...X...X...X...', c: '....x.......x...', h: 'xoxoxoxoxoxoxoxo', o: '..X...X...X...X.', b: '.bfb.bfb.bfb.bfb' },
+    ],
+    versions: [
+      { name: 'Euphoric', from: 'Uplifting', sound: 'Northern lights', pat: 'offbeat' },
+      { name: 'Goa', from: 'Psytrance', sound: 'Acid techno', bpm: 145, bass: 'acid' },
+    ],
+  },
+  {
+    id: 'triphop', name: 'Trip-hop', bpm: 84, swing: 0.25, kit: 'lofi', bass: 'round', fill: 'drop', beats: [
+      { name: 'Bristol', k: 'X......X..X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b......b..b.....' },
+      { name: 'Heavy', k: 'X.......X.X.....', s: '....X.......X..o', h: 'x.xox.xox.xox.xo', b: 'B.......b.b.....' },
+      { name: 'Downtempo', k: 'X.....x...X.....', r: '....x.......x...', h: '..x...x...x...x.', p: '?.......?.......', b: 'b.....f...b.....' },
+      { name: 'Slow break', k: 'X.X.......X.....', s: '....X..o....X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.b.......b.....' },
+    ],
+    versions: [
+      { name: 'Smoky', from: 'Bristol', sound: 'Fog machine', bpm: 78, kit: 'dub' },
+      { name: 'Cinematic', from: 'Heavy', sound: 'Cathedral', pat: 'hold' },
+    ],
+  },
+  {
+    id: 'phonk', name: 'Phonk', bpm: 130, swing: 0, kit: '808', bass: '808', fill: 'hats', beats: [
+      { name: 'Memphis', k: 'X.....X...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x...x..x..', b: 'B.....~...b.....' },
+      { name: 'Drift phonk', k: 'X..X..X...X..X..', c: '....X.......X...', h: 'x3x.x3x.x3x.x3x.', p: 'x.xx.x.xx.x.x.xx', b: 'B..~..B...~..B..' },
+      { name: 'Brazilian phonk', k: 'X..X..X.X..X..X.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: '..x...x...x...x.', b: 'B..b..b.B..b..b.' },
+      { name: 'Slow phonk', k: 'X.......X.x.....', c: '........X.......', h: 'x.x.x.x.x.x.x.x.', p: 'x.....x...x.....', b: 'B.......~.b.....' },
+    ],
+    versions: [
+      { name: 'Midnight drift', from: 'Drift phonk', sound: 'Night drive', bpm: 140 },
+      { name: 'Haunted', from: 'Memphis', sound: 'Cathedral', bpm: 120 },
+    ],
+  },
+  {
+    id: 'jersey', name: 'Jersey club', bpm: 140, swing: 0, kit: 'trap', bass: '808', fill: 'roll', beats: [
+      { name: 'Jersey bounce', k: 'X..X..X...X.X.X.', c: '....X.......X...', h: '..x...x...x...x.', b: 'B..b..b...b.b.b.' },
+      { name: 'Bed squeak', k: 'X..X..X...X.X.X.', c: '..X...X...X...X.', p: '...x......x..x..', b: 'B..b..b...b.....' },
+      { name: 'Baltimore', k: 'X..X..X.X...X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b.b...b...' },
+      { name: 'Footwork', k: 'X..X..X..X..X..X', c: '........X.......', h: 'x.x.x.x.x.x.x.x.', t: '..........x..x..', b: 'B.........b.....' },
+    ],
+    versions: [
+      { name: 'Juke 160', from: 'Footwork', sound: 'Scanner', bpm: 160, kit: '808' },
+      { name: 'Club anthem', from: 'Jersey bounce', sound: 'House', bpm: 145 },
+    ],
+  },
+  {
+    id: 'synthwave', name: 'Synthwave', bpm: 100, swing: 0, kit: 'linn', bass: 'synth', fill: 'toms', beats: [
+      { name: 'Outrun', k: 'X...X...X...X...', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.b.b.b.b.b.b.' },
+      { name: 'Gated', k: 'X.......X.......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', t: '..............x.', b: 'b.b.b.b.b.b.b.b.' },
+      { name: 'Darksynth', k: 'X..X..X.X..X..X.', s: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', b: 'bbbbbbbbbbbbbbbb' },
+      { name: 'Dreamwave', k: 'X.......X.x.....', s: '....X.......X...', h: '..x...x...x...x.', b: 'b.......b.f.....' },
+    ],
+    versions: [
+      { name: 'Night drive', from: 'Outrun', sound: 'Night drive', bpm: 96 },
+      { name: 'Arcade run', from: 'Darksynth', sound: 'Chiptune', bpm: 118, bass: 'pulse' },
+    ],
+  },
+  {
+    id: 'jazz', name: 'Jazz', bpm: 120, swing: 0.6, kit: 'brush', bass: 'upright', fill: 'toms', beats: [
+      { name: 'Swing', r: 'x...x.x.x...x.x.', h: '....x.......x...', k: 'o...o...o...o...', s: '......o.......o?', b: 'b...t...f...u...' },
+      { name: 'Ballad', s: 'o.o.o.o.o.o.o.o.', h: '....x.......x...', k: 'o.......o.......', b: 'b.......f.......' },
+      { name: 'Bebop', r: 'x...x.x.x...x.x.', h: '....x.......x...', s: '..o..?....o..o..', k: 'o.....o.....x...', b: 'b...t...f...t...' },
+      { name: 'Waltz', r: 'x...x.x...x.', k: 'o...........', h: '....x...x...', b: 'b...f...t...' },
+    ],
+    versions: [
+      { name: 'Late night', from: 'Ballad', sound: 'Blues bar', bpm: 72 },
+      { name: 'Hard bop', from: 'Bebop', sound: 'Vibes café', bpm: 168 },
+    ],
+  },
+  {
+    id: 'garage', name: 'UK garage', bpm: 132, swing: 0.3, kit: '909', bass: 'synth', fill: 'roll', beats: [
+      { name: '2-step', k: 'X......x..X.....', s: '....X.......X...', h: '..x.o.x...x.o.x.', r: '.......o.......o', b: 'b.....b...b..u..' },
+      { name: 'Speed garage', k: 'X...X...X...X...', s: '....X.......X...', h: '..x...x...x...x.', o: '..X...X...X...X.', b: 'B..b..u.B..b..u.' },
+      { name: 'Grime', k: 'X.......X.....x.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.......~.....b.' },
+      { name: 'Bassline', k: 'X...X...X...X...', c: '....x.......x...', h: 'x.xxx.xxx.xxx.xx', b: 'b.ub.ub.b.ub.ub.' },
+    ],
+    versions: [
+      { name: 'Grime 140', from: 'Grime', sound: 'Trap haze', bpm: 140, kit: 'punchy', bass: 'sub', swing: 0 },
+      { name: 'Sunday garage', from: '2-step', sound: 'Vibes café', bpm: 130 },
+    ],
+  },
+  {
+    id: 'hard', name: 'Hard dance', bpm: 150, swing: 0, kit: 'hard', bass: 'fuzz', fill: 'roll', beats: [
+      { name: 'Hardstyle', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', b: '..b...b...b...b.' },
+      { name: 'Hard techno', k: 'X...X...X...X...', h: 'x.xxx.xxx.xxx.xx', r: '..x...x...x...x.', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Rawstyle', k: 'X...X...X...X.X.', c: '....X.......X...', h: '..x...x...x...x.', b: '..bb..bb..bb..bb' },
+      { name: 'Gabber', k: 'X...X...X...X...', o: '..X...X...X...X.', b: '..b...b...b...b.' },
+    ],
+    versions: [
+      { name: 'Gabber 175', from: 'Gabber', sound: 'Acid techno', bpm: 175 },
+      { name: 'Euphoric hardstyle', from: 'Hardstyle', sound: 'Northern lights', bpm: 152, bass: 'synth' },
+    ],
+  },
+  {
+    id: 'disco', name: 'Disco', bpm: 118, swing: 0.1, kit: 'linn', bass: 'fingered', fill: 'toms', beats: [
+      { name: 'Disco', k: 'X...X...X...X...', s: '....X.......X...', h: 'x.o.x.o.x.o.x.o.', o: '..X...X...X...X.', b: 'b.u.b.u.b.u.b.u.' },
+      { name: 'Nu-disco', k: 'X...X...X...X...', c: '....X.......X...', h: 'xoxoxoxoxoxoxoxo', p: '..x...x...x...x.', b: 'b..bu..bb..bu..b' },
+      { name: 'French touch', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', b: 'b.bb.bb.b.bb.bb.' },
+      { name: 'Italo', k: 'X...X...X...X...', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'bubububububububu' },
+    ],
+    versions: [
+      { name: 'Mirror ball', from: 'Disco', sound: 'Gospel organ', bpm: 116 },
+      { name: 'Space disco', from: 'Italo', sound: 'Synthwave', bpm: 120, bass: 'synth' },
+    ],
+  },
+  {
+    id: 'hyperpop', name: 'Hyperpop', bpm: 160, swing: 0, kit: 'glitch', bass: '808', fill: 'glitch', beats: [
+      { name: 'Bubblegum', k: 'X.....x...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.....b...~.....' },
+      { name: 'Glitchcore', k: 'X.x...xX..X.x...', s: '....X..3....X.4.', h: 'x2x.x2x.x2x.x2x.', b: 'B.b...bB..B.b...' },
+      { name: 'Digicore', k: 'X......X..X.....', c: '....X.......X...', h: 'x.x.3.x.x.x.3.x.', b: 'B......~..b.....' },
+    ],
+    versions: [
+      { name: 'Sugar rush', from: 'Bubblegum', sound: 'Chiptune', bpm: 170, kit: 'trap' },
+      { name: 'Crystal', from: 'Digicore', sound: 'Music box night', bpm: 150 },
+    ],
+  },
+  {
+    id: 'baile', name: 'Baile funk', bpm: 130, swing: 0, kit: '808', bass: '808', fill: 'drop', beats: [
+      { name: 'Tamborzão', k: 'X..X..X...X..X..', c: '....X.......X...', t: '..x.....x..x....', b: 'B..b..b...b..b..' },
+      { name: 'Mandelão', k: 'X.......X.......', p: '..x.x..x..x.x..x', c: '....X.......X...', b: 'B.......B.......' },
+      { name: 'Funk carioca', k: 'X..X..X.X..X..X.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b.B..b..b.' },
+    ],
+    versions: [
+      { name: 'Favela night', from: 'Mandelão', sound: 'Trap haze', bpm: 135 },
+      { name: 'Beach party', from: 'Funk carioca', sound: 'Marimba party', bpm: 128, kit: 'hand' },
+    ],
+  },
+  {
+    id: 'gqom', name: 'Gqom', bpm: 126, swing: 0, kit: 'techno', bass: 'sub', fill: 'toms', beats: [
+      { name: 'Gqom', k: 'X..X..X.........', t: '...x..x...x..x..', h: '..x...x...x...x.', b: 'B.........b.....' },
+      { name: 'Sgubhu', k: 'X..X..X...X.....', p: 'x..x..x.x..x..x.', r: '....x.......x...', b: 'B.....b...b.....' },
+      { name: 'Durban', k: 'X.....X.....X...', t: '..x..x..x..x..x.', h: 'xoxoxoxoxoxoxoxo', b: 'B.....b.....b...' },
+    ],
+    versions: [
+      { name: 'Dark gqom', from: 'Gqom', sound: 'Fog machine', bpm: 122, kit: 'hard' },
+      { name: 'Taxi', from: 'Durban', sound: 'Kalimba campfire', bpm: 128, kit: 'hand' },
     ],
   },
 ];
