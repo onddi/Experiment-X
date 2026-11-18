@@ -298,6 +298,12 @@ export interface SoundParams {
   kit: DrumKit;
   padSound: PadSound;
   padPump: number; // 0 … 1: the pad ducks on each kick (or each beat without drums)
+  padTone?: number; // -1 … 1: darker … brighter
+  padWidth?: number; // 0 … 1 (0.5 = as the sound has it)
+  padBreath?: number; // 0 … 1: how much it swells and fades on its own (0.35 = as before)
+  padGlide?: number; // 0 … 1: how slowly it slides to the next chord
+  padHold?: boolean; // keeps playing when the field is still
+  padOct?: number; // -1, 0, 1
   attack: number; // 0 struck … 1 bowed
   bright: number; // -1 dark … 1 bright, over everything
   drive: number; // warm saturation over everything
@@ -2251,18 +2257,19 @@ export class ParticleSound {
     // and a new chord blooms (brighter and louder) before settling.
     const pd = PADS[P.padSound] ?? PADS.soft;
     const hz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
-    const chordKey = `${P.scale}${P.root}${P.octave}${this.chordRoot()}${this.voicing}${P.padSound}`;
+    const chordKey = `${P.scale}${P.root}${P.octave}${this.chordRoot()}${this.voicing}${P.padSound}${P.padOct ?? 0}`;
     if (chordKey !== this.padChord && P.pad > 0) {
       const first = !this.padChord;
       this.padChord = chordKey;
       const v = this.padVoice();
-      const glide = first ? 0.01 : 0.35;
+      const glide = first ? 0.01 : Math.max(0.02, 0.35 * Math.pow((P.padGlide ?? 0.5) * 2, 1.8));
+      const oc = 2 ** (P.padOct ?? 0);
       v.notes.forEach((m, slot) => {
-        this.padOsc[slot * 2].frequency.setTargetAtTime(hz(m), t, glide);
-        this.padOsc[slot * 2 + 1].frequency.setTargetAtTime(hz(m), t, glide);
+        this.padOsc[slot * 2].frequency.setTargetAtTime(hz(m) * oc, t, glide);
+        this.padOsc[slot * 2 + 1].frequency.setTargetAtTime(hz(m) * oc, t, glide);
       });
-      this.padSub.frequency.setTargetAtTime(hz(v.sub), t, glide);
-      this.padAir.frequency.setTargetAtTime(Math.min(9000, hz(v.notes[3]) * 8), t, 0.6);
+      this.padSub.frequency.setTargetAtTime(hz(v.sub) * Math.min(1, oc), t, glide);
+      this.padAir.frequency.setTargetAtTime(Math.min(9000, hz(v.notes[3]) * oc * 8), t, 0.6);
       if (!first) this.padSwell = 1;
     }
     // A burst in the field (births, a drop) blooms the pad too.
@@ -2276,8 +2283,10 @@ export class ParticleSound {
     }
     if (P.padPump <= 0) this.padDuck.gain.setTargetAtTime(1, t, 0.1);
     this.padLfo += F.dt * 0.6;
-    const breath = 0.65 + 0.35 * Math.sin(this.padLfo);
-    const lively = Math.max(0, Math.min(1, (this.energy - 0.04) * 3));
+    const bd = P.padBreath ?? 0.35;
+    const breath = 1 - bd + bd * Math.sin(this.padLfo);
+    // Hold: it keeps playing, softly, when the field is still.
+    const lively = Math.max(P.padHold ? 0.55 : 0, Math.min(1, (this.energy - 0.04) * 3));
     const swell = this.padSwell * pd.swell;
     const padLvl = P.pad * lively * breath * (0.4 + 0.6 * room) * Math.min(1.8, Math.sqrt(busyK)) * (1 + 0.35 * swell);
     this.levels[LI.pad] = Math.max(this.levels[LI.pad], padLvl * 0.8);
@@ -2289,7 +2298,7 @@ export class ParticleSound {
       const f = pd.band
         ? (pd.band + this.energy * pd.band * 0.8 + Math.sin(this.padLfo * 0.37) * pd.band * 0.28) * bloom
         : (400 + this.energy * 1800 + F.spread * 400) * pd.cut * sweep * bloom * (0.75 + 0.6 * F.speed);
-      this.padFilter.frequency.setTargetAtTime(Math.min(16000, f), t, 0.5);
+      this.padFilter.frequency.setTargetAtTime(Math.min(16000, f * 2 ** ((P.padTone ?? 0) * 1.6)), t, 0.5);
       this.padSubGain.gain.setTargetAtTime(pd.sub * 0.22, t, 0.5);
       this.padAirGain.gain.setTargetAtTime(pd.air * 0.05 * (0.6 + this.energy) * (1 + swell), t, 0.5);
       // Drift and sway, a few times a second (cheap): each oscillator wanders
@@ -2309,7 +2318,7 @@ export class ParticleSound {
           const sway = 0.75 + 0.25 * Math.sin(this.padLfo * 0.13 + slot * 1.7);
           const centre = (slot - 1.5) * 0.18;
           // A spread-out crowd opens the pad wide; a huddle narrows it.
-          const wide = pd.width * (0.55 + 0.9 * F.spread);
+          const wide = pd.width * (0.55 + 0.9 * F.spread) * (P.padWidth ?? 0.5) * 2;
           this.padPan[k].pan.setTargetAtTime(Math.max(-1, Math.min(1, centre + side * wide * 0.5 * sway)), t, 0.4);
         }
       }

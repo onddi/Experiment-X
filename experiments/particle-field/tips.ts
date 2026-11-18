@@ -399,6 +399,12 @@ Object.assign(TIPS, {
   sndKickPunch: 'Adds a deep, slightly driven thump under the kit’s kick, and ducks the bass and pad on it.',
   sndMove: 'With no music coming in, the particle drums play your Music reactions, so the field moves with the beat you hear.',
   sndPadPump: 'The pad ducks on each kick and swells back, the classic sidechain pump.',
+  sndPadHold: 'Keeps the pad playing softly when the field is still, instead of fading to silence.',
+  sndPadOct: 'How high the pad sits: low and warm, or high and airy.',
+  sndPadTone: 'Darker (more muffled) or brighter (more open) than the pad sound has it.',
+  sndPadWidth: 'How wide the pad spreads across the left and right speaker. Zero is mono in the middle.',
+  sndPadBreath: 'How much the pad swells and fades on its own, like slow breathing. Zero holds it steady.',
+  sndPadGlide: 'How slowly the pad slides into the next chord. Zero snaps, high melts from one chord to the next.',
   // Sound: mix
   sndShimmer: 'A reverb tail an octave up: a bright, glassy halo after each note.',
   sndPing: 'The echo bounces between the left and right speaker.',
