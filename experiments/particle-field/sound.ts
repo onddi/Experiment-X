@@ -2023,7 +2023,7 @@ export class ParticleSound {
     if (P.genre !== this.beatGenre || P.beat !== this.beatSet) {
       this.beatGenre = P.genre;
       this.beatSet = P.beat;
-      this.beatIdx = Math.max(0, P.beat) % g.beats.length;
+      this.beatIdx = Math.max(0, Math.round(P.beat) || 0) % g.beats.length;
     }
     const bar = Math.floor(tick / 16);
     if (s === 0 && bar !== this.beatBar) {
@@ -2033,7 +2033,7 @@ export class ParticleSound {
       }
       this.beatSwap = false;
     }
-    return { g, beat: g.beats[this.beatIdx], bar };
+    return { g, beat: g.beats[this.beatIdx] ?? g.beats[0], bar };
   }
 
   private beatDrums(P: SoundParams, B: NonNullable<ReturnType<ParticleSound['beatOf']>>, tick: number, s: number, sw: number, stepDur: number, k: number, e: number, onKick: boolean, ed: (row: number, nat: boolean) => boolean) {

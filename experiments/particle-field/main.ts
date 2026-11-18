@@ -10848,6 +10848,8 @@ let glideHomes: { ms: number; fromFree: boolean } | null = null;
 let homeGlide: { fx: Float32Array; fy: Float32Array; tx: Float32Array; ty: Float32Array; start: number; dur: number; dl?: Float32Array } | null = null;
 
 let forceIn: { start: number; dur: number } | null = null;
+let sndErrSeen: unknown = null;
+const MORPH_PICKS = new Set<keyof Settings>(['sndBeat']);
 function morphTo(target: Settings, morphSec = settings.morph) {
   const dur = morphSec * 1000;
   if (dur <= 0) {
@@ -10864,7 +10866,8 @@ function morphTo(target: Settings, morphSec = settings.morph) {
   const to: Record<string, number> = {};
   const instant = new Set<keyof Settings>();
   for (const k of Object.keys(DEFAULTS) as (keyof Settings)[]) {
-    if (typeof T[k] === 'number' && typeof S[k] === 'number') {
+    // Picks stored as numbers (which beat) switch, they don't glide through the ones between.
+    if (typeof T[k] === 'number' && typeof S[k] === 'number' && !MORPH_PICKS.has(k)) {
       if (T[k] !== S[k]) {
         from[k] = S[k] as number;
         to[k] = T[k] as number;
@@ -19255,25 +19258,30 @@ function soundTick(dt: number) {
   const shapeSig = settings.shape === 'none' ? '' : `${settings.shape}|${settings.shapeText}|${settings.shapeIcon}|${settings.shapeGeo}|${settings.shapeSolid}`;
   const shape = !!shapeSig && shapeSig !== sndShapeSig;
   sndShapeSig = shapeSig;
-  snd.frame({
-    dt: Math.min(0.1, dt), n, w, h, px, py, ox, tone, dead,
-    born: sndBorn,
-    scene,
-    shape: shape && !scene,
-    speed: Math.min(1, (meanSpeed * settings.speed) / 4),
-    spread,
-    hits: sndHitQ,
-    touch: { x: held ? thumb.x : pointer.x, y: held ? thumb.y : pointer.y, down: held || pointer.down },
-    fingers: sndFingers(),
-    thump: sndThump,
-    pulse: musicOn ? L.pulse : 0,
-    bpm: L.bpm,
-    musicOn,
-    pz,
-    depthOn: settings.depth > 0,
-    drop: musicOn && !!L.drop,
-    chroma: follow ? songNow : null,
-  });
+  // A sound error must never stop the picture: skip this sound frame, keep drawing.
+  try {
+    snd.frame({
+      dt: Math.min(0.1, dt), n, w, h, px, py, ox, tone, dead,
+      born: sndBorn,
+      scene,
+      shape: shape && !scene,
+      speed: Math.min(1, (meanSpeed * settings.speed) / 4),
+      spread,
+      hits: sndHitQ,
+      touch: { x: held ? thumb.x : pointer.x, y: held ? thumb.y : pointer.y, down: held || pointer.down },
+      fingers: sndFingers(),
+      thump: sndThump,
+      pulse: musicOn ? L.pulse : 0,
+      bpm: L.bpm,
+      musicOn,
+      pz,
+      depthOn: settings.depth > 0,
+      drop: musicOn && !!L.drop,
+      chroma: follow ? songNow : null,
+    });
+  } catch (err) {
+    if (!sndErrSeen) console.warn('particle sound', (sndErrSeen = err));
+  }
   sndHitQ.length = 0;
   sndThump = 0;
   sndBorn = 0;
