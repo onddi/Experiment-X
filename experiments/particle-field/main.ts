@@ -7003,6 +7003,35 @@ function gfxSceneGrade(): [[number, number, number], [number, number, number]] {
   const [r, g, b] = hslToRgb(top[0], top[1], Math.max(55, top[2]));
   return [bg, [r / 255, g / 255, b / 255]];
 }
+const fxMove = document.createElement('canvas');
+const fxMoveG = fxMove.getContext('2d')!;
+// The picture with the view's CSS transform drawn in (about the centre, as CSS does).
+function fxMoved(src: HTMLCanvasElement, tf: string) {
+  if (fxMove.width !== src.width || fxMove.height !== src.height) {
+    fxMove.width = src.width;
+    fxMove.height = src.height;
+  }
+  const kx = src.width / Math.max(1, w);
+  const ky = src.height / Math.max(1, h);
+  const g = fxMoveG;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (seeThrough) g.clearRect(0, 0, fxMove.width, fxMove.height);
+  else {
+    const [r, gg, b] = bgNow();
+    g.fillStyle = `rgb(${r} ${gg} ${b})`;
+    g.fillRect(0, 0, fxMove.width, fxMove.height);
+  }
+  let m: DOMMatrix;
+  try {
+    m = new DOMMatrix().scale(kx, ky).translate(w / 2, h / 2).multiply(new DOMMatrix(tf)).translate(-w / 2, -h / 2).scale(1 / kx, 1 / ky);
+  } catch {
+    return src;
+  }
+  g.setTransform(m);
+  g.drawImage(src, 0, 0);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  return fxMove;
+}
 function gpuFrame(now: number) {
   const on = gfxOn();
   const under = lensCanvas.hidden ? canvas : lensCanvas;
@@ -7019,7 +7048,10 @@ function gpuFrame(now: number) {
   if (under === lensCanvas && canvas.style.opacity !== '0') canvas.style.opacity = '0';
   const g = gpuFx.canvas;
   if (g.style.filter !== canvas.style.filter) g.style.filter = canvas.style.filter;
-  if (g.style.transform !== canvas.style.transform) g.style.transform = canvas.style.transform;
+  // Moved, turned or zoomed (Position, the music camera): the effects stay on the whole
+  // screen and the picture moves under them, so no edge of the effect shows.
+  if (g.style.transform) g.style.transform = '';
+  const src = canvas.style.transform ? fxMoved(under, canvas.style.transform) : under;
   const S = settings;
   const t = now / 1000;
   const L = audio.levels;
@@ -7064,7 +7096,7 @@ function gpuFrame(now: number) {
     } else if (i === 0 && S.gfxFollow === 'finger') ptrs.push(px, py);
     else ptrs.push(0.5 + Math.sin(t * (0.5 + i * 0.07) + ph) * 0.3, 0.5 + Math.sin(t * (0.37 + i * 0.05) + ph * 1.3) * 0.25);
   }
-  gpuFx.render(under, {
+  gpuFx.render(src, {
     bloom: S.gfxBloom * macro.bloom * (S.gfxBloomKick ? (music ? Math.min(1, gfxDrive[S.gfxLightBy === 'off' ? 'kick' : S.gfxLightBy] * 1.4 * S.gfxLightAmt) : 0.5 + 0.5 * Math.sin(t * 4)) : 1),
     spread: S.gfxSpread, split: S.gfxSplit, rays: S.gfxRays, flare: S.gfxFlare, tint: GFX_TINTS[S.gfxTint] ?? GFX_TINTS.white,
     feedback: S.gfxFeedback, zoom: S.gfxZoom, spin: S.gfxSpin, flow: S.gfxFlow, length: S.gfxLength,
