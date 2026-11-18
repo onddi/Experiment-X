@@ -244,6 +244,8 @@ export interface SoundParams {
   seqRate?: number; // play every 1, 2 or 4 sixteenths
   seqNotes?: number; // most notes a step, 0 = by how busy the music is
   seqSens?: number; // 0 … 1: how small a crowd still plays (0.5 = as before)
+  seqStyle?: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random'; // how a step's notes play
+  seqVary?: number; // 0 … 1: accents, skips, octave jumps and quick repeats
   seqTick?: boolean; // the soft pulse tick
   scan: number;
   scanSecs: number;
@@ -2010,6 +2012,7 @@ export class ParticleSound {
 
   // --- Beats from the library ---
   private beatIdx = 0;
+  private arpI = 0;
   private beatSet = -1;
   private beatGenre = '';
   private beatBar = -1;
@@ -2405,12 +2408,39 @@ export class ParticleSound {
           // Sensitivity: up, a thinner crowd still plays; down, only the thickest.
           const thr = ((mean * 1.8) / Math.sqrt(busyK)) * Math.pow(4, 0.5 - (P.seqSens ?? 0.5));
           const voice = P.seqSound && P.seqSound !== 'same' ? P.seqSound : this.voiceFor(0);
-          for (let r = 0; r < ROWS && played < most; r++) {
-            if (this.grid[r] < thr || this.grid[r] < 2) continue;
-            const deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * this.p.range * 0.85)));
-            this.note(deg, P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room * dyn, (s / STEPS) * 1.6 - 0.8, voice, sw);
-            played++;
+          // The crowded rows, low notes first (row 0 is the top, the highest note).
+          const rows: number[] = [];
+          for (let r = ROWS - 1; r >= 0; r--) if (this.grid[r] >= thr && this.grid[r] >= 2) rows.push(r);
+          const style = P.seqStyle ?? 'chord';
+          const V = P.seqVary ?? 0;
+          // Chord and strum: the thickest crowds; arpeggios: one row a step, in turn.
+          let pickRows: number[];
+          if (style === 'chord' || style === 'strum') pickRows = [...rows].sort((a, b) => this.grid[b] - this.grid[a]).slice(0, most).sort((a, b) => b - a);
+          else if (!rows.length) pickRows = [];
+          else if (style === 'random') pickRows = [rows[(Math.random() * rows.length) | 0]];
+          else {
+            const n = rows.length;
+            let i = this.arpI++;
+            if (style === 'down') i = n - 1 - (i % n);
+            else if (style === 'bounce' && n > 1) {
+              const p = i % (2 * n - 2);
+              i = p < n ? p : 2 * n - 2 - p;
+            } else i %= n;
+            pickRows = [rows[i]];
           }
+          // Vary: now and then a step rests, a note jumps an octave, or repeats quickly.
+          if (V > 0 && s % 4 !== 0 && Math.random() < V * 0.18) pickRows = [];
+          pickRows.forEach((r, k) => {
+            let deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * this.p.range * 0.85)));
+            if (V > 0 && Math.random() < V * 0.2) deg += Math.random() < 0.6 ? this.L : -this.L;
+            let vel = P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room * dyn;
+            if (V > 0) vel *= 1 + (Math.random() - 0.5) * V * 0.9;
+            const at = sw + (style === 'strum' ? k * 0.035 : 0);
+            const pan = (s / STEPS) * 1.6 - 0.8;
+            this.note(deg, vel, pan, voice, at);
+            if (V > 0 && Math.random() < V * 0.15) this.note(deg, vel * 0.6, pan, voice, at + (stepDur * every) / 2);
+            played++;
+          });
         }
       }
 

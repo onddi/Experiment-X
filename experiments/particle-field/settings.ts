@@ -257,6 +257,8 @@ export interface Settings {
   sndSeqRate: '1' | '2' | '4';
   sndSeqNotes: number;
   sndSeqSens: number;
+  sndSeqStyle: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random';
+  sndSeqVary: number;
   sndSeqTick: boolean;
   sndScanDir: 'across' | 'down' | 'bounce' | 'radar';
   sndScanSound: import('./sound.ts').HitSound;
@@ -911,6 +913,8 @@ export const DEFAULTS: Settings = {
   sndSeqRate: '1',
   sndSeqNotes: 0,
   sndSeqSens: 0.5,
+  sndSeqStyle: 'chord',
+  sndSeqVary: 0,
   sndSeqTick: true,
   sndScanDir: 'across',
   sndScanSound: 'same',
