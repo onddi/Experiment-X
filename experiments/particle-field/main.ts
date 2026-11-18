@@ -2615,7 +2615,74 @@ const bypass = new Set<Tab>((() => {
   }
 })());
 // The music moves the field (a source is on and the Music tab isn't off).
-const reacting = () => (audio.source !== 'off' || drumsDrive()) && !bypass.has('music');
+const reacting = () => (audio.source !== 'off' || drumsDrive() || demoDrive()) && !bypass.has('music');
+// While a reaction is being tried with nothing playing, a made-up song plays
+// the moments instead (see demoLevels), so the preview shows something.
+let mgTrying = false;
+const demoDrive = () => mgTrying && audio.source === 'off' && !drumsDrive();
+const demo = { t: 0, step: -1, pulse: 0, snare: 0, drop: 0, note: 0, syl: 0 };
+// 120 bpm, four bars round: kick on the beat, snare on 2 and 4, hats on the
+// eighths, a short build through bar 4 and a drop back on bar 1, a melody
+// note now and then and a voice that talks in the first two bars.
+function demoLevels(dt: number) {
+  const D = demo;
+  D.t += dt;
+  const st = Math.floor(D.t / 0.125); // sixteenths
+  const fall = Math.exp(-dt * 7);
+  D.pulse *= fall;
+  D.snare *= fall;
+  D.drop *= Math.exp(-dt * 1.5);
+  D.note *= fall;
+  D.syl *= Math.exp(-dt * 10);
+  const L = { ...audio.levels, beat: false, snare: false, hat: false, accent: false, drop: false, bar: false, note: false, syllable: false, pause: false, rhyme: false, crash: false };
+  const s16 = ((st % 64) + 64) % 64; // place in the 4 bars
+  const bar = s16 >> 4;
+  const build = bar === 3 ? (s16 - 48) / 16 : 0;
+  if (st !== D.step) {
+    D.step = st;
+    const inBar = s16 & 15;
+    if (inBar === 0) {
+      L.bar = true;
+      L.bars = (audio.levels.bars || 0) + 1;
+    }
+    if (bar < 3 && inBar % 4 === 0) {
+      L.beat = true;
+      D.pulse = 1;
+    }
+    if (s16 === 0) {
+      L.drop = L.crash = true;
+      D.drop = 1;
+    }
+    if (inBar === 4 || inBar === 12 || (bar === 3 && inBar >= 8 && inBar % 2 === 0)) {
+      L.snare = true;
+      L.snareX = Math.random();
+      D.snare = 1;
+    }
+    if (inBar % 2 === 0) L.hat = true;
+    if (inBar % 3 === 0 && Math.random() < 0.6) {
+      L.note = true;
+      L.notePc = (Math.random() * 12) | 0;
+      D.note = 1;
+    }
+    if (bar < 2 && inBar % 2 === 1 && Math.random() < 0.8) {
+      L.syllable = true;
+      L.accent = Math.random() < 0.2;
+      D.syl = 1;
+    }
+    if (bar === 2 && inBar === 0) {
+      L.pause = true;
+      L.rhyme = true;
+    }
+  }
+  const lv = 0.45 + 0.35 * build + 0.3 * D.drop;
+  Object.assign(L, {
+    level: Math.min(1, lv), bass: Math.min(1, 0.4 + 0.5 * D.pulse), mid: 0.5 + 0.2 * D.snare, treble: 0.4 + 0.3 * build, sub: bar < 3 ? 0.6 : 0.2,
+    liftLevel: Math.min(1, 0.6 * build + 0.8 * D.drop), liftMid: 0.4 * build, pulse: D.pulse, snareEnv: D.snare, bpm: 120,
+    tension: build, dropEnv: D.drop, noteEnv: D.note, melody: 0.5, voice: bar < 2 ? 0.6 : 0,
+    voxOn: bar < 2, vocal: bar < 2 ? 0.4 + 0.6 * D.syl : 0, syllEnv: D.syl, flow: bar < 2 ? 0.5 : 0, voxPitch: 0.5 + 0.3 * Math.sin(D.t * 2), voxRise: Math.cos(D.t * 2),
+  });
+  audio.levels = L;
+}
 // The particle drums stand in for music when none is playing (Drums move the field).
 const drumsDrive = () => settings.sndMove && settings.sndDrums > 0 && !!snd && sndOn && audio.source === 'off';
 const drumLv = { pulse: 0, snareEnv: 0, level: 0 };
@@ -8549,6 +8616,7 @@ function frame(now: number) {
   audio.update(now);
   soundTick(rawMs / 1000);
   if (drumsDrive()) drumLevels(Math.min(0.1, rawMs / 1000));
+  else if (demoDrive()) demoLevels(Math.min(0.1, rawMs / 1000));
   if (dropNow) {
     // Double-tap: the music's drop, on demand.
     dropNow = false;
@@ -14314,11 +14382,29 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       const flow = document.createElement('div');
       flow.className = 'mg-addflow';
       flow.hidden = true;
+      // Trying a reaction: it plays live (at the strength Add would give it)
+      // until you add it, try another, or leave; then it goes back.
+      let trying: { f: (typeof grid.rows)[number]['cells'][number] extends (infer F)[] | null ? F : never; was: number; b: HTMLElement } | null = null;
+      const endTry = (keep = false) => {
+        if (!trying) return;
+        if (!keep) trying.f.put(trying.was);
+        trying.b.classList.remove('trying');
+        trying.b.querySelector('em')!.textContent = '+';
+        trying = null;
+        mgTrying = false;
+        tryHint();
+      };
+      const tryHint = () => {
+        const p = flow.querySelector('.af-hint');
+        if (p && p.hasAttribute('data-step2')) p.textContent = trying ? (audio.source === 'off' && !drumsDrive() ? 'Trying it to a made-up beat. Tap Add to keep it, or try another.' : 'Trying it to your music. Tap Add to keep it, or try another.') : '…the particles. Tap one to try it, + to add it.';
+      };
       const closeFlow = () => {
+        endTry();
         flow.hidden = true;
         addAll.hidden = mgShowOff;
       };
       const stepWhen = () => {
+        endTry();
         flow.innerHTML = '<div class="af-top"><b>When…</b><span>1 of 2</span><button type="button">Cancel</button></div><p class="af-hint">Lit bars show what the music is doing right now.</p>';
         flow.querySelector('button')!.addEventListener('click', closeFlow);
         let group = '';
@@ -14351,7 +14437,9 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       };
       const stepWhat = (ri: number) => {
         const row = grid.rows[ri];
-        flow.innerHTML = '<div class="af-top"><button type="button" class="af-back">‹</button><b></b><span>2 of 2</span><button type="button">Cancel</button></div><p class="af-hint">…the particles. Tap one to add it; set its strength next.</p>';
+        endTry();
+        flow.innerHTML = '<div class="af-top"><button type="button" class="af-back">‹</button><b></b><span>2 of 2</span><button type="button">Cancel</button></div><p class="af-hint" data-step2></p>';
+        tryHint();
         flow.querySelector('b')!.textContent = row.when ?? row.name;
         flow.querySelector('.af-back')!.addEventListener('click', stepWhen);
         flow.querySelector('.af-top button:last-child')!.addEventListener('click', closeFlow);
@@ -14373,11 +14461,33 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
             b.querySelector('b')!.textContent = (f.home ? '↗ ' : '') + f.label;
             b.querySelector('small')!.textContent = f.note ?? (f.choice ? f.choice.options.map(([, t]) => t).slice(0, 3).join(', ') : '');
             b.querySelector('em')!.textContent = on ? 'on' : '+';
-            b.addEventListener('click', () => {
-              if (!on) f.put(2 / 3);
-              closeFlow();
-              redraw();
-              rowShow[ri]?.(f);
+            b.addEventListener('click', (e) => {
+              const add = on || (e.target as HTMLElement).closest('em');
+              if (add) {
+                // Add: keep what's being tried, or turn it on.
+                if (trying?.f === f) endTry(true);
+                else if (!on) f.put(2 / 3);
+                closeFlow();
+                redraw();
+                rowShow[ri]?.(f);
+                return;
+              }
+              const again = trying?.f === f;
+              endTry();
+              if (again) return;
+              trying = { f, was: f.get(), b };
+              f.put(2 / 3);
+              mgTrying = true;
+              b.classList.add('trying');
+              b.querySelector('em')!.textContent = 'Add';
+              tryHint();
+              // Leaving the panel stops trying (and puts it back).
+              const watch = () => {
+                if (!trying) return;
+                if (!flow.isConnected || !flow.offsetParent) return endTry();
+                requestAnimationFrame(watch);
+              };
+              requestAnimationFrame(watch);
             });
             flow.append(b);
           }
