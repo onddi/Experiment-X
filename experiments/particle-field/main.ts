@@ -16377,11 +16377,14 @@ function renderRack(src: RackSrc = RACK_LIVE): HTMLElement {
     const box = document.createElement('div');
     box.className = 'rack-group';
     const h = document.createElement('h3');
-    h.textContent = label;
+    // The group's name with its Studio folder icon, so a group is easy to spot.
+    const tab0 = OV_COLS.find(([l]) => l === label)?.[1][0] ?? 'look';
+    h.innerHTML = `<span class="fd-ic">${svg(TAB_ICONS[tab0])}</span><span class="rg-name"></span>`;
+    h.querySelector('.rg-name')!.textContent = label;
     box.append(h);
     {
       // The whole group's cards, open in the Studio.
-      const tab = (OV_COLS.find(([l]) => l === label)?.[1][0] ?? 'look') === 'presets' ? 'knobs' : OV_COLS.find(([l]) => l === label)![1][0];
+      const tab = tab0 === 'presets' ? 'knobs' : tab0;
       const go = document.createElement('button');
       go.type = 'button';
       go.className = 'rack-studio';

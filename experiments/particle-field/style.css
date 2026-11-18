@@ -3060,6 +3060,11 @@ html.top-layer.top-edit .top-back { display: block !important; position: fixed; 
 .af-fx.trying em { width: auto; padding: 5px 12px; border-radius: 999px; background: var(--cc, var(--accent)); color: #0b0b10; font-size: 12px; font-weight: 600; }
 /* Font lists: each font shown in itself, a little bigger so it reads. */
 .knob-menu button.in-font { font-size: 17px; line-height: 1.25; }
+/* Deck groups: a named header with the Studio folder's icon, kept in view while you scroll its group. */
+.rack-group > h3 { position: sticky; top: -12px; z-index: 2; gap: 8px; margin: 0 -4px; padding: 8px 4px; background: var(--page); font-size: 13px !important; letter-spacing: 0; text-transform: none; color: var(--text); }
+.rack-group > h3 .fd-ic { width: 24px; height: 24px; }
+.rack-group { padding-top: 14px !important; }
+.rack-group + .rack-group { margin-top: 6px; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
