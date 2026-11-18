@@ -21,7 +21,8 @@ export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano
 export type HitSound = 'same' | Voice;
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
 export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood';
-export type SndTimbre = 'colour' | 'lounge' | 'world' | Voice;
+export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze';
+export type SndTimbre = Band | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
 export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808';
@@ -77,10 +78,16 @@ const PROGS: Record<Exclude<SndProg, 'custom'>, number[]> = {
   mystic: [0, 1, 0, 6],
 };
 // By colour: the palette's colours are split between the four instruments of a band.
-const BANDS: Record<'colour' | 'lounge' | 'world', Voice[]> = {
+const BANDS: Record<Band, Voice[]> = {
   colour: ['marimba', 'bell', 'pluck', 'glass'],
   lounge: ['epiano', 'vibes', 'harp', 'flute'],
   world: ['kalimba', 'steel', 'koto', 'musicbox'],
+  fairy: ['celesta', 'musicbox', 'crystal', 'glass'],
+  temple: ['gong', 'tubular', 'koto', 'bell'],
+  woods: ['wood', 'marimba', 'kalimba', 'pluck'],
+  rain: ['drop', 'pluck', 'glass', 'celesta'],
+  retro: ['synth', 'tri', 'epiano', 'crystal'],
+  breeze: ['wind', 'flute', 'harp', 'vibes'],
 };
 // Each instrument is two oscillators, sometimes with FM, a filter sweep or a
 // wobble: cheap enough to play dozens at once.
@@ -1260,8 +1267,8 @@ export class ParticleSound {
 
   private voiceFor(tone: number): Voice {
     const tb = this.p.timbre;
-    if (tb === 'colour' || tb === 'lounge' || tb === 'world') return BANDS[tb][Math.min(3, Math.floor(tone * 4))];
-    return tb;
+    if (tb in BANDS) return BANDS[tb as Band][Math.min(3, Math.floor(tone * 4))];
+    return tb as Voice;
   }
 
   private note(deg: number, vel: number, pan: number, voice: Voice, when = 0, o?: NoteOpts) {
