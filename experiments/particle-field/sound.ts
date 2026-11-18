@@ -28,7 +28,7 @@ export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'pi
 import { bandsOf } from './audio.ts';
 import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
-export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air';
+export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 /** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
 export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | Voice;
@@ -204,6 +204,14 @@ const PADS: Record<PadSound, PadDef> = {
   bowed: { w: ['sawtooth', 'sawtooth'], spread: 6, width: 0.6, cut: 1, q: 1.6, band: 1100, color: 0, drift: 7, air: 0.25, gain: 2.8, sub: 0.15, swell: 1.6 },
   dark: { w: ['triangle', 'sine'], spread: 8, width: 0.6, cut: 0.5, q: 0.7, color: 4, drift: 5, air: 0.08, gain: 0.84, up: -12, sub: 0.35, swell: 0.8 },
   air: { w: ['sine', 'triangle'], spread: 10, width: 1, cut: 2.4, q: 1.2, band: 2400, color: 9, drift: 4, air: 0.9, gain: 5.6, sub: 0, swell: 1 },
+  brass: { w: ['sawtooth', 'sawtooth'], spread: 5, width: 0.5, cut: 1.9, q: 1.4, color: 0, drift: 2, air: 0, gain: 0.95, sub: 0.2, swell: 1.4 },
+  reed: { w: ['square', 'square'], spread: 7, width: 0.6, cut: 1, q: 1.4, band: 1400, color: 7, drift: 3, air: 0.05, gain: 2.6, sub: 0, swell: 0.4 },
+  hollow: { w: ['square', 'triangle'], spread: 4, width: 0.5, cut: 0.7, q: 3, color: 9, drift: 2, air: 0, gain: 0.9, sub: 0.2, swell: 0.6 },
+  ooh: { w: ['triangle', 'sawtooth'], spread: 8, width: 0.8, cut: 1, q: 2.6, band: 420, color: 0, drift: 5, air: 0.2, gain: 4.4, up: -12, sub: 0, swell: 0.9 },
+  cello: { w: ['sawtooth', 'sawtooth'], spread: 5, width: 0.5, cut: 0.9, q: 1.8, band: 700, color: 0, drift: 8, air: 0.15, gain: 3, up: -12, sub: 0.2, swell: 1.8 },
+  ice: { w: ['sine', 'triangle'], spread: 14, width: 1, cut: 4, q: 0.5, color: 9, drift: 2, air: 0.35, gain: 0.8, up: 24, sub: 0, swell: 0.4 },
+  pwm: { w: ['square', 'sawtooth'], spread: 18, width: 0.9, cut: 1.2, q: 0.9, color: 7, drift: 9, air: 0, gain: 0.85, sub: 0.25, swell: 1 },
+  velvet: { w: ['triangle', 'triangle'], spread: 11, width: 0.8, cut: 0.6, q: 0.5, color: 9, drift: 5, air: 0.1, gain: 1.1, sub: 0.3, swell: 1.3 },
 };
 
 export interface SoundParams {
