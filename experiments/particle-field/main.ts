@@ -14567,6 +14567,8 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
             b.querySelector('b')!.textContent = (f.home ? '↗ ' : '') + f.label;
             b.querySelector('small')!.textContent = f.note ?? (f.choice ? f.choice.options.map(([, t]) => t).slice(0, 3).join(', ') : '');
             b.querySelector('em')!.textContent = on ? 'on' : '+';
+            // Hover (or hold) the name: what it does to the field.
+            if (f.keys?.[0]) tipOn(b.querySelector('b')!, f.keys[0]);
             b.addEventListener('click', (e) => {
               const add = on || (e.target as HTMLElement).closest('em');
               if (add) {
