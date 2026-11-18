@@ -13080,6 +13080,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
       ['Explode from the centre (E)', ICONS.explode, () => explode()],
       ['Scatter (S)', ICONS.scatter, scatter],
+      ['Pause the sound (M)', NOTE_ICON, () => toggleMute(!sndMuted())],
       ['Project to another screen (P)', ICONS.project, toggleProject],
       ['Recording settings', ICONS.record, () => showTab('record')],
       ['Reset to defaults and clear locks', ICONS.reset, reset],
@@ -13095,6 +13096,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       });
       if (fn === toggleGather) gatherButtons.push(b);
       if (fn === recFromMenu) b.classList.add('dm-rec');
+      if (t.startsWith('Pause the sound')) b.classList.add('dm-snd');
       if (fn === toggleProject) projectUi.push(() => (b.querySelector('span')!.textContent = projector.on ? 'Stop projecting (P)' : t));
       dockMoreEl.append(b);
     }
@@ -13122,6 +13124,12 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       });
       dockMoreEl.prepend(b);
     }
+  }
+  // Sound: pause it, or play it again; hidden while it was never on.
+  const sb = dockMoreEl.querySelector<HTMLElement>('.dm-snd');
+  if (sb) {
+    sb.hidden = !(settings.sndVol > 0 || sndMuted());
+    sb.querySelector('span')!.textContent = settings.sndVol > 0 ? 'Pause the sound (M)' : 'Play the sound (M)';
   }
   const rb = dockMoreEl.querySelector('.dm-rec span');
   if (rb) rb.textContent = recorder.on ? 'Stop recording (V)' : 'Record a clip (V)';
@@ -19172,8 +19180,19 @@ function openStudioFromMenu() {
   if (sheetMode()) uGo('stage');
 }
 
+// A safety net: if the field crawls (under about 5 frames a second for three
+// seconds) while the sound plays, pause the sound, which is the usual cause.
+let sndSlow = 0;
 function soundTick(dt: number) {
   sndOn = settings.sndVol > 0;
+  if (sndOn && snd && !document.hidden && !paused) {
+    sndSlow = dt >= 0.2 ? sndSlow + dt : Math.max(0, sndSlow - dt * 2);
+    if (sndSlow > 3) {
+      sndSlow = 0;
+      toggleMute(true);
+      showToast('Sound paused: the app was struggling. ⋯ → Play the sound brings it back');
+    }
+  } else sndSlow = 0;
   if ((studio?.mode ?? 'off') !== (sndOn && snd ? studioPref : 'off')) syncStudio();
   const scanOn = sndOn && !!snd && settings.sndScan > 0 && settings.sndShow;
   if (sndScanEl) sndScanEl.hidden = !scanOn;
