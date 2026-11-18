@@ -228,6 +228,9 @@ export interface Settings {
   sndTremMode: 'volume' | 'pan';
   sndShimmer: number;
   sndGlue: number;
+  sndLowEnd: number;
+  sndKickPunch: number;
+  sndSub: number;
   sndTape: number;
   sndGrid: string;
   sndTempo: number;
@@ -877,6 +880,9 @@ export const DEFAULTS: Settings = {
   sndTremMode: 'volume',
   sndShimmer: 0,
   sndGlue: 0,
+  sndLowEnd: 0,
+  sndKickPunch: 0,
+  sndSub: 0,
   sndTape: 0,
   sndGrid: '',
   sndTempo: 90,

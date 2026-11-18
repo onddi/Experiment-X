@@ -299,6 +299,9 @@ export interface SoundParams {
   tremMode?: 'volume' | 'pan';
   shimmer?: number; // a reverb tail an octave up
   glue?: number; // a master compressor: tighter and louder
+  lowEnd?: number; // 0 … 1: weight in the lows, a fuller kick, bass and pad duck under it
+  kickPunch?: number; // 0 … 1: a deeper, longer, slightly driven thump under the kick
+  sub?: number; // 0 … 1: a clean sine an octave under the bass
   tape?: number; // bursts drag the pitch down like a tape stopping
   // Beats from the library: a genre and one of its beats ('' = the field plays the drums).
   genre: string;
@@ -425,6 +428,9 @@ export class ParticleSound {
   // spliced in here the first time they're turned up.
   private shelf: BiquadFilterNode;
   private chainEnd: AudioNode;
+  private lowShelf: BiquadFilterNode;
+  private bassDuck: GainNode;
+  private thumpShaper: WaveShaperNode | null = null;
   private driveShaper: WaveShaperNode | null = null;
   private driveK = -1;
   private lofiShaper: WaveShaperNode | null = null;
@@ -521,8 +527,13 @@ export class ParticleSound {
     this.shelf.type = 'highshelf';
     this.shelf.frequency.value = 3000;
     this.shelf.gain.value = 0;
-    this.master.connect(this.tone).connect(this.shelf).connect(comp);
-    this.chainEnd = this.shelf;
+    // Low end: a low shelf over everything (flat at 0).
+    this.lowShelf = ctx.createBiquadFilter();
+    this.lowShelf.type = 'lowshelf';
+    this.lowShelf.frequency.value = 90;
+    this.lowShelf.gain.value = 0;
+    this.master.connect(this.tone).connect(this.shelf).connect(this.lowShelf).connect(comp);
+    this.chainEnd = this.lowShelf;
     this.dry = ctx.createGain();
     this.dry.connect(this.master);
     const verb = ctx.createConvolver();
@@ -530,6 +541,12 @@ export class ParticleSound {
     this.wet = ctx.createGain();
     this.wet.connect(verb);
     verb.connect(this.master);
+    // The bass goes through one gain, so the kick can duck it (Low end).
+    this.bassDuck = ctx.createGain();
+    this.bassDuck.connect(this.dry);
+    const bw = ctx.createGain();
+    bw.gain.value = 0.12;
+    this.bassDuck.connect(bw).connect(this.wet);
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const nd = this.noise.getChannelData(0);
@@ -636,6 +653,7 @@ export class ParticleSound {
     if (p.chorus > 0) this.ensureChorus();
     if (this.chorusOut) this.chorusOut.gain.setTargetAtTime(p.chorus * 0.8, t, 0.1);
     this.shelf.gain.setTargetAtTime(p.bright * 9, t, 0.1);
+    this.lowShelf.gain.setTargetAtTime((p.lowEnd ?? 0) * 8, t, 0.1);
     if (p.drive > 0) this.ensureDrive();
     if (this.driveShaper) {
       const k = Math.round(p.drive * 20) / 20;
@@ -938,8 +956,8 @@ export class ParticleSound {
   }
 
   // Pump: duck the pad at `when`, back up over most of a beat.
-  private pump(when: number, k = 1) {
-    const amt = this.p.padPump * Math.min(1, k);
+  private pump(when: number, k = 1, by = this.p.padPump) {
+    const amt = by * Math.min(1, k);
     if (amt <= 0 || this.p.pad <= 0) return;
     const g = this.padDuck.gain;
     const beat = 60 / Math.max(40, this.bpmNow);
@@ -1751,7 +1769,16 @@ export class ParticleSound {
       this.send(cg, 0.12, false);
       src.start(t, Math.random() * 0.8, 0.04);
     }
-    this.send(g, 0.12, false);
+    if ((this.p.sub ?? 0) > 0) {
+      // Sub: a clean sine an octave down (at the note itself when it's already deep).
+      const s = ctx.createOscillator();
+      pitch(s.frequency, f > 70 ? 0.5 : 1);
+      const sg = ctx.createGain();
+      sg.gain.value = (this.p.sub ?? 0) * 0.9;
+      s.connect(sg).connect(g);
+      nodes.push(s);
+    }
+    g.connect(this.bassDuck);
     for (const nd of nodes) {
       nd.start(t);
       nd.stop(end);
@@ -1816,6 +1843,7 @@ export class ParticleSound {
     this.drumEv('kick', k, when);
     if (!this.audible('drums')) return;
     this.pump(when, k);
+    this.lowKick(when, k);
     const K = KITS[this.p.kit];
     if (K?.kick) {
       this.kitBody(K.kick.body, k, when, K.wet * 0.3);
@@ -1831,6 +1859,45 @@ export class ParticleSound {
       case 'brush': return this.body(when, 95, 55, 0.08, 0.3, 0.6 * k);
       case 'hand': return this.body(when, 120, 92, 0.1, 0.42, 0.6 * k, 'sine', 0.25); // low tom
       default: return this.body(when, 150, 45, 0.12, 0.35, 0.75 * k);
+    }
+  }
+
+  // Low end and Kick punch: a deep sine thump under the kit's own kick, a little
+  // driven so phone speakers carry it, and the bass and pad duck out of its way.
+  private lowKick(when: number, k: number) {
+    const low = this.p.lowEnd ?? 0;
+    const x = Math.min(1, (this.p.kickPunch ?? 0) + low * 0.6);
+    if (x > 0) {
+      const ctx = this.ctx;
+      const t = ctx.currentTime + when;
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(140, t);
+      o.frequency.exponentialRampToValueAtTime(46, t + 0.06 + x * 0.04);
+      const g = ctx.createGain();
+      const dec = 0.22 + x * 0.35;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.55 * x * k, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+      if (!this.thumpShaper) {
+        this.thumpShaper = ctx.createWaveShaper();
+        this.thumpShaper.curve = satCurve(2.5);
+        this.thumpShaper.connect(this.dry);
+      }
+      o.connect(g).connect(this.thumpShaper);
+      o.start(t);
+      o.stop(t + dec + 0.05);
+      o.onended = () => g.disconnect();
+    }
+    if (low > 0) {
+      // Duck the bass, and the pad unless Pump already does.
+      const beat = 60 / Math.max(40, this.bpmNow);
+      const t = this.ctx.currentTime + when;
+      const g = this.bassDuck.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(1 - low * 0.55 * Math.min(1, k), t + 0.01);
+      g.setTargetAtTime(1, t + 0.03, beat * 0.18);
+      if (this.p.padPump < low * 0.5) this.pump(when, k, low * 0.5);
     }
   }
 
