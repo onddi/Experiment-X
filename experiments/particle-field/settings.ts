@@ -1,5 +1,6 @@
 // Settings: every option's type and its default value. Pure data, no DOM.
 import type { DrumKit } from './drums.ts';
+import type { FontId } from './fonts.ts';
 import type { FillPattern } from './patterns.ts';
 import type { Genre, VoxMode } from './audio.ts';
 export type PointerMode = 'repel' | 'attract' | 'vortex' | 'none';
@@ -37,7 +38,7 @@ export type Palette = keyof typeof PALETTES | 'custom';
 export type GlyphSet = keyof typeof GLYPH_SETS | 'custom';
 export type GlyphPick = 'random' | 'speed' | 'heading' | 'size' | 'sequence';
 export type GlyphChange = 'fixed' | 'flicker' | 'beat';
-export type GlyphFont = 'mono' | 'serif' | 'sans' | 'bold';
+export type GlyphFont = FontId;
 export type GlyphRotate = 'none' | 'heading' | 'spin';
 
 // Glyph sets. 'density' runs light → heavy so picking by speed reads as
@@ -95,6 +96,7 @@ export interface Settings {
   spaceDist: number;
   shape: Shape;
   shapeText: string;
+  shapeFont: FontId; // the Text, Live and Sequence shapes' words
   shapeIcon: string;
   shapeGeo: string;
   shapeSolid: string;
@@ -343,7 +345,7 @@ export interface Settings {
   obsX: number;
   obsY: number;
   obsAngle: number;
-  obsFont: 'bold' | 'serif' | 'mono' | 'round' | 'script';
+  obsFont: FontId;
   obsStyle: 'faint' | 'solid' | 'outline' | 'glow' | 'neon' | 'glass' | 'shadow' | 'stripes' | 'dots';
   obsColour: 'white' | 'scene' | 'palette' | 'dark' | 'gold' | 'amber' | 'red' | 'pink' | 'violet' | 'blue' | 'ice' | 'mint';
   obsPulse: number; // 0 … 1, brightens with the music
@@ -757,6 +759,7 @@ export const DEFAULTS: Settings = {
   spaceDist: 12,
   shape: 'none',
   shapeText: 'HELLO',
+  shapeFont: 'bold',
   shapeIcon: 'heart',
   shapeGeo: 'star5',
   shapeSolid: 'sphere',

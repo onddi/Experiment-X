@@ -14,6 +14,7 @@ import { GLSprites, type Blend } from './webgl.ts';
 import { GLFx, affine, hueMatrix, type Target } from './glfx.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { GpuFx } from './gpufx.ts';
+import { FONT_OPTS, addFontCss, fontCss, fontReady, fontStyle } from './fonts.ts';
 import type { ParticleSound, SoundParams, Layer } from './sound.ts';
 import { STYLES, styleById, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './drums.ts';
@@ -576,11 +577,12 @@ function setWells(list: Well[]) {
 // out. Particles near an edge lose the part of their velocity heading in, so
 // they slide around it, and anything inside is pushed out.
 const OB_CELL = 4;
-const OB_FONTS: Record<Settings['obsFont'], [string, string]> = { bold: ['800', 'system-ui, sans-serif'], serif: ['700', 'Georgia, "Times New Roman", serif'], mono: ['700', 'ui-monospace, Menlo, Consolas, monospace'], round: ['800', 'ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif'], script: ['700', '"Brush Script MT", "Segoe Script", cursive'] };
 const OB_MARGIN = 22;
 type ObField = { W: number; H: number; sd: Float32Array; nx: Float32Array; ny: Float32Array };
 let obField: ObField | null = null;
 let obKey = '';
+// Bumped when a web font arrives, so the walls and their look are drawn again in it.
+let obFontGen = 0;
 
 function obCircleList(): { x: number; y: number }[] {
   return settings.obsCircles
@@ -624,14 +626,15 @@ function onePiece(g: CanvasRenderingContext2D, p: ObPiece, k: number) {
   g.rotate((a * Math.PI) / 180);
   if (p.kind === 'text') {
     const text = p.text.trim() || ' ';
-    const face = OB_FONTS[p.font] ?? OB_FONTS.bold;
+    // A web font still on its way: draw the fallback now, redo the field when it's in.
+    fontReady(p.font, () => obFontGen++);
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     let size = h * 0.5;
-    g.font = `${face[0]} ${size}px ${face[1]}`;
+    g.font = fontCss(p.font, size);
     size *= Math.min(1, (w * p.size) / Math.max(1, g.measureText(text).width));
     size = Math.min(size, h * 0.6 * p.size + 4);
-    g.font = `${face[0]} ${size}px ${face[1]}`;
+    g.font = fontCss(p.font, size);
     g.fillText(text, 0, 0);
   } else if (p.kind === 'wall') {
     const L = Math.max(w, h) * p.size;
@@ -725,7 +728,7 @@ function obstacleField(): ObField | null {
   const S = settings;
   if (S.obstacles === 'none') return null;
   obT = obMoving() ? Math.floor(performance.now() / 50) / 20 : 0;
-  const key = [S.obstacles, S.obsIcon, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, S.obsX, S.obsY, S.obsAngle, S.obsFont, OB_SLOT_KEYS.map((k) => S[k]).join(','), S.obsInside, obT, w, h, S.obstacles === 'body' ? bodyFrame : 0].join('|');
+  const key = [S.obstacles, S.obsIcon, S.obsCircles, S.obsRadius, S.obsText, S.obsSize, S.obsX, S.obsY, S.obsAngle, S.obsFont, OB_SLOT_KEYS.map((k) => S[k]).join(','), S.obsInside, obT, w, h, S.obstacles === 'body' ? bodyFrame : 0, obFontGen].join('|');
   if (key === obKey) return obField;
   obKey = key;
   const W = Math.max(1, Math.ceil(w / OB_CELL));
@@ -4704,7 +4707,7 @@ function buildShape() {
   // An animated size plays as a scale on the built shape (see placeFrame), so
   // the shape is built once at the knob's own size, not every frame.
   const sz = animBase.shapeSize ?? S.shapeSize;
-  const key = [S.shape, S.shapeText, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', shapeMedia ? `${shapeMedia.src}#${mediaFrameNo}` : '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
+  const key = [S.shape, S.shapeText, S.shapeFont, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', shapeMedia ? `${shapeMedia.src}#${mediaFrameNo}` : '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   if (S.shape === 'camera' && trackMode()) {
     // Face, hand and body modes: the homes follow the tracking every frame.
@@ -4760,11 +4763,16 @@ function buildShape() {
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       let size = H * 0.5;
-      g.font = `800 ${size}px system-ui, sans-serif`;
+      const fid = S.shapeFont;
+      fontReady(fid, () => {
+        shapeKey = '';
+        changed(new Set<keyof Settings>(['shapeFont']));
+      });
+      g.font = fontCss(fid, size);
       const tw = g.measureText(text).width;
       size *= Math.min(1, (W * sz) / Math.max(1, tw));
       size = Math.min(size, H * 0.7 * sz + 4);
-      g.font = `800 ${size}px system-ui, sans-serif`;
+      g.font = fontCss(fid, size);
       g.fillText(text, W / 2, H / 2);
       return true;
     };
@@ -5873,12 +5881,18 @@ function withAlpha(hsl: string, a: number) {
 
 // --- glyphs ------------------------------------------------------------------
 
-const FONTS: Record<GlyphFont, string> = {
+// The first four glyph fonts keep their old look (regular weight); the rest are the shared list.
+const GLYPH_OLD: Partial<Record<GlyphFont, string>> = {
   mono: 'ui-monospace, Menlo, monospace',
   serif: 'Georgia, "Times New Roman", serif',
   sans: 'system-ui, sans-serif',
-  bold: '800 {px} system-ui, sans-serif',
 };
+function glyphFontCss(px: number) {
+  const id = settings.glyphFont;
+  fontReady(id, buildShades);
+  const old = GLYPH_OLD[id];
+  return old ? `${px}px ${old}` : fontCss(id, px);
+}
 let glyphChars: string[] = [];
 
 function buildGlyphs() {
@@ -5943,8 +5957,7 @@ const glyphGroups: number[][] = Array.from({ length: 17 }, () => []);
 
 function drawGlyphs(list: number[], k: number, s: number) {
   const size = Math.max(6, s * 5 * settings.glyphScale);
-  const f = FONTS[settings.glyphFont];
-  const font = (px: number) => (f.includes('{px}') ? f.replace('{px}', `${px.toFixed(1)}px`) : `${px.toFixed(1)}px ${f}`);
+  const font = (px: number) => glyphFontCss(+px.toFixed(1));
   ctx.font = font(size);
   ctx.fillStyle = shades[k];
   ctx.textAlign = 'center';
@@ -5985,8 +5998,7 @@ function glyphSprite(ch: string) {
   c = document.createElement('canvas');
   c.width = c.height = SPRITE_PX;
   const g = c.getContext('2d')!;
-  const f = FONTS[settings.glyphFont];
-  g.font = f.includes('{px}') ? f.replace('{px}', `${GLYPH_PX}px`) : `${GLYPH_PX}px ${f}`;
+  g.font = glyphFontCss(GLYPH_PX);
   g.fillStyle = '#fff';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -8837,7 +8849,7 @@ type ControlBody =
   | { kind: 'mypals' }
   | { kind: 'heading'; label: string; tab: Tab }
   | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
-  | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][] }
+  | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][]; font?: boolean }
   | { kind: 'toggle'; key: keyof Settings; label: string }
   | { kind: 'choice'; key: keyof Settings; label: string; options: [string, string][] }
   | { kind: 'color'; key: keyof Settings; label: string }
@@ -8870,7 +8882,7 @@ const TOP_BLENDS: [Settings['topBlend'], string][] = [
   ['saturation', 'Saturation'],
   ['luminosity', 'Brightness only'],
 ];
-const OB_FONT_OPTS: [string, string][] = [['bold', 'Bold'], ['serif', 'Serif'], ['mono', 'Mono'], ['round', 'Rounded'], ['script', 'Script']];
+const OB_FONT_OPTS = FONT_OPTS;
 const OB_LOOKS: [string, string][] = [['faint', 'Faint'], ['solid', 'Solid'], ['outline', 'Outline'], ['glow', 'Glow'], ['neon', 'Neon'], ['glass', 'Glass'], ['shadow', 'Lifted (shadow)'], ['stripes', 'Stripes'], ['dots', 'Dots']];
 const OB_COLOURS: [string, string][] = [['white', 'White'], ['scene', 'Scene colour'], ['palette', 'Scene palette (gradient)'], ['dark', 'Dark (a cut-out)'], ['gold', 'Gold'], ['amber', 'Amber'], ['red', 'Red'], ['pink', 'Pink'], ['violet', 'Violet'], ['blue', 'Blue'], ['ice', 'Ice'], ['mint', 'Mint']];
 const OB_PIECE_KINDS: [string, string][] = [['text', 'A word'], ['icon', 'A shape'], ['wall', 'A wall'], ['ring', 'A ring'], ['circle', 'A circle']];
@@ -9853,7 +9865,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'glyphPick', label: 'Each particle shows', options: [['random', 'A random glyph'], ['speed', 'By speed'], ['heading', 'By direction'], ['size', 'By size'], ['sequence', 'In order (spells it)']], show: isGlyphs },
   { kind: 'select', key: 'glyphChange', label: 'Glyphs change', options: [['fixed', 'Never'], ['flicker', 'Flicker'], ['beat', 'On the beat']], show: () => isGlyphs() && (settings.glyphPick === 'random') },
   { kind: 'range', key: 'glyphRate', label: 'Flicker rate', min: 0, max: 0.2, step: 0.005, format: pct, show: () => isGlyphs() && settings.glyphPick === 'random' && settings.glyphChange === 'flicker' },
-  { kind: 'select', key: 'glyphFont', label: 'Font', options: [['mono', 'Monospace'], ['serif', 'Serif'], ['sans', 'Sans'], ['bold', 'Heavy']], show: isGlyphs },
+  { kind: 'select', key: 'glyphFont', label: 'Font', options: FONT_OPTS, font: true, show: isGlyphs },
   { kind: 'range', key: 'glyphScale', label: 'Glyph size', min: 0.5, max: 4, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: isGlyphs },
   { kind: 'select', key: 'glyphRotate', label: 'Rotation', options: [['none', 'Upright'], ['heading', 'Follow direction'], ['spin', 'Spin']], show: isGlyphs },
 
@@ -10013,12 +10025,13 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'solidLight', label: 'Light and shade', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)), show: () => settings.shape === 'solid' },
   { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'modelClip', 'modelSpeed', 'modelBeat', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'modelClip', 'modelSpeed', 'modelBeat', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
   { kind: 'note', text: 'How the camera forms you (face, hands or body) is on the Camera tab.', show: isCam },
   { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
+  { kind: 'select', key: 'shapeFont', label: 'Font', options: FONT_OPTS, font: true, show: () => settings.shape === 'text' || settings.shape === 'live' || settings.shape === 'sequence' },
   { kind: 'note', text: 'Symbols work too: try ★ ♥ ☾ ✿ ☮ or an emoji.', show: () => settings.shape === 'text' },
   { kind: 'select', key: 'shapeIcon', label: 'Icon', options: ICON_SHAPES, show: () => settings.shape === 'icon' },
   { kind: 'select', key: 'shapeGeo', label: 'Shape', options: GEO_SHAPES, show: () => settings.shape === 'geo' },
@@ -10170,7 +10183,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'obsPlace', label: 'Tap adds or removes circles, drag moves them', show: () => settings.obstacles === 'circles' },
   { kind: 'range', key: 'obsRadius', label: 'Circle size', min: 15, max: 220, step: 5, format: (v) => `${v}px`, show: () => settings.obstacles === 'circles' },
   { kind: 'text', key: 'obsText', label: 'Word', placeholder: 'Type a word', show: () => settings.obstacles === 'text' },
-  { kind: 'select', key: 'obsFont', label: 'Font', options: OB_FONT_OPTS, show: () => settings.obstacles === 'text' },
+  { kind: 'select', key: 'obsFont', label: 'Font', options: OB_FONT_OPTS, font: true, show: () => settings.obstacles === 'text' },
   { kind: 'range', key: 'obsSize', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsAngle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
   { kind: 'range', key: 'obsX', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => ['text', 'wall', 'ring', 'icon'].includes(settings.obstacles) },
@@ -10188,7 +10201,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob2Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob2Kind !== 'none' },
   { kind: 'select', key: 'ob2Icon', label: 'Shape', options: ICON_SHAPES, show: () => settings.ob2Kind === 'icon' },
   { kind: 'text', key: 'ob2Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob2Kind === 'text' },
-  { kind: 'select', key: 'ob2Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob2Kind === 'text' },
+  { kind: 'select', key: 'ob2Font', label: 'Font', options: OB_FONT_OPTS, font: true, show: () => settings.ob2Kind === 'text' },
   { kind: 'range', key: 'ob2Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob2Kind !== 'none' },
   { kind: 'range', key: 'ob2Angle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => settings.ob2Kind !== 'none' },
   { kind: 'range', key: 'ob2X', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob2Kind !== 'none' },
@@ -10201,7 +10214,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob3Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob3Kind !== 'none' },
   { kind: 'select', key: 'ob3Icon', label: 'Shape', options: ICON_SHAPES, show: () => settings.ob3Kind === 'icon' },
   { kind: 'text', key: 'ob3Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob3Kind === 'text' },
-  { kind: 'select', key: 'ob3Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob3Kind === 'text' },
+  { kind: 'select', key: 'ob3Font', label: 'Font', options: OB_FONT_OPTS, font: true, show: () => settings.ob3Kind === 'text' },
   { kind: 'range', key: 'ob3Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob3Kind !== 'none' },
   { kind: 'range', key: 'ob3Angle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => settings.ob3Kind !== 'none' },
   { kind: 'range', key: 'ob3X', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob3Kind !== 'none' },
@@ -10214,7 +10227,7 @@ const CONTROLS: Control[] = [
   { kind: 'select', key: 'ob4Kind', label: 'Kind', options: OB_PIECE_KINDS, show: () => settings.obstacles !== 'none' && settings.ob4Kind !== 'none' },
   { kind: 'select', key: 'ob4Icon', label: 'Shape', options: ICON_SHAPES, show: () => settings.ob4Kind === 'icon' },
   { kind: 'text', key: 'ob4Text', label: 'Word', placeholder: 'Type a word', show: () => settings.ob4Kind === 'text' },
-  { kind: 'select', key: 'ob4Font', label: 'Font', options: OB_FONT_OPTS, show: () => settings.ob4Kind === 'text' },
+  { kind: 'select', key: 'ob4Font', label: 'Font', options: OB_FONT_OPTS, font: true, show: () => settings.ob4Kind === 'text' },
   { kind: 'range', key: 'ob4Size', label: 'Size', min: 0.02, max: 1, step: 0.01, format: pct, show: () => settings.ob4Kind !== 'none' },
   { kind: 'range', key: 'ob4Angle', label: 'Angle', min: -90, max: 90, step: 1, format: (v) => `${v}°`, show: () => settings.ob4Kind !== 'none' },
   { kind: 'range', key: 'ob4X', label: 'Position ←→', min: 0, max: 1, step: 0.01, format: pct, show: () => settings.ob4Kind !== 'none' },
@@ -10876,7 +10889,7 @@ function morphTo(target: Settings, morphSec = settings.morph) {
   }
   // Shape changes: settle size and count at once so the new targets are
   // final, then let the targets glide there over the morph time.
-  const shapeKeys = ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'imageMode'] as const;
+  const shapeKeys = ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'imageMode'] as const;
   if (T.shape !== 'none' && (shapeKeys.some((k) => instant.has(k)) || 'shapeSize' in to)) {
     for (const k of ['shapeSize', 'count'] as const) {
       if (k in to) {
@@ -11320,7 +11333,7 @@ const xfPalCache = new Map<string, { shades: Rgb[]; bg: Rgb }>();
 const XF_PAL = ['palette', 'customColors', 'customBg', 'palBg'] as const;
 let xfUi: (() => void)[] = [];
 let xfDip = 0; // 0..1, darkening around the middle when A and B differ in a big way
-const XF_BIG = new Set<string>(['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'pointerMode']);
+const XF_BIG = new Set<string>(['render', 'mixStyles', 'glyphSet', 'glyphFont', 'glyphPick', 'colorBy', 'glow', 'lensMirror', 'flowType', 'emitter', 'shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapeSolid', 'shapeLive', 'shapeSeq', 'shapeFont', 'pointerMode']);
 // Where each switch-only setting changes over: spread over 35-65% by name.
 const xfFlipAt = (k: string) => {
   if (XF_BIG.has(k)) return 0.5;
@@ -12972,7 +12985,7 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
   if (keys.has('shapeSeq')) seqIdx = 0;
   if (keys.has('shape') && settings.shape !== 'drawing') drawMode = false;
   if (keys.has('shape') || keys.has('drawOutline')) inkSync();
-  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapePattern') || keys.has('patScale') || keys.has('patForm') || keys.has('patVary') || keys.has('patSeed') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
+  if (keys.has('shape') || keys.has('shapeText') || keys.has('shapeFont') || keys.has('shapeIcon') || keys.has('shapeGeo') || keys.has('shapeSolid') || keys.has('shapePattern') || keys.has('patScale') || keys.has('patForm') || keys.has('patVary') || keys.has('patSeed') || keys.has('shapeLive') || keys.has('shapeSeq') || keys.has('imageMode') || keys.has('shapeSize') || keys.has('count')) {
     const g = glideHomes && settings.shape !== 'none' ? glideHomes : null;
     const fx = g ? (g.fromFree ? px : hx).slice(0, n) : null;
     const fy = g ? (g.fromFree ? py : hy).slice(0, n) : null;
@@ -13030,7 +13043,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['morph', 'beatSnap'],
   look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
   colour: ['palette', 'colorBy', 'customColors', 'palSat', 'palLight', 'palBg'],
-  shape: ['shape', 'shapeText', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
+  shape: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['speed', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
@@ -18435,7 +18448,9 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
   next.addEventListener('click', () => step(1));
   out.addEventListener('dblclick', () => src.put(c.key, home()));
   // Tap the value for a list of every option.
-  out.addEventListener('click', () => choiceMenu(out, c.label, c.options, String(src.get(c.key)), (v) => src.put(c.key, v)));
+  // Fonts: each choice in the list is shown in its own font, and so is the value.
+  const fontPick = c.kind === 'select' && !!c.font;
+  out.addEventListener('click', () => choiceMenu(out, c.label, c.options, String(src.get(c.key)), (v) => src.put(c.key, v), fontPick ? fontStyle : undefined));
   const txt = document.createElement('i');
   out.prepend(txt);
   el.append(name, prev, out, next);
@@ -18443,6 +18458,10 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
     el,
     update: () => {
       txt.textContent = c.options.find(([k]) => k === src.get(c.key))?.[1] ?? String(src.get(c.key));
+      if (fontPick) {
+        addFontCss();
+        txt.style.cssText = fontStyle(String(src.get(c.key)));
+      }
       el.classList.toggle('moved', src.get(c.key) !== home());
     },
   };
@@ -20655,7 +20674,7 @@ addEventListener('scroll', (e) => {
   if (knobMenuEl?.classList.contains('choice-menu') && !knobMenuEl.contains(e.target as Node)) closeKnobMenu();
 }, true);
 // A setting's options as a list under its value (Studio and Deck rows).
-function choiceMenu(anchor: HTMLElement, label: string, options: [string, string][], cur: string, pick: (v: string) => void) {
+function choiceMenu(anchor: HTMLElement, label: string, options: [string, string][], cur: string, pick: (v: string) => void, styleOf?: (v: string) => string) {
   closeKnobMenu();
   const m = document.createElement('div');
   m.className = 'knob-menu choice-menu';
@@ -20669,6 +20688,11 @@ function choiceMenu(anchor: HTMLElement, label: string, options: [string, string
     b.type = 'button';
     b.textContent = text;
     b.setAttribute('role', 'option');
+    if (styleOf) {
+      addFontCss();
+      b.style.cssText = styleOf(v);
+      b.classList.add('in-font');
+    }
     if (v === cur) b.classList.add('on');
     b.addEventListener('click', () => {
       pick(v);
