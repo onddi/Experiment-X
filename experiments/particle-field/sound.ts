@@ -376,6 +376,22 @@ const STEPS = 16;
 const ROW_GAIN: Record<DrumRow, number> = { k: 1, s: 0.85, c: 0.85, h: 0.5, o: 0.5, r: 0.7, p: 0.7, t: 0.8, y: 0.6 };
 const ROWS = 8;
 
+type SongMix = { drums: number; bass: number; seq: number; pad: number; strings: number };
+type SongSection = { name: 'Intro' | 'Verse' | 'Build' | 'Drop' | 'Breakdown' | 'Outro'; bars: number; mix: SongMix; hard?: boolean };
+const ALL: SongMix = { drums: 1, bass: 1, seq: 1, pad: 1, strings: 1 };
+const VERSE: SongMix = { drums: 0.7, bass: 0.85, seq: 0.8, pad: 0.8, strings: 0.8 };
+/** Song mode's sections, played in turn and on a loop (80 bars). */
+export const SONG: SongSection[] = [
+  { name: 'Intro', bars: 8, mix: { drums: 0, bass: 0, seq: 0.5, pad: 1, strings: 0.5 } },
+  { name: 'Verse', bars: 16, mix: VERSE },
+  { name: 'Build', bars: 4, mix: VERSE },
+  { name: 'Drop', bars: 16, mix: ALL, hard: true },
+  { name: 'Breakdown', bars: 8, mix: { drums: 0, bass: 0.5, seq: 0.5, pad: 1, strings: 1 }, hard: true },
+  { name: 'Build', bars: 4, mix: VERSE },
+  { name: 'Drop', bars: 16, mix: ALL, hard: true },
+  { name: 'Outro', bars: 8, mix: { drums: 0.45, bass: 0.6, seq: 0.4, pad: 1, strings: 0.5 } },
+];
+
 export class ParticleSound {
   private ctx: AudioContext;
   private master: GainNode;
@@ -1652,7 +1668,7 @@ export class ParticleSound {
   // character) with a sine underneath for weight.
   private bassF = 0; // the last bass note's pitch, for slides
   private bassNote(deg: number, vel: number, len: number, when: number, slide = false, up = 0) {
-    if (this.voices >= MAX_VOICES) return;
+    if (this.voices >= MAX_VOICES || this.buildU > 0.75) return;
     // Octave: the setting, plus the line's own jumps.
     const oct = 2 ** Math.max(-1, Math.min(2, (this.p.bassOct ?? 0) + up));
     {
@@ -1856,6 +1872,8 @@ export class ParticleSound {
   }
 
   private kick(k: number, when: number) {
+    // Late in a build the kick drops out, so the drop hits harder.
+    if (this.buildU > 0.5) return;
     this.log('drums', k, 0.02, 0.25, when);
     this.drumEv('kick', k, when);
     if (!this.audible('drums')) return;
@@ -2139,8 +2157,152 @@ export class ParticleSound {
     }
   }
 
+  // --- Build and drop, and Song mode ---------------------------------------------
+  // A build: the next few bars filter up from the bass, a noise riser climbs,
+  // the snare rolls faster and faster, the kick and bass drop out; then on the
+  // downbeat the drop lands (crash, a deep boom, everything back at once).
+  private buildFrom = -1; // beat the build started (-1: none)
+  private dropAt = -1; // the downbeat it lands on
+  private dropNow = false;
+  private buildHp: BiquadFilterNode | null = null;
+  private riser: { src: AudioBufferSourceNode; g: GainNode } | null = null;
+  /** Start a build that drops after `bars` whole bars. */
+  buildDrop(bars = 4, at = -1) {
+    if (this.ctx.state !== 'running') return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    this.buildFrom = this.beat;
+    this.dropAt = at >= 0 ? at : (Math.floor(this.beat / 4) + 1 + Math.max(1, bars - 1)) * 4;
+    const secs = Math.max(0.5, ((this.dropAt - this.beat) * 60) / Math.max(40, this.bpmNow));
+    if (!this.buildHp) {
+      this.buildHp = ctx.createBiquadFilter();
+      this.buildHp.type = 'highpass';
+      this.buildHp.frequency.value = 20;
+      this.splice(this.buildHp, this.buildHp);
+    }
+    const f = this.buildHp.frequency;
+    f.cancelScheduledValues(t);
+    f.setValueAtTime(Math.max(20, f.value), t);
+    f.exponentialRampToValueAtTime(900, t + secs);
+    this.riser?.src.stop();
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 3;
+    bp.frequency.setValueAtTime(250, t);
+    bp.frequency.exponentialRampToValueAtTime(7000, t + secs);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + secs);
+    src.connect(bp).connect(g);
+    // Straight to the compressor: the build's high-pass doesn't thin the riser.
+    g.connect(this.comp);
+    src.start(t);
+    this.riser = { src, g };
+  }
+  /** 0 … 1 through a build, -1 when none is on. */
+  get buildU() {
+    if (this.dropAt < 0) return -1;
+    return Math.max(0, Math.min(1, (this.beat - this.buildFrom) / Math.max(0.01, this.dropAt - this.buildFrom)));
+  }
+  /** True once, on the frame a drop lands. */
+  takeDrop() {
+    const d = this.dropNow;
+    this.dropNow = false;
+    return d;
+  }
+  cancelBuild() {
+    if (this.dropAt < 0) return;
+    this.dropAt = -1;
+    this.buildFrom = -1;
+    this.endBuild(this.ctx.currentTime);
+  }
+  private endBuild(t: number) {
+    if (this.buildHp) {
+      this.buildHp.frequency.cancelScheduledValues(t);
+      this.buildHp.frequency.setTargetAtTime(20, t, 0.03);
+    }
+    if (this.riser) {
+      const r = this.riser;
+      r.g.gain.cancelScheduledValues(t);
+      r.g.gain.setTargetAtTime(0.0001, t, 0.05);
+      r.src.stop(t + 0.4);
+      r.src.onended = () => r.g.disconnect();
+      this.riser = null;
+    }
+  }
+  private drop(t: number) {
+    this.dropAt = -1;
+    this.buildFrom = -1;
+    this.endBuild(t);
+    this.dropNow = true;
+    this.cur = 'drums';
+    if (this.p.drums > 0) {
+      this.crash(1, 0);
+      this.kick(1, 0);
+    }
+    // The boom: a deep sine falling away under everything.
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(90, t);
+    o.frequency.exponentialRampToValueAtTime(32, t + 1.4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.85, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+    o.connect(g).connect(this.comp);
+    o.start(t);
+    o.stop(t + 1.9);
+    o.onended = () => g.disconnect();
+    this.padSwell = 1;
+    this.beatSwap = true;
+  }
+
+  // Song mode: the sound plays a whole song in sections, on a loop. Each
+  // section sets how loud the layers are; Build sections end in a drop.
+  private songFrom = -1;
+  private songIdx = -1;
+  song(on: boolean) {
+    if (!on) {
+      this.songFrom = -1;
+      this.songIdx = -1;
+      this.cancelBuild();
+      return;
+    }
+    // Starts on the next bar.
+    this.songFrom = (Math.floor(this.beat / 4) + 1) * 4;
+    this.songIdx = -1;
+  }
+  get songOn() {
+    return this.songFrom >= 0;
+  }
+  /** Where the song is: the section, and the bar in it. */
+  songNow() {
+    if (this.songFrom < 0) return null;
+    const total = SONG.reduce((a, x) => a + x.bars, 0);
+    let bar = Math.max(0, Math.floor((this.beat - this.songFrom) / 4)) % total;
+    for (let i = 0; i < SONG.length; i++) {
+      if (bar < SONG[i].bars) return { i, name: SONG[i].name, bar, bars: SONG[i].bars, drop: SONG[i].name === 'Drop' };
+      bar -= SONG[i].bars;
+    }
+    return null;
+  }
+  private songMix(P: SoundParams): SoundParams {
+    const now = this.songNow();
+    if (!now) return P;
+    const sec = SONG[now.i];
+    // Fade in from the section before over its first bar.
+    const prev = SONG[(now.i + SONG.length - 1) % SONG.length].mix;
+    const into = (((this.beat - this.songFrom) / 4) % 1 + 1) % 1;
+    const k = (key: keyof SongMix) => (now.bar === 0 && !sec.hard ? prev[key] + (sec.mix[key] - prev[key]) * into : sec.mix[key]);
+    return { ...P, drums: P.drums * k('drums'), bass: P.bass * k('bass'), seq: P.seq * k('seq'), pad: P.pad * k('pad'), strings: P.strings * k('strings') };
+  }
+
   frame(F: SoundFrame) {
-    const P = this.p;
+    // Song mode: this section's mix of the layers.
+    const P = this.songFrom >= 0 ? this.songMix(this.p) : this.p;
     if (this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime;
     const now = performance.now();
@@ -2174,6 +2336,13 @@ export class ParticleSound {
     const beats = F.dt * (bpm / 60);
     const before = this.beat;
     this.beat += beats;
+    // Song: entering a Build section starts the build that drops at its end.
+    const sn = this.songNow();
+    if (sn && sn.i !== this.songIdx) {
+      this.songIdx = sn.i;
+      if (SONG[sn.i].name === 'Build' && this.dropAt < 0) this.buildDrop(SONG[sn.i].bars - sn.bar, this.beat + (SONG[sn.i].bars - sn.bar) * 4 - ((this.beat - this.songFrom) % 4));
+    }
+    if (this.dropAt >= 0 && this.beat >= this.dropAt) this.drop(t);
     this.songLive = F.musicOn;
     this.depthOn = F.depthOn;
     this.steerChords(F, before, beats);
@@ -2389,6 +2558,19 @@ export class ParticleSound {
     const s16 = Math.floor(this.beat * 4) % STEPS;
     if (s16 !== this.step && F.n > 0 && (P.seq > 0 || P.bass > 0 || P.drums > 0)) {
       const s = (this.step = s16);
+      // The build's snare roll: quarters, then eighths, sixteenths, and a
+      // last flurry of thirty-seconds, rising in loudness.
+      const bu = this.buildU;
+      if (bu >= 0 && P.drums > 0 && this.audible('drums')) {
+        const every = bu < 0.25 ? 4 : bu < 0.5 ? 2 : 1;
+        if (s % every === 0) {
+          const sd = 60 / bpm / 4;
+          const v = (0.25 + 0.6 * bu) * P.drums;
+          this.cur = 'drums';
+          this.snare(v, 0);
+          if (bu > 0.85) this.snare(v * 0.8, sd / 2);
+        }
+      }
       const stepDur = 60 / bpm / 4;
       const sw = s % 2 ? P.swing * 0.5 * stepDur : 0;
       const x0 = (s / STEPS) * w, x1 = ((s + 1) / STEPS) * w;

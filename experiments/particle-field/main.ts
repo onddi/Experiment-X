@@ -1449,7 +1449,7 @@ function step(dt: number) {
   // the whole field into an orb at the centre until pressed again.
   const holdImplode = pointer.down && settings.click === 'implodeHold' && holdImplodeAt > 0;
   const holdGather = (pointer.down && settings.click === 'gather') || holdImplode;
-  const gathering = holdGather || gatherAll || linkRun.out.gather || tlGatherNow;
+  const gathering = holdGather || gatherAll || linkRun.out.gather || tlGatherNow || buildGather;
   const gx = holdGather ? pointer.x : w / 2;
   const gy = holdGather ? pointer.y : h / 2;
   // Implode & burst reaches further the longer it's held.
@@ -2718,7 +2718,13 @@ function drumLevels(dt: number) {
       drumLv.hold = Math.min(0.6, (e.len ?? 0.2) * 0.6);
     }
   }
-  const L = { ...audio.levels, beat: false, snare: false, hat: false, crash: false, accent: false, drop: false, bar: false, note: false };
+  const L = { ...audio.levels, beat: false, snare: false, hat: false, crash: false, accent: false, drop: dropPending, bar: false, note: false };
+  if (dropPending) {
+    // The drop (Build and drop): a full kick and a crash with it.
+    dropPending = false;
+    L.beat = L.crash = true;
+    drumLv.pulse = 1;
+  }
   const fall = Math.exp(-dt * 7);
   drumLv.pulse *= fall;
   drumLv.snareEnv *= fall;
@@ -10354,6 +10360,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndChordBars', label: 'Bars each', min: 1, max: 8, step: 1, format: (v) => `${v} bar${v > 1 ? 's' : ''}`, show: () => settings.sndChordMove !== 'song' },
   { kind: 'note', text: 'Following the song needs music playing; without it the chords change every few bars.', show: () => settings.sndChordMove === 'song' && audio.source === 'off' },
   { kind: 'buttons', buttons: [['Next chord ▸', () => snd?.nextChord()]] },
+  { kind: 'buttons', buttons: [['Build and drop', () => buildDropNow()], ['Song mode', () => toggleSong()]], active: (t) => (t === 'Song mode' ? !!snd?.songOn : snd ? snd.buildU >= 0 : false) },
   { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
   { kind: 'range', key: 'sndStrings', label: 'Strings', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndStringCount', label: 'How many strings', min: 2, max: 12, step: 1, format: (v) => String(v), show: () => settings.sndStrings > 0 },
@@ -13178,6 +13185,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       ['Explode from the centre (E)', ICONS.explode, () => explode()],
       ['Scatter (S)', ICONS.scatter, scatter],
       ['Previous scene', svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'), previousScene],
+      ['Build and drop (B)', ICONS.gather, buildDropNow],
       ['Pause the sound (M)', NOTE_ICON, () => toggleMute(!sndMuted())],
       ['Project to another screen (P)', ICONS.project, toggleProject],
       ['Recording settings', ICONS.record, () => showTab('record')],
@@ -13196,6 +13204,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       if (fn === recFromMenu) b.classList.add('dm-rec');
       if (t.startsWith('Pause the sound')) b.classList.add('dm-snd');
       if (fn === previousScene) b.classList.add('dm-prev');
+      if (fn === buildDropNow) b.classList.add('dm-build');
       if (fn === toggleProject) projectUi.push(() => (b.querySelector('span')!.textContent = projector.on ? 'Stop projecting (P)' : t));
       dockMoreEl.append(b);
     }
@@ -13231,6 +13240,8 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
     sb.querySelector('span')!.textContent = settings.sndVol > 0 ? 'Pause the sound (M)' : 'Play the sound (M)';
   }
   // Previous scene: hidden until there is one.
+  const bb = dockMoreEl.querySelector<HTMLElement>('.dm-build');
+  if (bb) bb.hidden = !(settings.sndVol > 0);
   const pb = dockMoreEl.querySelector<HTMLElement>('.dm-prev');
   if (pb) pb.hidden = !sceneHist.length;
   const rb = dockMoreEl.querySelector('.dm-rec span');
@@ -17545,14 +17556,17 @@ function renderSoundPage(body: HTMLElement) {
   };
   const songNote = note('Following the song');
   const nextChord = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('Next chord'));
+  const songBtns = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('Song mode'));
   const songDet = line('song', 'Song', SONG_KEYS, () => {
     const key = settings.sndKey === 'auto' ? 'Auto key' : settings.sndKey;
     const prog = settings.sndProg === 'custom' ? settings.sndProgText : optLabel([['drift', 'Drift'], ['pop', 'Pop'], ['calm', 'Calm'], ['mystic', 'Mystic'], ['still', 'One chord']], settings.sndProg);
-    return `${settings.sndKey === 'auto' ? settings.sndScale : `${key} ${settings.sndScale}`} · ${settings.sndTempo} bpm · ${prog}`;
+    return `${settings.sndKey === 'auto' ? settings.sndScale : `${key} ${settings.sndScale}`} · ${settings.sndTempo} bpm · ${prog}${songLabel()}`;
   });
   // Next chord and the song note go with the chord settings.
   const after = songDet.querySelector('[data-key="sndChordBars"]');
   if (after) after.after(...[songNote, nextChord].filter((e): e is HTMLElement => !!e));
+  // Build and drop and Song mode open the Song card.
+  if (songBtns) songDet.prepend(songBtns);
   line('mix', 'Mix', MIX_KEYS, () => {
     const w = (v: number, up: string, down: string) => (Math.abs(v - 0.5) < 0.01 ? '' : v > 0.5 ? up : down);
     const words = [w(settings.sndMBusy, 'busier', 'calmer'), w(settings.sndMBright, 'brighter', 'darker'), w(settings.sndMSpace, 'roomier', 'drier'), w(settings.sndMGroove, 'groovier', 'straighter')].filter(Boolean);
@@ -19317,6 +19331,46 @@ function openStudioFromMenu() {
 // A safety net: if the field crawls (under about 5 frames a second for three
 // seconds) while the sound plays, pause the sound, which is the usual cause.
 let sndSlow = 0;
+// Build and drop: the particles gather to the middle through the build and
+// burst out on the drop (with the Music reactions' drop, when they're on).
+let buildGather = false;
+let dropPending = false;
+let songSec = -1;
+function songFrame(S: ParticleSound) {
+  buildGather = S.buildU > 0.45;
+  if (S.takeDrop()) {
+    buildGather = false;
+    explode(w / 2, h / 2, 1.4);
+    dropPending = true;
+  }
+  // Song mode: a new section. With the crossfader on, drops go to scene B.
+  const now = S.songNow();
+  const i = now ? now.i : -1;
+  if (i !== songSec) {
+    songSec = i;
+    if (now && xf.on) xfFadeTo(now.drop ? 1 : 0);
+    refresh();
+  }
+}
+function buildDropNow() {
+  if (!snd || !sndOn) return showToast('Turn the sound on first: the build and drop is played by the particle sound');
+  if (snd.buildU >= 0) {
+    snd.cancelBuild();
+    return showToast('Build cancelled');
+  }
+  snd.buildDrop(4);
+  showToast('Building… the drop lands in 4 bars');
+}
+function toggleSong() {
+  if (!snd || !sndOn) return showToast('Turn the sound on first: Song mode plays the particle sound as a song');
+  snd.song(!snd.songOn);
+  showToast(snd.songOn ? 'Song mode: intro, verse, build, drop, breakdown, build, drop, outro, on a loop' : 'Song mode off');
+  refresh();
+}
+const songLabel = () => {
+  const now = snd?.songNow();
+  return now ? ` · ▶ ${now.name}` : '';
+};
 function soundTick(dt: number) {
   sndOn = settings.sndVol > 0;
   if (sndOn && snd && !document.hidden && !paused) {
@@ -19416,6 +19470,7 @@ function soundTick(dt: number) {
   sndHitQ.length = 0;
   sndThump = 0;
   sndBorn = 0;
+  songFrame(snd);
   if (guidesOn) drawSoundGuides(snd);
   if (studio && studio.mode !== 'off') studio.frame(performance.now());
   paintTrackLights(snd);
@@ -22377,6 +22432,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 's') scatter();
   else if (k === 'e') explode();
   else if (k === 'd' || k === 'r') undoable(() => shuffle());
+  else if (k === 'b') buildDropNow();
   // F, next to D: a random music vibe, as Surprise me in the Vibe card.
   else if (k === 'f') surpriseVibe(vibeLead === 'any' ? undefined : vibeLead);
   else if (k === 'h') toggle.click();
