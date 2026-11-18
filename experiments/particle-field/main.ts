@@ -17336,12 +17336,8 @@ function renderSoundPage(body: HTMLElement) {
           });
           row.append(x);
         }
-        // A pick closes the picker; the Style row shows what's playing.
-        row.addEventListener('click', () => {
-          useStyle(st, v);
-          pick.hidden = true;
-          sMain.setAttribute('aria-expanded', 'false');
-        });
+        // A pick keeps the picker open, so you can try the next one; tap Style to fold it.
+        row.addEventListener('click', () => useStyle(st, v));
         list.append(row);
       }
       pick.append(list);
