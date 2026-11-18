@@ -58,6 +58,10 @@ function pal(): PaletteDef {
 
 const STORAGE_KEY = 'particle-field:settings';
 const settings: Settings = { ...DEFAULTS, ...upgradeShape(load()) };
+// Scenes you left, for Undo and Previous scene (see rememberScene).
+type SceneSnap = { snap: Settings; base: Settings | null; name: string; mine: MyPreset | null };
+const sceneHist: SceneSnap[] = [];
+let histMute = false;
 if (settings.palette !== 'custom' && !(settings.palette in PALETTES)) settings.palette = DEFAULTS.palette;
 // Older saves used 'none' as a beat wave; that is now 'Kick does: Pulse'.
 if ((settings.audioBeat as string) === 'none') settings.audioBeat = 'ripple';
@@ -10839,6 +10843,7 @@ function refit() {
 
 function apply(p: Partial<Settings>, keepAudio = true, opts: { now?: boolean; morph?: number } = {}) {
   const blank = p === BLANK_SCENE;
+  rememberScene();
   p = fitToScreen(upgradeShape(p));
   qualityRetry();
   // The scene playing until now: what it switched on goes when it does.
@@ -11358,7 +11363,13 @@ function vjNext() {
   if (pool[k][0] === lastVjName && pool.length > 1) k = (k + 1) % pool.length;
   lastVjName = pool[k][0];
   lastPresetFamily = FAMILY_OF[pool[k][0]] ?? null;
-  apply(pool[k][1]);
+  // Auto VJ's changes aren't yours to step back through.
+  histMute = true;
+  try {
+    apply(pool[k][1]);
+  } finally {
+    histMute = false;
+  }
   lastSceneName = pool[k][0];
   showToast(pool[k][0]);
 }
@@ -12102,6 +12113,9 @@ function tlGo(i: number) {
     tlShownAt = performance.now();
     if (tl.knobs === 'reset') for (const [mk] of MACROS) (settings as unknown as Record<string, number>)[mk] = 0.5;
     const go = (morph: number) => {
+      // The timeline's steps aren't kept for Previous scene.
+      histMute = true;
+      setTimeout(() => (histMute = false));
       if (c.mine) {
         const mine = myPresets.find((p2) => p2.name === c.name);
         lastPresetFamily = null;
@@ -13155,6 +13169,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
       ['Explode from the centre (E)', ICONS.explode, () => explode()],
       ['Scatter (S)', ICONS.scatter, scatter],
+      ['Previous scene', svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'), previousScene],
       ['Pause the sound (M)', NOTE_ICON, () => toggleMute(!sndMuted())],
       ['Project to another screen (P)', ICONS.project, toggleProject],
       ['Recording settings', ICONS.record, () => showTab('record')],
@@ -13172,6 +13187,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       if (fn === toggleGather) gatherButtons.push(b);
       if (fn === recFromMenu) b.classList.add('dm-rec');
       if (t.startsWith('Pause the sound')) b.classList.add('dm-snd');
+      if (fn === previousScene) b.classList.add('dm-prev');
       if (fn === toggleProject) projectUi.push(() => (b.querySelector('span')!.textContent = projector.on ? 'Stop projecting (P)' : t));
       dockMoreEl.append(b);
     }
@@ -13206,6 +13222,9 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
     sb.hidden = !(settings.sndVol > 0 || sndMuted());
     sb.querySelector('span')!.textContent = settings.sndVol > 0 ? 'Pause the sound (M)' : 'Play the sound (M)';
   }
+  // Previous scene: hidden until there is one.
+  const pb = dockMoreEl.querySelector<HTMLElement>('.dm-prev');
+  if (pb) pb.hidden = !sceneHist.length;
   const rb = dockMoreEl.querySelector('.dm-rec span');
   if (rb) rb.textContent = recorder.on ? 'Stop recording (V)' : 'Record a clip (V)';
   dockMoreEl.classList.toggle('open', open);
@@ -16137,7 +16156,7 @@ const watchBar = document.createElement('div');
 watchBar.className = 'watch-bar';
 watchBar.innerHTML = `<button type="button" class="watch-scene" aria-label="Back to the Deck">${ICONS.sliders}<b></b></button><button type="button" class="watch-shuffle" aria-label="Shuffle">${ICONS.shuffle}</button>`;
 watchBar.querySelector('.watch-scene')!.addEventListener('click', stopWatching);
-watchBar.querySelector('.watch-shuffle')!.addEventListener('click', () => shuffle());
+watchBar.querySelector('.watch-shuffle')!.addEventListener('click', () => undoable(() => shuffle()));
 document.querySelector('.stage')!.append(watchBar);
 // Watch is simply the field with everything closed (the same view as
 // closing the menu); the bottom bar, swipes and knobs work the same.
@@ -17189,7 +17208,7 @@ const SND_TRACKS: SndTrack[] = [
       const kit = optLabel(KIT_OPTIONS, settings.sndKit);
       return g ? `${g.beats[settings.sndBeat]?.name ?? g.name} · ${kit}` : `follows the field · ${kit}`;
     } },
-  { name: 'Bass', how: 'Plays the root of the chord, low. A calm field holds one long note a bar. As the particles speed up it walks between root and fifth, then plays eighth notes.', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassPattern', 'sndBassMove', 'sndBassWalk', 'sndBassSound', 'sndBassOct', 'sndSub', 'sndBassTone', 'sndBassGlide', 'sndBassLen', 'sndBassGhost'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
+  { name: 'Bass', how: 'Plays the root of the chord, low. A calm field holds one long note a bar. As the particles speed up it walks between root and fifth, then plays eighth notes.', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassDrive', 'sndBassPattern', 'sndBassMove', 'sndBassWalk', 'sndBassSound', 'sndBassOct', 'sndSub', 'sndBassTone', 'sndBassGlide', 'sndBassLen', 'sndBassGhost'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
   { name: 'Strings', how: 'Invisible strings run up and down the screen. A particle crossing one plucks it. Strings further right play higher in the chord, and the top half of the screen plays higher still. The more particles cross at once, the louder the note.', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndOctave', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
   { name: 'Pad', how: 'Holds the chord underneath. It swells as the field gets busier, spreads wider in stereo as the particles spread out, and gets brighter as they speed up. Births and bursts make it bloom.', key: 'sndDrone', dot: '#b48cff', keys: ['sndPadSound', 'sndPadPump'], sub: () => optLabel(PAD_SOUNDS, settings.sndPadSound) + (settings.sndPadPump > 0 ? ' · pumping' : '') },
   { name: 'Steps', how: 'A step sequencer that reads the screen left to right, one column per sixteenth note. Where particles crowd in the current column, that height plays a note: higher on the screen, higher note.', key: 'sndSeq', dot: '#6fd3b0', keys: ['sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTick'], sub: () => `${optLabel(STEP_RATES, settings.sndSeqRate)} notes on ${(settings.sndSeqSound === 'same' ? optLabel(TIMBRES, settings.sndTimbre) : optLabel(STEP_SOUNDS, settings.sndSeqSound)).toLowerCase()}` },
@@ -18526,24 +18545,49 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
 // in the library, wrapping round. Then the rack redraws for the new scene.
 // A gesture that changes the scene (easy to do by accident) says which
 // scene it went to, with Undo back to exactly what you had, tweaks and all.
+// Every scene change (a pick, a shuffle, a swipe, a vibe) keeps the scene it
+// left, tweaks and all: Undo on the toast, or Previous scene in the ⋯ menu,
+// steps back through the last ten.
+function rememberScene() {
+  if (histMute) return null;
+  const h: SceneSnap = { snap: { ...settings }, base: sceneBase, name: lastSceneName, mine: currentMine };
+  sceneHist.push(h);
+  if (sceneHist.length > 10) sceneHist.shift();
+  return h;
+}
+function restoreScene(h: SceneSnap) {
+  const i = sceneHist.lastIndexOf(h);
+  if (i >= 0) sceneHist.splice(i);
+  histMute = true;
+  try {
+    apply(h.snap, true, { now: true });
+  } finally {
+    histMute = false;
+  }
+  sceneBase = h.base;
+  lastSceneName = h.name;
+  currentMine = h.mine;
+  redrawMine();
+  markLibrary();
+  syncSceneNow();
+}
+function previousScene() {
+  const h = sceneHist[sceneHist.length - 1];
+  if (!h) return showToast('No earlier scene yet');
+  restoreScene(h);
+  showToast(`Back to ${h.mine?.name ?? (h.name || 'the scene before')}`);
+}
 function undoable(go: () => void) {
-  const snap = { ...settings };
-  const base = sceneBase;
-  const name = lastSceneName;
-  const mine = currentMine;
-  go();
+  const h = rememberScene();
+  histMute = true;
+  try {
+    go();
+  } finally {
+    histMute = false;
+  }
+  if (!h) return;
   const now = currentMine?.name ?? (lastSceneName || 'Shuffled');
-  setTimeout(() => {
-    showToast(now, ['Undo', () => {
-      apply(snap, true, { now: true });
-      sceneBase = base;
-      lastSceneName = name;
-      currentMine = mine;
-      redrawMine();
-      markLibrary();
-      syncSceneNow();
-    }]);
-  }, 60);
+  setTimeout(() => showToast(now, ['Undo', () => restoreScene(h)]), 60);
 }
 function stepScene(d: number) {
   const r = sceneAfter(lastSceneName ? { name: lastSceneName } : null, lastSceneName ? d : 0);
@@ -20877,7 +20921,7 @@ function toggleMute(on = !sndMuted()) {
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · hold to mute' : 'Close the sound studio (M) · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
-  stage: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uMore()],
+  stage: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -20885,7 +20929,7 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
     [`Layout: ${OV_DENSITIES.find(([k]) => k === ovDensity)![1]}`, svg(DENSITY_ICON[ovDensity]), () => uDeckBtn('.ov-density')],
   ],
   studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], uMore()],
-  build: () => [['Shuffle', ICONS.shuffle, () => shuffle(), 'primary'], uMore()],
+  build: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uMore()],
 };
 // Desktop: icons for Shuffle and Pause, More for the rest of the actions.
 const MORE_ICON = svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>');
@@ -20904,10 +20948,10 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
-  deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
-  studio: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
-  build: () => [['Shuffle (D)', ICONS.shuffle, () => shuffle(), 'primary'], uPause(), uMore()],
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
+  studio: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
+  build: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
 };
 let uSig = '';
 function uPaint(force = false) {
@@ -21635,7 +21679,7 @@ mbar.querySelector('.mb-menu')!.addEventListener('click', () => {
   document.body.classList.remove('watching');
   if (panel.classList.contains('collapsed')) toggle.click();
 });
-mbar.querySelector('.mb-shuffle')!.addEventListener('click', () => shuffle());
+mbar.querySelector('.mb-shuffle')!.addEventListener('click', () => undoable(() => shuffle()));
 mbar.querySelector('.mb-scenes')!.addEventListener('click', () => {
   if (panel.classList.contains('collapsed')) toggle.click();
   if (currentTab !== 'presets') showTab('presets');
@@ -22319,7 +22363,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'a' || k === 'g') toggleGather();
   else if (k === 's') scatter();
   else if (k === 'e') explode();
-  else if (k === 'd' || k === 'r') shuffle();
+  else if (k === 'd' || k === 'r') undoable(() => shuffle());
   // F, next to D: a random music vibe, as Surprise me in the Vibe card.
   else if (k === 'f') surpriseVibe(vibeLead === 'any' ? undefined : vibeLead);
   else if (k === 'h') toggle.click();
@@ -22622,7 +22666,7 @@ function toggleDebug() {
   desk.title = 'Shuffle (D)';
   desk.setAttribute('aria-label', 'Shuffle');
   desk.innerHTML = ICONS.shuffle;
-  desk.addEventListener('click', () => shuffle());
+  desk.addEventListener('click', () => undoable(() => shuffle()));
   fab.after(desk);
   let rest = 0;
   window.addEventListener('pointermove', (e) => {
