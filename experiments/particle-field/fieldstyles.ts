@@ -84,7 +84,11 @@ export class FieldRender {
     this.h = h;
     this.any = false;
     // About 40k cells on a phone, a few more on a big screen.
-    const c = Math.max(2.5, Math.sqrt((w * h) / (w * h > 600000 ? 70000 : 40000)));
+    // Sharp-edged looks (Liquid, Cells, Contours) get a finer grid; soft ones
+    // (Smoke, the wash) don't need it.
+    const fine = style === 'liquid' || style === 'cells' || style === 'contours';
+    const cells = fine ? (w * h > 600000 ? 200000 : style === 'cells' ? 90000 : 130000) : w * h > 600000 ? 70000 : 40000;
+    const c = Math.max(fine ? 1.5 : 2.5, Math.sqrt((w * h) / cells));
     const gw = Math.ceil(w / c) + 1;
     const gh = Math.ceil(h / c) + 1;
     if (gw !== this.gw || gh !== this.gh || Math.abs(c - this.c) > 0.01) {
