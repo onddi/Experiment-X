@@ -6954,6 +6954,7 @@ function drawSubstance(style: string, s: number, light: boolean) {
   }
   if (style === 'sand') drawSand(dt);
   else {
+    fieldR.soft = settings.fieldSoft;
     fieldR.begin(style === 'glass' ? 'wash' : (style as 'liquid'), w, h, n, shadeRgb);
     for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1, vx, vy);
     for (let L = 0; L < FADE_LEVELS; L++) for (let k = 0; k < SHADES; k++) fieldR.add(px, py, fadeBuckets[L][k], k, (L + 0.5) / FADE_LEVELS, vx, vy);
@@ -10156,11 +10157,12 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Hold 1–8 and scroll, swipe or move the mouse to turn knob A–H. Tap the key alone to open its slider.', show: () => settings.numberKeys === 'knobs' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
-    lock: ['render', 'mixStyles', 'count', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
+    lock: ['render', 'mixStyles', 'count', 'fieldSoft', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
     summary: () => `${label(RENDERS, settings.render)}, ${settings.count.toLocaleString()}` },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
   { kind: 'range', key: 'count', label: 'Count', min: 1, max: MAX_COUNT, step: 1 },
+  { kind: 'range', key: 'fieldSoft', label: 'Softness', min: 0, max: 1, step: 0.01, format: pct, show: () => SUBSTANCES.has(settings.render) && settings.render !== 'sand' },
   { kind: 'buttons', buttons: [['Choose a sprite, sheet or GIF…', () => spriteInput.click()], ['Use the butterfly', () => spriteUse(null)]], show: isSprite },
   { kind: 'range', key: 'spriteScale', label: 'Sprite size', min: 1, max: 12, step: 0.5, format: (v) => `${v.toFixed(1)}×`, show: isSprite },
   { kind: 'select', key: 'spriteTurn', label: 'Turning', options: [['none', 'Upright'], ['heading', 'Face where it goes'], ['spin', 'Spin']], show: isSprite },

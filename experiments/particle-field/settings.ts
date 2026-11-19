@@ -465,6 +465,7 @@ export interface Settings {
   /** Tilting the phone moves the parallax and turns solids. */
   tiltLook: boolean;
   trail: number;
+  fieldSoft: number;
   glow: boolean;
   palette: Palette;
   colorBy: ColorBy;
@@ -1125,6 +1126,7 @@ export const DEFAULTS: Settings = {
   depthSoft: 0,
   tiltLook: false,
   trail: 0.75,
+  fieldSoft: 0.5,
   glow: false,
   palette: 'aurora',
   colorBy: 'palette',

@@ -111,6 +111,8 @@ export class FieldRender {
   private rain: Float32Array[] = [];
   private dropP = 0;
   private c3 = [0, 0, 0];
+  /** Softness, 0..1 (0.5 is the default look). */
+  soft = 0.5;
   private lavaFor: Rgb[] | null = null;
   private lavaRamp: number[][] = [];
 
@@ -126,8 +128,11 @@ export class FieldRender {
     // (Smoke, the wash) don't need it.
     const want = CELLS[style] ?? 40000;
     const fine = want > 40000;
-    const cells = w * h > 600000 ? want * 1.6 : want;
-    const c = Math.max(fine ? 1.5 : 2.5, Math.sqrt((w * h) / cells));
+    // Softness: low is a finer grid and less blur, high the other way.
+    const sf = this.soft;
+    const more = sf < 0.5 ? 1 + (0.5 - sf) * 1.1 : 1 - (sf - 0.5) * 0.8;
+    const cells = (w * h > 600000 ? want * 1.6 : want) * more;
+    const c = Math.max((fine ? 1.5 : 2.5) * (sf < 0.5 ? 0.8 + 0.4 * sf : 1), Math.sqrt((w * h) / cells));
     const gw = Math.ceil(w / c) + 1;
     const gh = Math.ceil(h / c) + 1;
     if (gw !== this.gw || gh !== this.gh || Math.abs(c - this.c) > 0.01) {
@@ -323,7 +328,7 @@ export class FieldRender {
   // Blur the splatted field into blobs about rad CSS px across. Returns the
   // scale that puts a lone particle's peak near 1.
   private blur(rad: number, colour: boolean, passes = 2) {
-    const r = Math.max(1, Math.round(rad / this.c));
+    const r = Math.max(1, Math.round((rad * (0.6 + 0.8 * this.soft)) / this.c));
     for (let p = 0; p < passes; p++) {
       boxBlur(this.dens, this.tmp, this.gw, this.gh, r);
       if (colour) {

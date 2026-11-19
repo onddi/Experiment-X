@@ -33,6 +33,7 @@ export const TIPS: Record<string, string> = {
   mixStyles: 'Draws particles in a mix of styles instead of one.',
   size: 'How big each particle is.',
   trail: 'How long particles leave a fading streak behind them.',
+  fieldSoft: 'For the styles that draw the whole field at once (Liquid, Smoke, Lava and the rest): low is crisp and fine-grained, high is soft and blurry. Lower costs a little more speed.',
   glow: 'Overlapping particles add up to brighter light.',
   linkDist: 'Draws lines between particles closer than this.',
   ribbonLen: 'How long each ribbon trail is.',
