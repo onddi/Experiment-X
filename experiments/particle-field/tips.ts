@@ -371,6 +371,7 @@ Object.assign(TIPS, {
   sndSeqRate: 'How often Steps can play: every quarter, eighth or sixteenth note.',
   sndSeqNotes: 'How many notes Steps plays at once. Auto follows how crowded the field is.',
   sndSeqSens: 'How many particles it takes to play a step. Low needs crowds, high plays with a few.',
+  sndSongForm: 'How Song mode arranges its sections: Classic, Club (long builds), Short, Verse and chorus, Chill (no drops), or a new arrangement every loop.',
   sndSeqStyle: 'How a step plays its crowded rows: all at once, strummed low to high, or one note a step as an arpeggio (up, down, up and down, or random).',
   sndSeqVary: 'Makes Steps less mechanical: louder and softer notes, the odd rest, octave jumps and quick repeats.',
   sndSeqTick: 'A soft tick on the off beats that keeps time under the Steps.',

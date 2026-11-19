@@ -263,6 +263,7 @@ export interface Settings {
   sndSeqRate: '1' | '2' | '4';
   sndSeqNotes: number;
   sndSeqSens: number;
+  sndSongForm: string; // Song mode's arrangement (sound.ts SONGS)
   sndSeqStyle: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random';
   sndSeqVary: number;
   sndSeqTick: boolean;
@@ -925,6 +926,7 @@ export const DEFAULTS: Settings = {
   sndSeqRate: '1',
   sndSeqNotes: 0,
   sndSeqSens: 0.5,
+  sndSongForm: 'classic',
   sndSeqStyle: 'chord',
   sndSeqVary: 0,
   sndSeqTick: true,

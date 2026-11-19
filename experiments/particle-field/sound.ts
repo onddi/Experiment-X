@@ -377,20 +377,39 @@ const ROW_GAIN: Record<DrumRow, number> = { k: 1, s: 0.85, c: 0.85, h: 0.5, o: 0
 const ROWS = 8;
 
 type SongMix = { drums: number; bass: number; seq: number; pad: number; strings: number };
-type SongSection = { name: 'Intro' | 'Verse' | 'Build' | 'Drop' | 'Breakdown' | 'Outro'; bars: number; mix: SongMix; hard?: boolean };
+type SongSection = { name: 'Intro' | 'Verse' | 'Build' | 'Drop' | 'Chorus' | 'Breakdown' | 'Bridge' | 'Outro'; bars: number; mix: SongMix; hard?: boolean };
 const ALL: SongMix = { drums: 1, bass: 1, seq: 1, pad: 1, strings: 1 };
 const VERSE: SongMix = { drums: 0.7, bass: 0.85, seq: 0.8, pad: 0.8, strings: 0.8 };
-/** Song mode's sections, played in turn and on a loop (80 bars). */
-export const SONG: SongSection[] = [
-  { name: 'Intro', bars: 8, mix: { drums: 0, bass: 0, seq: 0.5, pad: 1, strings: 0.5 } },
-  { name: 'Verse', bars: 16, mix: VERSE },
-  { name: 'Build', bars: 4, mix: VERSE },
-  { name: 'Drop', bars: 16, mix: ALL, hard: true },
-  { name: 'Breakdown', bars: 8, mix: { drums: 0, bass: 0.5, seq: 0.5, pad: 1, strings: 1 }, hard: true },
-  { name: 'Build', bars: 4, mix: VERSE },
-  { name: 'Drop', bars: 16, mix: ALL, hard: true },
-  { name: 'Outro', bars: 8, mix: { drums: 0.45, bass: 0.6, seq: 0.4, pad: 1, strings: 0.5 } },
-];
+const INTRO: SongMix = { drums: 0, bass: 0, seq: 0.5, pad: 1, strings: 0.5 };
+const BREAK: SongMix = { drums: 0, bass: 0.5, seq: 0.5, pad: 1, strings: 1 };
+const OUTRO: SongMix = { drums: 0.45, bass: 0.6, seq: 0.4, pad: 1, strings: 0.5 };
+const HALF: SongMix = { drums: 0.45, bass: 0.6, seq: 1, pad: 0.9, strings: 1 };
+const sec = (name: SongSection['name'], bars: number, mix: SongMix, hard = false): SongSection => ({ name, bars, mix, hard });
+/** Song mode's arrangements: sections played in turn, on a loop. */
+export const SONGS: Record<string, { name: string; form: SongSection[] }> = {
+  classic: { name: 'Classic', form: [sec('Intro', 8, INTRO), sec('Verse', 16, VERSE), sec('Build', 4, VERSE), sec('Drop', 16, ALL, true), sec('Breakdown', 8, BREAK, true), sec('Build', 4, VERSE), sec('Drop', 16, ALL, true), sec('Outro', 8, OUTRO)] },
+  club: { name: 'Club (long builds)', form: [sec('Intro', 16, { ...INTRO, drums: 0.6 }), sec('Build', 8, VERSE), sec('Drop', 32, ALL, true), sec('Breakdown', 16, BREAK, true), sec('Build', 8, VERSE), sec('Drop', 32, ALL, true), sec('Outro', 16, { ...OUTRO, drums: 0.8 })] },
+  short: { name: 'Short (quick drops)', form: [sec('Intro', 4, INTRO), sec('Build', 2, VERSE), sec('Drop', 8, ALL, true), sec('Breakdown', 4, BREAK, true), sec('Build', 2, VERSE), sec('Drop', 8, ALL, true)] },
+  pop: { name: 'Verse and chorus', form: [sec('Intro', 4, INTRO), sec('Verse', 8, HALF), sec('Build', 2, VERSE), sec('Chorus', 8, ALL, true), sec('Verse', 8, HALF, true), sec('Build', 2, VERSE), sec('Chorus', 8, ALL, true), sec('Bridge', 8, BREAK, true), sec('Build', 4, VERSE), sec('Chorus', 16, ALL, true), sec('Outro', 4, OUTRO)] },
+  chill: { name: 'Chill (no drops)', form: [sec('Intro', 8, INTRO), sec('Verse', 16, HALF), sec('Breakdown', 8, BREAK), sec('Verse', 16, VERSE), sec('Outro', 8, OUTRO)] },
+  shuffle: { name: 'Different every time', form: [] },
+};
+/** A fresh arrangement: an intro, then verses, builds and drops in some order, an outro. */
+function randomForm(): SongSection[] {
+  const pick = <T,>(xs: T[]) => xs[(Math.random() * xs.length) | 0];
+  const f: SongSection[] = [sec('Intro', pick([4, 8, 8, 16]), INTRO)];
+  const parts = 2 + ((Math.random() * 2) | 0);
+  for (let k = 0; k < parts; k++) {
+    if (Math.random() < 0.7) f.push(sec('Verse', pick([8, 16]), pick([VERSE, HALF]), k > 0));
+    if (Math.random() < 0.85) {
+      f.push(sec('Build', pick([2, 4, 4, 8]), VERSE));
+      f.push(sec(pick(['Drop', 'Chorus'] as const), pick([8, 16, 16]), ALL, true));
+    }
+    if (k < parts - 1 && Math.random() < 0.6) f.push(sec(pick(['Breakdown', 'Bridge'] as const), pick([4, 8]), BREAK, true));
+  }
+  f.push(sec('Outro', pick([4, 8]), OUTRO));
+  return f;
+}
 
 export class ParticleSound {
   private ctx: AudioContext;
@@ -2264,7 +2283,23 @@ export class ParticleSound {
   // section sets how loud the layers are; Build sections end in a drop.
   private songFrom = -1;
   private songIdx = -1;
+  private form: SongSection[] = SONGS.classic.form;
+  private formId = 'classic';
+  private loopN = 0;
+  /** The arrangement playing (the strip on the Song card draws it). */
+  get songForm() {
+    return this.form;
+  }
+  /** Pick the arrangement; the one playing changes at the end of its loop. */
+  setForm(id: string) {
+    if (id === this.formId && this.form.length) return;
+    this.formId = id;
+    this.nextForm = id === 'shuffle' ? randomForm() : (SONGS[id] ?? SONGS.classic).form;
+    if (this.songFrom < 0) this.form = this.nextForm;
+  }
+  private nextForm: SongSection[] | null = null;
   song(on: boolean) {
+    if (on && this.nextForm) (this.form = this.nextForm), (this.nextForm = null);
     if (!on) {
       this.songFrom = -1;
       this.songIdx = -1;
@@ -2274,6 +2309,8 @@ export class ParticleSound {
     // Starts on the next bar.
     this.songFrom = (Math.floor(this.beat / 4) + 1) * 4;
     this.songIdx = -1;
+    this.loopN = 0;
+    if (this.formId === 'shuffle') this.form = randomForm();
   }
   get songOn() {
     return this.songFrom >= 0;
@@ -2281,20 +2318,23 @@ export class ParticleSound {
   /** Where the song is: the section, and the bar in it. */
   songNow() {
     if (this.songFrom < 0) return null;
-    const total = SONG.reduce((a, x) => a + x.bars, 0);
-    let bar = Math.max(0, Math.floor((this.beat - this.songFrom) / 4)) % total;
-    for (let i = 0; i < SONG.length; i++) {
-      if (bar < SONG[i].bars) return { i, name: SONG[i].name, bar, bars: SONG[i].bars, drop: SONG[i].name === 'Drop' };
-      bar -= SONG[i].bars;
+    const F = this.form;
+    const total = F.reduce((a, x) => a + x.bars, 0);
+    const all = Math.max(0, (this.beat - this.songFrom) / 4);
+    let bar = Math.floor(all) % total;
+    const at = (all % total) / total;
+    for (let i = 0; i < F.length; i++) {
+      if (bar < F[i].bars) return { i, name: F[i].name, bar, bars: F[i].bars, drop: F[i].name === 'Drop' || F[i].name === 'Chorus', at, loop: Math.floor(all / total) };
+      bar -= F[i].bars;
     }
     return null;
   }
   private songMix(P: SoundParams): SoundParams {
     const now = this.songNow();
     if (!now) return P;
-    const sec = SONG[now.i];
+    const sec = this.form[now.i];
     // Fade in from the section before over its first bar.
-    const prev = SONG[(now.i + SONG.length - 1) % SONG.length].mix;
+    const prev = this.form[(now.i + this.form.length - 1) % this.form.length].mix;
     const into = (((this.beat - this.songFrom) / 4) % 1 + 1) % 1;
     const k = (key: keyof SongMix) => (now.bar === 0 && !sec.hard ? prev[key] + (sec.mix[key] - prev[key]) * into : sec.mix[key]);
     return { ...P, drums: P.drums * k('drums'), bass: P.bass * k('bass'), seq: P.seq * k('seq'), pad: P.pad * k('pad'), strings: P.strings * k('strings') };
@@ -2337,10 +2377,23 @@ export class ParticleSound {
     const before = this.beat;
     this.beat += beats;
     // Song: entering a Build section starts the build that drops at its end.
-    const sn = this.songNow();
+    let sn = this.songNow();
+    // A new loop: the next arrangement (a fresh one when it's Different every time).
+    if (sn && sn.loop !== this.loopN) {
+      this.loopN = sn.loop;
+      if (this.formId === 'shuffle') this.nextForm = randomForm();
+      if (this.nextForm) {
+        this.form = this.nextForm;
+        this.nextForm = null;
+        this.songFrom = Math.round(this.beat / 4) * 4;
+        this.loopN = 0;
+        sn = this.songNow();
+      }
+    }
     if (sn && sn.i !== this.songIdx) {
       this.songIdx = sn.i;
-      if (SONG[sn.i].name === 'Build' && this.dropAt < 0) this.buildDrop(SONG[sn.i].bars - sn.bar, this.beat + (SONG[sn.i].bars - sn.bar) * 4 - ((this.beat - this.songFrom) % 4));
+      const S = this.form[sn.i];
+      if (S.name === 'Build' && this.dropAt < 0) this.buildDrop(S.bars - sn.bar, this.beat + (S.bars - sn.bar) * 4 - ((this.beat - this.songFrom) % 4));
     }
     if (this.dropAt >= 0 && this.beat >= this.dropAt) this.drop(t);
     this.songLive = F.musicOn;

@@ -461,7 +461,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -10360,6 +10360,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndChordBars', label: 'Bars each', min: 1, max: 8, step: 1, format: (v) => `${v} bar${v > 1 ? 's' : ''}`, show: () => settings.sndChordMove !== 'song' },
   { kind: 'note', text: 'Following the song needs music playing; without it the chords change every few bars.', show: () => settings.sndChordMove === 'song' && audio.source === 'off' },
   { kind: 'buttons', buttons: [['Next chord ▸', () => snd?.nextChord()]] },
+  { kind: 'select', key: 'sndSongForm', label: 'Arrangement', options: [['classic', 'Classic'], ['club', 'Club (long builds)'], ['short', 'Short (quick drops)'], ['pop', 'Verse and chorus'], ['chill', 'Chill (no drops)'], ['shuffle', 'Different every time']] },
   { kind: 'buttons', buttons: [['Build and drop', () => buildDropNow()], ['Song mode', () => toggleSong()]], active: (t) => (t === 'Song mode' ? !!snd?.songOn : snd ? snd.buildU >= 0 : false) },
   { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
   { kind: 'range', key: 'sndStrings', label: 'Strings', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -17243,7 +17244,7 @@ const SND_TRACKS: SndTrack[] = [
   { name: 'Accents', how: 'Sounds for moments, not for motion. A new scene rolls the chord upward like a harp. A shape forming (a word, an icon, a picture) sweeps a rising whoosh. When dozens of particles are born at once (an emitter burst, a tap that spawns), three high notes ring. An explosion can land a low boom. Each plays once per moment, in the key of the music.', key: 'sndAccents', dot: '#f3d36b', keys: ['sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice'],
     sub: () => [settings.sndAccScene && 'scenes', settings.sndAccShape && 'shapes', settings.sndAccBirth && 'births', settings.sndAccBurst && 'explosions'].filter(Boolean).join(', ') || 'nothing on' },
 ];
-const SONG_KEYS: (keyof Settings)[] = ['sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
+const SONG_KEYS: (keyof Settings)[] = ['sndSongForm', 'sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
 const MIX_KEYS: (keyof Settings)[] = ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndReverb', 'sndShimmer', 'sndEcho', 'sndPing', 'sndSweep', 'sndBright', 'sndLowEnd', 'sndDrive', 'sndLofi', 'sndChorus', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndGlue', 'sndTape', 'sndDepth', 'sndShow'];
 const SND_OPEN_KEY = 'particle-field:sound-open';
 // A style's whole sound: the preset's setup, and the genre's drums, bass and tempo.
@@ -17567,6 +17568,11 @@ function renderSoundPage(body: HTMLElement) {
   if (after) after.after(...[songNote, nextChord].filter((e): e is HTMLElement => !!e));
   // Build and drop and Song mode open the Song card.
   if (songBtns) songDet.prepend(songBtns);
+  songStrip = mk('div', 'song-strip');
+  songStrip.hidden = true;
+  stripSig = '';
+  const formRow = songDet.querySelector('[data-key="sndSongForm"]');
+  songBtns?.after(...[songStrip, formRow].filter((e): e is HTMLElement => !!e));
   line('mix', 'Mix', MIX_KEYS, () => {
     const w = (v: number, up: string, down: string) => (Math.abs(v - 0.5) < 0.01 ? '' : v > 0.5 ? up : down);
     const words = [w(settings.sndMBusy, 'busier', 'calmer'), w(settings.sndMBright, 'brighter', 'darker'), w(settings.sndMSpace, 'roomier', 'drier'), w(settings.sndMGroove, 'groovier', 'straighter')].filter(Boolean);
@@ -19337,6 +19343,8 @@ let buildGather = false;
 let dropPending = false;
 let songSec = -1;
 function songFrame(S: ParticleSound) {
+  S.setForm(settings.sndSongForm);
+  paintSongStrip(S);
   buildGather = S.buildU > 0.45;
   if (S.takeDrop()) {
     buildGather = false;
@@ -19351,6 +19359,38 @@ function songFrame(S: ParticleSound) {
     if (now && xf.on) xfFadeTo(now.drop ? 1 : 0);
     refresh();
   }
+}
+// The arrangement strip on the Song card: a block per section, sized by its
+// bars, the one playing lit, and a playhead moving through the song.
+const SEC_COL: Record<string, string> = { Intro: '#7c8bb5', Verse: '#6aa8ff', Build: '#ffb45e', Drop: '#ff6fae', Chorus: '#ff6fae', Breakdown: '#b48cff', Bridge: '#b48cff', Outro: '#7c8bb5' };
+let songStrip: HTMLElement | null = null;
+let stripSig = '';
+function paintSongStrip(S: ParticleSound) {
+  const el = songStrip;
+  if (!el || !el.isConnected) return;
+  const now = S.songNow();
+  el.hidden = !now;
+  if (!now) return;
+  const F = S.songForm;
+  const sig = F.map((x) => `${x.name}${x.bars}`).join();
+  if (sig !== stripSig) {
+    stripSig = sig;
+    el.innerHTML = '<div class="ss-blocks"></div><i class="ss-head"></i><small class="ss-now"></small>';
+    const box = el.querySelector('.ss-blocks')!;
+    for (const x of F) {
+      const b = document.createElement('span');
+      b.style.flex = String(x.bars);
+      b.style.setProperty('--c', SEC_COL[x.name] ?? '#888');
+      b.textContent = x.bars >= 4 ? x.name : '';
+      b.title = `${x.name} · ${x.bars} bars`;
+      box.append(b);
+    }
+  }
+  el.querySelectorAll('.ss-blocks span').forEach((b, k) => b.classList.toggle('on', k === now.i));
+  el.querySelector<HTMLElement>('.ss-head')!.style.left = `${(now.at * 100).toFixed(2)}%`;
+  const txt = `${now.name} · bar ${now.bar + 1} of ${now.bars}`;
+  const nowEl = el.querySelector('.ss-now')!;
+  if (nowEl.textContent !== txt) nowEl.textContent = txt;
 }
 function buildDropNow() {
   if (!snd || !sndOn) return showToast('Turn the sound on first: the build and drop is played by the particle sound');
