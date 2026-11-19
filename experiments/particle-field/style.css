@@ -3099,6 +3099,13 @@ html.top-layer.top-edit .top-back { display: block !important; position: fixed; 
 /* Peek: holding the eye outside the Stage shows only the field. */
 body.peek > :not(#app), body.peek #app > :not(#stage), body.peek #fab { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.12s; }
 .u-seg button[data-v="stage"] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Desktop: the scene sheet resizes from its corner; the lists fill it. */
+.ss-size { position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 3; touch-action: none; background: linear-gradient(135deg, transparent 50%, var(--line) 50%, var(--line) 58%, transparent 58%, transparent 70%, var(--line) 70%, var(--line) 78%, transparent 78%); border-bottom-right-radius: 14px; }
+.scene-sheet.sized { max-height: none; overflow: hidden; }
+.scene-sheet.sized > .ss-picks { flex: 1 1 0; min-height: 0; }
+.scene-sheet.sized .ss-picks .rail-picker { height: auto; flex: 1 1 0; min-height: 0; }
+.scene-sheet.mini .ss-size { display: none; }
+.scene-sheet.sized.mini { height: auto !important; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

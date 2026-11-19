@@ -21732,6 +21732,50 @@ function sheetDrag(el: HTMLElement) {
     el.classList.remove('moved');
   };
   grip.addEventListener('dblclick', reset);
+  // Resize from the bottom-right corner (remembered); it pins the sheet where it is first.
+  const SIZE_KEY = 'pf-scene-sheet-size';
+  const corner = document.createElement('div');
+  corner.className = 'ss-size';
+  corner.title = 'Drag to resize · double-click for the usual size';
+  el.append(corner);
+  const size = (wd: number, ht: number) => {
+    const r = el.getBoundingClientRect();
+    wd = Math.max(340, Math.min(innerWidth - r.left - 8, wd));
+    // Clear of the bar at the bottom.
+    ht = Math.max(260, Math.min(innerHeight - r.top - 84, ht));
+    Object.assign(el.style, { width: `${wd}px`, height: `${ht}px` });
+    el.classList.add('sized');
+    return { w: wd, h: ht };
+  };
+  try {
+    const z = JSON.parse(localStorage.getItem(SIZE_KEY) ?? 'null');
+    if (z) requestAnimationFrame(() => size(z.w, z.h));
+  } catch {}
+  let rs: { x: number; y: number; w: number; h: number } | null = null;
+  corner.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const r0 = el.getBoundingClientRect();
+    place(r0.left, r0.top);
+    try { localStorage.setItem(SHEET_POS_KEY, JSON.stringify({ x: r0.left, y: r0.top })); } catch {}
+    rs = { x: e.clientX, y: e.clientY, w: r0.width, h: r0.height };
+    corner.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  corner.addEventListener('pointermove', (e) => {
+    if (!rs) return;
+    const z = size(rs.w + e.clientX - rs.x, rs.h + e.clientY - rs.y);
+    try { localStorage.setItem(SIZE_KEY, JSON.stringify(z)); } catch {}
+  });
+  const stop = () => (rs = null);
+  corner.addEventListener('pointerup', stop);
+  corner.addEventListener('pointercancel', stop);
+  corner.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    try { localStorage.removeItem(SIZE_KEY); } catch {}
+    Object.assign(el.style, { width: '', height: '' });
+    el.classList.remove('sized');
+  });
   // The sheet's own top edge (its padding above the row) drags too.
   el.addEventListener('pointerdown', (e) => {
     if (e.target === el && e.clientY - el.getBoundingClientRect().top < 22) down(e);
