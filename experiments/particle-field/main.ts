@@ -95,9 +95,24 @@ try {
   }
 } catch {}
 
+// Sound quality was a switch plus an amount; now the amount alone (0 = off),
+// and the Mix polish reverb became Reverb type, for any mix.
+function qualityOneSlider(o: Record<string, unknown>) {
+  if (!o || typeof o !== 'object') return o;
+  for (const [sw, amt] of [['sndPolish', 'sndPolishAmt'], ['sndUnison', 'sndUnisonAmt'], ['sndWave', 'sndWaveAmt'], ['sndHuman', 'sndHumanAmt']]) {
+    if (typeof o[sw] !== 'boolean') continue;
+    if (!o[sw]) o[amt] = 0;
+    delete o[sw];
+  }
+  if (typeof o.sndPolishVerb === 'string') {
+    if (Number(o.sndPolishAmt) > 0 && !o.sndVerb) o.sndVerb = o.sndPolishVerb;
+    delete o.sndPolishVerb;
+  }
+  return o;
+}
 function load(): Partial<Settings> {
   try {
-    return migrateLegacy(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'));
+    return migrateLegacy(qualityOneSlider(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')));
   } catch {
     return {};
   }
@@ -461,7 +476,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSongVary', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub', 'sndPolish', 'sndPolishAmt', 'sndPolishVerb', 'sndUnison', 'sndUnisonAmt', 'sndWave', 'sndWaveAmt', 'sndHuman', 'sndHumanAmt'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSongVary', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub', 'sndPolishAmt', 'sndVerb', 'sndUnisonAmt', 'sndWaveAmt', 'sndHumanAmt'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -10437,6 +10452,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndBend', label: 'Bend', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndArp', label: 'Arpeggio', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndStrings > 0 },
   { kind: 'range', key: 'sndReverb', label: 'Reverb', min: 0, max: 1, step: 0.05, format: pct },
+  { kind: 'select', key: 'sndVerb', label: 'Reverb type', options: [['classic', 'Classic'], ['room', 'Room'], ['hall', 'Hall'], ['plate', 'Plate']] },
   { kind: 'range', key: 'sndShimmer', label: 'Shimmer', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndEcho', label: 'Echo (in time)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'toggle', key: 'sndPing', label: 'Ping-pong echo', show: () => settings.sndEcho > 0 },
@@ -10451,15 +10467,10 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndTrem', label: 'Tremolo', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndTremMode', label: 'Tremolo', options: [['volume', 'Volume'], ['pan', 'Pan L–R']], show: () => settings.sndTrem > 0 },
   { kind: 'range', key: 'sndGlue', label: 'Glue', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'toggle', key: 'sndPolish', label: 'Mix polish' },
-  { kind: 'range', key: 'sndPolishAmt', label: 'Amount', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.sndPolish },
-  { kind: 'select', key: 'sndPolishVerb', label: 'Room', options: [['room', 'Room'], ['hall', 'Hall'], ['plate', 'Plate']], show: () => settings.sndPolish },
-  { kind: 'toggle', key: 'sndUnison', label: 'Unison' },
-  { kind: 'range', key: 'sndUnisonAmt', label: 'Amount', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.sndUnison },
-  { kind: 'toggle', key: 'sndWave', label: 'Wavetable motion' },
-  { kind: 'range', key: 'sndWaveAmt', label: 'Amount', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.sndWave },
-  { kind: 'toggle', key: 'sndHuman', label: 'Humanise' },
-  { kind: 'range', key: 'sndHumanAmt', label: 'Amount', min: 0.05, max: 1, step: 0.05, format: pct, show: () => settings.sndHuman },
+  { kind: 'range', key: 'sndPolishAmt', label: 'Mix polish', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndUnisonAmt', label: 'Unison', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndWaveAmt', label: 'Wavetable motion', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'sndHumanAmt', label: 'Humanise', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndTape', label: 'Tape stop', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndDepth', label: 'Depth (3D)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'toggle', key: 'sndShow', label: 'Show the instruments on screen' },
@@ -17272,7 +17283,7 @@ const SND_TRACKS: SndTrack[] = [
     sub: () => [settings.sndAccScene && 'scenes', settings.sndAccShape && 'shapes', settings.sndAccBirth && 'births', settings.sndAccBurst && 'explosions'].filter(Boolean).join(', ') || 'nothing on' },
 ];
 const SONG_KEYS: (keyof Settings)[] = ['sndSongForm', 'sndSongVary', 'sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
-const QUALITY_KEYS: (keyof Settings)[] = ['sndPolish', 'sndPolishAmt', 'sndPolishVerb', 'sndUnison', 'sndUnisonAmt', 'sndWave', 'sndWaveAmt', 'sndHuman', 'sndHumanAmt'];
+const QUALITY_KEYS: (keyof Settings)[] = ['sndPolishAmt', 'sndUnisonAmt', 'sndWaveAmt', 'sndHumanAmt'];
 const SND_OPEN_KEY = 'particle-field:sound-open';
 const SND_TAB_KEY = 'particle-field:sound-tab';
 // A style's whole sound: the preset's setup, and the genre's drums, bass and tempo.
@@ -17633,7 +17644,7 @@ function renderSoundPage(body: HTMLElement) {
   songBtns?.after(...[songStrip, formRow, varyRow].filter((e): e is HTMLElement => !!e));
   const mixP = panelOf('mix');
   group(mixP, 'Feel', ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove']);
-  group(mixP, 'Space', ['sndReverb', 'sndShimmer', 'sndEcho', 'sndPing']);
+  group(mixP, 'Space', ['sndReverb', 'sndVerb', 'sndShimmer', 'sndEcho', 'sndPing']);
   group(mixP, 'Tone', ['sndSweep', 'sndBright', 'sndLowEnd']);
   group(mixP, 'Colour', ['sndDrive', 'sndLofi', 'sndChorus', 'sndPhaser', 'sndTrem', 'sndTremMode']);
   group(mixP, 'Dynamics', ['sndGlue', 'sndTape']);
@@ -19279,7 +19290,7 @@ function sndParams(): SoundParams {
   return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, accScene: S.sndAccScene, accShape: S.sndAccShape, accBirth: S.sndAccBirth, accBurst: S.sndAccBurst, accVoice: S.sndAccVoice, hits: S.sndHits, hitSound: S.sndHitSound, seqSound: S.sndSeqSound, seqRate: Number(S.sndSeqRate), seqNotes: S.sndSeqNotes, seqSens: S.sndSeqSens, seqStyle: S.sndSeqStyle, seqVary: S.sndSeqVary, seqTick: S.sndSeqTick, grainSound: S.sndGrainSound, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, scanDir: S.sndScanDir, scanSound: S.sndScanSound, scanNotes: S.sndScanNotes, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
-    echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, bassMove: S.sndBassMove, bassPattern: S.sndBassPattern, bassWalk: S.sndBassWalk, bassOct: S.sndBassOct === 'sub' ? -1 : S.sndBassOct === 'mid' ? 1 : 0, bassGlide: S.sndBassGlide, bassLen: S.sndBassLen, bassGhost: S.sndBassGhost, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, padTone: S.sndPadTone, padWidth: S.sndPadWidth, padBreath: S.sndPadBreath, padGlide: S.sndPadGlide, padHold: S.sndPadHold, padOct: S.sndPadOct === 'low' ? -1 : S.sndPadOct === 'high' ? 1 : 0, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, ping: S.sndPing, phaser: S.sndPhaser, trem: S.sndTrem, tremMode: S.sndTremMode, shimmer: S.sndShimmer, glue: S.sndGlue, lowEnd: S.sndLowEnd, kickPunch: S.sndKickPunch, sub: S.sndSub, tape: S.sndTape, grid: S.sndGrid, polish: S.sndPolish ? S.sndPolishAmt : 0, polishVerb: S.sndPolishVerb, unison: S.sndUnison ? S.sndUnisonAmt : 0, wave: S.sndWave ? S.sndWaveAmt : 0, human: S.sndHuman ? S.sndHumanAmt : 0 };
+    echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, bassMove: S.sndBassMove, bassPattern: S.sndBassPattern, bassWalk: S.sndBassWalk, bassOct: S.sndBassOct === 'sub' ? -1 : S.sndBassOct === 'mid' ? 1 : 0, bassGlide: S.sndBassGlide, bassLen: S.sndBassLen, bassGhost: S.sndBassGhost, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, padTone: S.sndPadTone, padWidth: S.sndPadWidth, padBreath: S.sndPadBreath, padGlide: S.sndPadGlide, padHold: S.sndPadHold, padOct: S.sndPadOct === 'low' ? -1 : S.sndPadOct === 'high' ? 1 : 0, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, ping: S.sndPing, phaser: S.sndPhaser, trem: S.sndTrem, tremMode: S.sndTremMode, shimmer: S.sndShimmer, glue: S.sndGlue, lowEnd: S.sndLowEnd, kickPunch: S.sndKickPunch, sub: S.sndSub, tape: S.sndTape, grid: S.sndGrid, polish: S.sndPolishAmt, verb: S.sndVerb, unison: S.sndUnisonAmt, wave: S.sndWaveAmt, human: S.sndHumanAmt };
 }
 // Your chords: "1 5 6 4" (or 1-5-6-4, I V vi IV) to scale degrees from 0.
 const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };

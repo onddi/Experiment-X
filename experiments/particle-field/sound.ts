@@ -306,7 +306,7 @@ export interface SoundParams {
   padOct?: number; // -1, 0, 1
   // Sound quality (each 0 = off, exactly as before).
   polish?: number; // Mix polish: a better reverb, ducking under the kick, EQ, tape warmth, glue, width and a limiter
-  polishVerb?: 'room' | 'hall' | 'plate';
+  verb?: 'classic' | 'room' | 'hall' | 'plate'; // the reverb's kind (classic = the original)
   unison?: number; // pads and leads (Steps, Strings) as a stack of detuned voices
   wave?: number; // wavetable motion: pads and leads morph between waveforms
   human?: number; // humanise: timing, accents, ghost notes, chord inversions
@@ -761,7 +761,8 @@ export class ParticleSound {
     this.comp.attack.setTargetAtTime(0.003 + glue * 0.012, t, 0.1);
     this.comp.release.setTargetAtTime(0.25 - glue * 0.1, t, 0.1);
     this.makeup.gain.setTargetAtTime(1 + glue * 0.6, t, 0.1);
-    this.setPolish(p.polish ?? 0, p.polishVerb ?? 'hall');
+    this.setVerb(p.verb ?? 'classic');
+    this.setPolish(p.polish ?? 0);
     if ((p.tape ?? 0) > 0) this.ensureTape();
     if (p.chorus > 0) this.ensureChorus();
     if (this.chorusOut) this.chorusOut.gain.setTargetAtTime(p.chorus * 0.8, t, 0.1);
@@ -1302,13 +1303,35 @@ export class ParticleSound {
   }
 
   // --- Sound quality --------------------------------------------------------
-  // Mix polish: a generated reverb (room, hall or plate) with pre-delay and
-  // damping; pad, bass and the leads duck under the kick; low cuts on the pad
+  // Reverb type: a generated reverb (room, hall or plate) with pre-delay,
+  // early reflections and damping, in place of the classic one.
+  private verb2: { pre: DelayNode; verb: ConvolverNode; kind: string } | null = null;
+  private setVerb(kind: string) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const cur = this.verb2?.kind ?? 'classic';
+    if (kind === cur) return;
+    if (!this.verb2) {
+      const pre = ctx.createDelay(0.2);
+      const verb = ctx.createConvolver();
+      pre.connect(verb).connect(this.master);
+      this.verb2 = { pre, verb, kind: 'classic' };
+    }
+    const V = this.verb2;
+    if (cur === 'classic') this.wet.disconnect(this.verb);
+    else this.wet.disconnect(V.pre);
+    V.kind = kind;
+    if (kind === 'classic') return void this.wet.connect(this.verb);
+    V.verb.buffer = this.impulse2(kind);
+    V.pre.delayTime.setTargetAtTime(kind === 'room' ? 0.008 : kind === 'plate' ? 0.012 : 0.03, t, 0.05);
+    this.wet.connect(V.pre);
+  }
+  // Mix polish: pad, bass and the leads duck under the kick; low cuts on the pad
   // and leads; a gentle dip in the harsh highs, tape warmth, a slow glue
   // compressor and a limiter at the end; the bass stays in the middle and the
   // pad and hats spread wider. Off: it's all wired out, exactly as before.
   private pol: {
-    on: boolean; amt: number; kind: string; pre: DelayNode; verb: ConvolverNode;
+    on: boolean; amt: number;
     padHp: BiquadFilterNode; lead: GainNode; leadHp: BiquadFilterNode; leadWet: GainNode;
     eq: BiquadFilterNode; satDry: GainNode; sat: WaveShaperNode; satWet: GainNode; glue: DynamicsCompressorNode; lift: GainNode; lim: DynamicsCompressorNode;
   } | null = null;
@@ -1316,15 +1339,12 @@ export class ParticleSound {
   private get polAmt() {
     return this.pol?.on ? this.pol.amt : 0;
   }
-  private setPolish(amt: number, kind: string) {
+  private setPolish(amt: number) {
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const on = amt > 0;
     if (!on && !this.pol?.on) return;
     if (!this.pol) {
-      const pre = ctx.createDelay(0.2);
-      const verb = ctx.createConvolver();
-      pre.connect(verb).connect(this.master);
       const padHp = ctx.createBiquadFilter();
       padHp.type = 'highpass';
       padHp.frequency.value = 170;
@@ -1361,7 +1381,7 @@ export class ParticleSound {
       eq.connect(satDry).connect(glue);
       eq.connect(sat).connect(satWet).connect(glue);
       glue.connect(lift).connect(lim);
-      this.pol = { on: false, amt: 0, kind: '', pre, verb, padHp, lead, leadHp, leadWet, eq, satDry, sat, satWet, glue, lift, lim };
+      this.pol = { on: false, amt: 0, padHp, lead, leadHp, leadWet, eq, satDry, sat, satWet, glue, lift, lim };
     }
     const P = this.pol;
     if (on !== P.on) {
@@ -1369,8 +1389,6 @@ export class ParticleSound {
       const out = ctx.destination;
       const taps = [this.ana, this.recDest].filter((n): n is AnalyserNode | MediaStreamAudioDestinationNode => !!n);
       if (on) {
-        this.wet.disconnect(this.verb);
-        this.wet.connect(P.pre);
         this.padDuck.disconnect(this.scPad);
         this.padDuck.connect(P.padHp);
         this.makeup.disconnect(out);
@@ -1379,8 +1397,6 @@ export class ParticleSound {
         P.lim.connect(out);
         for (const n of taps) P.lim.connect(n);
       } else {
-        this.wet.disconnect(P.pre);
-        this.wet.connect(this.verb);
         this.padDuck.disconnect(P.padHp);
         this.padDuck.connect(this.scPad);
         this.makeup.disconnect(P.eq);
@@ -1391,11 +1407,6 @@ export class ParticleSound {
       }
     }
     if (!on) return;
-    if (kind !== P.kind) {
-      P.kind = kind;
-      P.verb.buffer = this.impulse2(kind);
-      P.pre.delayTime.setTargetAtTime(kind === 'room' ? 0.008 : kind === 'plate' ? 0.012 : 0.03, t, 0.05);
-    }
     if (Math.abs(amt - P.amt) > 0.001) {
       P.amt = amt;
       P.eq.gain.setTargetAtTime(-3.5 * amt, t, 0.1);
