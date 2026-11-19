@@ -18556,7 +18556,8 @@ addEventListener('keydown', (e) => {
 // A tap anywhere else (not another knob) puts the tuner away.
 document.addEventListener('pointerdown', (e) => {
   const t0 = e.target as HTMLElement;
-  if (soloRow && !soloRow.sheet.contains(t0) && performance.now() - soloSince > 300) exitSolo();
+  // Its own pop-up list (a picker's options) is part of it too.
+  if (soloRow && !soloRow.sheet.contains(t0) && !t0.closest('.knob-menu') && performance.now() - soloSince > 300) exitSolo();
   if (!tunerEl) return;
   const t = e.target as HTMLElement;
   if (tunerEl.contains(t) || t.closest('.rack-knob')) return;
