@@ -15160,7 +15160,9 @@ document.addEventListener('pointerdown', (e) => {
   tipHide();
   if (e.pointerType === 'mouse') return;
   const t = (e.target as HTMLElement).closest?.<HTMLElement>('[data-tip]');
-  if (!t || t.closest('.rack-knob, .overview, .solo-sheet')) return;
+  // A knob's own tap opens its slider (with the text); a fill row has no tap, so holding its name shows it.
+  const rk = t?.closest<HTMLElement>('.rack-knob');
+  if (!t || t.closest('.overview, .solo-sheet') || (rk && !isFillRow(rk))) return;
   tipHeld = false;
   const [x, y] = [e.clientX, e.clientY];
   tipTimer = window.setTimeout(() => {
