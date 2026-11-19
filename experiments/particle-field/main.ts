@@ -21429,7 +21429,6 @@ function uCrossfade() {
   } else ovEl?.querySelector<HTMLButtonElement>('.ov-xfstart')?.click();
   uPaint(true);
 }
-const FIND_ICON = svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>');
 // The sound studio's ♪, while Particle sound is on.
 const NOTE_ICON = svg('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>');
 // Mute: the sound goes silent but the dock keeps its ♫ (struck through);
@@ -21476,9 +21475,18 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
     [ovPickKnobs ? 'Done picking knobs' : 'Pick field knobs', svg('<circle cx="12" cy="12" r="8"/><path d="M12 12l4.2-4.2"/>'), () => uDeckBtn('.ov-pickknobs'), ovPickKnobs ? 'on' : ''],
     [`Layout: ${OV_DENSITIES.find(([k]) => k === ovDensity)![1]}`, svg(DENSITY_ICON[ovDensity]), () => uDeckBtn('.ov-density')],
   ],
-  studio: () => [['Search', FIND_ICON, () => document.getElementById('sheet-find')!.click()], uMore()],
+  // Shortcuts to the folders you visit most (Search stays at the Studio's top).
+  studio: () => [...['shape', 'look', 'sound'].map(uFolder), uMore()],
   build: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uMore()],
 };
+function uFolder(id: string): [string, string, () => void, string?] {
+  const f = FOLDERS.find((x) => x.id === id)!;
+  const here = panel.classList.contains('f-in') && folderOf(currentTab).id === id;
+  return [f.label, svg(f.icon), () => {
+    document.querySelector<HTMLElement>(`.fd[data-f="${id}"] .fd-head`)?.click();
+    uPaint(true);
+  }, here ? 'folder on' : 'folder'];
+}
 // Desktop: icons for Shuffle and Pause, More for the rest of the actions.
 const MORE_ICON = svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>');
 const ARRANGE_ICON = svg('<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>');
@@ -21548,7 +21556,7 @@ function uPaint(force = false) {
     b.type = 'button';
     b.title = label;
     b.setAttribute('aria-label', label.replace(/ \(.*\)$/, ''));
-    const named = desk ? cls?.includes('label') : j === 0;
+    const named = desk ? cls?.includes('label') : j === 0 && !cls?.includes('folder');
     b.innerHTML = ic + (named ? `<span>${label.replace(/ \(.*\)$/, '')}</span>` : '');
     if (cls) b.classList.add(...cls.split(' '));
     if (cls?.includes('more')) dockMoreBtn = b;
@@ -23277,7 +23285,10 @@ function buildFolders() {
   controls.before(pane);
   pane.append(fhead, controls);
   split.append(nav, pane);
-  fhead.querySelector('.fback')!.addEventListener('click', () => setInside(false));
+  fhead.querySelector('.fback')!.addEventListener('click', () => {
+    setInside(false);
+    uPaint(true);
+  });
   const setInside = (on: boolean) => {
     panel.classList.toggle('f-in', on);
     if (on) controls.scrollTop = 0;
