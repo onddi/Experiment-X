@@ -20,6 +20,7 @@ import { STYLES, styleById, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './drums.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
+import { FieldRender, FIELD_STYLES, SandLayer } from './fieldstyles.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
@@ -5784,7 +5785,7 @@ function drawUserSprites(list: number[], k: number, s: number) {
 
 // --- sprites -----------------------------------------------------------------
 
-type SpriteStyle = 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'neon' | 'flare' | 'ink' | 'bubbles' | 'stars';
+type SpriteStyle = 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'neon' | 'flare' | 'ink' | 'bubbles' | 'stars' | 'marbles';
 // scale: drawn size relative to the Size setting; alpha: overall opacity.
 const SPRITES: Record<SpriteStyle, { scale: number; alpha: number }> = {
   circles: { scale: 1.4, alpha: 1 },
@@ -5797,6 +5798,7 @@ const SPRITES: Record<SpriteStyle, { scale: number; alpha: number }> = {
   ink: { scale: 13, alpha: 0.22 },
   bubbles: { scale: 5, alpha: 1 },
   stars: { scale: 3.2, alpha: 1 },
+  marbles: { scale: 4, alpha: 1 },
 };
 // Styles that twinkle or flicker per particle (sized one by one).
 const FLICKER = new Set(['stars', 'flare']);
@@ -5903,6 +5905,20 @@ function spriteFor(style: SpriteStyle, k: number) {
     g.fillStyle = 'rgba(255,255,255,0.85)';
     g.beginPath();
     g.ellipse(m - m * 0.35, m - m * 0.4, m * 0.16, m * 0.09, -0.7, 0, Math.PI * 2);
+    g.fill();
+  } else if (style === 'marbles') {
+    // A glossy ball lit from the top left: a white shine, its colour, a dark side.
+    const [r, gg, b] = shadeRgb[k] ?? [255, 255, 255];
+    const tone = (f: number) => (f >= 0 ? `rgb(${r + (255 - r) * f} ${gg + (255 - gg) * f} ${b + (255 - b) * f})` : `rgb(${r * (1 + f)} ${gg * (1 + f)} ${b * (1 + f)})`);
+    const grad = g.createRadialGradient(m * 0.66, m * 0.6, m * 0.03, m * 0.92, m * 0.9, m * 1.02);
+    grad.addColorStop(0, tone(0.9));
+    grad.addColorStop(0.14, tone(0.4));
+    grad.addColorStop(0.5, tone(0));
+    grad.addColorStop(0.86, tone(-0.55));
+    grad.addColorStop(1, tone(-0.7));
+    g.fillStyle = grad;
+    g.beginPath();
+    g.arc(m, m, m - 1, 0, Math.PI * 2);
     g.fill();
   } else if (style === 'stars') {
     // A five-point star.
@@ -6117,6 +6133,8 @@ function glWhy() {
   if (!glr) return 'no WebGL';
   if (RENDERER !== 'only') return 'chosen';
   if (gfxOn()) return 'FX';
+  // Glass drops look through the picture, so it has to be on the 2D canvas.
+  if (settings.render === 'glass') return 'Glass drops';
   return '';
 }
 function glSetOnly(on: boolean) {
@@ -6913,6 +6931,124 @@ const FADE_LEVELS = 6;
 const fadeBuckets: number[][][] = Array.from({ length: FADE_LEVELS }, () => Array.from({ length: SHADES }, () => []));
 
 const ribbonMerge: number[] = [];
+
+// Styles that draw the whole field at once (see fieldstyles.ts), plus Glass
+// drops (lenses over a haze of the colours) and Sand (pigment that builds up).
+const SUBSTANCES = new Set([...FIELD_STYLES, 'glass', 'sand']);
+const fieldR = new FieldRender();
+let substWas = '';
+let substLast = 0;
+function drawSubstance(style: string, s: number, light: boolean) {
+  const now = performance.now();
+  const dt = Math.min(0.1, Math.max(0, (now - substLast) / 1000));
+  substLast = now;
+  if (style !== substWas) {
+    substWas = style;
+    fieldR.forget();
+    sandClear = true;
+  }
+  if (style === 'sand') drawSand(dt);
+  else {
+    fieldR.begin(style === 'glass' ? 'wash' : (style as 'liquid'), w, h, n, shadeRgb);
+    for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1);
+    for (let L = 0; L < FADE_LEVELS; L++) for (let k = 0; k < SHADES; k++) fieldR.add(px, py, fadeBuckets[L][k], k, (L + 0.5) / FADE_LEVELS);
+    fieldR.draw(ctx, s, t, dt, light);
+    if (style === 'glass') drawGlass(s);
+  }
+  if (glOnly) {
+    glDirty2d = true;
+    glTake2d('over');
+  }
+}
+
+// Glass drops: each particle a small lens showing what's behind it, shrunk
+// and upside down, with a shine and a dark edge. The haze behind gives them
+// something to show. Clipping each drop costs, so a crowd shows some of them.
+const glassSnap = document.createElement('canvas');
+const glassSnapG = glassSnap.getContext('2d')!;
+let glassRim: HTMLCanvasElement | null = null;
+function glassRimSprite() {
+  if (glassRim) return glassRim;
+  const c = document.createElement('canvas');
+  const P = 64;
+  const m = P / 2;
+  c.width = c.height = P;
+  const g = c.getContext('2d')!;
+  const edge = g.createRadialGradient(m, m, m * 0.55, m, m, m);
+  edge.addColorStop(0, 'rgb(0 0 0 / 0)');
+  edge.addColorStop(0.75, 'rgb(0 0 0 / 0.15)');
+  edge.addColorStop(1, 'rgb(0 0 0 / 0.65)');
+  g.fillStyle = edge;
+  g.beginPath();
+  g.arc(m, m, m, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgb(255 255 255 / 0.35)';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  g.arc(m, m, m - 1, 0, Math.PI * 2);
+  g.stroke();
+  // The window's light caught top left, and a faint glint opposite.
+  g.fillStyle = 'rgb(255 255 255 / 0.85)';
+  g.beginPath();
+  g.ellipse(m - m * 0.38, m - m * 0.42, m * 0.2, m * 0.11, -0.75, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgb(255 255 255 / 0.3)';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(m, m, m * 0.78, 0.15 * Math.PI, 0.55 * Math.PI);
+  g.stroke();
+  glassRim = c;
+  return c;
+}
+const glassList: number[] = [];
+function drawGlass(s: number) {
+  const cw = canvas.width;
+  const ch = canvas.height;
+  if (!cw || !ch) return;
+  if (glassSnap.width !== cw || glassSnap.height !== ch) {
+    glassSnap.width = cw;
+    glassSnap.height = ch;
+  }
+  glassSnapG.globalCompositeOperation = 'copy';
+  glassSnapG.drawImage(canvas, 0, 0);
+  glassList.length = 0;
+  for (const bk of buckets) for (const i of bk) glassList.push(i);
+  for (const lv of fadeBuckets) for (const bk of lv) for (const i of bk) glassList.push(i);
+  const stride = Math.max(1, Math.ceil(glassList.length / 350));
+  const rim = glassRimSprite();
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  for (let q = 0; q < glassList.length; q += stride) {
+    const i = glassList[q];
+    const r = s * 4.5 * (uniformSize ? 1 : psz[i]);
+    if (r < 1.5) continue;
+    const x = px[i];
+    const y = py[i];
+    const R = Math.min(r * 2.6 * dpr, cw / 2, ch / 2);
+    const sx = Math.max(0, Math.min(cw - 2 * R, x * dpr - R));
+    const sy = Math.max(0, Math.min(ch - 2 * R, y * dpr - R));
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(x, y);
+    ctx.scale(-1, -1);
+    ctx.drawImage(glassSnap, sx, sy, 2 * R, 2 * R, -r, -r, 2 * r, 2 * r);
+    ctx.restore();
+    ctx.drawImage(rim, x - r, y - r, 2 * r, 2 * r);
+  }
+  ctx.restore();
+}
+
+// Sand (see fieldstyles.ts): pigment that builds up where particles pass.
+const sandL = new SandLayer();
+let sandClear = true;
+function drawSand(dt: number) {
+  if (sandClear) sandL.clear();
+  sandClear = false;
+  sandL.draw(ctx, w, h, px, py, buckets, shadeRgb, dt);
+}
 
 function drawBuckets(bks: number[][], s: number) {
   if (settings.render === 'mixed') {
@@ -8061,11 +8197,14 @@ function draw() {
     }
   }
   if (settings.render === 'links') drawLinks();
-  drawBuckets(buckets, s);
-  // Fading particles, drawn in a few alpha steps to keep draw calls batched.
-  for (let L = 0; L < FADE_LEVELS; L++) {
-    ctx.globalAlpha = (L + 0.5) / FADE_LEVELS;
-    drawBuckets(fadeBuckets[L], s);
+  if (SUBSTANCES.has(settings.render)) drawSubstance(settings.render, s, light);
+  else {
+    drawBuckets(buckets, s);
+    // Fading particles, drawn in a few alpha steps to keep draw calls batched.
+    for (let L = 0; L < FADE_LEVELS; L++) {
+      ctx.globalAlpha = (L + 0.5) / FADE_LEVELS;
+      drawBuckets(fadeBuckets[L], s);
+    }
   }
   ctx.globalAlpha = 1;
   if (glr?.pending) {
@@ -9016,7 +9155,8 @@ const RENDERS: [string, string][] = [
   ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'],
   ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'],
   ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
-  ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'],
+  ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'], ['marbles', 'Marbles'],
+  ['liquid', 'Liquid'], ['cells', 'Cells'], ['contours', 'Contours'], ['smoke', 'Smoke'], ['glass', 'Glass drops'], ['sand', 'Sand'],
   ['sprite', 'Your sprite (image or sheet)'],
   ['mixed', 'Mixed'],
 ];
@@ -21685,7 +21825,7 @@ setInterval(stageName, 300);
 let arrangeEl: HTMLElement | null = null;
 const LITE_KEY = 'pf-arrange-lite';
 const LITE: Partial<Settings> = { trail: 0, glow: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioTunnel: 0, audioKaleido: 0 };
-const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets']);
+const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand']);
 let liteScene = '';
 // Outline: while arranging, skip the simulation and draw only the shape's
 // spots (a light dotted outline), so dragging stays snappy on phones.
