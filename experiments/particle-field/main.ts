@@ -9407,7 +9407,7 @@ function setMusicTab(t: MusicTab) {
 }
 // One picker for scenes and vibes: a rail of families on the left, a dense
 // list of names on the right, ★ to keep favourites (the Saved family).
-type RailItem = { name: string; sub?: string; on: boolean; fav?: boolean; dot?: string; fp?: number[] };
+type RailItem = { name: string; id?: string; sub?: string; on: boolean; fav?: boolean; dot?: string; fp?: number[] };
 function railPicker(o: {
   rail: () => [string, string, number][];
   now: () => string;
@@ -9418,7 +9418,8 @@ function railPicker(o: {
   // Optional A–Z / Newest switch shown at the top of the list.
   sort?: { now: () => string; set: (s: string) => void; show: () => boolean };
   // Optional Random button: plays a random one from the list shown, skipping these names.
-  random?: { skip: string[] };
+  // With roll, the button makes a new one instead (when roll says it did).
+  random?: { skip: string[]; roll?: () => boolean };
 }) {
   const el = document.createElement('div');
   el.className = 'rail-picker';
@@ -9428,7 +9429,7 @@ function railPicker(o: {
   const draw = () => {
     const rail = o.rail();
     const items = o.items();
-    const next = o.now() + (o.sort?.show() ? o.sort.now() : '') + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}`).join('|');
+    const next = o.now() + (o.sort?.show() ? o.sort.now() : '') + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}${it.sub ?? ''}`).join('|');
     if (next === sig) return;
     sig = next;
     railEl.innerHTML = '';
@@ -9450,7 +9451,8 @@ function railPicker(o: {
     }
     listEl.innerHTML = '';
     const pool = o.random ? items.filter((it) => !o.random!.skip.includes(it.name)) : [];
-    if (o.sort?.show() || pool.length > 1) {
+    const canRoll = !!o.random?.roll;
+    if (o.sort?.show() || pool.length > 1 || canRoll) {
       const bar = document.createElement('div');
       bar.className = 'rp-sort';
       for (const [id, label] of o.sort?.show() ? [['az', 'A–Z'], ['new', 'Newest']] : []) {
@@ -9466,17 +9468,22 @@ function railPicker(o: {
         });
         bar.append(b);
       }
-      if (pool.length > 1) {
+      if (pool.length > 1 || canRoll) {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'rp-random';
         b.textContent = '⚄ Random';
         b.title = 'Play a random one from this list';
         b.addEventListener('click', () => {
+          if (o.random?.roll?.()) {
+            draw();
+            return;
+          }
           // Never the one already playing, so every tap changes something.
           const from = pool.filter((it) => !it.on);
           const it = from[Math.floor(Math.random() * from.length)] ?? pool[0];
-          o.pick(it.name);
+          if (!it) return;
+          o.pick(it.id ?? it.name);
           draw();
           listEl.querySelector('.rp-item.on')?.scrollIntoView({ block: 'nearest' });
         });
@@ -9502,7 +9509,7 @@ function railPicker(o: {
       if (it.sub) sm.textContent = it.sub;
       else sm.remove();
       nb.addEventListener('click', () => {
-        o.pick(it.name);
+        o.pick(it.id ?? it.name);
         draw();
       });
       const st = row.querySelector<HTMLButtonElement>('.rp-star')!;
@@ -9511,7 +9518,7 @@ function railPicker(o: {
       st.classList.toggle('y', !!it.fav);
       st.setAttribute('aria-label', it.fav ? `Remove ${it.name} from Saved` : `Save ${it.name}`);
       st.addEventListener('click', () => {
-        o.fav(it.name);
+        o.fav(it.id ?? it.name);
         draw();
       });
       listEl.append(row);
@@ -9628,6 +9635,74 @@ function vibePicker() {
       if (favVibes.has(name)) favVibes.delete(name);
       else favVibes.add(name);
       writeJson(FAV_VIBES_KEY, [...favVibes]);
+    },
+  });
+}
+// Music: genres down the side, each genre's songs on the right. ★ keeps a
+// song (rolled ones too) in Saved; the dice rolls a new song in the genre.
+let musicRail = '';
+function musicSongs(id: string): string[] {
+  const st = styleById(id);
+  if (id === 'yours') return mySoundPresets().map(([n]) => n);
+  if (!st) return [];
+  const saved = savedSongs(id);
+  return [...saved.filter(isRoll), ...styleVars(st)];
+}
+const splitKey = (k: string) => [k.slice(0, k.indexOf('/')), k.slice(k.indexOf('/') + 1)] as const;
+const songLabel = (v: string) => (isRoll(v) ? songName(Number(v.slice(1)) || 0) : v);
+function musicStep(d: number) {
+  const n = styleNow();
+  const id = n.st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : STYLES[0].id);
+  const list = musicSongs(id);
+  if (!list.length) return;
+  const i = list.indexOf(n.v);
+  const v = list[i < 0 ? (d > 0 ? 0 : list.length - 1) : (i + d + list.length) % list.length];
+  useStyle(styleById(id) ?? null, v);
+  showToast(songLabel(v));
+}
+function musicPicker() {
+  const cur = () => styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : '');
+  if (!musicRail) musicRail = cur() || STYLES[0].id;
+  const allSaved = () => STYLES.flatMap((st) => savedSongs(st.id).map((v) => [st, v] as const));
+  const item = (st: Style | null, v: string, sub?: string): RailItem => {
+    const id = `${st?.id ?? 'yours'}/${v}`;
+    const on = settings.sndStyle === id;
+    return { name: songLabel(v), id, sub: on && styleNow().edited ? 'changed · tap to reset' : sub, on, fav: st ? savedSongs(st.id).includes(v) : undefined };
+  };
+  return railPicker({
+    rail: () => [
+      ['saved', '★ Saved', allSaved().length],
+      ['all', 'All genres', STYLES.reduce((n, st) => n + styleVars(st).length, 0)],
+      ...STYLES.map((st): [string, string, number] => [st.id, st.name, musicSongs(st.id).length]),
+      ...(mySoundPresets().length ? [['yours', 'Yours', mySoundPresets().length] as [string, string, number]] : []),
+    ],
+    now: () => musicRail,
+    setRail: (id) => (musicRail = id),
+    random: {
+      skip: [],
+      roll: () => {
+        if (musicRail === 'all') return (randomStyle(), true);
+        const st = styleById(musicRail);
+        if (!st || !RECIPES[st.id]) return false;
+        useStyle(st, `~${newSeed()}`);
+        return true;
+      },
+    },
+    items: () => {
+      if (musicRail === 'saved') return allSaved().map(([st, v]) => item(st, v, st.name));
+      if (musicRail === 'yours') return musicSongs('yours').map((v) => item(null, v));
+      if (musicRail === 'all') return STYLES.flatMap((st) => styleVars(st).map((v) => item(st, v, st.name)));
+      const st = styleById(musicRail);
+      return st ? musicSongs(st.id).map((v) => item(st, v)) : [];
+    },
+    pick: (key) => {
+      const [sid, v] = splitKey(key);
+      useStyle(styleById(sid) ?? null, v);
+    },
+    fav: (key) => {
+      const [sid, v] = splitKey(key);
+      if (sid === 'yours') return;
+      keepSong(sid, v, !savedSongs(sid).includes(v));
     },
   });
 }
@@ -17571,10 +17646,13 @@ function keepSong(id: string, v: string, keep: boolean) {
   all[id] = keep ? [v, ...list] : list;
   writeJson(SND_SONGS_KEY, all);
 }
-// The dice: a new song in the genre you're in (any genre when none is picked).
+// The dice: a new song in the genre picked in the list, or the one playing
+// (any genre with All genres, or when none is picked).
 function randomStyle() {
-  const now = styleNow().st;
-  const st = now && RECIPES[now.id] ? now : STYLES[(Math.random() * STYLES.length) | 0];
+  // The genre picked in the list wins (All genres: any), then the one playing.
+  const now = musicRail === 'all' ? null : styleById(musicRail) ?? styleNow().st;
+  const rolls = STYLES.filter((x) => RECIPES[x.id]);
+  const st = now && RECIPES[now.id] ? now : rolls[(Math.random() * rolls.length) | 0];
   useStyle(st, `~${newSeed()}`);
 }
 // What the Style row says: the picked style, marked when you've changed it since.
@@ -17631,7 +17709,7 @@ function renderSoundPage(body: HTMLElement) {
   const sMain = mk('button', 'sndp-style-main', '<small>Style</small><b></b><span>sets the instruments, beat, bass, chords, tempo and effects</span>');
   const dice = mk('button', 'sndp-dice', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/></svg>');
   dice.setAttribute('aria-label', 'New song');
-  dice.title = 'New song in this genre';
+  dice.title = 'New song in the picked genre (any genre with All genres)';
   dice.addEventListener('click', randomStyle);
   // Save: keeps the song the dice rolled, so it's in the genre's list.
   const keep = mk('button', 'sndp-dice sndp-keep', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>');
@@ -17643,7 +17721,7 @@ function renderSoundPage(body: HTMLElement) {
     keepSong(n.st.id, n.v, !was);
     showToast(was ? 'Removed from saved songs' : `Saved ${songName(Number(n.v.slice(1)) || 0)}`);
     paintKeep();
-    paintPick(true);
+    paintPick();
   });
   const paintKeep = () => {
     const n = styleNow();
@@ -17656,123 +17734,61 @@ function renderSoundPage(body: HTMLElement) {
     keep.title = on ? 'Saved: tap to remove' : 'Save this song';
   };
   style.append(sMain, keep, dice);
+  // The picker: genres down the side, songs on the right (as Scenes and Vibes).
   const pick = mk('div', 'sndp-pick');
   pick.hidden = true;
+  const picker = musicPicker();
+  const acts = mk('div', 'sndp-acts');
+  const save = mk('button', '');
+  save.textContent = '+ Save as yours';
+  save.addEventListener('click', () => {
+    const name = prompt('Name this sound', `My sound ${mySoundPresets().length + 1}`)?.trim();
+    if (!name) return;
+    const S = settings as unknown as Record<string, unknown>;
+    const look = Object.fromEntries(SND_LOOK_KEYS.filter((k) => k !== 'sndStyle').map((k) => [k, S[k]])) as Partial<Settings>;
+    writeJson(SND_PRESETS_KEY, [[name, look], ...mySoundPresets().filter(([n]) => n !== name)]);
+    settings.sndStyle = `yours/${name}`;
+    changed(new Set<keyof Settings>(['sndStyle']));
+    musicRail = 'yours';
+    picker.draw();
+  });
+  // Delete: shown while one of yours is playing.
+  const del = mk('button', '');
+  del.textContent = 'Delete';
+  del.addEventListener('click', () => {
+    const name = settings.sndStyle.slice('yours/'.length);
+    writeJson(SND_PRESETS_KEY, mySoundPresets().filter(([n]) => n !== name));
+    settings.sndStyle = '';
+    changed(new Set<keyof Settings>(['sndStyle']));
+    showToast(`Deleted ${name}`);
+  });
+  const clear = mk('button', '');
+  clear.textContent = 'Clear';
+  clear.title = 'Every sound setting back to its default';
+  clear.addEventListener('click', () => {
+    const S = settings as unknown as Record<string, unknown>;
+    const was = Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, S[k]]));
+    Object.assign(settings, Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, DEFAULTS[k]])));
+    changed(new Set(SND_LOOK_KEYS));
+    showToast('Sound cleared to the defaults', ['Undo', () => {
+      Object.assign(settings, was);
+      changed(new Set(SND_LOOK_KEYS));
+    }]);
+  });
+  acts.append(save, del, clear);
+  pick.append(picker.el, acts);
   sMain.addEventListener('click', () => {
     pick.hidden = !pick.hidden;
     sMain.setAttribute('aria-expanded', String(!pick.hidden));
     if (!pick.hidden) {
-      browse = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : browse);
-      paintPick(true);
+      if (musicRail !== 'all') musicRail = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : musicRail);
+      paintPick();
+      pick.querySelector<HTMLElement>('.rp-item.on')?.scrollIntoView({ block: 'nearest' });
     }
   });
-  let browse = '';
-  let pickSig = '';
-  const paintPick = (force = false) => {
-    if (pick.hidden) return;
-    const now = styleNow();
-    const mine = mySoundPresets();
-    const sig = `${browse}|${settings.sndStyle}|${now.edited}|${mine.map(([n]) => n).join(',')}`;
-    if (sig === pickSig && !force) return;
-    pickSig = sig;
-    pick.innerHTML = '';
-    const grid = mk('div', 'sndp-genres');
-    const genres: [string, string][] = [...STYLES.map((s): [string, string] => [s.id, s.name]), ...(mine.length ? [['yours', 'Yours'] as [string, string]] : [])];
-    for (const [id, name] of genres) {
-      const b = mk('button', 'sndp-genre');
-      b.textContent = name;
-      const on = id === browse;
-      b.classList.toggle('on', on);
-      b.classList.toggle('cur', (now.st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : '')) === id);
-      b.setAttribute('aria-pressed', String(on));
-      b.addEventListener('click', () => {
-        browse = id;
-        paintPick(true);
-      });
-      grid.append(b);
-    }
-    pick.append(grid);
-    const st = styleById(browse) ?? null;
-    const vars = browse === 'yours' ? mine.map(([n]) => n) : st ? styleVars(st) : [];
-    if (vars.length) {
-      const list = mk('div', 'sndp-vars');
-      // Songs you saved from the dice come first.
-      if (st) vars.unshift(...savedSongs(st.id));
-      for (const v of vars) {
-        const row = mk('button', 'sndp-var');
-        const on = settings.sndStyle === `${st?.id ?? 'yours'}/${v}`;
-        row.classList.toggle('on', on);
-        row.setAttribute('aria-pressed', String(on));
-        const nm = document.createElement('span');
-        nm.textContent = isRoll(v) ? songName(Number(v.slice(1)) || 0) : v;
-        row.append(nm);
-        if (on && now.edited) {
-          const e = document.createElement('small');
-          e.textContent = 'changed · tap to reset';
-          row.append(e);
-        }
-        if (st && isRoll(v)) {
-          const x = document.createElement('i');
-          x.textContent = '×';
-          x.title = 'Remove from saved songs';
-          x.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            keepSong(st.id, v, false);
-            paintKeep();
-            paintPick(true);
-          });
-          row.append(x);
-        }
-        if (browse === 'yours') {
-          const x = document.createElement('i');
-          x.textContent = '×';
-          x.title = `Delete ${v}`;
-          x.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            writeJson(SND_PRESETS_KEY, mySoundPresets().filter(([n]) => n !== v));
-            paintPick(true);
-          });
-          row.append(x);
-        }
-        // A pick keeps the picker open, so you can try the next one; tap Style to fold it.
-        row.addEventListener('click', () => useStyle(st, v));
-        list.append(row);
-      }
-      pick.append(list);
-    } else {
-      const p = mk('p', 'note');
-      p.textContent = 'Pick a genre, then one of its variations.';
-      pick.append(p);
-    }
-    const acts = mk('div', 'sndp-acts');
-    const save = mk('button', '');
-    save.textContent = '+ Save as yours';
-    save.addEventListener('click', () => {
-      const name = prompt('Name this sound', `My sound ${mine.length + 1}`)?.trim();
-      if (!name) return;
-      const S = settings as unknown as Record<string, unknown>;
-      const look = Object.fromEntries(SND_LOOK_KEYS.filter((k) => k !== 'sndStyle').map((k) => [k, S[k]])) as Partial<Settings>;
-      writeJson(SND_PRESETS_KEY, [[name, look], ...mySoundPresets().filter(([n]) => n !== name)]);
-      settings.sndStyle = `yours/${name}`;
-      changed(new Set<keyof Settings>(['sndStyle']));
-      browse = 'yours';
-      paintPick(true);
-    });
-    const clear = mk('button', '');
-    clear.textContent = 'Clear';
-    clear.title = 'Every sound setting back to its default';
-    clear.addEventListener('click', () => {
-      const S = settings as unknown as Record<string, unknown>;
-      const was = Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, S[k]]));
-      Object.assign(settings, Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, DEFAULTS[k]])));
-      changed(new Set(SND_LOOK_KEYS));
-      showToast('Sound cleared to the defaults', ['Undo', () => {
-        Object.assign(settings, was);
-        changed(new Set(SND_LOOK_KEYS));
-      }]);
-    });
-    acts.append(save, clear);
-    pick.append(acts);
+  const paintPick = () => {
+    del.hidden = !settings.sndStyle.startsWith('yours/');
+    if (!pick.hidden) picker.draw();
   };
   refreshers.push(() => {
     const n = styleNow();
@@ -21605,7 +21621,7 @@ ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
 let sceneSheetEl: HTMLElement | null = null;
 // With a sound source on, the sheet has two tabs: Scenes (the look) and
 // Vibes (how the music moves it), each naming its current pick.
-let sheetTab: 'scenes' | 'vibes' = 'scenes';
+let sheetTab: 'scenes' | 'vibes' | 'music' = 'scenes';
 const musicOn = () => audio.source !== 'off';
 const vibeFamilyLabel = (f: VibeFamily) => VIBE_FAMILIES.find(([k]) => k === f)?.[1] ?? 'Vibe';
 function vibeList() {
@@ -21728,12 +21744,14 @@ function toggleSceneSheet() {
   tabsEl.setAttribute('aria-label', 'Pick');
   const ICON_SCENES = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>';
   const ICON_VIBES = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
-  const tabB: Record<'scenes' | 'vibes', HTMLButtonElement> = { scenes: document.createElement('button'), vibes: document.createElement('button') };
-  for (const t of ['scenes', 'vibes'] as const) {
+  const ICON_MUSIC = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>';
+  const TABS = [['scenes', 'Scenes', ICON_SCENES], ['vibes', 'Vibes', ICON_VIBES], ['music', 'Music', ICON_MUSIC]] as const;
+  const tabB = { scenes: document.createElement('button'), vibes: document.createElement('button'), music: document.createElement('button') };
+  for (const [t, label, icon] of TABS) {
     const b = tabB[t];
     b.type = 'button';
     b.setAttribute('role', 'tab');
-    b.innerHTML = `${t === 'scenes' ? ICON_SCENES : ICON_VIBES}<span><small>${t === 'scenes' ? 'Scenes' : 'Vibes'}</small><b></b></span>`;
+    b.innerHTML = `${icon}<span><small>${label}</small><b></b></span>`;
     b.addEventListener('click', () => {
       sheetTab = t;
       draw();
@@ -21769,7 +21787,7 @@ function toggleSceneSheet() {
     draw();
   });
   const [prevB, nextB] = el.querySelectorAll<HTMLButtonElement>('.ss-step');
-  const step = (d: number) => (sheetTab === 'vibes' ? vibeStep(d) : sheetStep(d));
+  const step = (d: number) => (sheetTab === 'vibes' ? vibeStep(d) : sheetTab === 'music' ? musicStep(d) : sheetStep(d));
   prevB.addEventListener('click', () => step(-1));
   nextB.addEventListener('click', () => step(1));
   el.querySelector('.ss-close')!.addEventListener('click', closeSceneSheet);
@@ -21788,9 +21806,10 @@ function toggleSceneSheet() {
   const picks = el.querySelector<HTMLElement>('.ss-picks')!;
   const scenes = scenePicker();
   const vibes = vibePicker();
-  picks.append(scenes.el, vibes.el);
+  const musicP = musicPicker();
+  picks.append(scenes.el, vibes.el, musicP.el);
   let sig = '';
-  const sigNow = () => `${lastSceneName}|${currentMine?.name ?? ''}|${musicOn()}|${sheetTab}|${vibeLabel()}|${settings.audioVibeLook}`;
+  const sigNow = () => `${lastSceneName}|${currentMine?.name ?? ''}|${musicOn()}|${sheetTab}|${vibeLabel()}|${settings.audioVibeLook}|${settings.sndStyle}|${styleNow().edited}`;
   const draw = () => {
     sig = sigNow();
     const music = musicOn();
@@ -21802,16 +21821,23 @@ function toggleSceneSheet() {
     onB.hidden = !vib || !music;
     onB.setAttribute('aria-checked', String(!vibeIsOff()));
     el.classList.toggle('vibing', vib);
-    for (const t of ['scenes', 'vibes'] as const) {
-      tabB[t].setAttribute('aria-selected', String(vib === (t === 'vibes')));
-      tabB[t].classList.toggle('on', vib === (t === 'vibes'));
+    for (const [t] of TABS) {
+      tabB[t].setAttribute('aria-selected', String(sheetTab === t));
+      tabB[t].classList.toggle('on', sheetTab === t);
     }
     tabB.scenes.querySelector('b')!.textContent = sceneName;
     tabB.vibes.querySelector('b')!.textContent = vibeIsOff() ? 'Off' : vibeLabel() || 'None';
+    const song = styleNow();
+    tabB.music.querySelector('b')!.textContent = settings.sndVol > 0 && settings.sndStyle ? (song.st ? songLabel(song.v) : song.name) : 'Off';
     lookB.setAttribute('aria-checked', String(settings.audioVibeLook));
-    scenes.el.hidden = vib;
+    scenes.el.hidden = sheetTab !== 'scenes';
     vibes.el.hidden = !vib;
-    if (vib) {
+    musicP.el.hidden = sheetTab !== 'music';
+    if (sheetTab === 'music') {
+      el.querySelector('.ss-now b')!.textContent = song.name;
+      el.querySelector('.ss-now small')!.textContent = 'Music';
+      musicP.draw();
+    } else if (vib) {
       const v = currentVibe();
       el.querySelector('.ss-now b')!.textContent = vibeIsOff() ? 'Vibe off' : vibeLabel() || 'No vibe';
       el.querySelector('.ss-now small')!.textContent = v ? vibeFamilyLabel(v.family) : 'Vibe';
