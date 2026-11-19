@@ -17273,8 +17273,8 @@ const SND_TRACKS: SndTrack[] = [
 ];
 const SONG_KEYS: (keyof Settings)[] = ['sndSongForm', 'sndSongVary', 'sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
 const QUALITY_KEYS: (keyof Settings)[] = ['sndPolish', 'sndPolishAmt', 'sndPolishVerb', 'sndUnison', 'sndUnisonAmt', 'sndWave', 'sndWaveAmt', 'sndHuman', 'sndHumanAmt'];
-const MIX_KEYS: (keyof Settings)[] = ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndReverb', 'sndShimmer', 'sndEcho', 'sndPing', 'sndSweep', 'sndBright', 'sndLowEnd', 'sndDrive', 'sndLofi', 'sndChorus', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndGlue', 'sndTape', 'sndDepth', 'sndShow'];
 const SND_OPEN_KEY = 'particle-field:sound-open';
+const SND_TAB_KEY = 'particle-field:sound-tab';
 // A style's whole sound: the preset's setup, and the genre's drums, bass and tempo.
 // A genre with a beat lists its beats (UK drill, NY drill …); each plays with
 // the genre's sound. Genres without a beat list their sounds.
@@ -17562,35 +17562,64 @@ function renderSoundPage(body: HTMLElement) {
     tracks.append(wrap);
   }
 
-  // Song and Mix: one summary line each, tap for the rest.
-  const lines = mk('div', 'sndp-lines');
-  const line = (id: string, label: string, keys: (keyof Settings)[], summary: () => string, extra: HTMLElement[] = []) => {
-    const wrap = mk('div', 'sndp-line');
-    const row = mk('button', 'sndp-lrow', '<b></b><span></span><svg class="sndp-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>');
-    row.querySelector('b')!.textContent = label;
-    row.addEventListener('click', () => setOpen(id));
-    const det = mk('div', 'sndp-det');
+  // Instruments, Song and Mix: the Music page's tab bar (Vibes · Mix ·
+  // Reactions), one panel each. Mix comes in small named groups.
+  const SND_TABS: [string, string][] = [['inst', 'Instruments'], ['song', 'Song'], ['mix', 'Mix']];
+  let sTab = 'inst';
+  try {
+    const t = localStorage.getItem(SND_TAB_KEY);
+    if (t && SND_TABS.some(([x]) => x === t)) sTab = t;
+  } catch {
+    // Starts on Instruments.
+  }
+  const tabBar = mk('div', 'mtabs sndp-tabs');
+  tabBar.setAttribute('role', 'tablist');
+  const panels: [string, HTMLElement, HTMLButtonElement][] = [];
+  const paintTabs = () => {
+    for (const [id, p, b] of panels) {
+      p.hidden = id !== sTab;
+      b.classList.toggle('on', id === sTab);
+      b.setAttribute('aria-selected', String(id === sTab));
+    }
+  };
+  for (const [id, label] of SND_TABS) {
+    const b = mk('button', '');
+    b.setAttribute('role', 'tab');
+    b.textContent = label;
+    b.addEventListener('click', () => {
+      sTab = id;
+      try {
+        localStorage.setItem(SND_TAB_KEY, id);
+      } catch {
+        // Not remembered.
+      }
+      paintTabs();
+    });
+    tabBar.append(b);
+    panels.push([id, mk('div', `sndp-panel sndp-p-${id}`), b]);
+  }
+  const panelOf = (id: string) => panels.find(([x]) => x === id)![1];
+  // A named group of settings: a small heading over its rows.
+  const group = (into: HTMLElement, title: string, keys: (keyof Settings)[]) => {
+    const det = mk('div', 'sndp-det sndp-group');
+    if (title) det.append(mk('h3', 'sndp-gh', title));
     for (const k of keys) {
       const e = take(k);
       if (e) det.append(e);
     }
-    det.append(...extra);
-    folds.push([id, wrap, det]);
-    refreshers.push(() => {
-      row.querySelector('span')!.textContent = summary();
-    });
-    wrap.append(row, det);
-    lines.append(wrap);
+    into.append(det);
     return det;
   };
+  // Song: plays while the tab is closed too, so its tab says so.
+  const songTabBtn = panels.find(([x]) => x === 'song')![2];
+  refreshers.push(() => {
+    const t = snd?.songOn && sndOn ? 'Song ▶' : 'Song';
+    if (songTabBtn.textContent !== t) songTabBtn.textContent = t;
+  });
   const songNote = note('Following the song');
   const nextChord = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('Next chord'));
   const songBtns = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('Song mode'));
-  const songDet = line('song', 'Song', SONG_KEYS, () => {
-    const key = settings.sndKey === 'auto' ? 'Auto key' : settings.sndKey;
-    const prog = settings.sndProg === 'custom' ? settings.sndProgText : optLabel([['drift', 'Drift'], ['pop', 'Pop'], ['calm', 'Calm'], ['mystic', 'Mystic'], ['still', 'One chord']], settings.sndProg);
-    return `${settings.sndKey === 'auto' ? settings.sndScale : `${key} ${settings.sndScale}`} · ${settings.sndTempo} bpm · ${prog}${songLabel()}`;
-  });
+  const songDet = group(panelOf('song'), '', SONG_KEYS);
   // Next chord and the song note go with the chord settings.
   const after = songDet.querySelector('[data-key="sndChordBars"]');
   if (after) after.after(...[songNote, nextChord].filter((e): e is HTMLElement => !!e));
@@ -17602,15 +17631,15 @@ function renderSoundPage(body: HTMLElement) {
   const formRow = songDet.querySelector('[data-key="sndSongForm"]');
   const varyRow = songDet.querySelector('[data-key="sndSongVary"]');
   songBtns?.after(...[songStrip, formRow, varyRow].filter((e): e is HTMLElement => !!e));
-  line('quality', 'Quality', QUALITY_KEYS, () => {
-    const on = [settings.sndPolish && 'Polish', settings.sndUnison && 'Unison', settings.sndWave && 'Motion', settings.sndHuman && 'Humanise'].filter(Boolean);
-    return on.length ? on.join(' · ') : 'Polish, Unison, Motion, Humanise';
-  });
-  line('mix', 'Mix', MIX_KEYS, () => {
-    const w = (v: number, up: string, down: string) => (Math.abs(v - 0.5) < 0.01 ? '' : v > 0.5 ? up : down);
-    const words = [w(settings.sndMBusy, 'busier', 'calmer'), w(settings.sndMBright, 'brighter', 'darker'), w(settings.sndMSpace, 'roomier', 'drier'), w(settings.sndMGroove, 'groovier', 'straighter')].filter(Boolean);
-    return words.length ? words.join(' · ') : 'Busy, Bright, Space, Groove';
-  });
+  const mixP = panelOf('mix');
+  group(mixP, 'Feel', ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove']);
+  group(mixP, 'Space', ['sndReverb', 'sndShimmer', 'sndEcho', 'sndPing']);
+  group(mixP, 'Tone', ['sndSweep', 'sndBright', 'sndLowEnd']);
+  group(mixP, 'Colour', ['sndDrive', 'sndLofi', 'sndChorus', 'sndPhaser', 'sndTrem', 'sndTremMode']);
+  group(mixP, 'Dynamics', ['sndGlue', 'sndTape']);
+  group(mixP, 'Quality', QUALITY_KEYS);
+  group(mixP, 'More', ['sndDepth', 'sndShow']);
+  panelOf('inst').append(tracks);
 
   // Volume first, as a bar like the tracks', then the page; the studio button last.
   take('sndVol')?.remove();
@@ -17619,10 +17648,13 @@ function renderSoundPage(body: HTMLElement) {
   vol.append(levelBar('sndVol', 'Volume'), volV);
   refreshers.push(() => (volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off'));
   const studioBtn = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('sound studio'));
-  page.append(style, pick, tracks, lines);
+  page.append(style, pick, tabBar, ...panels.map(([, p]) => p));
+  // Sliders throughout (fill rows), whatever the view.
+  page.classList.add('std-fill');
   body.prepend(vol, page);
   if (studioBtn) page.after(studioBtn);
   paintFolds();
+  paintTabs();
 }
 // A level bar: slide sideways anywhere on it (the whole row height is the
 // target); arrow keys step it.
@@ -19484,10 +19516,6 @@ function toggleSong() {
   showToast(snd.songOn ? 'Song mode: intro, verse, build, drop, breakdown, build, drop, outro, on a loop' : 'Song mode off');
   refresh();
 }
-const songLabel = () => {
-  const now = snd?.songNow();
-  return now ? ` · ▶ ${now.name}` : '';
-};
 function soundTick(dt: number) {
   sndOn = settings.sndVol > 0;
   if (sndOn && snd && !document.hidden && !paused) {
