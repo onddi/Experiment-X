@@ -18136,7 +18136,7 @@ const SOUND_PRESETS: [string, Partial<Settings>][] = [
     sndGrid: beat('--------+-------', '--------+-------', '..+...+...+...+.', '+..+.+....+.+...') }],
   ['Dancehall', { sndTimbre: 'steel', sndScale: 'minor', sndProg: 'custom', sndProgText: '1 6 4 5', sndTempo: 96, sndStrings: 0.4, sndLength: 0.5, sndBass: 0.8, sndBassSound: 'sub', sndDrums: 0.6, sndKit: '808', sndDrive: 0.15, sndEcho: 0.2, sndReverb: 0.3,
     sndGrid: beat('+.......+.......', '...+..+....+..+.', '+.+.+.+.+.+.+.+.', '+..+..+.+..+..+.') }],
-  ['Boom bap', { sndTimbre: 'epiano', sndScale: 'dorian', sndProg: 'custom', sndProgText: '1 4', sndTempo: 88, sndStrings: 0.45, sndDrone: 0.2, sndPadSound: 'strings', sndBass: 0.75, sndBassSound: 'round', sndBassTone: -0.2, sndDrums: 0.65, sndKit: 'punchy', sndSwing: 0.45, sndLofi: 0.35, sndBright: -0.2, sndReverb: 0.25,
+  ['Boom bap', { sndTimbre: 'epiano', sndScale: 'dorian', sndProg: 'custom', sndProgText: '1 4', sndTempo: 88, sndStrings: 0.45, sndDrone: 0.2, sndPadSound: 'strings', sndBass: 0.75, sndBassSound: 'round', sndBassTone: -0.2, sndDrums: 0.65, sndKit: 'punchy', sndSwing: 0.45, sndLofi: 0.15, sndBright: -0.2, sndReverb: 0.25,
     sndGrid: beat('+......+.+......', '....+.......+...', '+.+.+.+.+.+.+.+.', '+......+.+......') }],
   ['Synthwave', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'custom', sndProgText: '6 4 1 5', sndTempo: 100, sndStrings: 0.5, sndArp: 0.8, sndDrone: 0.4, sndPadSound: 'strings', sndBass: 0.55, sndBassSound: 'synth', sndDrums: 0.5, sndKit: '808', sndChorus: 0.6, sndEcho: 0.3, sndSweep: 0.5, sndReverb: 0.45,
     sndGrid: beat('+.......+.......', '....+.......+...', '+.+.+.+.+.+.+.+.', '+.+.+.+.+.+.+.+.') }],

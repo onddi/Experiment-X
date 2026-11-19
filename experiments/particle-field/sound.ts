@@ -811,7 +811,8 @@ export class ParticleSound {
     }
     if (p.lofi > 0) this.ensureLofi();
     if (this.lofiShaper && this.lofiLp && this.lofiHiss) {
-      const bits = p.lofi === 0 ? 0 : Math.round(12 - p.lofi * 8);
+      // Fewer bits only past halfway: below that it's warmth and a little hiss.
+      const bits = p.lofi <= 0.5 ? 0 : Math.round(12 - (p.lofi - 0.5) * 10);
       if (bits !== this.lofiBits) {
         this.lofiBits = bits;
         if (!bits) this.lofiShaper.curve = null;
@@ -822,7 +823,7 @@ export class ParticleSound {
         }
       }
       this.lofiLp.frequency.setTargetAtTime(p.lofi === 0 ? 20000 : 9000 - p.lofi * 6500, t, 0.1);
-      this.lofiHiss.gain.setTargetAtTime(p.lofi * 0.012, t, 0.2);
+      this.lofiHiss.gain.setTargetAtTime(p.lofi * 0.005, t, 0.2);
     }
     this.setPad(p.padSound);
     if (p.sweep === 0) {
@@ -3080,7 +3081,7 @@ export class ParticleSound {
       }
     }
     // Lo-fi crackle: the odd dusty click.
-    if (P.lofi > 0 && Math.random() < F.dt * P.lofi * 5) this.grain(Math.random() * w, h * 0.05, w, h, P.lofi * 0.5, 1, 0.002, 0.05);
+    if (P.lofi > 0 && Math.random() < F.dt * P.lofi * 2.5) this.grain(Math.random() * w, h * 0.05, w, h, P.lofi * 0.25, 1, 0.002, 0.05);
 
     // Strings: vertical lines across the screen; a particle crossing one
     // plucks it (a chord tone, higher in the upper half of the screen).
