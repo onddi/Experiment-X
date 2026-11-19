@@ -36,7 +36,6 @@ export const STYLES: Style[] = [
   { id: 'synthwave', name: 'Synthwave', beat: 'synthwave', vars: ['Synthwave'] },
   { id: 'jazz', name: 'Jazz', beat: 'jazz', vars: ['Jazz club'] },
   { id: 'garage', name: 'UK garage', beat: 'garage', vars: ['UK garage'] },
-  { id: 'hard', name: 'Hard dance', beat: 'hard', vars: ['Hardstyle'] },
   { id: 'disco', name: 'Disco', beat: 'disco', vars: ['Disco'] },
   { id: 'hyperpop', name: 'Hyperpop', beat: 'hyperpop', vars: ['Hyperpop'] },
   { id: 'baile', name: 'Baile funk', beat: 'baile', vars: ['Baile funk'] },

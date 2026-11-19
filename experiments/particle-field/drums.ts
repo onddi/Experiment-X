@@ -413,18 +413,6 @@ export const GENRES: Genre[] = [
     ],
   },
   {
-    id: 'hard', name: 'Hard dance', bpm: 150, swing: 0, kit: 'hard', bass: 'fuzz', fill: 'roll', beats: [
-      { name: 'Hardstyle', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', b: '..b...b...b...b.' },
-      { name: 'Hard techno', k: 'X...X...X...X...', h: 'x.xxx.xxx.xxx.xx', r: '..x...x...x...x.', b: '.bbb.bbb.bbb.bbb' },
-      { name: 'Rawstyle', k: 'X...X...X...X.X.', c: '....X.......X...', h: '..x...x...x...x.', b: '..bb..bb..bb..bb' },
-      { name: 'Gabber', k: 'X...X...X...X...', o: '..X...X...X...X.', b: '..b...b...b...b.' },
-    ],
-    versions: [
-      { name: 'Gabber 175', from: 'Gabber', sound: 'Acid techno', bpm: 175 },
-      { name: 'Euphoric hardstyle', from: 'Hardstyle', sound: 'Northern lights', bpm: 152, bass: 'synth' },
-    ],
-  },
-  {
     id: 'disco', name: 'Disco', bpm: 118, swing: 0.1, kit: 'linn', bass: 'fingered', fill: 'toms', beats: [
       { name: 'Disco', k: 'X...X...X...X...', s: '....X.......X...', h: 'x.o.x.o.x.o.x.o.', o: '..X...X...X...X.', b: 'b.u.b.u.b.u.b.u.' },
       { name: 'Nu-disco', k: 'X...X...X...X...', c: '....X.......X...', h: 'xoxoxoxoxoxoxoxo', p: '..x...x...x...x.', b: 'b..bu..bb..bu..b' },
