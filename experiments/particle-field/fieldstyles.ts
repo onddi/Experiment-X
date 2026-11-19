@@ -257,7 +257,8 @@ export class FieldRender {
 
   // Wash: a soft out-of-focus haze of the colours (behind Glass drops).
   private wash(s: number) {
-    const norm = this.blur(Math.max(14, s * 9), true);
+    // Three passes so the haze is round, not square.
+    const norm = this.blur(Math.max(11, s * 7), true, 3);
     const { gw, gh, dens, cr, cg, cb } = this;
     const d = this.img!.data;
     for (let i = 0, N = gw * gh; i < N; i++) {
@@ -268,10 +269,10 @@ export class FieldRender {
         continue;
       }
       const inv = 1 / dens[i];
-      d[o] = cr[i] * inv;
-      d[o + 1] = cg[i] * inv;
-      d[o + 2] = cb[i] * inv;
-      d[o + 3] = (1 - Math.exp(-D * 0.35)) * 150;
+      d[o] = cr[i] * inv * 0.8;
+      d[o + 1] = cg[i] * inv * 0.8;
+      d[o + 2] = cb[i] * inv * 0.8;
+      d[o + 3] = (1 - Math.exp(-D * 0.3)) * 85;
     }
   }
 
