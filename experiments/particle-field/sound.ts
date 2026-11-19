@@ -16,7 +16,7 @@
 // notes is capped so thousands of particles can't turn into noise.
 
 export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
-export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop';
+export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop';
 // The chimes' own sound, or 'same' to play whatever the strings play.
 export type HitSound = 'same' | Voice;
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
@@ -29,7 +29,7 @@ export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'pi
 import { bandsOf } from './audio.ts';
 import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
-export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet';
+export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet' | 'analog' | 'vox' | 'drone' | 'mist' | 'supersaw' | 'harmonium' | 'cosmic';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 /** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
 export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | Voice;
@@ -132,6 +132,14 @@ const VOICES: Record<Voice, VoiceDef> = {
   pizz: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 0.45, ks: { bright: 0.3, keep: 0.985 }, gain: 1.9 },
   violin: { type: 'sawtooth', ratio: 1.004, level: 0.5, fade: 1, decay: 1.6, attack: 0.12, vibrato: 14, sweep: [3800, 2000], gain: 0.6 },
   cello: { type: 'sawtooth', ratio: 1.003, level: 0.5, fade: 1, decay: 2, attack: 0.15, vibrato: 10, octave: -1, sweep: [1900, 900], gain: 0.75 },
+  // Keys and blips (Steps and Strings).
+  piano: { type: 'triangle', ratio: 2, level: 0.35, fade: 0.25, decay: 1.6, fm: [2, 0.2], sweep: [5200, 900], gain: 1.15 },
+  clav: { type: 'square', ratio: 3, level: 0.3, fade: 0.2, decay: 0.35, sweep: [4200, 700], gain: 0.7 },
+  xylo: { type: 'sine', ratio: 3, level: 0.7, fade: 0.05, decay: 0.35, octave: 1, gain: 1.2 },
+  chip: { type: 'square', ratio: 2, level: 0, fade: 0.1, decay: 0.22, gain: 0.5 },
+  acid: { type: 'sawtooth', ratio: 1.01, level: 0.4, fade: 1, decay: 0.3, sweep: [5200, 220], gain: 0.9 },
+  organ: { type: 'square', ratio: 2, level: 0.5, fade: 1, decay: 0.7, attack: 0.008, gain: 0.5 },
+  bubble: { type: 'sine', ratio: 2, level: 0.05, fade: 0.2, decay: 0.18, octave: 1, bend: 900, gain: 1.8 },
   // Chime sounds: bright, ringing, a little inharmonic.
   wind: { type: 'sine', ratio: 5.4, level: 0.3, fade: 0.35, decay: 2.8, octave: 1, wobble: [3, 0.12], gain: 1.1 },
   celesta: { type: 'sine', ratio: 4, level: 0.22, fade: 0.12, decay: 1.1, octave: 1, fm: [1, 0.25], gain: 1.1 },
@@ -231,6 +239,13 @@ const PADS: Record<PadSound, PadDef> = {
   ice: { w: ['sine', 'triangle'], spread: 14, width: 1, cut: 4, q: 0.5, color: 9, drift: 2, air: 0.35, gain: 0.8, up: 24, sub: 0, swell: 0.4 },
   pwm: { w: ['square', 'sawtooth'], spread: 18, width: 0.9, cut: 1.2, q: 0.9, color: 7, drift: 9, air: 0, gain: 0.85, sub: 0.25, swell: 1 },
   velvet: { w: ['triangle', 'triangle'], spread: 11, width: 0.8, cut: 0.6, q: 0.5, color: 9, drift: 5, air: 0.1, gain: 1.1, sub: 0.3, swell: 1.3 },
+  analog: { w: ['sawtooth', 'square'], spread: 14, width: 0.9, cut: 1.6, q: 1.2, color: 7, drift: 7, air: 0.05, gain: 0.9, sub: 0.25, swell: 1 },
+  vox: { w: ['sawtooth', 'triangle'], spread: 9, width: 0.8, cut: 1, q: 2.4, band: 950, color: 0, drift: 6, air: 0.3, gain: 3.6, sub: 0, swell: 0.9 },
+  drone: { w: ['sawtooth', 'sawtooth'], spread: 3, width: 0.4, cut: 0.8, q: 2, band: 520, color: 7, drift: 1, air: 0, gain: 2.4, up: -12, sub: 0.4, swell: 2 },
+  mist: { w: ['sine', 'sine'], spread: 20, width: 1, cut: 1.5, q: 0.3, color: 9, drift: 12, air: 0.6, gain: 1.2, sub: 0, swell: 1.8 },
+  supersaw: { w: ['sawtooth', 'sawtooth'], spread: 24, width: 1, cut: 2.8, q: 0.6, color: 4, drift: 4, air: 0.1, gain: 0.75, sub: 0.15, swell: 0.8 },
+  harmonium: { w: ['square', 'sawtooth'], spread: 3, width: 0.4, cut: 1.4, q: 1, band: 1600, color: 7, drift: 1.5, air: 0.05, gain: 2.2, sub: 0.1, swell: 0.5 },
+  cosmic: { w: ['triangle', 'sawtooth'], spread: 12, width: 1, cut: 2, q: 4, color: 4, drift: 3, air: 0.4, gain: 0.8, up: 12, sub: 0.2, swell: 1.5 },
 };
 
 export interface SoundParams {
