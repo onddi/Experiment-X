@@ -17562,6 +17562,15 @@ function useStyle(st: Style | null, v: string) {
   if (settings.sndVol === 0) settings.sndVol = 0.7;
   changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
 }
+// Rolled songs you kept, per genre: the dice only shuffles, Save keeps one.
+const SND_SONGS_KEY = 'particle-field:songs';
+const savedSongs = (id: string) => readJson<Record<string, string[]>>(SND_SONGS_KEY, {})[id] ?? [];
+function keepSong(id: string, v: string, keep: boolean) {
+  const all = readJson<Record<string, string[]>>(SND_SONGS_KEY, {});
+  const list = (all[id] ?? []).filter((x) => x !== v);
+  all[id] = keep ? [v, ...list] : list;
+  writeJson(SND_SONGS_KEY, all);
+}
 // The dice: a new song in the genre you're in (any genre when none is picked).
 function randomStyle() {
   const now = styleNow().st;
@@ -17624,7 +17633,29 @@ function renderSoundPage(body: HTMLElement) {
   dice.setAttribute('aria-label', 'New song');
   dice.title = 'New song in this genre';
   dice.addEventListener('click', randomStyle);
-  style.append(sMain, dice);
+  // Save: keeps the song the dice rolled, so it's in the genre's list.
+  const keep = mk('button', 'sndp-dice sndp-keep', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>');
+  keep.hidden = true;
+  keep.addEventListener('click', () => {
+    const n = styleNow();
+    if (!n.st || !isRoll(n.v)) return;
+    const was = savedSongs(n.st.id).includes(n.v);
+    keepSong(n.st.id, n.v, !was);
+    showToast(was ? 'Removed from saved songs' : `Saved ${songName(Number(n.v.slice(1)) || 0)}`);
+    paintKeep();
+    paintPick(true);
+  });
+  const paintKeep = () => {
+    const n = styleNow();
+    const roll = !!n.st && isRoll(n.v);
+    keep.hidden = !roll;
+    const on = roll && savedSongs(n.st!.id).includes(n.v);
+    keep.classList.toggle('on', on);
+    keep.setAttribute('aria-pressed', String(on));
+    keep.setAttribute('aria-label', on ? 'Saved song' : 'Save song');
+    keep.title = on ? 'Saved: tap to remove' : 'Save this song';
+  };
+  style.append(sMain, keep, dice);
   const pick = mk('div', 'sndp-pick');
   pick.hidden = true;
   sMain.addEventListener('click', () => {
@@ -17665,15 +17696,8 @@ function renderSoundPage(body: HTMLElement) {
     const vars = browse === 'yours' ? mine.map(([n]) => n) : st ? styleVars(st) : [];
     if (vars.length) {
       const list = mk('div', 'sndp-vars');
-      // A new song in this genre: its recipe rolls one (the dice does the same).
-      if (st && RECIPES[st.id]) {
-        const cur = settings.sndStyle.startsWith(`${st.id}/~`) ? settings.sndStyle.slice(st.id.length + 1) : '';
-        if (cur) vars.unshift(cur);
-        const roll = mk('button', 'sndp-var sndp-roll');
-        roll.innerHTML = '<span>⚄ New song</span><small>a fresh one in this genre, every tap</small>';
-        roll.addEventListener('click', () => useStyle(st, `~${newSeed()}`));
-        list.append(roll);
-      }
+      // Songs you saved from the dice come first.
+      if (st) vars.unshift(...savedSongs(st.id));
       for (const v of vars) {
         const row = mk('button', 'sndp-var');
         const on = settings.sndStyle === `${st?.id ?? 'yours'}/${v}`;
@@ -17686,6 +17710,18 @@ function renderSoundPage(body: HTMLElement) {
           const e = document.createElement('small');
           e.textContent = 'changed · tap to reset';
           row.append(e);
+        }
+        if (st && isRoll(v)) {
+          const x = document.createElement('i');
+          x.textContent = '×';
+          x.title = 'Remove from saved songs';
+          x.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            keepSong(st.id, v, false);
+            paintKeep();
+            paintPick(true);
+          });
+          row.append(x);
         }
         if (browse === 'yours') {
           const x = document.createElement('i');
@@ -17741,6 +17777,7 @@ function renderSoundPage(body: HTMLElement) {
   refreshers.push(() => {
     const n = styleNow();
     sMain.querySelector('b')!.textContent = n.name + (n.edited ? ' · changed' : '');
+    paintKeep();
     paintPick();
   });
 
