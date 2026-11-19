@@ -14705,6 +14705,8 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
 
   // Opens a reaction's settings in its row (the add flow lands there).
   const rowShow: ((f: MgFlav) => void)[] = [];
+  // Edit: swap a reaction for another (the add flow, opened under its row).
+  let editFlow: ((ri: number, f: MgFlav, anchor: HTMLElement) => void) | null = null;
   // When you… → …the particles: each trigger lists what it does now, + adds more.
   const list = document.createElement('div');
   list.className = 'mg-list';
@@ -14759,14 +14761,21 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
         const p = flow.querySelector('.af-hint');
         if (p && p.hasAttribute('data-step2')) p.textContent = trying ? (audio.source === 'off' && !drumsDrive() ? 'Trying it to a made-up beat. Tap Add to keep it, or try another.' : 'Trying it to your music. Tap Add to keep it, or try another.') : '…the particles. Tap one to try it, + to add it.';
       };
+      // Editing: the reaction being swapped out, and the strength it had.
+      let replacing: { f: MgFlav; was: number } | null = null;
       const closeFlow = () => {
         endTry();
         flow.hidden = true;
         addAll.hidden = mgShowOff;
+        if (replacing) {
+          replacing = null;
+          addAll.after(flow);
+        }
       };
       const stepWhen = () => {
         endTry();
         flow.innerHTML = '<div class="af-top"><b>When…</b><span>1 of 2</span><button type="button">Cancel</button></div><p class="af-hint">Lit bars show what the music is doing right now.</p>';
+        if (replacing) flow.querySelector('.af-top b')!.textContent = `Move ${replacing.f.label} to…`;
         flow.querySelector('button')!.addEventListener('click', closeFlow);
         let group = '';
         let gridEl: HTMLElement | null = null;
@@ -14802,6 +14811,10 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
         flow.innerHTML = '<div class="af-top"><button type="button" class="af-back">‹</button><b></b><span>2 of 2</span><button type="button">Cancel</button></div><p class="af-hint" data-step2></p>';
         tryHint();
         flow.querySelector('b')!.textContent = row.when ?? row.name;
+        if (replacing) {
+          flow.querySelector('.af-top span')!.textContent = `instead of ${replacing.f.label}`;
+          if (!trying) flow.querySelector('.af-hint')!.textContent = 'Pick what it does instead: tap one to try it, + to swap. ‹ picks another moment.';
+        }
         flow.querySelector('.af-back')!.addEventListener('click', stepWhen);
         flow.querySelector('.af-top button:last-child')!.addEventListener('click', closeFlow);
         row.cells.forEach((fl, ci) => {
@@ -14830,6 +14843,11 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
                 // Add: keep what's being tried, or turn it on.
                 if (trying?.f === f) endTry(true);
                 else if (!on) f.put(2 / 3);
+                // Editing: the new one takes the old one's strength, and the old one goes.
+                if (replacing && replacing.f !== f) {
+                  if (!on) f.put(Math.max(0.05, replacing.was));
+                  replacing.f.put(0);
+                }
                 closeFlow();
                 redraw();
                 rowShow[ri]?.(f);
@@ -14856,7 +14874,16 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
           }
         });
       };
+      editFlow = (ri, f, anchor) => {
+        replacing = { f, was: f.get() };
+        anchor.after(flow);
+        addAll.hidden = true;
+        flow.hidden = false;
+        stepWhat(ri);
+        flow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      };
       addAll.addEventListener('click', () => {
+        if (replacing) closeFlow();
         addAll.hidden = true;
         flow.hidden = false;
         stepWhen();
@@ -14965,7 +14992,7 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
         const pick = f.choice && f.get() > 0.02 ? f.choice.options.find(([o]) => o === f.choice!.get())?.[1] : '';
         return pick || f.label;
       };
-      const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => chipName(f), [f], key, () => f.put(0), menu);
+      const show = (f: MgFlav, _col: string, key: string) => openDetail(who, () => chipName(f), [f], key, () => f.put(0), menu, editFlow ? () => editFlow?.(ri, f, menu) : undefined);
       rowShow[ri] = (f) => {
         const it = fixed.find((x) => x.f === f);
         if (!it) return;
@@ -15110,7 +15137,7 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
   }
 
   // anchor: show the panel right under this (the list), not at the end.
-  function openDetail(sup: string, title: string | (() => string), fl: MgFlav[], key: string, remove?: () => void, anchor?: HTMLElement) {
+  function openDetail(sup: string, title: string | (() => string), fl: MgFlav[], key: string, remove?: () => void, anchor?: HTMLElement, edit?: () => void) {
     // The same pill again closes its slider.
     if (open === key && !detail.hidden) {
       open = null;
@@ -15141,6 +15168,17 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
       redraw();
     };
     done.addEventListener('click', close);
+    if (edit) {
+      // Edit: swap it for another reaction, at the same moment or another.
+      const ed = document.createElement('button');
+      ed.type = 'button';
+      ed.textContent = 'Edit';
+      ed.addEventListener('click', () => {
+        close();
+        edit();
+      });
+      top.append(ed);
+    }
     if (remove) {
       const rm = document.createElement('button');
       rm.type = 'button';
