@@ -457,6 +457,24 @@ export const GENRES: Genre[] = [
       { name: 'Taxi', from: 'Durban', sound: 'Kalimba campfire', bpm: 128, kit: 'hand' },
     ],
   },
+  {
+    // The kick on every beat and a rolling bass in the three steps between.
+    // Suomisaundi is the Finnish freeform kind: wonky, playful, full of squelch.
+    id: 'psy', name: 'Psytrance', bpm: 145, swing: 0, kit: 'techno', bass: 'pulse', fill: 'roll', beats: [
+      { name: 'Full on', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', r: '.......o.......x', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Night', k: 'X...X...X...X...', h: 'xoxxxoxxxoxxxoxx', p: '.....?.......?..', b: '.bbb.bbb.bbb.bfb' },
+      { name: 'Forest', k: 'X...X...X...X...', h: '..x...x...x...x.', t: '...o......o.....', p: '..?..?...?..?...', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Goa', k: 'X...X...X...X...', c: '....x.......x...', o: '..X...X...X...X.', b: '.bub.bub.bub.bub' },
+      { name: 'Progressive', k: 'X...X...X...X...', h: '..x...x...x...x.', r: '......x.......x.', b: '..bb..bb..bb..bb' },
+      { name: 'Suomisaundi', k: 'X...X...X...X...', h: '..x.?.x...x.?.xx', p: '...x.?....x..?..', r: '.o.....o..o.....', t: '.............2..', b: '.bbb.b~b.bbb.ubf' },
+      { name: 'Breakdown', h: '....x.......x...', r: '..............o.', b: 'B...............' },
+    ],
+    versions: [
+      { name: 'Suomi freeform', from: 'Suomisaundi', sound: 'Suomisaundi', bpm: 148, kit: 'glitch', bass: 'acid' },
+      { name: 'Acid goa', from: 'Goa', sound: 'Acid techno', bpm: 142, bass: 'acid' },
+      { name: 'Twilight', from: 'Night', sound: 'Deep space', bpm: 147, bass: 'reese' },
+    ],
+  },
 ];
 export const genreById = (id: string) => GENRES.find((g) => g.id === id);
 
