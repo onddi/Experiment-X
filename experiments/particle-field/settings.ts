@@ -232,6 +232,7 @@ export interface Settings {
   sndPing: boolean;
   sndMove: boolean; // the particle drums drive the Music reactions
   sndBassDrive: boolean; // the particle bass drives the bass reactions
+  sndNoteDrive: boolean; // the particle melody lights the note and voice reactions
   sndPhaser: number;
   sndTrem: number;
   sndTremMode: 'volume' | 'pan';
@@ -904,6 +905,7 @@ export const DEFAULTS: Settings = {
   sndPing: false,
   sndMove: false,
   sndBassDrive: false,
+  sndNoteDrive: false,
   sndPhaser: 0,
   sndTrem: 0,
   sndTremMode: 'volume',

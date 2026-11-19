@@ -3087,6 +3087,8 @@ html.top-layer.top-edit .top-back { display: block !important; position: fixed; 
 .sndp-group { padding: 10px 10px 12px; border-radius: 14px; background: rgb(255 255 255 / 0.035); }
 .sndp-group > .sndp-gh { margin: 0 4px 2px; padding: 0; border: 0; line-height: 16px; min-height: 0; font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .std-fill .sndp-det > .kn { grid-column: 1 / -1; }
+/* Sound › Reactions: the Music grid again; its classic-cards switch stays on the Music page. */
+.sndp-p-react .mg-classic { display: none; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -805,7 +805,8 @@ export class ParticleSound {
   }
 
   // Drum hits as they're scheduled, for the field to move with (see takeDrumHits).
-  private drumQ: { kind: 'kick' | 'snare' | 'hat' | 'crash' | 'bass'; k: number; at: number; col: number; len?: number }[] = [];
+  // Melodic notes go in too (kind 'note', with the pitch class), so they can light the picture.
+  private drumQ: { kind: 'kick' | 'snare' | 'hat' | 'crash' | 'bass' | 'note'; k: number; at: number; col: number; len?: number; pc?: number }[] = [];
   private stepNow = 0;
   private drumEv(kind: 'kick' | 'snare' | 'hat' | 'crash', k: number, when: number) {
     if (!this.audible('drums') || this.drumQ.length > 64) return;
@@ -1635,6 +1636,7 @@ export class ParticleSound {
     const fl = this.freq(deg) * 2 ** (Vd.octave ?? 0);
     this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * this.lenK * (this.bpmNow / 60), when);
     if (!this.audible(this.cur)) return;
+    if (this.drumQ.length <= 64) this.drumQ.push({ kind: 'note', k: vel, at: this.ctx.currentTime + when, col: this.stepNow, pc: ((Math.round(69 + 12 * Math.log2(fl / 440)) % 12) + 12) % 12 });
     this.voices++;
     const V = VOICES[voice];
     const ctx = this.ctx;
