@@ -304,6 +304,12 @@ export interface SoundParams {
   padGlide?: number; // 0 … 1: how slowly it slides to the next chord
   padHold?: boolean; // keeps playing when the field is still
   padOct?: number; // -1, 0, 1
+  // Sound quality (each 0 = off, exactly as before).
+  polish?: number; // Mix polish: a better reverb, ducking under the kick, EQ, tape warmth, glue, width and a limiter
+  polishVerb?: 'room' | 'hall' | 'plate';
+  unison?: number; // pads and leads (Steps, Strings) as a stack of detuned voices
+  wave?: number; // wavetable motion: pads and leads morph between waveforms
+  human?: number; // humanise: timing, accents, ghost notes, chord inversions
   attack: number; // 0 struck … 1 bowed
   bright: number; // -1 dark … 1 bright, over everything
   drive: number; // warm saturation over everything
@@ -536,6 +542,9 @@ export class ParticleSound {
   private lofiHiss: GainNode | null = null;
   private lofiBits = -1;
   private padKind = '';
+  private verb: ConvolverNode;
+  private scBass: GainNode;
+  private scPad: GainNode;
   // --- For the sound studio (only filled while it is open) ---
   /** Mute and solo, for listening (not saved). */
   muted = new Set<Layer>();
@@ -634,17 +643,19 @@ export class ParticleSound {
     this.chainEnd = this.lowShelf;
     this.dry = ctx.createGain();
     this.dry.connect(this.master);
-    const verb = ctx.createConvolver();
+    const verb = (this.verb = ctx.createConvolver());
     verb.buffer = this.impulse(2.8);
     this.wet = ctx.createGain();
     this.wet.connect(verb);
     verb.connect(this.master);
-    // The bass goes through one gain, so the kick can duck it (Low end).
+    // The bass goes through one gain, so the kick can duck it (Low end), then
+    // Mix polish's sidechain (a plain 1 unless that's on).
     this.bassDuck = ctx.createGain();
-    this.bassDuck.connect(this.dry);
+    this.scBass = ctx.createGain();
+    this.bassDuck.connect(this.scBass).connect(this.dry);
     const bw = ctx.createGain();
     bw.gain.value = 0.12;
-    this.bassDuck.connect(bw).connect(this.wet);
+    this.scBass.connect(bw).connect(this.wet);
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const nd = this.noise.getChannelData(0);
@@ -664,7 +675,10 @@ export class ParticleSound {
     // Pump: a gain after everything, dipped on each kick.
     this.padDuck = ctx.createGain();
     this.padGain.connect(this.padDuck);
-    this.send(this.padDuck, 0.9);
+    // Mix polish's sidechain (a plain 1 unless that's on).
+    this.scPad = ctx.createGain();
+    this.padDuck.connect(this.scPad);
+    this.send(this.scPad, 0.9);
     for (let k = 0; k < 8; k++) {
       const o = ctx.createOscillator();
       o.type = k % 2 ? 'triangle' : 'sine';
@@ -747,6 +761,7 @@ export class ParticleSound {
     this.comp.attack.setTargetAtTime(0.003 + glue * 0.012, t, 0.1);
     this.comp.release.setTargetAtTime(0.25 - glue * 0.1, t, 0.1);
     this.makeup.gain.setTargetAtTime(1 + glue * 0.6, t, 0.1);
+    this.setPolish(p.polish ?? 0, p.polishVerb ?? 'hall');
     if ((p.tape ?? 0) > 0) this.ensureTape();
     if (p.chorus > 0) this.ensureChorus();
     if (this.chorusOut) this.chorusOut.gain.setTargetAtTime(p.chorus * 0.8, t, 0.1);
@@ -1271,7 +1286,7 @@ export class ParticleSound {
     const ctx = this.ctx;
     if (!this.recDest) {
       this.recDest = ctx.createMediaStreamDestination();
-      this.makeup.connect(this.recDest);
+      (this.pol?.on ? this.pol.lim : this.makeup).connect(this.recDest);
     }
     this.recMix?.disconnect();
     this.recMix = null;
@@ -1284,6 +1299,237 @@ export class ParticleSound {
   }
   close() {
     void this.ctx.close().catch(() => {});
+  }
+
+  // --- Sound quality --------------------------------------------------------
+  // Mix polish: a generated reverb (room, hall or plate) with pre-delay and
+  // damping; pad, bass and the leads duck under the kick; low cuts on the pad
+  // and leads; a gentle dip in the harsh highs, tape warmth, a slow glue
+  // compressor and a limiter at the end; the bass stays in the middle and the
+  // pad and hats spread wider. Off: it's all wired out, exactly as before.
+  private pol: {
+    on: boolean; amt: number; kind: string; pre: DelayNode; verb: ConvolverNode;
+    padHp: BiquadFilterNode; lead: GainNode; leadHp: BiquadFilterNode; leadWet: GainNode;
+    eq: BiquadFilterNode; satDry: GainNode; sat: WaveShaperNode; satWet: GainNode; glue: DynamicsCompressorNode; lift: GainNode; lim: DynamicsCompressorNode;
+  } | null = null;
+  private hatSide = 1;
+  private get polAmt() {
+    return this.pol?.on ? this.pol.amt : 0;
+  }
+  private setPolish(amt: number, kind: string) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const on = amt > 0;
+    if (!on && !this.pol?.on) return;
+    if (!this.pol) {
+      const pre = ctx.createDelay(0.2);
+      const verb = ctx.createConvolver();
+      pre.connect(verb).connect(this.master);
+      const padHp = ctx.createBiquadFilter();
+      padHp.type = 'highpass';
+      padHp.frequency.value = 170;
+      padHp.Q.value = 0.6;
+      padHp.connect(this.scPad);
+      // The leads (Steps, Strings): a low cut, and their own duck.
+      const lead = ctx.createGain();
+      const leadHp = ctx.createBiquadFilter();
+      leadHp.type = 'highpass';
+      leadHp.frequency.value = 140;
+      leadHp.Q.value = 0.6;
+      const leadWet = ctx.createGain();
+      lead.connect(leadHp).connect(this.dry);
+      leadHp.connect(leadWet).connect(this.wet);
+      const eq = ctx.createBiquadFilter();
+      eq.type = 'peaking';
+      eq.frequency.value = 3400;
+      eq.Q.value = 0.9;
+      const satDry = ctx.createGain();
+      const sat = ctx.createWaveShaper();
+      sat.oversample = '2x';
+      const satWet = ctx.createGain();
+      const glue = ctx.createDynamicsCompressor();
+      glue.knee.value = 10;
+      glue.attack.value = 0.02;
+      glue.release.value = 0.25;
+      const lift = ctx.createGain();
+      const lim = ctx.createDynamicsCompressor();
+      lim.threshold.value = -2;
+      lim.knee.value = 0;
+      lim.ratio.value = 20;
+      lim.attack.value = 0.001;
+      lim.release.value = 0.08;
+      eq.connect(satDry).connect(glue);
+      eq.connect(sat).connect(satWet).connect(glue);
+      glue.connect(lift).connect(lim);
+      this.pol = { on: false, amt: 0, kind: '', pre, verb, padHp, lead, leadHp, leadWet, eq, satDry, sat, satWet, glue, lift, lim };
+    }
+    const P = this.pol;
+    if (on !== P.on) {
+      P.on = on;
+      const out = ctx.destination;
+      const taps = [this.ana, this.recDest].filter((n): n is AnalyserNode | MediaStreamAudioDestinationNode => !!n);
+      if (on) {
+        this.wet.disconnect(this.verb);
+        this.wet.connect(P.pre);
+        this.padDuck.disconnect(this.scPad);
+        this.padDuck.connect(P.padHp);
+        this.makeup.disconnect(out);
+        for (const n of taps) this.makeup.disconnect(n);
+        this.makeup.connect(P.eq);
+        P.lim.connect(out);
+        for (const n of taps) P.lim.connect(n);
+      } else {
+        this.wet.disconnect(P.pre);
+        this.wet.connect(this.verb);
+        this.padDuck.disconnect(P.padHp);
+        this.padDuck.connect(this.scPad);
+        this.makeup.disconnect(P.eq);
+        P.lim.disconnect();
+        this.makeup.connect(out);
+        for (const n of taps) this.makeup.connect(n);
+        for (const g of [this.scPad, this.scBass, P.lead]) g.gain.cancelScheduledValues(t), g.gain.setValueAtTime(1, t);
+      }
+    }
+    if (!on) return;
+    if (kind !== P.kind) {
+      P.kind = kind;
+      P.verb.buffer = this.impulse2(kind);
+      P.pre.delayTime.setTargetAtTime(kind === 'room' ? 0.008 : kind === 'plate' ? 0.012 : 0.03, t, 0.05);
+    }
+    if (Math.abs(amt - P.amt) > 0.001) {
+      P.amt = amt;
+      P.eq.gain.setTargetAtTime(-3.5 * amt, t, 0.1);
+      P.sat.curve = satCurve(1 + amt * 2);
+      P.satWet.gain.setTargetAtTime(amt * 0.45, t, 0.1);
+      P.satDry.gain.setTargetAtTime(1 - amt * 0.45, t, 0.1);
+      P.glue.threshold.setTargetAtTime(-16 - amt * 6, t, 0.1);
+      P.glue.ratio.setTargetAtTime(1.5 + amt * 1.5, t, 0.1);
+      P.lift.gain.setTargetAtTime(1 + amt * 0.35, t, 0.1);
+    }
+  }
+  /** Mix polish: the pad, bass and leads dip under each kick. */
+  private sidechain(when: number, k: number) {
+    const a = this.polAmt;
+    if (!a || !this.pol) return;
+    const t = this.ctx.currentTime + when;
+    const beat = 60 / Math.max(40, this.bpmNow);
+    const duck = (g: GainNode, by: number) => {
+      g.gain.cancelScheduledValues(t);
+      g.gain.setTargetAtTime(1 - by * Math.min(1, k), t, 0.004);
+      g.gain.setTargetAtTime(1, t + 0.03, beat * 0.16);
+    };
+    duck(this.scPad, 0.4 * a);
+    duck(this.scBass, 0.55 * a);
+    duck(this.pol.lead, 0.3 * a);
+  }
+  /** A generated reverb: early reflections, then a tail whose highs die first. */
+  private impulse2(kind: string) {
+    const sr = this.ctx.sampleRate;
+    const K = kind === 'room' ? { sec: 1.1, damp: 0.6, bright: 0.45, er: [0.011, 0.017, 0.023, 0.031, 0.043], build: 0.01 }
+      : kind === 'plate' ? { sec: 2.3, damp: 0.2, bright: 0.85, er: [] as number[], build: 0.002 }
+      : { sec: 3.2, damp: 0.4, bright: 0.6, er: [0.019, 0.029, 0.043, 0.061, 0.083], build: 0.03 };
+    const len = Math.floor(sr * K.sec);
+    const b = this.ctx.createBuffer(2, len, sr);
+    // Match the loudness of the plain reverb, so the Reverb amount means the same.
+    const ref = this.verb.buffer?.getChannelData(0);
+    let refE = 0;
+    if (ref) for (let i = 0; i < ref.length; i++) refE += ref[i] * ref[i];
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c);
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const x = i / len;
+        const a = 0.06 + 0.94 * K.bright * Math.pow(1 - x, 1 + K.damp * 4);
+        lp += a * (Math.random() * 2 - 1 - lp);
+        d[i] = lp * Math.exp(-6.9 * x) * Math.min(1, i / (K.build * sr + 1));
+      }
+      for (const er of K.er) {
+        const i = Math.floor((er + c * 0.0013) * sr);
+        if (i < len) d[i] += (Math.random() < 0.5 ? -1 : 1) * 0.6 * Math.exp(-er * 10);
+      }
+      let e = 0;
+      for (let i = 0; i < len; i++) e += d[i] * d[i];
+      const k = refE > 0 && e > 0 ? Math.sqrt(refE / e) : 1;
+      for (let i = 0; i < len; i++) d[i] *= k;
+    }
+    return b;
+  }
+  // Single-cycle waves made in code, for Unison and Wavetable motion.
+  private tbl: Record<'saw' | 'bright' | 'warm' | 'vocal', PeriodicWave> | null = null;
+  private get tables() {
+    if (this.tbl) return this.tbl;
+    const make = (n: number, amp: (h: number) => number) => {
+      const re = new Float32Array(n + 1), im = new Float32Array(n + 1);
+      for (let h = 1; h <= n; h++) im[h] = amp(h);
+      return this.ctx.createPeriodicWave(re, im);
+    };
+    const bump = (h: number, at: number, w: number) => Math.exp(-((h - at) ** 2) / w);
+    this.tbl = {
+      saw: make(24, (h) => 1 / h),
+      bright: make(32, (h) => (h % 2 ? 1 : 0.6) / Math.pow(h, 0.65)),
+      warm: make(10, (h) => 1 / (h * h)),
+      vocal: make(24, (h) => 0.35 / h + bump(h, 4, 2.5) + 0.6 * bump(h, 11, 6)),
+    };
+    return this.tbl;
+  }
+  // Pad extras: a stack of detuned saws (Unison) and a pair of waves that
+  // crossfade with the breath and the field (Wavetable motion). Made when
+  // first needed and dropped again when both are off.
+  private padX: { uni: OscillatorNode[]; uniG: GainNode; wA: OscillatorNode[]; wB: OscillatorNode[]; aG: GainNode; bG: GainNode; uniAmt: number } | null = null;
+  private padHz = [220, 277, 330, 415];
+  private padXSet(uni: number, wave: number, t: number) {
+    const ctx = this.ctx;
+    if (!(uni > 0 || wave > 0) || this.p.pad <= 0) {
+      if (this.padX) {
+        const X = this.padX;
+        this.padX = null;
+        for (const o of [...X.uni, ...X.wA, ...X.wB]) o.stop();
+        X.uniG.disconnect();
+        X.aG.disconnect();
+        X.bG.disconnect();
+      }
+      return;
+    }
+    if (!this.padX) {
+      const T = this.tables;
+      const uniG = ctx.createGain(), aG = ctx.createGain(), bG = ctx.createGain();
+      for (const g of [uniG, aG, bG]) (g.gain.value = 0), g.connect(this.padFilter);
+      const uni: OscillatorNode[] = [], wA: OscillatorNode[] = [], wB: OscillatorNode[] = [];
+      for (let slot = 0; slot < 4; slot++) {
+        for (let j = 0; j < 4; j++) {
+          const o = ctx.createOscillator();
+          o.setPeriodicWave(T.saw);
+          o.frequency.value = this.padHz[slot];
+          const pn = ctx.createStereoPanner();
+          pn.pan.value = (j % 2 ? 1 : -1) * (j < 2 ? 0.45 : 0.9);
+          o.connect(pn).connect(uniG);
+          o.start();
+          uni.push(o);
+        }
+        for (const [list, w, g] of [[wA, T.vocal, aG], [wB, T.warm, bG]] as const) {
+          const o = ctx.createOscillator();
+          o.setPeriodicWave(w);
+          o.frequency.value = this.padHz[slot];
+          o.connect(g);
+          o.start();
+          list.push(o);
+        }
+      }
+      this.padX = { uni, uniG, wA, wB, aG, bG, uniAmt: -1 };
+    }
+    const X = this.padX;
+    if (Math.abs(uni - X.uniAmt) > 0.02) {
+      X.uniAmt = uni;
+      X.uni.forEach((o, k) => {
+        const j = k % 4;
+        o.detune.setTargetAtTime((j % 2 ? 1 : -1) * (j < 2 ? 0.5 : 1) * (6 + uni * 22), t, 0.2);
+      });
+    }
+    X.uniG.gain.setTargetAtTime(uni * 0.05, t, 0.4);
+    // The morph: the breath sways it, a lively field leans to the brighter wave.
+    const x = Math.max(0, Math.min(1, 0.5 + 0.3 * Math.sin(this.padLfo * 0.3) + (this.energy - 0.25) * 1.2));
+    X.aG.gain.setTargetAtTime(wave * 0.09 * x, t, 0.5);
+    X.bG.gain.setTargetAtTime(wave * 0.09 * (1 - x), t, 0.5);
   }
 
   private impulse(sec: number) {
@@ -1459,7 +1705,57 @@ export class ParticleSound {
     o1.connect(g);
     o2.connect(g2).connect(g);
     out.connect(pn);
-    this.send(pn, 1 + wetMore);
+    // The leads: Steps and Strings get Mix polish's low cut and duck, and Unison and Wavetable motion.
+    const lead = this.cur === 'steps' || this.cur === 'strings';
+    const pol = lead && this.pol?.on && !wetMore ? this.pol : null;
+    const route = (nd: AudioNode) => {
+      if (!pol) return this.send(nd, 1 + wetMore);
+      nd.connect(pol.lead);
+      if (this.echoIn && P.echo > 0) nd.connect(this.echoIn);
+    };
+    route(pn);
+    const extra: AudioNode[] = [];
+    const wv = lead ? P.wave ?? 0 : 0;
+    if (wv > 0) {
+      // Wavetable motion: a bright (or, in a lively field, vocal) wave at the
+      // strike melts into a warm one; a busy field holds the brightness longer.
+      const T = this.tables;
+      const hold = decay * (0.2 + 0.5 * Math.min(1, this.energy * 1.5));
+      const lvl = wv * 0.8;
+      for (const [w, from, to] of [[this.energy > 0.45 ? T.vocal : T.bright, 1, 0.08], [T.warm, 0.08, 0.9]] as const) {
+        const o = ctx.createOscillator();
+        o.setPeriodicWave(w);
+        o.frequency.value = f;
+        const og = ctx.createGain();
+        og.gain.setValueAtTime(lvl * from, t);
+        og.gain.linearRampToValueAtTime(lvl * to, t + hold);
+        o.connect(og).connect(g);
+        nodes.push(o);
+      }
+    }
+    const uni = lead ? P.unison ?? 0 : 0;
+    if (uni > 0) {
+      // Unison: more copies of the note, detuned and spread across the stereo field.
+      const n = this.voices > 18 ? 2 : this.voices > 10 ? 4 : 6;
+      const gu = ctx.createGain();
+      gu.gain.setValueAtTime(0, t);
+      gu.gain.linearRampToValueAtTime((peak * uni * 1.1) / Math.sqrt(n), t + atk);
+      gu.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+      for (let j = 0; j < n; j++) {
+        const side = j % 2 ? 1 : -1;
+        const pos = ((j >> 1) + 1) / Math.ceil(n / 2);
+        const o = ctx.createOscillator();
+        o.type = V.type === 'sine' ? 'triangle' : V.type;
+        o.frequency.value = f;
+        o.detune.value = side * pos * (6 + uni * 22);
+        const up = ctx.createStereoPanner();
+        up.pan.value = Math.max(-1, Math.min(1, pan + side * pos * 0.85 * uni));
+        o.connect(up).connect(gu);
+        nodes.push(o);
+      }
+      route(gu);
+      extra.push(gu);
+    }
     for (const nd of nodes) {
       nd.start(t);
       nd.stop(end);
@@ -1467,6 +1763,7 @@ export class ParticleSound {
     o1.onended = () => {
       this.voices--;
       pn.disconnect();
+      for (const x of extra) x.disconnect();
     };
   }
 
@@ -1785,7 +2082,8 @@ export class ParticleSound {
       o.connect(og);
       if (pan) {
         const pn = ctx.createStereoPanner();
-        pn.pan.value = pan;
+        // Mix polish keeps the bass in the middle.
+        pn.pan.value = pan * (1 - this.polAmt);
         og.connect(pn).connect(mix);
       } else og.connect(mix);
       voices.push(o);
@@ -1945,6 +2243,7 @@ export class ParticleSound {
     this.drumEv('kick', k, when);
     if (!this.audible('drums')) return;
     this.pump(when, k);
+    this.sidechain(when, k);
     this.lowKick(when, k);
     const K = KITS[this.p.kit];
     if (K?.kick) {
@@ -2039,7 +2338,9 @@ export class ParticleSound {
       const H = K.hat;
       const d = open ? H.open : H.closed;
       const j = K.jit ? 1 + (Math.random() - 0.5) * K.jit : 1;
-      this.hiss(when, H.type, H.f * j, H.q, 0.001, d, H.amp * k, 0.3, K.wet * 0.4);
+      const pa = this.polAmt;
+      if (pa) this.hatSide = -this.hatSide;
+      this.hiss(when, H.type, H.f * j, H.q, 0.001, d, H.amp * k, pa ? this.hatSide * (0.3 + 0.4 * pa) : 0.3, K.wet * 0.4);
       if (H.ping) {
         // Metal: two square tones that don't agree.
         this.body(when, 3310, 3300, 0.01, d * 0.8, 0.025 * H.ping * k, 'square', 0.05);
@@ -2194,6 +2495,12 @@ export class ParticleSound {
       }
     }
     if (s === 0 && P.fills > 0 && B.bar > 0 && B.bar % P.fills === 0) hits.set('y', { v: 0.7, n: 1 });
+    // Humanise: soft ghost snares between the beats, accents on the beat, and
+    // everything but the kick a touch late now and then.
+    const hum = P.human ?? 0;
+    const loose = hum * Math.min(1, 0.45 + e * 1.1);
+    if (loose > 0 && s % 2 === 1 && !hits.has('s') && !hits.has('c') && Math.random() < loose * 0.08) hits.set('s', { v: 0.22, n: 1 });
+    const accent = hum > 0 ? 1 - hum * 0.9 * (s % 4 === 0 ? 0 : s % 2 === 0 ? 0.12 : 0.26) : 1;
     // Beat grid edits still win: '+' adds, '-' silences (kick, snare or clap, hats).
     const edit = (row: number, rs: DrumRow[]) => {
       const has = rs.some((r) => hits.has(r));
@@ -2210,7 +2517,8 @@ export class ParticleSound {
       else if (r === 's' || r === 'c') this.gridNow[16 + s] = 1;
       else if (r === 'h' || r === 'o') this.gridNow[32 + s] = 1;
       const gap = stepDur / h.n;
-      for (let j = 0; j < h.n; j++) this.hit(r, k * ROW_GAIN[r] * h.v * (h.n > 1 ? 0.55 + (0.45 * (j + 1)) / h.n : 1), sw + j * gap, down);
+      const late = loose > 0 && r !== 'k' ? Math.random() * 0.012 * loose : 0;
+      for (let j = 0; j < h.n; j++) this.hit(r, k * accent * ROW_GAIN[r] * h.v * (h.n > 1 ? 0.55 + (0.45 * (j + 1)) / h.n : 1), sw + j * gap + late, down);
     }
   }
 
@@ -2614,6 +2922,8 @@ export class ParticleSound {
       v.notes.forEach((m, slot) => {
         this.padOsc[slot * 2].frequency.setTargetAtTime(hz(m) * oc, t, glide);
         this.padOsc[slot * 2 + 1].frequency.setTargetAtTime(hz(m) * oc, t, glide);
+        this.padHz[slot] = hz(m) * oc;
+        if (this.padX) for (const o of [...this.padX.uni.slice(slot * 4, slot * 4 + 4), this.padX.wA[slot], this.padX.wB[slot]]) o.frequency.setTargetAtTime(hz(m) * oc, t, glide);
       });
       this.padSub.frequency.setTargetAtTime(hz(v.sub) * Math.min(1, oc), t, glide);
       this.padAir.frequency.setTargetAtTime(Math.min(9000, hz(v.notes[3]) * oc * 8), t, 0.6);
@@ -2639,6 +2949,7 @@ export class ParticleSound {
     this.levels[LI.pad] = Math.max(this.levels[LI.pad], padLvl * 0.8);
     const padOn = this.audible('pad');
     this.padGain.gain.setTargetAtTime(padOn ? padLvl * 0.3 * pd.gain : 0, t, 0.4);
+    this.padXSet(P.unison ?? 0, P.wave ?? 0, t);
     if (P.pad > 0) {
       const sweep = 1 + 0.25 * Math.sin(this.padLfo * 0.21);
       const bloom = 1 + swell * 0.8;
@@ -2665,7 +2976,7 @@ export class ParticleSound {
           const sway = 0.75 + 0.25 * Math.sin(this.padLfo * 0.13 + slot * 1.7);
           const centre = (slot - 1.5) * 0.18;
           // A spread-out crowd opens the pad wide; a huddle narrows it.
-          const wide = pd.width * (0.55 + 0.9 * F.spread) * (P.padWidth ?? 0.5) * 2;
+          const wide = pd.width * (0.55 + 0.9 * F.spread) * (P.padWidth ?? 0.5) * 2 * (1 + 0.4 * this.polAmt);
           this.padPan[k].pan.setTargetAtTime(Math.max(-1, Math.min(1, centre + side * wide * 0.5 * sway)), t, 0.4);
         }
       }
@@ -2751,6 +3062,12 @@ export class ParticleSound {
       }
       const stepDur = 60 / bpm / 4;
       const sw = s % 2 ? P.swing * 0.5 * stepDur : 0;
+      // Humanise: how loose it plays (a lively field loosens it), a little
+      // late now and then, and stronger on the beat than off it.
+      const hum = P.human ?? 0;
+      const loose = hum * Math.min(1, 0.45 + this.energy * 1.1);
+      const late = (most: number) => (loose > 0 ? Math.random() * most * loose : 0);
+      const accent = hum > 0 ? 1 - hum * 0.9 * (s % 4 === 0 ? 0 : s % 2 === 0 ? 0.12 : 0.26) : 1;
       const x0 = (s / STEPS) * w, x1 = ((s + 1) / STEPS) * w;
       this.grid.fill(0);
       let tot = 0;
@@ -2799,12 +3116,16 @@ export class ParticleSound {
           }
           // Vary: now and then a step rests, a note jumps an octave, or repeats quickly.
           if (V > 0 && s % 4 !== 0 && Math.random() < V * 0.18) pickRows = [];
+          // Humanise: now and then the chord is inverted (its lowest note goes up an octave).
+          const inv = loose > 0 && (style === 'chord' || style === 'strum') && pickRows.length > 1 && Math.random() < loose * 0.5;
           pickRows.forEach((r, k) => {
             let deg = this.toChord(Math.round((1 - (r + 0.5) / ROWS) * (this.L * this.p.range * 0.85)));
             if (V > 0 && Math.random() < V * 0.2) deg += Math.random() < 0.6 ? this.L : -this.L;
+            if (inv && k === 0) deg += this.L;
             let vel = P.seq * Math.min(1, this.grid[r] / (mean * 4)) * (s % 4 === 0 ? 1 : 0.7) * room * dyn;
             if (V > 0) vel *= 1 + (Math.random() - 0.5) * V * 0.9;
-            const at = sw + (style === 'strum' ? k * 0.035 : 0);
+            vel *= accent;
+            const at = sw + (style === 'strum' ? k * 0.035 : 0) + late(0.016);
             const pan = (s / STEPS) * 1.6 - 0.8;
             this.note(deg, vel, pan, voice, at);
             if (V > 0 && Math.random() < V * 0.15) this.note(deg, vel * 0.6, pan, voice, at + (stepDur * every) / 2);
@@ -2873,7 +3194,7 @@ export class ParticleSound {
       if (P.bass > 0) bq = this.bassShape(bq, pat, s, e, stepDur, ed);
       if (bq) {
         this.gridNow[48 + s] = 1;
-        this.bassNote(bq.deg, P.bass * (fit ? 0.5 : 1) * bq.vel, bq.len * (P.bassLen ?? 1), sw, bq.slide, bq.up);
+        this.bassNote(bq.deg, P.bass * (fit ? 0.5 : 1) * bq.vel * accent, bq.len * (P.bassLen ?? 1), sw + late(0.008), bq.slide, bq.up);
       }
 
       this.stepNow = s;
@@ -2897,8 +3218,8 @@ export class ParticleSound {
         else if (mv === 'hats') (kick = snare = false), (hat ||= live && s % 4 === 2);
         else if (mv === 'busy') (hat ||= live), (kick ||= live && s === 14 && Math.random() < 0.5);
         if (kick) (this.gridNow[s] = 1), this.kick(k * (s === 0 ? 1 : 0.8), sw);
-        if (snare) (this.gridNow[16 + s] = 1), this.snare(k * (0.6 + Math.min(0.4, mid / (m2 * 4))), sw);
-        if (hat) (this.gridNow[32 + s] = 1), this.hat(k * (s % 4 === 0 ? 0.5 : 0.32) * (0.6 + e * 0.6), sw, s === 14 && e > 0.5);
+        if (snare) (this.gridNow[16 + s] = 1), this.snare(k * (0.6 + Math.min(0.4, mid / (m2 * 4))), sw + late(0.012));
+        if (hat) (this.gridNow[32 + s] = 1), this.hat(k * accent * (s % 4 === 0 ? 0.5 : 0.32) * (0.6 + e * 0.6), sw + late(0.012), s === 14 && e > 0.5);
       }
     }
 

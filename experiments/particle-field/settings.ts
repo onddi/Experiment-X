@@ -264,6 +264,15 @@ export interface Settings {
   sndSeqNotes: number;
   sndSeqSens: number;
   sndSongForm: string; // Song mode's arrangement (sound.ts SONGS)
+  sndPolish: boolean; // Sound quality: Mix polish (reverb, ducking, EQ, warmth, glue, width, limiter)
+  sndPolishAmt: number;
+  sndPolishVerb: 'room' | 'hall' | 'plate';
+  sndUnison: boolean; // pads and leads as detuned stacks
+  sndUnisonAmt: number;
+  sndWave: boolean; // wavetable motion on pads and leads
+  sndWaveAmt: number;
+  sndHuman: boolean; // humanise timing, accents, ghosts, inversions
+  sndHumanAmt: number;
   sndSongVary: number; // Song mode: how much each section changes the beat and the picture (0 = only the mix)
   sndSeqStyle: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random';
   sndSeqVary: number;
@@ -929,6 +938,15 @@ export const DEFAULTS: Settings = {
   sndSeqSens: 0.5,
   sndSongForm: 'classic',
   sndSongVary: 0.5,
+  sndPolish: false,
+  sndPolishAmt: 0.6,
+  sndPolishVerb: 'hall',
+  sndUnison: false,
+  sndUnisonAmt: 0.5,
+  sndWave: false,
+  sndWaveAmt: 0.5,
+  sndHuman: false,
+  sndHumanAmt: 0.5,
   sndSeqStyle: 'chord',
   sndSeqVary: 0,
   sndSeqTick: true,
