@@ -2774,12 +2774,22 @@ export class ParticleSound {
   get songForm() {
     return this.form;
   }
-  /** Pick the arrangement; the one playing changes at the end of its loop. */
+  /** Pick the arrangement. While a song plays, the new one starts from its top on the next bar. */
   setForm(id: string) {
     if (id === this.formId && this.form.length) return;
     this.formId = id;
-    this.nextForm = id === 'shuffle' ? randomForm() : (SONGS[id] ?? SONGS.classic).form;
-    if (this.songFrom < 0) this.form = this.nextForm;
+    this.form = id === 'shuffle' ? randomForm() : (SONGS[id] ?? SONGS.classic).form;
+    this.nextForm = null;
+    if (this.songFrom >= 0) {
+      // Back to the song's own beat and no build, then the new form from the top.
+      if (this.swapFrom >= 0) this.beatIdx = this.swapFrom;
+      this.swapFrom = -1;
+      this.secMove = null;
+      this.cancelBuild();
+      this.songFrom = (Math.floor(this.beat / 4) + 1) * 4;
+      this.songIdx = -1;
+      this.loopN = 0;
+    }
   }
   private nextForm: SongSection[] | null = null;
   /** Song variation, 0 to 1: 0 keeps every section's beat and look as set. */
