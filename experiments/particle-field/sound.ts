@@ -25,7 +25,7 @@ export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' 
 export type SndTimbre = Band | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
-export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808';
+export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808' | 'dist808' | 'growl' | 'rubber' | 'deep' | 'fretless' | 'brass' | 'psy' | 'chip';
 import { bandsOf } from './audio.ts';
 import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
@@ -197,6 +197,14 @@ const BASSES: Record<BassSound, BassDef> = {
   wobble: { osc: [['sawtooth', 1, -9, 0.5], ['square', 1, 9, 0.4]], sub: 0.9, cut: 300, env: 1, fdec: 0.1, q: 8, poles: 2, open: 1, wob: 2, drive: 2, fuzz: 2, attack: 0.005, decay: 0.4, sustain: 0.9, release: 0.08, gain: 1 },
   fuzz: { osc: [['sawtooth', 1, 0, 0.6], ['square', 0.5, 0, 0.4]], sub: 0.7, cut: 900, env: 3, fdec: 0.1, q: 1, poles: 2, open: 1, drive: 6, fuzz: 3, attack: 0.003, decay: 0.3, sustain: 0.8, release: 0.06, gain: 0.8 },
   house: { osc: [['sine', 1, 0, 0.7], ['sine', 2, 0, 0.35], ['sine', 3, 0, 0.12]], sub: 0.5, cut: 2500, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, attack: 0.006, decay: 0.2, sustain: 0.7, release: 0.06, click: 1500, gain: 1.1 },
+  dist808: { osc: [['sine', 1, 0, 1]], sub: 0.3, cut: 1800, env: 1, fdec: 0.1, q: 0.6, poles: 2, open: 0, drive: 8, fuzz: 2, punch: 2.5, attack: 0.002, decay: 1.2, sustain: 0.6, release: 0.2, gain: 0.75 },
+  growl: { osc: [['sawtooth', 1, 0, 0.8]], fm: [1.5, 4, 0.4], sub: 0.8, cut: 900, env: 2, fdec: 0.2, q: 6, poles: 4, open: 2, drive: 3, fuzz: 2, attack: 0.005, decay: 0.5, sustain: 0.8, release: 0.08, gain: 0.8 },
+  rubber: { osc: [['square', 1, 0, 0.8]], sub: 0.6, cut: 300, env: 10, fdec: 0.06, q: 3, poles: 4, open: 1.5, drive: 1.4, attack: 0.002, decay: 0.15, sustain: 0.2, release: 0.06, gain: 1.35 },
+  deep: { osc: [['sawtooth', 1, -4, 0.5], ['sawtooth', 1, 4, 0.5]], sub: 0.9, cut: 170, env: 2, fdec: 0.3, q: 1, poles: 4, open: 0.6, drive: 1.3, attack: 0.008, decay: 0.5, sustain: 0.8, release: 0.12, gain: 1.25 },
+  fretless: { osc: [['triangle', 1, 0, 0.7], ['sine', 2, 4, 0.25]], sub: 0.5, cut: 800, env: 2, fdec: 0.15, q: 1.4, poles: 2, open: 0.5, drive: 1.2, attack: 0.03, decay: 0.8, sustain: 0.6, release: 0.25, ring: 2, drop: 60, gain: 1.6 },
+  brass: { osc: [['sawtooth', 1, -3, 0.5], ['sawtooth', 1, 3, 0.4]], sub: 0.4, cut: 380, env: 3, fdec: 0.12, q: 1.2, poles: 2, open: 1, drive: 1.4, attack: 0.025, decay: 0.4, sustain: 0.8, release: 0.1, gain: 1.1 },
+  psy: { osc: [['sawtooth', 1, 0, 0.9]], sub: 0.6, cut: 350, env: 8, fdec: 0.05, q: 2, poles: 4, open: 1.5, drive: 1.6, attack: 0.001, decay: 0.12, sustain: 0.3, release: 0.03, click: 3000, gain: 1.3 },
+  chip: { osc: [['square', 1, 0, 0.8]], sub: 0.3, cut: 5000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, attack: 0.001, decay: 0.2, sustain: 0.7, release: 0.04, gain: 0.7 },
   '808': { osc: [['sine', 1, 0, 1]], sub: 0, cut: 2000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, drive: 3, punch: 2.2, attack: 0.002, decay: 1.2, sustain: 0.6, release: 0.2, gain: 1.0 },
 };
 

@@ -9143,6 +9143,7 @@ const BASS_SOUNDS: [string, string][] = [
   ['round', 'Round (warm)'], ['house', 'Organ (house)'], ['fm', 'FM (80s punch)'], ['slap', 'Slap (funk)'],
   ['upright', 'Upright (woody)'], ['fingered', 'Fingered (vintage)'], ['picked', 'Picked (electric)'],
   ['acid', 'Acid (squelchy)'], ['reese', 'Reese (DnB)'], ['wobble', 'Wobble (dubstep)'], ['fuzz', 'Fuzz (distorted)'],
+  ['dist808', '808 (distorted)'], ['growl', 'Growl (neuro FM)'], ['rubber', 'Rubber (bouncy)'], ['deep', 'Deep (dark, filtered)'], ['fretless', 'Fretless (singing)'], ['brass', 'Brass (tuba)'], ['psy', 'Psy (tight, clicky)'], ['chip', 'Chip (8-bit)'],
 ];
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const GFX_LENSES: [string, string][] = [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort'], ['twirl', 'Whirlpool'], ['pinch', 'Pinch'], ['bulge', 'Bulge'], ['tilt', 'Tilt-shift'], ['mirrorx', 'Mirror ←→'], ['mirrory', 'Mirror ↑↓'], ['quad', 'Mirror four ways']];
