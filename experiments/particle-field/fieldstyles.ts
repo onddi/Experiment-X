@@ -26,7 +26,16 @@ function ramp(stops: number[][], v: number, out: number[]) {
   out[2] = a[2] + (b[2] - a[2]) * u;
   return out;
 }
-const LAVA = [[20, 2, 2], [120, 12, 4], [215, 60, 8], [250, 140, 25], [255, 215, 90], [255, 250, 220]];
+// Lava's heat: the palette from dark to bright, starting from a near-black
+// crust and ending near white hot.
+function lavaStops(rgb: Rgb[]): number[][] {
+  const lum = (c: Rgb) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
+  const cols = (rgb.length ? [...rgb] : [[215, 60, 8] as Rgb]).sort((a, b) => lum(a) - lum(b));
+  const pick = cols.length <= 4 ? cols : [0, 1, 2, 3].map((k) => cols[Math.round((k * (cols.length - 1)) / 3)]);
+  const lo = pick[0];
+  const hi = pick[pick.length - 1];
+  return [[lo[0] * 0.08, lo[1] * 0.08, lo[2] * 0.08], [lo[0] * 0.5, lo[1] * 0.5, lo[2] * 0.5], ...pick.map((c) => [c[0], c[1], c[2]]), [hi[0] + (255 - hi[0]) * 0.75, hi[1] + (255 - hi[1]) * 0.75, hi[2] + (255 - hi[2]) * 0.75]];
+}
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -102,6 +111,8 @@ export class FieldRender {
   private rain: Float32Array[] = [];
   private dropP = 0;
   private c3 = [0, 0, 0];
+  private lavaFor: Rgb[] | null = null;
+  private lavaRamp: number[][] = [];
 
   /** Start a frame: size the grid for the screen and clear what was added. */
   begin(style: FieldStyle, w: number, h: number, total: number, rgb: Rgb[]) {
@@ -380,6 +391,11 @@ export class FieldRender {
     const d = this.img!.data;
     const th = 0.3;
     const out = this.c3;
+    if (this.lavaFor !== this.rgb) {
+      this.lavaFor = this.rgb;
+      this.lavaRamp = lavaStops(this.rgb);
+    }
+    const stops = this.lavaRamp;
     for (let y = 0; y < gh; y++) {
       for (let x = 0; x < gw; x++) {
         const i = y * gw + x;
@@ -403,9 +419,9 @@ export class FieldRender {
         const cr2 = 1 - Math.abs(wob(y * 1.7 + 40, x * 1.7, t * 0.3));
         const crack = Math.max(cr1 ** 14, cr2 ** 18 * 0.8);
         const edge = Math.exp(-Math.max(0, D - th) * 2.5);
-        let heat = 0.14 + 0.12 * inner;
+        let heat = 0.08 + 0.1 * inner;
         heat = Math.max(heat, crack * (0.55 + 0.45 * inner), edge * 0.72);
-        ramp(LAVA, heat, out);
+        ramp(stops, heat, out);
         d[o] = out[0];
         d[o + 1] = out[1];
         d[o + 2] = out[2];
