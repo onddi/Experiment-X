@@ -257,6 +257,10 @@ export const TIPS: Record<string, string> = {
   audioSubAmt: 'How much the sub bass swells it.',
   audioBassThrob: 'Each bass swell shoves the particles outward and lets them settle back, like a speaker cone breathing.',
   audioNoteRipple: 'A ripple on each melody note.',
+  audioNoteGlide: 'A rising melody lifts the field and a falling one lets it sink, easing back to level between notes.',
+  audioNoteFollow: 'The view drifts toward each melody note: low notes to the left, high ones to the right.',
+  audioNoteTrails: 'Held melody notes leave long trails, short notes short ones. Most exact with the particle instruments.',
+  audioHatJitter: 'Particles shiver for a moment on each hi-hat.',
   audioSpeed: 'Particles speed up when the music gets energetic.',
   audioFlow: 'The music stirs the flow field.',
   audioDrop: 'How big the moment at a drop is.',
@@ -511,7 +515,7 @@ Object.assign(TIPS, {
   obsAlpha: 'How strongly the obstacle shows.',
   obsInside: 'Particles stay inside the obstacles instead of flowing round them.',
   obsPulse: 'The obstacles brighten with the music.',
-  audioCrash: 'A burst from the middle on each crash cymbal.',
+  audioCrash: 'A burst from the middle on each crash cymbal: picked out of music as a bright burst that keeps ringing, and played by the particle drums.',
 });
 // Obstacles 2 to 4 work like the first one.
 for (const n of [2, 3, 4]) {

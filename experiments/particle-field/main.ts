@@ -1504,7 +1504,7 @@ function step(dt: number) {
   flowNow *= (1 - blastK) * handDial.flow * lk.flow;
   speedNow *= handDial.speed * lk.speed;
   // Energy shake: the field trembles harder as the music lifts.
-  const jitterNow = jitter + (on ? A.liftLevel * S.audioEnergyShake * 2.5 * I : 0);
+  const jitterNow = jitter + (on ? A.liftLevel * S.audioEnergyShake * 2.5 * I + hatJitA * S.audioHatJitter * 3 * I : 0);
 
   const kickPulse = on && (S.audioKick === 'pulse' || S.audioKick === 'both');
   const kickWave = on && (S.audioKick === 'wave' || S.audioKick === 'both');
@@ -2722,7 +2722,7 @@ const bassOn = () => settings.sndBassDrive && settings.sndBass > 0;
 // Melodic notes light the picture (colour, glow) but never push particles, so there's no loop.
 const notesOn = () => settings.sndNoteDrive;
 const drumsDrive = () => (drumsOn() || bassOn() || notesOn()) && !!snd && sndOn && audio.source === 'off';
-const drumLv = { pulse: 0, snareEnv: 0, level: 0, sub: 0, hold: 0, note: 0, voice: 0 };
+const drumLv = { pulse: 0, snareEnv: 0, level: 0, sub: 0, hold: 0, note: 0, voice: 0, ring: 0, melody: 0 };
 const DRUM_KINDS = new Set(['kick', 'snare', 'hat', 'crash']);
 function drumLevels(dt: number) {
   const all = snd!.takeDrumHits();
@@ -2772,17 +2772,21 @@ function drumLevels(dt: number) {
   L.liftLevel = drumLv.sub * 0.6;
   // Notes: each one sets the note colour and a decaying melody glow; the pad's level is the voice glow.
   drumLv.note *= Math.exp(-dt * 4);
+  // How much tone is ringing: full while a note sounds, for as long as it's held.
+  drumLv.ring = Math.max(0, drumLv.ring - dt);
+  drumLv.melody = drumLv.ring > 0 ? 1 : drumLv.melody * Math.exp(-dt * 5);
   if (notesOn()) {
     for (const e of all) {
       if (e.kind !== 'note') continue;
       L.note = true;
       L.notePc = e.pc ?? 0;
       drumLv.note = Math.max(drumLv.note, Math.min(1, 0.4 + e.k * 0.7));
+      drumLv.ring = Math.max(drumLv.ring, Math.min(3, e.len ?? 0.2));
     }
     drumLv.voice += (Math.min(1, snd!.levelOf('pad') * 1.6) - drumLv.voice) * Math.min(1, dt * 3);
   } else drumLv.voice = 0;
   L.noteEnv = drumLv.note;
-  L.melody = drumLv.note;
+  L.melody = notesOn() ? drumLv.melody : 0;
   L.voice = drumLv.voice;
   L.bpm = snd!.bpmNow;
   audio.levels = L;
@@ -10955,7 +10959,7 @@ const MUSIC_KEYS = [
   'audioPalEvery', 'audioMonoBuild', 'audioBgFlash', 'audioInvert', 'audioStutter', 'audioGravFlip', 'audioTrailEnergy', 'audioSway',
   'audioWordsOn', 'audioWords', 'audioWordsEvery', 'audioWordPulse', 'audioLetterHop',
   'audioSnareFlash', 'audioSnareHop', 'audioHatTwinkle', 'audioHatShake', 'audioBassThrob', 'audioBassZoom', 'audioBassGlow', 'audioBuildScatter', 'audioEnergyShake', 'audioEnergyWords',
-  'audioNoteRipple', 'audioNoteHue', 'audioNoteHop', 'audioVoxGlow', 'audioVoxZoom', 'audioVoxSwell',
+  'audioNoteRipple', 'audioNoteHue', 'audioNoteHop', 'audioNoteGlide', 'audioNoteFollow', 'audioNoteTrails', 'audioHatJitter', 'audioVoxGlow', 'audioVoxZoom', 'audioVoxSwell',
   'audioSylPush', 'audioSylFlash', 'audioSylHop', 'audioPauseDim', 'audioPauseFreeze', 'audioFlowSpeed', 'audioFlowHue', 'audioAccentBurst', 'audioCrash', 'audioAccentPunch', 'audioPitchLift', 'audioPitchTilt', 'audioRhymeRipple', 'audioRhymeHue',
 ] as const;
 const playSettings = (): Partial<Settings> => ({
@@ -11227,6 +11231,15 @@ let rhymeHueNow = 0;
 let accentZ = 0;
 let pitchTilt = 0;
 let pitchLift = 0;
+// Melody: Glide (the line's direction lifts or sinks the field), Follow (the
+// view drifts to the note's side) and the last note's pitch class.
+let noteGlideT = 0;
+let noteGlide = 0;
+let noteFollowX = 0;
+let noteFollowT = 0;
+let lastNotePc = -1;
+// Hi-hat jitter: a short shiver in the motion on each hat.
+let hatJitA = 0;
 let twinkleA = 0;
 let hatShakeA = 0;
 let hopIdx = 0;
@@ -11356,6 +11369,7 @@ function musicVisuals(now: number) {
   zoom *= songLook.zoom;
   // Hi-hat shake: a small, quick jitter of the frame on each hat.
   hatShakeA = on && S.audioHatShake > 0 && L.hat ? 1 : hatShakeA * 0.7;
+  hatJitA = on && S.audioHatJitter > 0 && L.hat ? 1 : hatJitA * Math.exp(-dt * 14);
   if (!on || S.audioHatShake <= 0) hatShakeA = 0;
   if (hatShakeA > 0.02) {
     const m = hatShakeA * S.audioHatShake * 3;
@@ -11385,6 +11399,14 @@ function musicVisuals(now: number) {
     panX = Math.sin(panT * Math.PI * 2) * S.audioPan * w * 0.06;
     panY = Math.sin(panT * Math.PI * 4) * S.audioPan * h * 0.04;
   }
+  // Follow: the view drifts toward each note's side, low notes left and high
+  // ones right (where the melody ripples start), and settles back slowly.
+  if (on && S.audioNoteFollow > 0) {
+    if (L.note) noteFollowT = ((L.notePc ?? 0) / 11 - 0.5) * 2;
+    noteFollowT *= Math.exp(-dt * 0.6);
+  } else noteFollowT = 0;
+  noteFollowX += (noteFollowT * w * 0.05 * S.audioNoteFollow - noteFollowX) * Math.min(1, dt * 3);
+  panX += noteFollowX;
   const panZ = 1 + (2 * Math.max(Math.abs(panX) / w, Math.abs(panY) / h));
   // Roll: tilts one way on a snare, the other way on the next.
   if (on && S.audioRoll > 0 && L.snare) rollSign = -rollSign;
@@ -11449,11 +11471,28 @@ function musicVisuals(now: number) {
   // Pitch lift: particles float up with a high voice and sink with a low one.
   pitchLift += ((on && S.audioPitchLift > 0 && L.voxOn ? (L.voxPitch - 0.5) * 2 * S.audioPitchLift : 0) - pitchLift) * Math.min(1, dt * 4);
   gravNow -= pitchLift * 0.35;
+  // Glide: a rising line lifts the field, a falling one lets it sink; it
+  // eases back to level between notes. The step is the nearer way round.
+  if (on && S.audioNoteGlide > 0) {
+    if (L.note) {
+      const pc = L.notePc ?? 0;
+      if (lastNotePc >= 0 && pc !== lastNotePc) noteGlideT = Math.max(-1, Math.min(1, ((((pc - lastNotePc + 18) % 12) - 6) / 5)));
+      lastNotePc = pc;
+    }
+    noteGlideT *= Math.exp(-dt * 1.2);
+  } else {
+    noteGlideT = 0;
+    lastNotePc = -1;
+  }
+  noteGlide += (noteGlideT - noteGlide) * Math.min(1, dt * 5);
+  gravNow -= noteGlide * 0.4 * S.audioNoteGlide;
   if (on && S.audioSway > 0) {
     if (L.beat) swayDir = -swayDir;
     swayF = swayDir * Math.max(L.sub, L.bass * 0.7) * S.audioSway * 0.12;
   } else swayF = 0;
   trailNow = on && S.audioTrailEnergy > 0 ? Math.min(0.985, S.trail + (1 - S.trail) * S.audioTrailEnergy * Math.min(1, L.level * 1.4)) : S.trail;
+  // Note trails: long, held notes leave long trails; short ones short.
+  if (on && S.audioNoteTrails > 0) trailNow = Math.min(0.985, trailNow + (1 - trailNow) * 0.9 * S.audioNoteTrails * Math.min(1, L.melody * 1.6));
   if (macro.trailAdd) trailNow = Math.max(0, Math.min(0.985, trailNow + macro.trailAdd));
 
   // View effects. The tunnel and kaleidoscope also run without music.
@@ -14081,13 +14120,13 @@ const MUSIC_GRID: MgGrid = {
       name: 'Hi-hats',
       when: 'Hats tick',
       live: () => lit('hat', levelsNow().hat),
-      cells: [[mgMode('Sparkle', 'audioHats', 'sparkle', 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })], [mgRange('Twinkle', 'audioHatTwinkle', 1)], [mgRange('Shake', 'audioHatShake', 1)], null, null, null],
+      cells: [[mgMode('Sparkle', 'audioHats', 'sparkle', 'none', 'audioHits', 2, { note: 'Snare and hi-hats share one hit strength.' })], [mgRange('Twinkle', 'audioHatTwinkle', 1)], [mgRange('Shake', 'audioHatShake', 1)], [mgRange('Jitter', 'audioHatJitter', 1, { note: 'Each hat makes the particles shiver for a moment: the busy top of the beat felt as texture.' })], null, null],
     },
     {
       name: 'Crash',
       when: 'A crash hits',
       live: () => lit('crash', !!levelsNow().crash),
-      cells: [[mgRange('Burst', 'audioCrash', 1, { note: 'A burst from the centre on each crash cymbal: fills and the top of a phrase. Played by the Particle sound drums (Drums move the field); crashes in music aren’t picked out yet.' })], null, null, null, null, null],
+      cells: [[mgRange('Burst', 'audioCrash', 1, { note: 'A burst from the centre on each crash cymbal: fills and the top of a phrase. Played by the Particle sound drums (Drums move the field); in music, a bright crash that keeps ringing (hats die away fast).' })], null, null, null, null, null],
     },
     {
       name: 'Bass',
@@ -14112,8 +14151,8 @@ const MUSIC_GRID: MgGrid = {
       cells: [
         [mgRange('Ripple', 'audioNoteRipple', 1, { note: 'Each new note sends a ring: low notes on the left, high ones on the right. Melody is read from the clearest tone in the mids, so busy mixes give rougher notes.' })],
         [mgRange('Note hue', 'audioNoteHue', 1, { note: 'Each pitch has its own colour, so a riff repeats its colours.' })],
-        null,
-        null,
+        [mgRange('Follow', 'audioNoteFollow', 1, { note: 'The view drifts toward each note: low notes left, high ones right, like the ripples.' })],
+        [mgRange('Glide', 'audioNoteGlide', 1, { note: 'A rising melody lifts the field, a falling one lets it sink.' }), mgRange('Trails', 'audioNoteTrails', 1, { note: 'Held notes leave long trails, short notes short ones. Most exact with the particle instruments (Sound › Reactions › Notes colour the picture).' })],
         [mgRange('Hop', 'audioNoteHop', 1, { note: 'The letter that hops follows the note: higher notes, letters further right.' })],
         null,
       ],
@@ -17814,7 +17853,7 @@ function renderSoundPage(body: HTMLElement) {
   // Reactions: which instruments stand in for music, then the Music page's own grid (the same settings).
   const reactP = panelOf('react');
   const fromInst = group(reactP, 'Play the reactions', ['sndMove', 'sndBassDrive', 'sndNoteDrive']);
-  fromInst.querySelector('.sndp-gh')!.after(mk('p', 'sndp-how', 'With no music playing, these instruments fire your reactions below. Drums and bass move the field; notes only change colour and glow.'));
+  fromInst.querySelector('.sndp-gh')!.after(mk('p', 'sndp-how', 'With no music playing, these instruments fire your reactions below. Drums and bass move the field; notes mostly change colour and glow.'));
   note('With no music playing, the drums')?.remove();
   reactP.append(renderMixGrid('music'));
 
@@ -19771,7 +19810,7 @@ function soundTick(dt: number) {
   // the field, a rise in speed is followed only slowly, so the two can't chase each other.
   const rawSpeed = Math.min(1, (meanSpeed * settings.speed) / 4);
   if (drumsDrive()) {
-    const pushing = Math.min(1, Math.max(drumLv.pulse, drumLv.sub, drumLv.snareEnv));
+    const pushing = Math.min(1, Math.max(drumLv.pulse, drumLv.sub, drumLv.snareEnv, drumLv.note * 0.7));
     const rate = rawSpeed > sndSpeed ? 1 - Math.min(0.9, pushing) : 1;
     sndSpeed += (rawSpeed - sndSpeed) * Math.min(1, dt * 6 * rate);
   } else sndSpeed = rawSpeed;

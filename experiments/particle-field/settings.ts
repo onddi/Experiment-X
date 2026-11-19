@@ -636,6 +636,10 @@ export interface Settings {
   audioEnergyShake: number;
   audioEnergyWords: number;
   audioNoteRipple: number;
+  audioNoteGlide: number; // a rising melody lifts the field
+  audioNoteFollow: number; // the view drifts to the note's side
+  audioNoteTrails: number; // held notes leave longer trails
+  audioHatJitter: number; // hats make the particles shiver
   audioNoteHue: number;
   audioNoteHop: number;
   audioVoxGlow: number;
@@ -1285,6 +1289,10 @@ export const DEFAULTS: Settings = {
   audioEnergyShake: 0,
   audioEnergyWords: 0,
   audioNoteRipple: 0,
+  audioNoteGlide: 0,
+  audioNoteFollow: 0,
+  audioNoteTrails: 0,
+  audioHatJitter: 0,
   audioNoteHue: 0,
   audioNoteHop: 0,
   audioVoxGlow: 0,

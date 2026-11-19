@@ -1636,7 +1636,7 @@ export class ParticleSound {
     const fl = this.freq(deg) * 2 ** (Vd.octave ?? 0);
     this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * this.lenK * (this.bpmNow / 60), when);
     if (!this.audible(this.cur)) return;
-    if (this.drumQ.length <= 64) this.drumQ.push({ kind: 'note', k: vel, at: this.ctx.currentTime + when, col: this.stepNow, pc: ((Math.round(69 + 12 * Math.log2(fl / 440)) % 12) + 12) % 12 });
+    if (this.drumQ.length <= 64) this.drumQ.push({ kind: 'note', k: vel, at: this.ctx.currentTime + when, col: this.stepNow, len: Vd.decay * P.length * this.lenK, pc: ((Math.round(69 + 12 * Math.log2(fl / 440)) % 12) + 12) % 12 });
     this.voices++;
     const V = VOICES[voice];
     const ctx = this.ctx;

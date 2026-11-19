@@ -55,7 +55,7 @@ export const TUNING: Record<Genre, Tuning> = {
 export interface AudioLevels {
   // Where a snare came from, 0..1 across (only the particle drums say).
   snareX?: number;
-  // A crash cymbal (only the particle drums say, for now).
+  // A crash cymbal: a bright burst that keeps ringing (hats die away fast).
   crash?: boolean;
   // Smoothed loudness per band, auto-gained to 0..1. Good for meters and
   // colour, but a typical song sits high here most of the time.
@@ -268,6 +268,10 @@ export class AudioInput {
   private lastKick = 0;
   private mel = { prev: 0, midi: 0, at: 0, drift: 0 };
   private kickHits: number[] = []; // full kicks in the last 2 s
+  // Crash: a loud bright onset waits a moment to see if it keeps ringing.
+  private crashTry: { t: number; peak: number } | null = null;
+  private crashAt = -1e9;
+  private cymAvg = 0;
   private kickAvg = 0; // typical kick strength, so bass notes don't count as the kick coming back
   private lastFrame = 0;
   private slow = { fast: 0, slow: 0 }; // ~1 s and ~4 s loudness averages
@@ -439,7 +443,7 @@ export class AudioInput {
   update(now: number) {
     const a = this.analyser;
     const L = this.cur;
-    L.beat = L.snare = L.hat = L.drop = L.bar = L.note = false;
+    L.beat = L.snare = L.hat = L.drop = L.bar = L.note = L.crash = false;
     L.syllable = L.pause = L.accent = L.rhyme = false;
     let hzPerBin: number;
     let drums: DrumFrame[];
@@ -542,6 +546,20 @@ export class AudioInput {
       L.snareEnv = Math.max(L.snareEnv, snare);
     }
     if (hat > 0) L.hat = true;
+    // Crash: the whole top end (5-16 kHz) jumps well above its usual level
+    // and is still more than half that far above it a quarter second later. A hat,
+    // even an open one, has mostly died by then; a ride never jumps.
+    const cym = band([5000, 16000]);
+    const tried = this.crashTry;
+    if (tried && t - tried.t >= 230) {
+      if (cym - this.cymAvg >= (tried.peak - this.cymAvg) * 0.5) {
+        L.crash = true;
+        this.crashAt = t;
+      }
+      this.crashTry = null;
+    } else if (tried) tried.peak = Math.max(tried.peak, cym);
+    else if (hat > 0 && t - this.crashAt > 1200 && cym - this.cymAvg > 0.1) this.crashTry = { t, peak: cym };
+    this.cymAvg = this.cymAvg ? this.cymAvg * 0.995 + cym * 0.005 : cym;
     if (kick > 0 || snare > 0) {
       this.kickTimes.push(t);
       while (this.kickTimes.length && t - this.kickTimes[0] > 8000) this.kickTimes.shift();
@@ -579,7 +597,7 @@ export class AudioInput {
     if (i < 0) {
       // Nothing old enough yet: hold the last output, without repeating its hits.
       if (this.levels === L) this.levels = { ...ZERO };
-      else this.levels = { ...this.levels, beat: false, snare: false, hat: false, drop: false, bar: false, note: false, syllable: false, pause: false, accent: false, rhyme: false };
+      else this.levels = { ...this.levels, beat: false, snare: false, hat: false, crash: false, drop: false, bar: false, note: false, syllable: false, pause: false, accent: false, rhyme: false };
       return;
     }
     const out = { ...this.hist[i].L };
@@ -588,6 +606,7 @@ export class AudioInput {
       out.beat ||= h.beat;
       out.snare ||= h.snare;
       out.hat ||= h.hat;
+      out.crash ||= h.crash;
       out.drop ||= h.drop;
       out.bar ||= h.bar;
       out.note ||= h.note;
