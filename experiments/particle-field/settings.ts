@@ -264,6 +264,7 @@ export interface Settings {
   sndSeqNotes: number;
   sndSeqSens: number;
   sndSongForm: string; // Song mode's arrangement (sound.ts SONGS)
+  sndSongVary: number; // Song mode: how much each section changes the beat and the picture (0 = only the mix)
   sndSeqStyle: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random';
   sndSeqVary: number;
   sndSeqTick: boolean;
@@ -927,6 +928,7 @@ export const DEFAULTS: Settings = {
   sndSeqNotes: 0,
   sndSeqSens: 0.5,
   sndSongForm: 'classic',
+  sndSongVary: 0.5,
   sndSeqStyle: 'chord',
   sndSeqVary: 0,
   sndSeqTick: true,

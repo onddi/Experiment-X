@@ -3073,6 +3073,11 @@ html.top-layer.top-edit .top-back { display: block !important; position: fixed; 
 .song-strip .ss-blocks span.on { background: color-mix(in srgb, var(--c) 60%, transparent); color: #fff; }
 .song-strip .ss-head { position: absolute; top: 2px; width: 2px; height: 30px; margin-left: -1px; border-radius: 1px; background: #fff; box-shadow: 0 0 6px rgb(255 255 255 / 0.8); pointer-events: none; }
 .song-strip .ss-now { font-size: 11px; color: var(--muted); }
+.song-strip .ss-foot { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+.song-strip .ss-foot .ss-now { flex: 1; min-width: 0; display: block; padding: 0; text-transform: none; letter-spacing: 0; }
+.song-strip .ss-foot .lock { margin: 0 -4px 0 0; }
+.song-strip .ss-foot .lock[hidden] { display: none; }
+.song-strip .ss-blocks span.locked { box-shadow: inset 0 -2px 0 var(--accent); }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

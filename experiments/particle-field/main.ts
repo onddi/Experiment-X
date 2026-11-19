@@ -15,7 +15,7 @@ import { GLFx, affine, hueMatrix, type Target } from './glfx.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { GpuFx } from './gpufx.ts';
 import { FONT_OPTS, addFontCss, fontCss, fontReady, fontStyle } from './fonts.ts';
-import type { ParticleSound, SoundParams, Layer } from './sound.ts';
+import type { ParticleSound, SoundParams, Layer, BeatMove, PicMove } from './sound.ts';
 import { STYLES, styleById, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './drums.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
@@ -461,7 +461,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSongVary', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -10361,6 +10361,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Following the song needs music playing; without it the chords change every few bars.', show: () => settings.sndChordMove === 'song' && audio.source === 'off' },
   { kind: 'buttons', buttons: [['Next chord ▸', () => snd?.nextChord()]] },
   { kind: 'select', key: 'sndSongForm', label: 'Arrangement', options: [['classic', 'Classic'], ['club', 'Club (long builds)'], ['short', 'Short (quick drops)'], ['pop', 'Verse and chorus'], ['chill', 'Chill (no drops)'], ['shuffle', 'Different every time']] },
+  { kind: 'range', key: 'sndSongVary', label: 'Variation', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : v < 0.35 ? 'subtle' : v < 0.7 ? 'some' : 'bold') },
   { kind: 'buttons', buttons: [['Build and drop', () => buildDropNow()], ['Song mode', () => toggleSong()]], active: (t) => (t === 'Song mode' ? !!snd?.songOn : snd ? snd.buildU >= 0 : false) },
   { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
   { kind: 'range', key: 'sndStrings', label: 'Strings', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -10997,6 +10998,9 @@ function morphTo(target: Settings, morphSec = settings.morph) {
 
 let hueNow = 0;
 let hueTarget = 0;
+// Song variation's picture now, and where it's easing to (see songLookTo).
+const songLook = { hue: 0, sat: 1, bright: 1, zoom: 1 };
+const songLookT = { hue: 0, sat: 1, bright: 1, zoom: 1 };
 let spinT = 0;
 let spinTarget = 0;
 let vjBars = 0;
@@ -11141,6 +11145,11 @@ function musicVisuals(now: number) {
     if (Math.abs(sat - 1) > 0.01) parts.push(`saturate(${sat.toFixed(2)})`);
     if (S.audioInvert && L.dropEnv > 0.55) parts.push('invert(1)');
   }
+  // Song variation's picture move.
+  songLookStep(dt);
+  if (!lightBg && Math.abs(songLook.hue) > 0.5) parts.push(`hue-rotate(${songLook.hue.toFixed(1)}deg)`);
+  if (Math.abs(songLook.sat - 1) > 0.01) parts.push(`saturate(${songLook.sat.toFixed(2)})`);
+  if (!lightBg && Math.abs(songLook.bright - 1) > 0.01) parts.push(`brightness(${songLook.bright.toFixed(2)})`);
   const hueCam = handDial.hue + linkRun.out.amounts.hue + (lightBg ? 0 : settings.hueShift);
   if (Math.abs(hueCam) > 0.5) parts.push(`hue-rotate(${hueCam.toFixed(1)}deg)`);
   if (macro.filter) parts.push(macro.filter);
@@ -11166,6 +11175,7 @@ function musicVisuals(now: number) {
   if (!on || S.audioAccentPunch <= 0) accentZ = 0;
   zoom *= 1 + accentZ * 0.1 * S.audioAccentPunch;
   if (on && S.audioBassZoom > 0) zoom *= 1 + L.sub * L.sub * 0.07 * S.audioBassZoom * S.audioIntensity;
+  zoom *= songLook.zoom;
   // Hi-hat shake: a small, quick jitter of the frame on each hat.
   hatShakeA = on && S.audioHatShake > 0 && L.hat ? 1 : hatShakeA * 0.7;
   if (!on || S.audioHatShake <= 0) hatShakeA = 0;
@@ -17244,7 +17254,7 @@ const SND_TRACKS: SndTrack[] = [
   { name: 'Accents', how: 'Sounds for moments, not for motion. A new scene rolls the chord upward like a harp. A shape forming (a word, an icon, a picture) sweeps a rising whoosh. When dozens of particles are born at once (an emitter burst, a tap that spawns), three high notes ring. An explosion can land a low boom. Each plays once per moment, in the key of the music.', key: 'sndAccents', dot: '#f3d36b', keys: ['sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice'],
     sub: () => [settings.sndAccScene && 'scenes', settings.sndAccShape && 'shapes', settings.sndAccBirth && 'births', settings.sndAccBurst && 'explosions'].filter(Boolean).join(', ') || 'nothing on' },
 ];
-const SONG_KEYS: (keyof Settings)[] = ['sndSongForm', 'sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
+const SONG_KEYS: (keyof Settings)[] = ['sndSongForm', 'sndSongVary', 'sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
 const MIX_KEYS: (keyof Settings)[] = ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndReverb', 'sndShimmer', 'sndEcho', 'sndPing', 'sndSweep', 'sndBright', 'sndLowEnd', 'sndDrive', 'sndLofi', 'sndChorus', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndGlue', 'sndTape', 'sndDepth', 'sndShow'];
 const SND_OPEN_KEY = 'particle-field:sound-open';
 // A style's whole sound: the preset's setup, and the genre's drums, bass and tempo.
@@ -17570,9 +17580,10 @@ function renderSoundPage(body: HTMLElement) {
   if (songBtns) songDet.prepend(songBtns);
   songStrip = mk('div', 'song-strip');
   songStrip.hidden = true;
-  stripSig = '';
+  stripSig = lockSig = '';
   const formRow = songDet.querySelector('[data-key="sndSongForm"]');
-  songBtns?.after(...[songStrip, formRow].filter((e): e is HTMLElement => !!e));
+  const varyRow = songDet.querySelector('[data-key="sndSongVary"]');
+  songBtns?.after(...[songStrip, formRow, varyRow].filter((e): e is HTMLElement => !!e));
   line('mix', 'Mix', MIX_KEYS, () => {
     const w = (v: number, up: string, down: string) => (Math.abs(v - 0.5) < 0.01 ? '' : v > 0.5 ? up : down);
     const words = [w(settings.sndMBusy, 'busier', 'calmer'), w(settings.sndMBright, 'brighter', 'darker'), w(settings.sndMSpace, 'roomier', 'drier'), w(settings.sndMGroove, 'groovier', 'straighter')].filter(Boolean);
@@ -19344,6 +19355,7 @@ let dropPending = false;
 let songSec = -1;
 function songFrame(S: ParticleSound) {
   S.setForm(settings.sndSongForm);
+  S.songVary = settings.sndSongVary;
   paintSongStrip(S);
   buildGather = S.buildU > 0.45;
   if (S.takeDrop()) {
@@ -19356,6 +19368,7 @@ function songFrame(S: ParticleSound) {
   const i = now ? now.i : -1;
   if (i !== songSec) {
     songSec = i;
+    songLookTo(now ? S.secMove?.pic ?? 'same' : 'same');
     if (now && xf.on) xfFadeTo(now.drop ? 1 : 0);
     refresh();
   }
@@ -19375,7 +19388,14 @@ function paintSongStrip(S: ParticleSound) {
   const sig = F.map((x) => `${x.name}${x.bars}`).join();
   if (sig !== stripSig) {
     stripSig = sig;
-    el.innerHTML = '<div class="ss-blocks"></div><i class="ss-head"></i><small class="ss-now"></small>';
+    el.innerHTML = `<div class="ss-blocks"></div><i class="ss-head"></i><div class="ss-foot"><small class="ss-now"></small><button type="button" class="lock">${LOCK_SVG}</button></div>`;
+    // The lock keeps the playing section's beat and picture moves on later loops.
+    el.querySelector<HTMLButtonElement>('.lock')!.onclick = () => {
+      const n = snd?.songNow();
+      if (!snd || !n) return;
+      snd.lockSection(n.i, !snd.sectionLocked(n.i));
+      lockSig = '';
+    };
     const box = el.querySelector('.ss-blocks')!;
     for (const x of F) {
       const b = document.createElement('span');
@@ -19388,10 +19408,45 @@ function paintSongStrip(S: ParticleSound) {
   }
   el.querySelectorAll('.ss-blocks span').forEach((b, k) => b.classList.toggle('on', k === now.i));
   el.querySelector<HTMLElement>('.ss-head')!.style.left = `${(now.at * 100).toFixed(2)}%`;
-  const txt = `${now.name} · bar ${now.bar + 1} of ${now.bars}`;
+  const mv = S.secMove;
+  const moves = mv ? [BEAT_MOVE_NAME[mv.beat], PIC_MOVE_NAME[mv.pic]].filter(Boolean).join(', ') : '';
+  const txt = `${now.name} · bar ${now.bar + 1} of ${now.bars}${moves ? ` · ${moves}` : ''}`;
   const nowEl = el.querySelector('.ss-now')!;
   if (nowEl.textContent !== txt) nowEl.textContent = txt;
+  const locked = S.sectionLocked(now.i);
+  const lsig = `${now.i}|${locked}|${settings.sndSongVary > 0}`;
+  if (lsig !== lockSig) {
+    lockSig = lsig;
+    const b = el.querySelector<HTMLButtonElement>('.lock')!;
+    b.hidden = settings.sndSongVary <= 0;
+    b.classList.toggle('on', locked);
+    b.setAttribute('aria-pressed', String(locked));
+    b.title = locked ? `Locked: ${now.name} keeps these moves every loop` : `Lock: keep this ${now.name}'s beat and picture moves every loop`;
+    el.querySelectorAll('.ss-blocks span').forEach((x, k) => x.classList.toggle('locked', S.sectionLocked(k)));
+  }
 }
+let lockSig = '';
+// Song variation's picture: each section's move eases the colour, light and
+// framing over a second or so, on top of the scene (its settings stay as they are).
+function songLookTo(m: PicMove) {
+  const T = songLookT;
+  // A colour shift lasts its section; the scene's own colours come back after.
+  T.hue = m === 'hue' ? (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 80) : 0;
+  T.sat = m === 'calm' ? 0.7 : m === 'mono' ? 0.18 : m === 'vivid' ? 1.45 : 1;
+  T.bright = m === 'calm' ? 0.8 : m === 'vivid' ? 1.08 : 1;
+  T.zoom = m === 'lean' ? 1.1 : 1;
+}
+function songLookStep(dt: number) {
+  if (!(snd?.songOn && sndOn)) {
+    songLookT.sat = songLookT.bright = songLookT.zoom = 1;
+    songLookT.hue = 0;
+  }
+  const k = Math.min(1, dt * 1.6);
+  for (const key of ['hue', 'sat', 'bright', 'zoom'] as const) songLook[key] += (songLookT[key] - songLook[key]) * k;
+}
+// Song variation's moves, as the strip names them (sound.ts loads later, so here).
+const BEAT_MOVE_NAME: Record<BeatMove, string> = { full: '', half: 'Half-time', sparse: 'Sparse beat', hats: 'Hats only', busy: 'Busier beat', swap: 'New beat' };
+const PIC_MOVE_NAME: Record<PicMove, string> = { same: '', hue: 'Colour shift', calm: 'Calmer look', mono: 'Drained colour', vivid: 'Vivid', lean: 'Lean in' };
 function buildDropNow() {
   if (!snd || !sndOn) return showToast('Turn the sound on first: the build and drop is played by the particle sound');
   if (snd.buildU >= 0) {

@@ -411,6 +411,54 @@ function randomForm(): SongSection[] {
   return f;
 }
 
+// Song variation: each section rolls a move for the beat and one for the
+// picture when it starts, from the moves that suit its part of the song. No
+// fixed rules: the roll never repeats last loop's pick for that section, a
+// calm field leans sparse and a wild one busy, and a drop has to feel at
+// least as big as what came before it.
+export type BeatMove = 'full' | 'half' | 'sparse' | 'hats' | 'busy' | 'swap';
+export type PicMove = 'same' | 'hue' | 'calm' | 'mono' | 'vivid' | 'lean';
+// How full each move sounds (the contrast rule compares these).
+const BEAT_FULL: Record<BeatMove, number> = { hats: 0.2, sparse: 0.35, half: 0.5, full: 0.7, swap: 0.7, busy: 0.95 };
+const PIC_FULL: Record<PicMove, number> = { mono: 0.2, calm: 0.3, same: 0.5, hue: 0.6, lean: 0.7, vivid: 0.9 };
+type Role = 'start' | 'verse' | 'build' | 'peak' | 'break' | 'end';
+const ROLE: Record<SongSection['name'], Role> = { Intro: 'start', Verse: 'verse', Build: 'build', Drop: 'peak', Chorus: 'peak', Breakdown: 'break', Bridge: 'break', Outro: 'end' };
+const BEAT_MOVES: Record<Role, BeatMove[]> = {
+  start: ['hats', 'sparse', 'full'],
+  verse: ['half', 'sparse', 'full', 'swap', 'hats'],
+  build: ['full', 'sparse', 'half'],
+  peak: ['full', 'busy', 'swap'],
+  break: ['hats', 'sparse', 'half'],
+  end: ['half', 'sparse', 'hats', 'full'],
+};
+const PIC_MOVES: Record<Role, PicMove[]> = {
+  start: ['same', 'calm', 'mono'],
+  verse: ['same', 'hue', 'calm'],
+  build: ['same', 'mono', 'lean'],
+  peak: ['vivid', 'hue', 'lean', 'same'],
+  break: ['calm', 'mono', 'hue'],
+  end: ['calm', 'same', 'mono'],
+};
+// The bold moves only come in as Variation goes up.
+const BOLD = new Set<string>(['hats', 'busy', 'swap', 'mono', 'vivid']);
+function rollMove<M extends string>(moves: M[], plain: M, full: Record<M, number>, vary: number, lean: number, last: M | undefined, atLeast: number): M {
+  if (vary <= 0) return plain;
+  let opts = moves.filter((m) => full[m] >= atLeast - 0.001);
+  if (!opts.length) opts = moves.filter((m) => full[m] === Math.max(...moves.map((x) => full[x])));
+  if (opts.length > 1 && last !== undefined) opts = opts.filter((m) => m !== last) as M[];
+  const weight = (m: M) => {
+    let wt = Math.max(0.15, 1 + lean * (full[m] - 0.5) * 3);
+    if (BOLD.has(m)) wt *= Math.min(1, vary * 1.6);
+    // Low Variation mostly keeps things as they are.
+    if (m === plain) wt *= 1 + (1 - vary) * 4;
+    return wt;
+  };
+  const sum = opts.reduce((a, m) => a + weight(m), 0);
+  let r = Math.random() * sum;
+  for (const m of opts) if ((r -= weight(m)) <= 0) return m;
+  return opts[opts.length - 1];
+}
+
 export class ParticleSound {
   private ctx: AudioContext;
   private master: GainNode;
@@ -2088,11 +2136,14 @@ export class ParticleSound {
     const V = P.vary;
     const hits = new Map<DrumRow, { v: number; n: number }>();
     const calm = P.follow * Math.max(0, 0.7 - e * 1.6);
+    // Song mode: this section's beat move. Half-time reads the beat at half speed.
+    const mv = this.secMove?.beat ?? 'full';
+    const half = mv === 'half';
     for (const r of DRUM_ROWS) {
       const row = B.beat[r];
       if (!row) continue;
-      const i = tick % row.length;
-      let h = stepHit(row[i]);
+      const i = (half ? tick >> 1 : tick) % row.length;
+      let h = half && tick % 2 ? null : stepHit(row[i]);
       const anchor = (r === 'k' && i === 0) || ((r === 's' || r === 'c') && row[i] === 'X');
       // Variation: drop ghost notes and the odd hit, add ghosts and rolls.
       if (h) {
@@ -2110,6 +2161,7 @@ export class ParticleSound {
       if (!h && r === 'h' && P.follow > 0 && e > 0.5 && Math.random() < P.follow * (e - 0.5) * 0.8) h = { v: 0.4, n: 1 };
       if (h) hits.set(r, h);
     }
+    this.moveHits(mv, hits, s);
     // A fill at the end of every few bars, in the genre's way.
     let down = 0;
     const from = V > 0.6 ? 8 : 12;
@@ -2159,6 +2211,23 @@ export class ParticleSound {
       else if (r === 'h' || r === 'o') this.gridNow[32 + s] = 1;
       const gap = stepDur / h.n;
       for (let j = 0; j < h.n; j++) this.hit(r, k * ROW_GAIN[r] * h.v * (h.n > 1 ? 0.55 + (0.45 * (j + 1)) / h.n : 1), sw + j * gap, down);
+    }
+  }
+
+  /** A section's beat move on this step's hits: thinner, hats only, or busier. */
+  private moveHits(mv: BeatMove, hits: Map<DrumRow, { v: number; n: number }>, s: number) {
+    if (mv === 'sparse') {
+      for (const r of [...hits.keys()]) {
+        const keep = (r === 'k' && s % 8 === 0) || ((r === 's' || r === 'c') && s % 8 === 4) || (r === 'h' && s % 4 === 2) || r === 'y';
+        if (!keep) hits.delete(r);
+      }
+    } else if (mv === 'hats') {
+      for (const r of ['k', 's', 'c', 't'] as DrumRow[]) hits.delete(r);
+      if (s % 4 === 2 && !hits.has('h') && !hits.has('o')) hits.set('h', { v: 0.45, n: 1 });
+    } else if (mv === 'busy') {
+      if (!hits.has('h') && !hits.has('o')) hits.set(s % 4 === 2 && Math.random() < 0.4 ? 'o' : 'h', { v: s % 2 ? 0.3 : 0.45, n: 1 });
+      if (s === 14 && !hits.has('k') && Math.random() < 0.5) hits.set('k', { v: 0.6, n: 1 });
+      if (s % 4 === 3 && !hits.has('s') && Math.random() < 0.2) hits.set('s', { v: 0.3, n: 1 });
     }
   }
 
@@ -2298,9 +2367,64 @@ export class ParticleSound {
     if (this.songFrom < 0) this.form = this.nextForm;
   }
   private nextForm: SongSection[] | null = null;
+  /** Song variation, 0 to 1: 0 keeps every section's beat and look as set. */
+  songVary = 0.5;
+  /** This section's moves (null before the song has entered one). */
+  secMove: { beat: BeatMove; pic: PicMove } | null = null;
+  // Last loop's picks, by section, and the sections kept as they are.
+  private lastMoves: ({ beat: BeatMove; pic: PicMove } | undefined)[] = [];
+  private locked = new Set<number>();
+  private movesOf: SongSection[] | null = null;
+  private swapFrom = -1;
+  /** Keep the playing section's moves on later loops (or let them roll again). */
+  lockSection(i: number, on: boolean) {
+    if (on) this.locked.add(i);
+    else this.locked.delete(i);
+  }
+  sectionLocked(i: number) {
+    return this.locked.has(i);
+  }
+  private enterSection(i: number) {
+    if (this.movesOf !== this.form) {
+      this.movesOf = this.form;
+      this.lastMoves = [];
+      this.locked.clear();
+    }
+    const S = this.form[i];
+    const role = ROLE[S.name];
+    const last = this.lastMoves[i];
+    const prev = this.secMove;
+    let mv: { beat: BeatMove; pic: PicMove };
+    if (last && this.locked.has(i)) mv = last;
+    else {
+      // A calm field leans sparse, a wild one busy.
+      const lean = Math.max(-1, Math.min(1, (this.energy - 0.3) * 2.5));
+      // A drop is at least as full as what came before; when the beat can't
+      // get any bigger, the picture has to.
+      const peak = role === 'peak' && prev;
+      const beat = rollMove(BEAT_MOVES[role], 'full', BEAT_FULL, this.songVary, lean, last?.beat, peak ? BEAT_FULL[prev.beat] : 0);
+      const beatUp = peak && BEAT_FULL[beat] > BEAT_FULL[prev.beat] + 0.01;
+      const pic = rollMove(PIC_MOVES[role], 'same', PIC_FULL, this.songVary, lean, last?.pic, peak && !beatUp ? Math.min(0.9, PIC_FULL[prev.pic] + 0.1) : 0);
+      mv = { beat, pic };
+    }
+    this.lastMoves[i] = mv;
+    this.secMove = mv;
+    // A new beat from the genre for this section; the old one comes back after.
+    const g = this.beatGenre ? genreById(this.beatGenre) : undefined;
+    if (mv.beat === 'swap' && g && g.beats.length > 1) {
+      if (this.swapFrom < 0) this.swapFrom = this.beatIdx;
+      this.beatIdx = (this.swapFrom + 1 + Math.floor(Math.random() * (g.beats.length - 1))) % g.beats.length;
+    } else if (this.swapFrom >= 0) {
+      if (g) this.beatIdx = this.swapFrom % g.beats.length;
+      this.swapFrom = -1;
+    }
+  }
   song(on: boolean) {
     if (on && this.nextForm) (this.form = this.nextForm), (this.nextForm = null);
     if (!on) {
+      if (this.swapFrom >= 0) this.beatIdx = this.swapFrom;
+      this.swapFrom = -1;
+      this.secMove = null;
       this.songFrom = -1;
       this.songIdx = -1;
       this.cancelBuild();
@@ -2393,6 +2517,7 @@ export class ParticleSound {
     if (sn && sn.i !== this.songIdx) {
       this.songIdx = sn.i;
       const S = this.form[sn.i];
+      this.enterSection(sn.i);
       if (S.name === 'Build' && this.dropAt < 0) this.buildDrop(S.bars - sn.bar, this.beat + (S.bars - sn.bar) * 4 - ((this.beat - this.songFrom) % 4));
     }
     if (this.dropAt >= 0 && this.beat >= this.dropAt) this.drop(t);
@@ -2761,9 +2886,16 @@ export class ParticleSound {
         const low = this.grid[6] + this.grid[7], mid = this.grid[3] + this.grid[4], top = this.grid[0] + this.grid[1];
         const live = e > 0.03;
         const de = drumE(e);
-        const kick = ed(0, live && !onKick && (s === 0 || (s === 8 && de > 0.12) || (s % 2 === 0 && de > 0.25 && low > m2 * 1.6)));
-        const snare = ed(1, live && (s === 4 || s === 12) && (de > 0.18 || mid > m2 * 1.2));
-        const hat = ed(2, live && (s % 2 === 0 ? de > 0.08 || top > m2 : de > 0.45 && top > m2 * 0.8));
+        // Song mode: the section's beat move (half-time plays every other step at half speed).
+        const mv = this.secMove?.beat ?? 'full';
+        const odd = mv === 'half' && tick % 2 === 1;
+        const q = mv === 'half' ? (tick >> 1) % 16 : s;
+        let kick = ed(0, live && !onKick && !odd && (q === 0 || (q === 8 && de > 0.12) || (q % 2 === 0 && de > 0.25 && low > m2 * 1.6)));
+        let snare = ed(1, live && !odd && (q === 4 || q === 12) && (de > 0.18 || mid > m2 * 1.2));
+        let hat = ed(2, live && !odd && (q % 2 === 0 ? de > 0.08 || top > m2 : de > 0.45 && top > m2 * 0.8));
+        if (mv === 'sparse') (kick &&= s % 8 === 0), (snare &&= s === 12), (hat &&= s % 4 === 2);
+        else if (mv === 'hats') (kick = snare = false), (hat ||= live && s % 4 === 2);
+        else if (mv === 'busy') (hat ||= live), (kick ||= live && s === 14 && Math.random() < 0.5);
         if (kick) (this.gridNow[s] = 1), this.kick(k * (s === 0 ? 1 : 0.8), sw);
         if (snare) (this.gridNow[16 + s] = 1), this.snare(k * (0.6 + Math.min(0.4, mid / (m2 * 4))), sw);
         if (hat) (this.gridNow[32 + s] = 1), this.hat(k * (s % 4 === 0 ? 0.5 : 0.32) * (0.6 + e * 0.6), sw, s === 14 && e > 0.5);
