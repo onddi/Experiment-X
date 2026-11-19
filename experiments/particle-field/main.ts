@@ -6955,10 +6955,11 @@ function drawSubstance(style: string, s: number, light: boolean) {
   if (style === 'sand') drawSand(dt);
   else {
     fieldR.begin(style === 'glass' ? 'wash' : (style as 'liquid'), w, h, n, shadeRgb);
-    for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1);
-    for (let L = 0; L < FADE_LEVELS; L++) for (let k = 0; k < SHADES; k++) fieldR.add(px, py, fadeBuckets[L][k], k, (L + 0.5) / FADE_LEVELS);
+    for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1, vx, vy);
+    for (let L = 0; L < FADE_LEVELS; L++) for (let k = 0; k < SHADES; k++) fieldR.add(px, py, fadeBuckets[L][k], k, (L + 0.5) / FADE_LEVELS, vx, vy);
     fieldR.draw(ctx, s, t, dt, light);
     if (style === 'glass') drawGlass(s);
+    if (style === 'slime') fieldR.steer(px, py, vx, vy, n, dt);
   }
   if (glOnly) {
     glDirty2d = true;
@@ -9162,6 +9163,7 @@ const RENDERS: [string, string][] = [
   ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'], ['marbles', 'Marbles'],
   ['liquid', 'Liquid'], ['cells', 'Cells'], ['contours', 'Contours'], ['smoke', 'Smoke'], ['glass', 'Glass drops'], ['sand', 'Sand'],
+  ['lava', 'Lava'], ['terrain', 'Terrain'], ['caustics', 'Caustics'], ['aurora', 'Aurora'], ['marbling', 'Marbling'], ['rain', 'Rain on water'], ['slime', 'Slime mould'],
   ['sprite', 'Your sprite (image or sheet)'],
   ['mixed', 'Mixed'],
 ];
@@ -21914,7 +21916,7 @@ setInterval(stageName, 300);
 let arrangeEl: HTMLElement | null = null;
 const LITE_KEY = 'pf-arrange-lite';
 const LITE: Partial<Settings> = { trail: 0, glow: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioTunnel: 0, audioKaleido: 0 };
-const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand']);
+const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime']);
 let liteScene = '';
 // Outline: while arranging, skip the simulation and draw only the shape's
 // spots (a light dotted outline), so dragging stays snappy on phones.
