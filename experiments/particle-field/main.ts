@@ -21,6 +21,7 @@ import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './dr
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { FieldRender, FIELD_STYLES, SandLayer } from './fieldstyles.ts';
+import { RECIPES, rollSong, songName, newSeed } from './recipes.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
 // --- settings ----------------------------------------------------------------
@@ -17531,7 +17532,14 @@ function styleVars(st: Style): string[] {
   // Each beat, then the genre's other takes on it (see Version).
   return g ? g.beats.flatMap((b) => [b.name, ...(g.versions ?? []).filter((x) => x.from === b.name).map((x) => x.name)]) : st.vars;
 }
+// A rolled song ('~' and its seed): the genre's recipe, from one of its written beats.
+const isRoll = (v: string) => v.startsWith('~');
 function styleLook(st: Style | null, v: string): Partial<Settings> {
+  if (st && isRoll(v) && RECIPES[st.id]) {
+    const look = rollSong(RECIPES[st.id], Number(v.slice(1)) || 0, styleVars(st), (a) => styleLook(st, a));
+    look.sndStyle = `${st.id}/${v}`;
+    return look;
+  }
   const g = st?.beat ? drumGenre(st.beat) : null;
   const ver = g?.versions?.find((x) => x.name === v);
   const bi = g ? g.beats.findIndex((b) => b.name === (ver?.from ?? v)) : -1;
@@ -17552,15 +17560,11 @@ function useStyle(st: Style | null, v: string) {
   if (settings.sndVol === 0) settings.sndVol = 0.7;
   changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
 }
+// The dice: a new song in the genre you're in (any genre when none is picked).
 function randomStyle() {
-  const pick = <T,>(a: readonly T[]) => a[(Math.random() * a.length) | 0];
-  const cur = settings.sndStyle;
-  let st: Style, v: string;
-  do {
-    st = pick(STYLES);
-    v = pick(styleVars(st));
-  } while (`${st.id}/${v}` === cur);
-  useStyle(st, v);
+  const now = styleNow().st;
+  const st = now && RECIPES[now.id] ? now : STYLES[(Math.random() * STYLES.length) | 0];
+  useStyle(st, `~${newSeed()}`);
 }
 // What the Style row says: the picked style, marked when you've changed it since.
 function styleNow(): { st: Style | null; v: string; name: string; edited: boolean } {
@@ -17573,7 +17577,7 @@ function styleNow(): { st: Style | null; v: string; name: string; edited: boolea
   const L = styleLook(st, v) as Record<string, unknown>;
   const S = settings as unknown as Record<string, unknown>;
   const edited = SND_LOOK_KEYS.some((k) => S[k] !== L[k]);
-  return { st, v, name: st ? `${st.name} · ${v}` : v, edited };
+  return { st, v, name: st ? `${st.name} · ${isRoll(v) ? songName(Number(v.slice(1)) || 0) : v}` : v, edited };
 }
 function renderSoundPage(body: HTMLElement) {
   const take = (k: string) => body.querySelector<HTMLElement>(`:scope > [data-key="${k}"]`);
@@ -17615,8 +17619,8 @@ function renderSoundPage(body: HTMLElement) {
   const style = mk('div', 'sndp-style');
   const sMain = mk('button', 'sndp-style-main', '<small>Style</small><b></b><span>sets the instruments, beat, bass, chords, tempo and effects</span>');
   const dice = mk('button', 'sndp-dice', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/></svg>');
-  dice.setAttribute('aria-label', 'Random style');
-  dice.title = 'Random style';
+  dice.setAttribute('aria-label', 'New song');
+  dice.title = 'New song in this genre';
   dice.addEventListener('click', randomStyle);
   style.append(sMain, dice);
   const pick = mk('div', 'sndp-pick');
@@ -17659,13 +17663,22 @@ function renderSoundPage(body: HTMLElement) {
     const vars = browse === 'yours' ? mine.map(([n]) => n) : st ? styleVars(st) : [];
     if (vars.length) {
       const list = mk('div', 'sndp-vars');
+      // A new song in this genre: its recipe rolls one (the dice does the same).
+      if (st && RECIPES[st.id]) {
+        const cur = settings.sndStyle.startsWith(`${st.id}/~`) ? settings.sndStyle.slice(st.id.length + 1) : '';
+        if (cur) vars.unshift(cur);
+        const roll = mk('button', 'sndp-var sndp-roll');
+        roll.innerHTML = '<span>⚄ New song</span><small>a fresh one in this genre, every tap</small>';
+        roll.addEventListener('click', () => useStyle(st, `~${newSeed()}`));
+        list.append(roll);
+      }
       for (const v of vars) {
         const row = mk('button', 'sndp-var');
         const on = settings.sndStyle === `${st?.id ?? 'yours'}/${v}`;
         row.classList.toggle('on', on);
         row.setAttribute('aria-pressed', String(on));
         const nm = document.createElement('span');
-        nm.textContent = v;
+        nm.textContent = isRoll(v) ? songName(Number(v.slice(1)) || 0) : v;
         row.append(nm);
         if (on && now.edited) {
           const e = document.createElement('small');
