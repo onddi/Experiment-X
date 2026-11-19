@@ -21985,6 +21985,42 @@ setInterval(stageName, 300);
   }, true);
 }
 
+// Peek: outside the Stage, hold the eye to see only the field (no bars, no
+// panels); let go and the settings come back. A quick tap still goes to the Stage.
+{
+  const b = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]')!;
+  let timer = 0;
+  let peeked = false;
+  const end = () => {
+    clearTimeout(timer);
+    if (!document.body.classList.contains('peek')) return;
+    document.body.classList.remove('peek');
+  };
+  b.addEventListener('pointerdown', (e) => {
+    peeked = false;
+    if (uView() === 'stage') return;
+    try {
+      b.setPointerCapture(e.pointerId);
+    } catch {
+      // Fine without.
+    }
+    timer = window.setTimeout(() => {
+      peeked = true;
+      document.body.classList.add('peek');
+    }, 260);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, end);
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+  // A peek's release isn't a tap: stay in the view you were in.
+  b.addEventListener('click', (e) => {
+    if (!peeked) return;
+    peeked = false;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }, true);
+  addEventListener('blur', end);
+}
+
 // Arrange: move, turn and resize the shape by hand on the field. One finger
 // (or the mouse) moves it; two fingers twist to turn and pinch to resize; on
 // a 3D shape, Turn 3D makes one finger orbit it instead. The wheel resizes

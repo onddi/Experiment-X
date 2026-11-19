@@ -3096,6 +3096,9 @@ html.top-layer.top-edit .top-back { display: block !important; position: fixed; 
 /* Sound › Reactions: the Music grid again; its classic-cards switch stays on the Music page. */
 .sndp-p-react .mg-classic { display: none; }
 .sndp-pick .rp-sort { position: static; background: none; }
+/* Peek: holding the eye outside the Stage shows only the field. */
+body.peek > :not(#app), body.peek #app > :not(#stage), body.peek #fab { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.12s; }
+.u-seg button[data-v="stage"] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
