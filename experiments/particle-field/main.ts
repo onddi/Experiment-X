@@ -13200,6 +13200,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
     dockMoreEl = document.createElement('div');
     dockMoreEl.className = 'dock-more';
     const items: [string, string, () => void][] = [
+      ['Pause (Space)', ICONS.pause, togglePause],
       ['Record a clip (V)', ICONS.record, recFromMenu],
       ['Gather to the centre (A)', ICONS.gather, toggleGather],
       ['Explode from the centre (E)', ICONS.explode, () => explode()],
@@ -13222,6 +13223,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       });
       if (fn === toggleGather) gatherButtons.push(b);
       if (fn === recFromMenu) b.classList.add('dm-rec');
+      if (fn === togglePause) b.classList.add('dm-pause');
       if (t.startsWith('Pause the sound')) b.classList.add('dm-snd');
       if (fn === previousScene) b.classList.add('dm-prev');
       if (fn === buildDropNow) b.classList.add('dm-build');
@@ -13258,6 +13260,12 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
   if (sb) {
     sb.hidden = !(settings.sndVol > 0 || sndMuted());
     sb.querySelector('span')!.textContent = settings.sndVol > 0 ? 'Pause the sound (M)' : 'Play the sound (M)';
+  }
+  // Play and pause: phones only (wider screens have it on the bar).
+  const ppb = dockMoreEl.querySelector<HTMLElement>('.dm-pause');
+  if (ppb) {
+    ppb.hidden = !sheetMode();
+    ppb.innerHTML = `${paused ? ICONS.play : ICONS.pause}<span>${paused ? 'Play' : 'Pause'}</span>`;
   }
   // Previous scene: hidden until there is one.
   const bb = dockMoreEl.querySelector<HTMLElement>('.dm-build');
