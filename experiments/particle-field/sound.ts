@@ -16,12 +16,12 @@
 // notes is capped so thousands of particles can't turn into noise.
 
 export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
-export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop';
+export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop';
 // The chimes' own sound, or 'same' to play whatever the strings play.
 export type HitSound = 'same' | Voice;
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
 export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood';
-export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze';
+export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze' | 'strings';
 export type SndTimbre = Band | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
@@ -88,6 +88,7 @@ const BANDS: Record<Band, Voice[]> = {
   rain: ['drop', 'pluck', 'glass', 'celesta'],
   retro: ['synth', 'tri', 'epiano', 'crystal'],
   breeze: ['wind', 'flute', 'harp', 'vibes'],
+  strings: ['cello', 'guitar', 'mandolin', 'violin'],
 };
 // Each instrument is two oscillators, sometimes with FM, a filter sweep or a
 // wobble: cheap enough to play dozens at once.
@@ -105,6 +106,8 @@ interface VoiceDef {
   vibrato?: number; // cents
   bend?: number; // starts this many cents sharp and drops into tune
   gain?: number;
+  /** A plucked string (Karplus-Strong): pick brightness 0…1, and how much each pass keeps (ring). */
+  ks?: { bright: number; keep: number };
 }
 const VOICES: Record<Voice, VoiceDef> = {
   marimba: { type: 'sine', ratio: 3.9, level: 0.5, fade: 0.08, decay: 0.7 },
@@ -120,6 +123,15 @@ const VOICES: Record<Voice, VoiceDef> = {
   flute: { type: 'sine', ratio: 2, level: 0.12, fade: 1, decay: 0.9, attack: 0.07, vibrato: 12, octave: 1, gain: 0.8 },
   synth: { type: 'sawtooth', ratio: 1.006, level: 0.6, fade: 1, decay: 0.6, sweep: [3200, 350], gain: 0.95 },
   koto: { type: 'sawtooth', ratio: 2, level: 0.2, fade: 0.15, decay: 1.1, sweep: [2600, 500], bend: 40, gain: 1 },
+  // Strings: plucked ones are a modelled string; bowed ones a swelling saw.
+  guitar: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 2.2, ks: { bright: 0.7, keep: 0.996 }, gain: 1.5 },
+  nylon: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 1.8, ks: { bright: 0.35, keep: 0.995 }, gain: 1.7 },
+  sitar: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 2.6, ks: { bright: 0.95, keep: 0.998 }, bend: 30, wobble: [0.7, 0.12], gain: 1.3 },
+  mandolin: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 1, ks: { bright: 0.8, keep: 0.993 }, wobble: [13, 0.55], octave: 1, gain: 1.4 },
+  banjo: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 0.7, ks: { bright: 1, keep: 0.988 }, gain: 1.4 },
+  pizz: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 0.45, ks: { bright: 0.3, keep: 0.985 }, gain: 1.9 },
+  violin: { type: 'sawtooth', ratio: 1.004, level: 0.5, fade: 1, decay: 1.6, attack: 0.12, vibrato: 14, sweep: [3800, 2000], gain: 0.6 },
+  cello: { type: 'sawtooth', ratio: 1.003, level: 0.5, fade: 1, decay: 2, attack: 0.15, vibrato: 10, octave: -1, sweep: [1900, 900], gain: 0.75 },
   // Chime sounds: bright, ringing, a little inharmonic.
   wind: { type: 'sine', ratio: 5.4, level: 0.3, fade: 0.35, decay: 2.8, octave: 1, wobble: [3, 0.12], gain: 1.1 },
   celesta: { type: 'sine', ratio: 4, level: 0.22, fade: 0.12, decay: 1.1, octave: 1, fm: [1, 0.25], gain: 1.1 },
@@ -1715,8 +1727,22 @@ export class ParticleSound {
     }
     const pn = ctx.createStereoPanner();
     pn.pan.value = Math.max(-1, Math.min(1, pan));
-    o1.connect(g);
-    o2.connect(g2).connect(g);
+    if (V.ks) {
+      // A modelled string instead of the two oscillators (they run silent, for the voice count).
+      const ks = ctx.createBufferSource();
+      const [buf, rate] = this.ksBuf(f, V.ks, decay);
+      ks.buffer = buf;
+      ks.playbackRate.value = rate;
+      if (bend) {
+        ks.detune.setValueAtTime(bend, t);
+        ks.detune.linearRampToValueAtTime(0, t + (o?.bend ? 0.16 : 0.08));
+      }
+      ks.connect(g);
+      nodes.push(ks);
+    } else {
+      o1.connect(g);
+      o2.connect(g2).connect(g);
+    }
     out.connect(pn);
     // The leads: Steps and Strings get Mix polish's low cut and duck, and Unison and Wavetable motion.
     const lead = this.cur === 'steps' || this.cur === 'strings';
@@ -1778,6 +1804,50 @@ export class ParticleSound {
       pn.disconnect();
       for (const x of extra) x.disconnect();
     };
+  }
+
+  // A plucked string, Karplus-Strong: a burst of noise (brighter for a pick,
+  // softer for a thumb) in a loop one period long, smoothed a little each
+  // pass. Kept per pitch; played back at the exact rate for the note.
+  private ksCache = new Map<string, AudioBuffer>();
+  private ksBuf(f: number, ks: { bright: number; keep: number }, dur: number): [AudioBuffer, number] {
+    const sr = this.ctx.sampleRate;
+    // Averaging with the next sample shortens the loop by half a sample.
+    const N = Math.max(2, Math.round(sr / f + 0.5));
+    const rate = (f * (N - 0.5)) / sr;
+    const secs = Math.min(4, Math.max(0.3, Math.ceil(dur * 2) / 2));
+    const key = `${ks.bright}|${ks.keep}|${N}|${secs}`;
+    let b = this.ksCache.get(key);
+    if (!b) {
+      if (this.ksCache.size > 160) this.ksCache.clear();
+      const len = Math.ceil(sr * secs);
+      b = this.ctx.createBuffer(1, len, sr);
+      const out = b.getChannelData(0);
+      const line = new Float32Array(N);
+      const a = 0.12 + 0.88 * ks.bright;
+      let lp = 0, mean = 0;
+      for (let i = 0; i < N; i++) {
+        lp += (Math.random() * 2 - 1 - lp) * a;
+        line[i] = lp;
+        mean += lp;
+      }
+      mean /= N;
+      // Higher notes pass the loop more often, so they keep a little more each pass.
+      const keep = 1 - (1 - ks.keep) * Math.min(1, 220 / f);
+      let peak = 0;
+      for (let i = 0, j = 0; i < len; i++) {
+        const v = line[j] - mean;
+        out[i] = v;
+        if (Math.abs(v) > peak) peak = Math.abs(v);
+        const n = j + 1 === N ? 0 : j + 1;
+        line[j] = keep * 0.5 * (line[j] + line[n]) + (1 - keep) * mean;
+        j = n;
+      }
+      const k = peak > 0 ? 0.9 / peak : 1;
+      for (let i = 0; i < len; i++) out[i] *= k;
+      this.ksCache.set(key, b);
+    }
+    return [b, rate];
   }
 
   private grain(x: number, y: number, w: number, h: number, amt: number, speed: number, len = 0.006 + (1 - speed) * 0.03, wet = 0.4) {
