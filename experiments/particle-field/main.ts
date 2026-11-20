@@ -19654,14 +19654,8 @@ function soloRowOpen(row: HTMLElement, update: () => void) {
   sheet.querySelector('.tuner-close')!.addEventListener('click', exitSolo);
   if (row.dataset.key) sheet.querySelector('.tuner-close')!.before(fieldKnobButton(row.dataset.key));
   soloRow = { el: row, parent: row.parentNode!, next: row.nextSibling, sheet };
+  // Just the control: the sheet stays small over the picture.
   sheet.prepend(row);
-  const tipKey = row.querySelector<HTMLElement>('[data-tip]')?.dataset.tip;
-  if (tipKey && ABOUT[tipKey]) {
-    const about = document.createElement('p');
-    about.className = 'tuner-about solo-about';
-    about.textContent = ABOUT[tipKey];
-    row.after(about);
-  }
   document.body.append(sheet);
   // Kept current even if the overview redraws behind it.
   const timer = window.setInterval(() => (sheet.isConnected ? update() : clearInterval(timer)), 150);
