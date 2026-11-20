@@ -176,7 +176,7 @@ export class FieldRender {
       this.cr.fill(0);
       this.cg.fill(0);
       this.cb.fill(0);
-      if (style === 'marbling') {
+      if (style === 'marbling' || style === 'frost') {
         this.vu.fill(0);
         this.vv.fill(0);
         this.vw.fill(0);
@@ -253,7 +253,7 @@ export class FieldRender {
       cr[o] += w00 * r; cr[o + 1] += w10 * r; cr[o + gw] += w01 * r; cr[o + gw + 1] += w11 * r;
       cg[o] += w00 * g; cg[o + 1] += w10 * g; cg[o + gw] += w01 * g; cg[o + gw + 1] += w11 * g;
       cb[o] += w00 * b; cb[o + 1] += w10 * b; cb[o + gw] += w01 * b; cb[o + gw + 1] += w11 * b;
-      if (vx && vy && this.style === 'marbling') {
+      if (vx && vy && (this.style === 'marbling' || this.style === 'frost')) {
         const { vu, vv, vw } = this;
         const u = vx[i];
         const v = vy[i];
@@ -1072,6 +1072,12 @@ export class FieldRender {
     const f = Math.min(3, dt * 60);
     const keep = Math.pow(0.985, f);
     for (let i = 0; i < N; i++) M[i] = M[i] * keep + dens[i] * norm * 0.06 * f;
+    // The particles' motion, smoothed: crystals ride it, and a fast push breaks them.
+    const { vu, vv, vw, tmp } = this;
+    const vr = Math.max(1, Math.round(Math.max(10, s * 6) / c));
+    boxBlur(vu, tmp, gw, gh, vr);
+    boxBlur(vv, tmp, gw, gh, vr);
+    boxBlur(vw, tmp, gw, gh, vr);
     const fr = this.frosts;
     const big = Math.sqrt(this.w * this.h);
     const maxN = Math.round(Math.min(90, Math.max(25, (this.w * this.h) / 9000)));
@@ -1091,10 +1097,20 @@ export class FieldRender {
     ctx.lineCap = 'round';
     for (let q = fr.length - 1; q >= 0; q--) {
       const C = fr[q];
-      const m = sample(M, gw, gh, C.x / c - 0.5, C.y / c - 0.5);
-      // Grows while it's damp here, melts back where it's dry.
-      if (m > 0.05) C.r = Math.min(C.L, C.r + C.L * 0.012 * f);
-      else C.r -= C.L * 0.01 * f;
+      const gx = C.x / c - 0.5, gy = C.y / c - 0.5;
+      const m = sample(M, gw, gh, gx, gy);
+      const w = sample(vw, gw, gh, gx, gy);
+      const u = w > 0.01 ? sample(vu, gw, gh, gx, gy) / w : 0;
+      const v = w > 0.01 ? sample(vv, gw, gh, gx, gy) / w : 0;
+      const sp = Math.hypot(u, v);
+      C.x += u * f * 0.8;
+      C.y += v * f * 0.8;
+      C.a += (u * 0.002 - v * 0.002) * f;
+      // Grows while it's damp and calm here; melts where it's dry, shatters
+      // where the particles are thrown about (a touch, a burst).
+      if (sp > 3.5) C.r -= C.L * 0.06 * f;
+      else if (m > 0.05) C.r = Math.min(C.L, C.r + C.L * 0.012 * f);
+      else C.r -= C.L * 0.02 * f;
       if (C.r <= 0) {
         fr.splice(q, 1);
         continue;
