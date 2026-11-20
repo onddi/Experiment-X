@@ -516,6 +516,13 @@ export const VIBES: VibeDef[] = [
     { audioDrop: 1.2, audioWordPulse: 0.5, audioSway: 0.6, audioRoll: 0.5, audioCuts: '4bars', audioHue: 'beat', audioHueAmt: 30 }, {}, 'face', 'camera'),
   vibe('Hologram', 'Flickers on each syllable, fades in the gaps', 'voice', { audioSpeed: 0.3 },
     { audioDrop: 1, audioSylFlash: 0.7, audioPauseDim: 0.5, audioTunnel: 0.3, audioStutter: true, audioMonoBuild: true }, { render: 'dots', palette: 'ice' }, 'face', 'camera'),
+  // --- Made for the Sound page's instruments (they work with music too) ---
+  vibe('Drums lead', 'Each drum has its own move: the kick pumps, the snare flashes, hats twinkle', 'beat', { audioKick: 'pump', audioPulse: 0.8, audioSnare: 'flash', audioHats: 'sparkle', audioHits: 0.7, audioSpeed: 0.2, audioFlow: 0.3 },
+    { audioDrop: 0.8, audioSnareHop: 0.4, audioHatTwinkle: 0.4, audioHue: 'bar', audioHueAmt: 30 }, { render: 'dots', trail: 0.5 }, 'groove'),
+  vibe('Bass carries it', 'The bass line swells, glows and zooms the field; drums stay out of it', 'bass', { audioSub: 'size', audioSubAmt: 0.8, audioSpeed: 0.15, audioFlow: 0.4 },
+    { audioBassThrob: 0.8, audioBassZoom: 0.5, audioBassGlow: 0.5, audioDrop: 0.6, audioHue: 'drift', audioHueAmt: 15 }, { render: 'glow', trail: 0.8, flow: 0.4, flowType: 'curl' }, 'groove'),
+  vibe('Notes paint', 'Every note colours the field and sends a ripple; the pad makes it glow', 'melody', { audioSpeed: 0.1, audioFlow: 0.4 },
+    { audioNoteHue: 0.8, audioNoteRipple: 0.5, audioNoteHop: 0.3, audioVoxGlow: 0.4, audioBright: 0.2 }, { render: 'bokeh', trail: 0.7, flow: 0.3, flowType: 'curl' }, 'chill'),
 ];
 
 // When each scene was added (from the repo history), for the picker's

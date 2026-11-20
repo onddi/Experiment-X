@@ -2741,7 +2741,7 @@ const bassOn = () => settings.sndBassDrive && settings.sndBass > 0;
 // Melodic notes light the picture (colour, glow) but never push particles, so there's no loop.
 const notesOn = () => settings.sndNoteDrive;
 const drumsDrive = () => (drumsOn() || bassOn() || notesOn()) && !!snd && sndOn && audio.source === 'off';
-const drumLv = { pulse: 0, snareEnv: 0, level: 0, sub: 0, hold: 0, note: 0, voice: 0, ring: 0, melody: 0 };
+const drumLv = { pulse: 0, snareEnv: 0, level: 0, sub: 0, hold: 0, note: 0, voice: 0, ring: 0, melody: 0, bar: -1, drop: 0 };
 const DRUM_KINDS = new Set(['kick', 'snare', 'hat', 'crash']);
 function drumLevels(dt: number) {
   const all = snd!.takeDrumHits();
@@ -2762,7 +2762,21 @@ function drumLevels(dt: number) {
     dropPending = false;
     L.beat = L.crash = true;
     drumLv.pulse = 1;
+    drumLv.drop = 1;
   }
+  // The song's shape: bars, the build (Build and drop, Song mode) and the drop's tail.
+  const bar = Math.floor(snd!.beatNow / 4);
+  if (bar !== drumLv.bar) {
+    if (drumLv.bar >= 0 && bar > drumLv.bar) {
+      L.bar = true;
+      L.bars = (L.bars || 0) + 1;
+    }
+    drumLv.bar = bar;
+  }
+  drumLv.drop *= Math.pow(0.35, dt);
+  L.dropEnv = drumLv.drop;
+  const bu = snd!.buildU;
+  L.tension = bu >= 0 ? bu : Math.max(0, (L.tension || 0) - dt * 0.8);
   const fall = Math.exp(-dt * 7);
   drumLv.pulse *= fall;
   drumLv.snareEnv *= fall;
@@ -9719,7 +9733,7 @@ function cardAllows(k: keyof Settings) {
   return !sec || sec.kind !== 'section' || !locks.has(sec.id);
 }
 
-function applyVibe(v: VibeDef) {
+function applyVibe(v: VibeDef, fromSound = false) {
   const patch: Partial<Settings> = {};
   let look = settings.audioVibeLook ? v.look : {};
   // A vibe only changes the scene when "Vibes also change style" is on: then
@@ -9754,7 +9768,7 @@ function applyVibe(v: VibeDef) {
     refresh();
   }]);
   // Vibes are how the music plays the field: without sound they barely show.
-  if (audio.source === 'off') setTimeout(() => showToast(`${v.name} is set. It moves with music: turn on a sound source`), faceVibe ? 2500 : 0);
+  if (audio.source === 'off' && !fromSound) setTimeout(() => showToast(`${v.name} is set. It moves with music: turn on a sound source`), faceVibe ? 2500 : 0);
 }
 
 const faceScene = () => settings.shape === 'camera' && faceMode();
@@ -9804,6 +9818,24 @@ function vibesOn() {
   const v = VIBES.find((x) => x.name === name) ?? vibeList()[0] ?? VIBES[0];
   if (v) applyVibe(v);
 }
+// Vibes for the Sound page: only the ones that listen to what the instruments
+// play (drums, bass, notes, the song's shape), not to a voice or a face.
+const SOUND_VIBES = VIBES.filter((v) => v.family !== 'words' && v.family !== 'face' && v.lead !== 'voice');
+// Which instruments a vibe needs to play the reactions: picking one turns those on.
+function soundVibe(v: VibeDef) {
+  const r = { ...v.drums, ...v.cards } as Partial<Settings>;
+  const num = (k: keyof Settings) => Number(r[k] ?? 0) > 0;
+  const drums = r.audioKick !== 'none' || r.audioSnare !== 'none' || r.audioHats !== 'none' || ['audioSnareFlash', 'audioSnareHop', 'audioHatTwinkle', 'audioHatShake'].some((k) => num(k as keyof Settings));
+  const bass = (r.audioSub ?? 'none') !== 'none' || ['audioBassThrob', 'audioBassZoom', 'audioBassGlow'].some((k) => num(k as keyof Settings));
+  const notes = ['audioNoteHue', 'audioNoteRipple', 'audioNoteHop', 'audioVoxGlow', 'audioVoxZoom', 'audioVoxSwell'].some((k) => num(k as keyof Settings));
+  applyVibe(v, true);
+  const patch: Partial<Settings> = { sndMove: drums || (!bass && !notes), sndBassDrive: bass, sndNoteDrive: notes };
+  Object.assign(settings, patch);
+  changed(new Set(Object.keys(patch) as (keyof Settings)[]));
+  save();
+  refresh();
+}
+
 // No vibe: the music does what the scene itself came with. Every setting a
 // vibe can touch goes back to the scene's own value.
 const VIBE_KEYS = [...new Set(VIBES.flatMap((v) => Object.keys({ ...v.drums, ...v.cards })))] as (keyof Settings)[];
@@ -18577,6 +18609,32 @@ function renderSoundPage(body: HTMLElement) {
   panelOf('inst').append(tracks);
   // Reactions: which instruments stand in for music, then the Music page's own grid (the same settings).
   const reactP = panelOf('react');
+  // A vibe made for the instruments: the rack's ‹ › picker, a dice, and what it does.
+  const vibeDet = mk('div', 'sndp-det sndp-group sndp-vibe');
+  vibeDet.append(mk('h3', 'sndp-gh', 'Vibe'));
+  const vibeCtl: Extract<Control, { kind: 'select' }> = { kind: 'select', key: 'audioVibe', label: 'Vibe', options: [['', 'Scene’s own'], ...SOUND_VIBES.map((v): [string, string] => [v.name, v.name])] };
+  const vibeRow = stdPick(vibeCtl, valSrc(() => (SOUND_VIBES.some((v) => v.name === settings.audioVibe) ? settings.audioVibe : ''), (x) => {
+    const v = SOUND_VIBES.find((y) => y.name === x);
+    if (v) soundVibe(v);
+    else vibeNone();
+  }), () => '');
+  const vibeDice = mk('button', 'sndp-dice', dice.innerHTML);
+  vibeDice.setAttribute('aria-label', 'Random vibe');
+  vibeDice.title = 'A random vibe that works with the instruments';
+  vibeDice.addEventListener('click', () => {
+    const rest = SOUND_VIBES.filter((v) => v.name !== settings.audioVibe);
+    soundVibe(rest[Math.floor(Math.random() * rest.length)]);
+  });
+  const vibeLine = mk('div', 'sndp-vibe-row');
+  vibeLine.append(vibeRow.el, vibeDice);
+  const vibeAbout = mk('p', 'sndp-how');
+  vibeDet.append(vibeLine, vibeAbout);
+  refreshers.push(() => {
+    vibeRow.update();
+    const v = SOUND_VIBES.find((y) => y.name === settings.audioVibe);
+    vibeAbout.textContent = v ? v.about : 'The scene’s own reactions. Pick a vibe to try another way the sound can move the field.';
+  });
+  reactP.append(vibeDet);
   const fromInst = group(reactP, 'Play the reactions', ['sndMove', 'sndBassDrive', 'sndNoteDrive']);
   fromInst.querySelector('.sndp-gh')!.after(mk('p', 'sndp-how', 'With no music playing, these instruments fire your reactions below. Drums and bass move the field; notes mostly change colour and glow.'));
   note('With no music playing, the drums')?.remove();
