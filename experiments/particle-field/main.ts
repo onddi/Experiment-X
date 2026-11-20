@@ -2821,6 +2821,8 @@ function drumLevels(dt: number) {
   L.noteEnv = drumLv.note;
   L.melody = notesOn() ? drumLv.melody : 0;
   L.voice = drumLv.voice;
+  // The pad stands in for the voice everywhere (FX › Voice reads vocal).
+  L.vocal = drumLv.voice;
   L.bpm = snd!.bpmNow;
   audio.levels = L;
 }
@@ -10881,7 +10883,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gfxLensAmt', label: 'Lens amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxLensBy !== 'off' },
   { kind: 'select', key: 'gfxSurfBy', label: 'Surface', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Off']], show: () => settings.gfxKick > 0 },
   { kind: 'range', key: 'gfxSurfAmt', label: 'Surface amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxSurfBy !== 'off' },
-  { kind: 'note', text: 'Needs a sound source (Music).', show: () => audio.source === 'off' },
+  { kind: 'note', text: 'Needs music (Music › Listening), or the Sound playing the reactions (Sound › Reactions). With the Sound, Voice follows the pad.', show: () => audio.source === 'off' && !drumsDrive() },
 
   { kind: 'section', about: 'Near and far layers with parallax, and how a 3D solid is lit and turned.', id: 'depth', label: 'Depth & light', tab: 'look', lock: ['depth', 'depthParallax', 'shapeTilt', 'shapeFacing', 'solidLight', 'shapeDrag'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
