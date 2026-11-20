@@ -11125,7 +11125,9 @@ const CONTROLS: Control[] = [
 
   { kind: 'section', about: 'Particles that make particles: bursts when they die or hit something, trails, bursts on the beat.', id: 'spawning', label: 'Spawning', tab: 'shape',
     lock: ['spawnOn', 'spawnFrom', 'spawnCount', 'spawnSpeed', 'spawnLife', 'spawnSize', 'spawnTone', 'spawnShare', 'spawnChain'],
-    power: { on: spawnOn, off: { spawnOn: 'none' }, start: { spawnOn: 'death', lifespan: 2.5, lifeFade: 'edges' } },
+    // Bursts on death need particles that die: give them a lifespan only if
+    // Birth & lifespan hasn't got one (or an emitter) already.
+    power: { on: spawnOn, off: { spawnOn: 'none' }, get start(): Partial<Settings> { return settings.lifespan > 0 || hasEmitter() ? { spawnOn: 'death' } : { spawnOn: 'death', lifespan: 2.5, lifeFade: 'edges' }; } },
     summary: () => (spawnOn() ? `${label(SPAWN_ON, settings.spawnOn).toLowerCase()} · ${settings.spawnCount}` : 'off') },
   { kind: 'select', key: 'spawnOn', label: 'New particles', options: SPAWN_ON },
   { kind: 'note', text: 'Bursts come when a particle\'s life ends: switch on a Lifespan (Birth & lifespan) or an emitter.', show: () => settings.spawnOn === 'death' && settings.lifespan <= 0 },
