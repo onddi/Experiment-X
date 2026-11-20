@@ -7489,10 +7489,20 @@ function drawGlass(s: number) {
 // Sand (see fieldstyles.ts): pigment that builds up where particles pass.
 const sandL = new SandLayer();
 let sandClear = true;
+const sandLists: number[][] = [];
 function drawSand(dt: number) {
   if (sandClear) sandL.clear();
   sandClear = false;
-  sandL.draw(ctx, w, h, px, py, buckets, shadeRgb, dt);
+  // Every grain, the fading and shaded ones too (a lit 3D shape puts its dim
+  // side there), each as strong as it shows (light, depth, fog).
+  for (let k = 0; k < SHADES; k++) {
+    const L = (sandLists[k] ??= []);
+    L.length = 0;
+    for (const i of buckets[k]) L.push(i);
+    for (const lv of fadeBuckets) for (const i of lv[k]) L.push(i);
+  }
+  // On a 3D shape the sand lasts a moment, so it stays on the turning surface.
+  sandL.draw(ctx, w, h, px, py, sandLists, shadeRgb, dt, settings.shape === 'solid' ? 1.2 : 90, fadeOf);
 }
 
 function drawBuckets(bks: number[][], s: number) {

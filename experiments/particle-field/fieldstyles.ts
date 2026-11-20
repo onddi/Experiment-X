@@ -1362,7 +1362,11 @@ export class SandLayer {
     this.al.fill(0);
   }
 
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, px: Float32Array, py: Float32Array, lists: number[][], cols: Rgb[], dt: number) {
+  /**
+   * memory: seconds the settled sand takes to fade (a 3D shape turning would
+   * otherwise paint its whole outline flat); fade: a grain's strength (depth, fog).
+   */
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, px: Float32Array, py: Float32Array, lists: number[][], cols: Rgb[], dt: number, memory = 90, fade?: (i: number) => number) {
     const k = w * h > 800000 ? 0.5 : 1;
     const sw = Math.max(1, Math.round(w * k));
     const sh = Math.max(1, Math.round(h * k));
@@ -1377,8 +1381,8 @@ export class SandLayer {
       this.al = new Float32Array(sw * sh);
     }
     const { rgb, al } = this;
-    const keep = Math.exp(-dt / 90);
-    const dep = 0.09;
+    const keep = Math.exp(-dt / memory);
+    const dep0 = 0.09;
     for (let k2 = 0; k2 < lists.length; k2++) {
       const list = lists[k2];
       if (!list.length) continue;
@@ -1389,6 +1393,8 @@ export class SandLayer {
         if (x < 0 || y < 0 || x >= sw || y >= sh) continue;
         const p = y * sw + x;
         const q = p * 3;
+        const dep = fade ? dep0 * fade(i) : dep0;
+        if (dep <= 0) continue;
         // The new grain tints what's there more the thinner it is.
         const t = dep / Math.max(dep, al[p] + dep);
         rgb[q] += (col[0] - rgb[q]) * t;
@@ -1415,10 +1421,13 @@ export class SandLayer {
         const y = (py[i] * k) | 0;
         if (x < 0 || y < 0 || x >= sw || y >= sh) continue;
         const o = (y * sw + x) * 4;
-        d[o] = col[0];
-        d[o + 1] = col[1];
-        d[o + 2] = col[2];
-        d[o + 3] = 255;
+        const f = fade ? fade(i) : 1;
+        if (f < 0.02) continue;
+        // Over what's settled there, in proportion.
+        d[o] += (col[0] - d[o]) * f;
+        d[o + 1] += (col[1] - d[o + 1]) * f;
+        d[o + 2] += (col[2] - d[o + 2]) * f;
+        d[o + 3] = Math.max(d[o + 3], 255 * f);
       }
     }
     this.g.putImageData(this.img!, 0, 0);
