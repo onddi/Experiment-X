@@ -2195,7 +2195,7 @@ function swarmForces() {
   const S = settings;
   const fl = S.flock * macro.flock;
   const sp = S.space;
-  const pred = Math.min(PRED_MAX, n >> 3, S.predators | 0);
+  const pred = huntersNow();
   if (fl <= 0 && sp <= 0 && pred <= 0) return false;
   if (swx.length < n) {
     swx = new Float32Array(cap);
@@ -2287,29 +2287,50 @@ function swarmForces() {
 // to a hunter flee, which makes the flock split and swirl around it.
 
 const PRED_MAX = 6;
+const huntersNow = () => Math.min(PRED_MAX, n >> 3, settings.predators | 0);
 // How far prey notice a hunter: about a sixth of the screen.
-const predSee = () => Math.min(140, Math.max(50, Math.min(w, h) * 0.16));
+const predSee = () => Math.min(140, Math.max(50, Math.min(w, h) * 0.16)) * settings.predFear;
 const predPrey = new Int32Array(PRED_MAX).fill(-1);
 const predTime = new Float32Array(PRED_MAX);
+const predNear = new Int32Array(PRED_MAX).fill(-1); // the closest prey seen last frame
 
 function predatorForces(pred: number, range: number, cols: number, rows: number) {
+  const S = settings;
   const see = predSee();
   const see2 = see * see;
   const reach = Math.ceil(see / range);
   for (let p = 0; p < pred; p++) {
     if (dead[p]) continue;
+    // Hunters wear the palette's hottest colour (unless hidden in the crowd).
+    if (S.predLook !== 'same') tone[p] = 0.98;
     let t = predPrey[p];
-    if (t < pred || t >= n || dead[t] || --predTime[p] <= 0) {
+    const near = S.predChase === 'nearest' && predNear[p] >= pred && predNear[p] < n && !dead[predNear[p]];
+    if (near) t = predPrey[p] = predNear[p];
+    else if (t < pred || t >= n || dead[t] || --predTime[p] <= 0) {
       t = pred + ((Math.random() * (n - pred)) | 0);
       predPrey[p] = t;
       predTime[p] = 90 + Math.random() * 60;
     }
+    predNear[p] = -1;
     const dx = px[t] - px[p];
     const dy = py[t] - py[p];
     const d = Math.hypot(dx, dy) + 1e-6;
-    if (d < 6) predTime[p] = 0;
-    swx[p] = ((dx / d) * 2.6 - vx[p]) * 0.08;
-    swy[p] = ((dy / d) * 2.6 - vy[p]) * 0.08;
+    let boom = 1;
+    if (d < 6) {
+      // Caught: pick another, and the catch can mean something.
+      predTime[p] = 0;
+      predPrey[p] = -1;
+      if (S.predCatch === 'eaten') {
+        // Gone, and back somewhere else at random.
+        px[t] = ox[t] = Math.random() * w;
+        py[t] = oy[t] = Math.random() * h;
+        vx[t] = vy[t] = 0;
+      } else if (S.predCatch === 'burst') boom = 8;
+    }
+    const cruise = 2.6 * S.predSpeed;
+    swx[p] = ((dx / d) * cruise - vx[p]) * 0.08;
+    swy[p] = ((dy / d) * cruise - vy[p]) * 0.08;
+    let best = see2;
     const cx = Math.min(cols - 1, Math.max(0, (px[p] / range) | 0));
     const cy = Math.min(rows - 1, Math.max(0, (py[p] / range) | 0));
     for (let yy = Math.max(0, cy - reach); yy <= Math.min(rows - 1, cy + reach); yy++) {
@@ -2320,8 +2341,9 @@ function predatorForces(pred: number, range: number, cols: number, rows: number)
           const ey = py[j] - py[p];
           const e2 = ex * ex + ey * ey;
           if (e2 >= see2 || e2 < 0.01) continue;
+          if (e2 < best) (best = e2), (predNear[p] = j);
           const e = Math.sqrt(e2);
-          const f = ((1 - e / see) ** 2 * 0.45) / e;
+          const f = ((1 - e / see) ** 2 * 0.45 * boom) / e;
           swx[j] += ex * f;
           swy[j] += ey * f;
         }
@@ -2330,20 +2352,18 @@ function predatorForces(pred: number, range: number, cols: number, rows: number)
   }
 }
 
-function drawPredators(light: boolean) {
-  const pred = Math.min(PRED_MAX, n >> 3, settings.predators | 0);
-  if (pred <= 0) return;
+function drawPredators() {
+  const pred = huntersNow();
+  if (pred <= 0 || settings.predLook !== 'marked') return;
+  const st = pal().stops;
+  const [hh, ss, ll] = st[st.length - 1] ?? [10, 90, 60];
   const P = penFor(true);
   P.lineWidth = 1.5;
+  P.strokeStyle = `hsl(${hh} ${ss}% ${ll}% / 0.7)`;
   for (let p = 0; p < pred; p++) {
     if (dead[p]) continue;
-    P.fillStyle = light ? 'rgb(200 30 20 / 0.9)' : 'rgb(255 90 60 / 0.95)';
     P.beginPath();
-    P.arc(px[p], py[p], 4, 0, Math.PI * 2);
-    P.fill();
-    P.strokeStyle = light ? 'rgb(200 30 20 / 0.4)' : 'rgb(255 120 90 / 0.45)';
-    P.beginPath();
-    P.arc(px[p], py[p], 10, 0, Math.PI * 2);
+    P.arc(px[p], py[p], 11, 0, Math.PI * 2);
     P.stroke();
   }
 }
@@ -7442,7 +7462,8 @@ function updateSizes() {
   const bands = reacting() ? settings.audioBands : 0;
   const kids = kidTo > kidFrom;
   const ks = settings.spawnSize;
-  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0 && !kids && !lightOn;
+  const hunt = settings.predLook === 'bigger' ? huntersNow() : 0;
+  uniformSize = sv <= 0 && ls === 'none' && dp <= 0 && bands <= 0 && !kids && !lightOn && hunt <= 0;
   if (uniformSize) return;
   const L = audio.levels;
   // Bass particles are big and swell with the bass, highs small and bright.
@@ -7466,6 +7487,7 @@ function updateSizes() {
     }
     // Light on a solid: lit points a little bigger, shaded ones smaller, so it reads as round.
     if (lightOn) z *= 1 + (Math.min(1.3, shadeLit[i]) * 0.9 - 0.55) * settings.solidLight;
+    if (i < hunt) z *= 2.4;
     psz[i] = z;
   }
 }
@@ -8849,7 +8871,7 @@ function draw() {
   const P = penFor(true);
   P.globalAlpha = 1;
   if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
-  drawPredators(r * 0.3 + g * 0.59 + b * 0.11 > 140);
+  drawPredators();
   // Fingertips and pinches, faintly, so you can see where your hands are.
   if (markPts.length) {
     P.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
@@ -10347,11 +10369,9 @@ function musicPicker(styles = false) {
           const list = G().filter((g) => g.id !== settings.sndGroove && (liveRail.startsWith('g:') ? g.style === liveRail.slice(2) : liveRail === 'saved' ? keptGrooves().includes(g.id) : true));
           return rollLive(list);
         }
-        if (musicRail === 'all') return (randomStyle(), true);
-        const st = styleById(musicRail);
-        if (!st || !RECIPES[st.id]) return false;
-        useStyle(st, `~${newSeed()}`);
-        return true;
+        // Generated: Random plays one of the listed presets; the dice next
+        // to Style makes a brand-new song.
+        return false;
       },
     },
     items: () => {
@@ -11176,12 +11196,17 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'showWells', label: 'Show the points', show: () => wellList().length > 0 },
   { kind: 'buttons', buttons: [['Remove all points', () => setWells([])]], show: () => wellList().length > 0 },
 
-  { kind: 'section', about: 'Flocking like birds, or keeping personal space.', id: 'swarm', label: 'Swarm', tab: 'motion', lock: ['flock', 'flockSep', 'flockAlign', 'flockCohesion', 'flockRange', 'space', 'spaceDist', 'predators'],
+  { kind: 'section', about: 'Flocking like birds, or keeping personal space.', id: 'swarm', label: 'Swarm', tab: 'motion', lock: ['flock', 'flockSep', 'flockAlign', 'flockCohesion', 'flockRange', 'space', 'spaceDist', 'predators', 'predLook', 'predChase', 'predCatch', 'predSpeed', 'predFear'],
     power: { on: () => settings.flock > 0 || settings.space > 0 || settings.predators > 0, off: { flock: 0, space: 0, predators: 0 }, start: { flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45 } },
     summary: () => [settings.flock > 0 ? 'flocking' : '', settings.space > 0 ? 'spaced' : '', settings.predators > 0 ? 'hunted' : ''].filter(Boolean).join(', ') || 'off' },
   { kind: 'range', key: 'flock', label: 'Flocking', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'space', label: 'Personal space', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'predators', label: 'Predators', min: 0, max: 6, step: 1, format: (v) => (v === 0 ? 'off' : `${v}`) },
+  { kind: 'select', key: 'predLook', label: 'Hunters look', options: [['bigger', 'Bigger'], ['same', 'Like the rest'], ['marked', 'Marked with a ring']], show: () => settings.predators > 0 },
+  { kind: 'select', key: 'predChase', label: 'Hunters chase', options: [['one', 'One prey at a time'], ['nearest', 'Whoever is nearest']], show: () => settings.predators > 0 },
+  { kind: 'select', key: 'predCatch', label: 'On a catch', options: [['none', 'Nothing'], ['eaten', 'Prey is eaten (reborn elsewhere)'], ['burst', 'The crowd bursts away']], show: () => settings.predators > 0 },
+  { kind: 'range', key: 'predSpeed', label: 'Hunter speed', min: 0.3, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.predators > 0 },
+  { kind: 'range', key: 'predFear', label: 'Prey sense from', min: 0.3, max: 2.5, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.predators > 0 },
   { kind: 'note', text: 'Flocking works best with little or no Flow, and Pixels, Arrows or Comets.', show: () => settings.flock > 0 },
   { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'flockAlign', label: 'Follow neighbours', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
@@ -18492,7 +18517,7 @@ function renderSoundPage(body: HTMLElement) {
   const sMain = mk('button', 'sndp-style-main', '<small>Style</small><b></b><span>sets the instruments, beat, bass, chords, tempo and effects</span>');
   const dice = mk('button', 'sndp-dice', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/></svg>');
   dice.setAttribute('aria-label', 'New song');
-  dice.title = 'New song in the picked genre (any genre with All genres)';
+  dice.title = 'A brand-new song in the picked genre (any genre with All genres). Random in the list plays one of the presets.';
   dice.addEventListener('click', () => {
     if (settings.sndDrumSrc !== 'live') return randomStyle();
     void grooves().then((all) => rollLive(all.filter((g) => g.id !== settings.sndGroove)));
@@ -18600,7 +18625,7 @@ function renderSoundPage(body: HTMLElement) {
     sMain.querySelector('small')!.textContent = live ? 'Groove' : 'Style';
     sMain.querySelector('span')!.textContent = live ? (g ? `drummer ${g.drummer} · ${g.bpm} BPM · ${g.bars} bars, as played` : '') : 'sets the instruments, beat, bass, chords, tempo and effects';
     acts.hidden = live;
-    dice.title = live ? 'Another groove, with a song around it that suits it' : 'New song in the picked genre (any genre with All genres)';
+    dice.title = live ? 'Another groove, with a song around it that suits it' : 'A brand-new song in the picked genre (any genre with All genres). Random in the list plays one of the presets.';
     paintKeep();
     paintPick();
   });

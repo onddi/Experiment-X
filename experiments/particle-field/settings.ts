@@ -94,6 +94,11 @@ export interface Settings {
   flockRange: number;
   space: number;
   predators: number;
+  predLook: 'bigger' | 'same' | 'marked';
+  predChase: 'one' | 'nearest';
+  predCatch: 'none' | 'eaten' | 'burst';
+  predSpeed: number;
+  predFear: number;
   spaceDist: number;
   shape: Shape;
   shapeText: string;
@@ -798,6 +803,11 @@ export const DEFAULTS: Settings = {
   flockRange: 40,
   space: 0,
   predators: 0,
+  predLook: 'bigger',
+  predChase: 'one',
+  predCatch: 'none',
+  predSpeed: 1,
+  predFear: 1,
   spaceDist: 12,
   shape: 'none',
   shapeText: 'HELLO',
