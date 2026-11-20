@@ -485,7 +485,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSongVary', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndSeqTickSound', 'sndGrainSound', 'sndGrainFrom', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndNoteDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub', 'sndPolishAmt', 'sndVerb', 'sndUnisonAmt', 'sndWaveAmt', 'sndHumanAmt', 'sndDrumSrc', 'sndGroove', 'sndGrooveTight', 'sndGrooveDyn'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndStringOct', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSongVary', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndSeqTickSound', 'sndGrainSound', 'sndGrainFrom', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndNoteDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub', 'sndPolishAmt', 'sndVerb', 'sndUnisonAmt', 'sndWaveAmt', 'sndHumanAmt', 'sndDrumSrc', 'sndGroove', 'sndGrooveTight', 'sndGrooveDyn'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -2195,13 +2195,14 @@ function swarmForces() {
   const S = settings;
   const fl = S.flock * macro.flock;
   const sp = S.space;
-  if (fl <= 0 && sp <= 0) return false;
+  const pred = Math.min(PRED_MAX, n >> 3, S.predators | 0);
+  if (fl <= 0 && sp <= 0 && pred <= 0) return false;
   if (swx.length < n) {
     swx = new Float32Array(cap);
     swy = new Float32Array(cap);
     sNext = new Int32Array(cap);
   }
-  const range = Math.max(fl > 0 ? S.flockRange : 0, sp > 0 ? S.spaceDist : 0);
+  const range = Math.max(fl > 0 ? S.flockRange : 0, sp > 0 ? S.spaceDist : 0, pred > 0 && fl <= 0 && sp <= 0 ? predSee() : 0);
   const cols = Math.ceil(w / range) + 1;
   const rows = Math.ceil(h / range) + 1;
   if (sHead.length < cols * rows) sHead = new Int32Array(cols * rows);
@@ -2218,7 +2219,11 @@ function swarmForces() {
   const sd = S.spaceDist;
   const sd2 = sd * sd;
   const sepD2 = fr2 * 0.12;
-  for (let i = 0; i < n; i++) {
+  if (fl <= 0 && sp <= 0) {
+    swx.fill(0, 0, n);
+    swy.fill(0, 0, n);
+  }
+  for (let i = 0; i < n && (fl > 0 || sp > 0); i++) {
     swx[i] = swy[i] = 0;
     if (dead[i]) continue;
     const cx = Math.min(cols - 1, Math.max(0, (px[i] / range) | 0));
@@ -2272,7 +2277,75 @@ function swarmForces() {
     swx[i] = ax;
     swy[i] = ay;
   }
+  if (pred > 0) predatorForces(pred, range, cols, rows);
   return true;
+}
+
+// --- predators and prey ------------------------------------------------------
+// The first few particles hunt: each picks a prey, chases it faster than the
+// flock cruises, and picks again once it catches it or gives up. Prey close
+// to a hunter flee, which makes the flock split and swirl around it.
+
+const PRED_MAX = 6;
+// How far prey notice a hunter: about a sixth of the screen.
+const predSee = () => Math.min(140, Math.max(50, Math.min(w, h) * 0.16));
+const predPrey = new Int32Array(PRED_MAX).fill(-1);
+const predTime = new Float32Array(PRED_MAX);
+
+function predatorForces(pred: number, range: number, cols: number, rows: number) {
+  const see = predSee();
+  const see2 = see * see;
+  const reach = Math.ceil(see / range);
+  for (let p = 0; p < pred; p++) {
+    if (dead[p]) continue;
+    let t = predPrey[p];
+    if (t < pred || t >= n || dead[t] || --predTime[p] <= 0) {
+      t = pred + ((Math.random() * (n - pred)) | 0);
+      predPrey[p] = t;
+      predTime[p] = 90 + Math.random() * 60;
+    }
+    const dx = px[t] - px[p];
+    const dy = py[t] - py[p];
+    const d = Math.hypot(dx, dy) + 1e-6;
+    if (d < 6) predTime[p] = 0;
+    swx[p] = ((dx / d) * 2.6 - vx[p]) * 0.08;
+    swy[p] = ((dy / d) * 2.6 - vy[p]) * 0.08;
+    const cx = Math.min(cols - 1, Math.max(0, (px[p] / range) | 0));
+    const cy = Math.min(rows - 1, Math.max(0, (py[p] / range) | 0));
+    for (let yy = Math.max(0, cy - reach); yy <= Math.min(rows - 1, cy + reach); yy++) {
+      for (let xx = Math.max(0, cx - reach); xx <= Math.min(cols - 1, cx + reach); xx++) {
+        for (let j = sHead[yy * cols + xx]; j >= 0; j = sNext[j]) {
+          if (j < pred) continue;
+          const ex = px[j] - px[p];
+          const ey = py[j] - py[p];
+          const e2 = ex * ex + ey * ey;
+          if (e2 >= see2 || e2 < 0.01) continue;
+          const e = Math.sqrt(e2);
+          const f = ((1 - e / see) ** 2 * 0.45) / e;
+          swx[j] += ex * f;
+          swy[j] += ey * f;
+        }
+      }
+    }
+  }
+}
+
+function drawPredators(light: boolean) {
+  const pred = Math.min(PRED_MAX, n >> 3, settings.predators | 0);
+  if (pred <= 0) return;
+  const P = penFor(true);
+  P.lineWidth = 1.5;
+  for (let p = 0; p < pred; p++) {
+    if (dead[p]) continue;
+    P.fillStyle = light ? 'rgb(200 30 20 / 0.9)' : 'rgb(255 90 60 / 0.95)';
+    P.beginPath();
+    P.arc(px[p], py[p], 4, 0, Math.PI * 2);
+    P.fill();
+    P.strokeStyle = light ? 'rgb(200 30 20 / 0.4)' : 'rgb(255 120 90 / 0.45)';
+    P.beginPath();
+    P.arc(px[p], py[p], 10, 0, Math.PI * 2);
+    P.stroke();
+  }
 }
 
 // --- ribbon history -----------------------------------------------------------
@@ -4475,7 +4548,7 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
   const cx = w / 2;
   const cy = h / 2;
   if (kind === 'geo') {
-    let [x, y] = geoPoint(S.shapeGeo, u, v, t, (w / 2) / Math.max(1, R));
+    let [x, y] = geoPoint(S.shapeGeo, u, v, t, (w / 2) / Math.max(1, R), n);
     if (GEO_SPINS(S.shapeGeo) && S.shapeSpin > 0) {
       const a = shapeT * S.shapeSpin * 0.6;
       const c = Math.cos(a);
@@ -7415,7 +7488,7 @@ function drawSubstance(style: string, s: number, light: boolean) {
     fieldR.begin(style === 'glass' ? 'wash' : (style as 'liquid'), w, h, n, shadeRgb);
     for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1, vx, vy);
     for (let L = 0; L < FADE_LEVELS; L++) for (let k = 0; k < SHADES; k++) fieldR.add(px, py, fadeBuckets[L][k], k, (L + 0.5) / FADE_LEVELS, vx, vy);
-    fieldR.draw(ctx, s, t, dt, light, 1, style === 'frost' ? penFor() : ctx);
+    fieldR.draw(ctx, s, t, dt, light, 1, (style === 'frost' || style === 'colonise') ? penFor() : ctx);
     if (style === 'glass') drawGlass(s);
     if (STEER_STYLES.has(style)) {
       if (style === 'ants') fieldR.targets = wellList().map((q): [number, number] => [q.x * w, q.y * h]);
@@ -8763,6 +8836,7 @@ function draw() {
   const P = penFor(true);
   P.globalAlpha = 1;
   if (settings.showWells) drawWellMarkers(r * 0.3 + g * 0.59 + b * 0.11 > 140);
+  drawPredators(r * 0.3 + g * 0.59 + b * 0.11 > 140);
   // Fingertips and pinches, faintly, so you can see where your hands are.
   if (markPts.length) {
     P.fillStyle = r * 0.3 + g * 0.59 + b * 0.11 > 140 ? 'rgb(0 0 0 / 0.25)' : 'rgb(255 255 255 / 0.25)';
@@ -9695,7 +9769,7 @@ const RENDERS: [string, string][] = [
   ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'], ['marbles', 'Marbles'],
   ['liquid', 'Liquid'], ['cells', 'Cells'], ['contours', 'Contours'], ['smoke', 'Smoke'], ['glass', 'Glass drops'], ['sand', 'Sand'],
-  ['lava', 'Lava'], ['terrain', 'Terrain'], ['caustics', 'Caustics'], ['aurora', 'Aurora'], ['marbling', 'Marbling'], ['rain', 'Rain on water'], ['slime', 'Slime mould'], ['rivals', 'Rival slimes'], ['mycelium', 'Mycelium'], ['ants', 'Ant trails'], ['termites', 'Termites'],
+  ['lava', 'Lava'], ['terrain', 'Terrain'], ['caustics', 'Caustics'], ['aurora', 'Aurora'], ['marbling', 'Marbling'], ['rain', 'Rain on water'], ['slime', 'Slime mould'], ['rivals', 'Rival slimes'], ['mycelium', 'Mycelium'], ['ants', 'Ant trails'], ['termites', 'Termites'], ['colonise', 'Space colonisation'], ['lenia', 'Lenia'],
   ['turing', 'Coral (reaction-diffusion)'], ['ferro', 'Ferrofluid'], ['frost', 'Frost'], ['flames', 'Flames'], ['stained', 'Stained glass'],
   ['lowpoly', 'Low-poly'], ['fieldlines', 'Field lines'], ['sketch', 'Pencil sketch'], ['fireflies', 'Fireflies'], ['brush', 'Brush strokes'],
   ['sprite', 'Your sprite (image or sheet)'],
@@ -11087,11 +11161,12 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'showWells', label: 'Show the points', show: () => wellList().length > 0 },
   { kind: 'buttons', buttons: [['Remove all points', () => setWells([])]], show: () => wellList().length > 0 },
 
-  { kind: 'section', about: 'Flocking like birds, or keeping personal space.', id: 'swarm', label: 'Swarm', tab: 'motion', lock: ['flock', 'flockSep', 'flockAlign', 'flockCohesion', 'flockRange', 'space', 'spaceDist'],
-    power: { on: () => settings.flock > 0 || settings.space > 0, off: { flock: 0, space: 0 }, start: { flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45 } },
-    summary: () => [settings.flock > 0 ? 'flocking' : '', settings.space > 0 ? 'spaced' : ''].filter(Boolean).join(', ') || 'off' },
+  { kind: 'section', about: 'Flocking like birds, or keeping personal space.', id: 'swarm', label: 'Swarm', tab: 'motion', lock: ['flock', 'flockSep', 'flockAlign', 'flockCohesion', 'flockRange', 'space', 'spaceDist', 'predators'],
+    power: { on: () => settings.flock > 0 || settings.space > 0 || settings.predators > 0, off: { flock: 0, space: 0, predators: 0 }, start: { flock: 1, flockAlign: 1.2, flockCohesion: 1, flockSep: 0.8, flockRange: 45 } },
+    summary: () => [settings.flock > 0 ? 'flocking' : '', settings.space > 0 ? 'spaced' : '', settings.predators > 0 ? 'hunted' : ''].filter(Boolean).join(', ') || 'off' },
   { kind: 'range', key: 'flock', label: 'Flocking', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'space', label: 'Personal space', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'range', key: 'predators', label: 'Predators', min: 0, max: 6, step: 1, format: (v) => (v === 0 ? 'off' : `${v}`) },
   { kind: 'note', text: 'Flocking works best with little or no Flow, and Pixels, Arrows or Comets.', show: () => settings.flock > 0 },
   { kind: 'more', label: 'More settings' },
   { kind: 'range', key: 'flockAlign', label: 'Follow neighbours', min: 0, max: 2, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => settings.flock > 0 },
@@ -11224,6 +11299,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndTempo', label: 'Tempo', min: 50, max: 160, step: 1, format: (v) => `${v} bpm`, show: () => settings.sndMusic !== 'along' || audio.source === 'off' },
   { kind: 'range', key: 'sndStrings', label: 'Strings', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndStringCount', label: 'How many strings', min: 2, max: 12, step: 1, format: (v) => String(v), show: () => settings.sndStrings > 0 },
+  { kind: 'range', key: 'sndStringOct', label: 'Strings octave', min: -2, max: 2, step: 1, format: (v) => (v === 0 ? 'same' : `${v > 0 ? '+' : ''}${v}`), show: () => settings.sndStrings > 0 },
   { kind: 'range', key: 'sndDrone', label: 'Pad', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndSeq', label: 'Steps (rhythm)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndAccents', label: 'Accents', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
@@ -14073,7 +14149,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['speed', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
-  swarm: ['flock', 'space'],
+  swarm: ['flock', 'space', 'predators'],
   obstacles: ['obstacles', 'obsText', 'obsShow', 'obsForce'],
   pointer: ['pointerMode', 'click', 'radius', 'playTwo', 'playPinch', 'tapTwice', 'twistTwo', 'holdTwo', 'swipeThree', 'swipeOne', 'tapThree', 'thumbWall'],
   drums: ['audioKick', 'audioPulse', 'audioSpeed'],
@@ -18249,7 +18325,7 @@ const SND_TRACKS: SndTrack[] = [
       return g ? `${g.beats[settings.sndBeat]?.name ?? g.name} · ${kit}` : `follows the field · ${kit}`;
     } },
   { name: 'Bass', how: 'Plays the root of the chord, low. A calm field holds one long note a bar. As the particles speed up it walks between root and fifth, then plays eighth notes.', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassPattern', 'sndBassMove', 'sndBassWalk', 'sndBassSound', 'sndBassOct', 'sndSub', 'sndBassTone', 'sndBassGlide', 'sndBassLen', 'sndBassGhost'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
-  { name: 'Strings', how: 'Invisible strings run up and down the screen. A particle crossing one plucks it. Strings further right play higher in the chord, and the top half of the screen plays higher still. The more particles cross at once, the louder the note.', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndOctave', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
+  { name: 'Strings', how: 'Invisible strings run up and down the screen. A particle crossing one plucks it. Strings further right play higher in the chord, and the top half of the screen plays higher still. The more particles cross at once, the louder the note.', key: 'sndStrings', dot: '#7fb3ff', keys: ['sndTimbre', 'sndStringCount', 'sndArp', 'sndStringOct', 'sndRange', 'sndLength', 'sndAttack', 'sndDyn', 'sndBend'], sub: () => `${optLabel(TIMBRES, settings.sndTimbre)} · ${settings.sndStringCount} strings` },
   { name: 'Pad', how: 'Holds the chord underneath. It swells as the field gets busier, spreads wider in stereo as the particles spread out, and gets brighter as they speed up. Births and bursts make it bloom.', key: 'sndDrone', dot: '#b48cff', keys: ['sndPadSound', 'sndPadHold', 'sndPadOct', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadPump'], sub: () => optLabel(PAD_SOUNDS, settings.sndPadSound) + (settings.sndPadPump > 0 ? ' · pumping' : '') },
   { name: 'Steps', how: 'A step sequencer that reads the screen left to right, one column per sixteenth note. Where particles crowd in the current column, that height plays a note: higher on the screen, higher note.', key: 'sndSeq', dot: '#6fd3b0', keys: ['sndSeqSound', 'sndSeqStyle', 'sndSeqVary', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSeqTickSound'], sub: () => `${optLabel(STEP_RATES, settings.sndSeqRate)} notes on ${(settings.sndSeqSound === 'same' ? optLabel(TIMBRES, settings.sndTimbre) : optLabel(STEP_SOUNDS, settings.sndSeqSound)).toLowerCase()}` },
   { name: 'Chimes', how: 'A note each time particles bounce off an edge or an obstacle. Only the hardest bounces play, louder the harder they hit, and higher near the top of the screen.', key: 'sndHits', dot: '#9fe3f0', keys: ['sndHitSound'], notes: ['Chimes need'], sub: () => (settings.sndHitSound === 'same' ? 'when particles bounce' : `${optLabel(CHIME_SOUNDS, settings.sndHitSound)} · on bounces`) },
@@ -18259,7 +18335,7 @@ const SND_TRACKS: SndTrack[] = [
   { name: 'Accents', how: 'Sounds for moments, not for motion. A new scene rolls the chord upward like a harp. A shape forming (a word, an icon, a picture) sweeps a rising whoosh. When dozens of particles are born at once (an emitter burst, a tap that spawns), three high notes ring. An explosion can land a low boom. Each plays once per moment, in the key of the music.', key: 'sndAccents', dot: '#f3d36b', keys: ['sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice'],
     sub: () => [settings.sndAccScene && 'scenes', settings.sndAccShape && 'shapes', settings.sndAccBirth && 'births', settings.sndAccBurst && 'explosions'].filter(Boolean).join(', ') || 'nothing on' },
 ];
-const SONG_KEYS: (keyof Settings)[] = ['sndSongForm', 'sndSongVary', 'sndKey', 'sndScale', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
+const SONG_KEYS: (keyof Settings)[] = ['sndSongForm', 'sndSongVary', 'sndKey', 'sndScale', 'sndOctave', 'sndProg', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndTempo', 'sndField', 'sndMusic'];
 const QUALITY_KEYS: (keyof Settings)[] = ['sndPolishAmt', 'sndUnisonAmt', 'sndWaveAmt', 'sndHumanAmt'];
 const SND_OPEN_KEY = 'particle-field:sound-open';
 const SND_TAB_KEY = 'particle-field:sound-tab';
@@ -20645,7 +20721,7 @@ function sndParams(): SoundParams {
   // Live drums: the groove (the grooves load the first time Live is on).
   const liveG = S.sndDrumSrc === 'live' ? grooveById(S.sndGroove) : null;
   if (S.sndDrumSrc === 'live' && !groovesNow()) void grooves();
-  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, accScene: S.sndAccScene, accShape: S.sndAccShape, accBirth: S.sndAccBirth, accBurst: S.sndAccBurst, accVoice: S.sndAccVoice, hits: S.sndHits, hitSound: S.sndHitSound, seqSound: S.sndSeqSound, seqRate: Number(S.sndSeqRate), seqNotes: S.sndSeqNotes, seqSens: S.sndSeqSens, seqStyle: S.sndSeqStyle, seqVary: S.sndSeqVary, seqTick: S.sndSeqTick ? S.sndSeqTickSound : 'off', grainSound: S.sndGrainSound, grainFrom: S.sndGrainFrom, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, scanDir: S.sndScanDir, scanSound: S.sndScanSound, scanNotes: S.sndScanNotes, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
+  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, stringOct: S.sndStringOct, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, accScene: S.sndAccScene, accShape: S.sndAccShape, accBirth: S.sndAccBirth, accBurst: S.sndAccBurst, accVoice: S.sndAccVoice, hits: S.sndHits, hitSound: S.sndHitSound, seqSound: S.sndSeqSound, seqRate: Number(S.sndSeqRate), seqNotes: S.sndSeqNotes, seqSens: S.sndSeqSens, seqStyle: S.sndSeqStyle, seqVary: S.sndSeqVary, seqTick: S.sndSeqTick ? S.sndSeqTickSound : 'off', grainSound: S.sndGrainSound, grainFrom: S.sndGrainFrom, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, scanDir: S.sndScanDir, scanSound: S.sndScanSound, scanNotes: S.sndScanNotes, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: liveG ? liveG.swing : S.sndSwing, arp: S.sndArp,
     echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, bassMove: S.sndBassMove, bassPattern: S.sndBassPattern, bassWalk: S.sndBassWalk, bassOct: S.sndBassOct === 'sub' ? -1 : S.sndBassOct === 'mid' ? 1 : 0, bassGlide: S.sndBassGlide, bassLen: S.sndBassLen, bassGhost: S.sndBassGhost, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, padTone: S.sndPadTone, padWidth: S.sndPadWidth, padBreath: S.sndPadBreath, padGlide: S.sndPadGlide, padHold: S.sndPadHold, padOct: S.sndPadOct === 'low' ? -1 : S.sndPadOct === 'high' ? 1 : 0, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, ping: S.sndPing, phaser: S.sndPhaser, trem: S.sndTrem, tremMode: S.sndTremMode, shimmer: S.sndShimmer, glue: S.sndGlue, lowEnd: S.sndLowEnd, kickPunch: S.sndKickPunch, sub: S.sndSub, tape: S.sndTape, groove: liveG, grooveTight: S.sndGrooveTight, grooveDyn: S.sndGrooveDyn, grid: S.sndGrid, polish: S.sndPolishAmt, verb: S.sndVerb, unison: S.sndUnisonAmt, wave: S.sndWaveAmt, human: S.sndHumanAmt };
@@ -23115,7 +23191,7 @@ setInterval(stageName, 300);
 let arrangeEl: HTMLElement | null = null;
 const LITE_KEY = 'pf-arrange-lite';
 const LITE: Partial<Settings> = { trail: 0, glow: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioTunnel: 0, audioKaleido: 0 };
-const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'rivals', 'mycelium', 'ants', 'termites', 'turing', 'ferro', 'frost', 'flames', 'stained', 'lowpoly', 'fieldlines', 'sketch', 'fireflies', 'brush']);
+const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'rivals', 'mycelium', 'ants', 'termites', 'colonise', 'lenia', 'turing', 'ferro', 'frost', 'flames', 'stained', 'lowpoly', 'fieldlines', 'sketch', 'fireflies', 'brush']);
 let liteScene = '';
 // Outline: while arranging, skip the simulation and draw only the shape's
 // spots (a light dotted outline), so dragging stays snappy on phones.

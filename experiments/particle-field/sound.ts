@@ -268,6 +268,7 @@ export interface SoundParams {
   strings: number;
   stringCount: number;
   octave: number; // shifts every note by octaves
+  stringOct?: number; // shifts only the Strings
   range: number; // how many octaves the notes spread over
   pad: number;
   seq: number;
@@ -1679,7 +1680,8 @@ export class ParticleSound {
     if (this.voices >= MAX_VOICES || this.tokens < 1 || vel < 0.02) return;
     this.tokens--;
     const Vd = VOICES[voice];
-    const fl = this.freq(deg) * 2 ** (Vd.octave ?? 0);
+    const so = this.cur === 'strings' ? (P.stringOct ?? 0) : 0;
+    const fl = this.freq(deg) * 2 ** ((Vd.octave ?? 0) + so);
     this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * this.lenK * (this.bpmNow / 60), when);
     if (!this.audible(this.cur)) return;
     if (this.drumQ.length <= 64) this.drumQ.push({ kind: 'note', k: vel, at: this.ctx.currentTime + when, col: this.stepNow, len: Vd.decay * P.length * this.lenK, pc: ((Math.round(69 + 12 * Math.log2(fl / 440)) % 12) + 12) % 12 });
@@ -1687,7 +1689,7 @@ export class ParticleSound {
     const V = VOICES[voice];
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
-    const f = this.freq(deg) * 2 ** (V.octave ?? 0);
+    const f = this.freq(deg) * 2 ** ((V.octave ?? 0) + so);
     // Low notes ring longer, like real bars and strings.
     const decay = V.decay * (1.3 - Math.min(1, f / 1600) * 0.6) * P.length * this.lenK;
     const end = t + decay + 0.05;

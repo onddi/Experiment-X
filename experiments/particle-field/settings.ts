@@ -26,7 +26,7 @@ export type SpawnOn = 'none' | 'death' | 'hit' | 'trail' | 'beat';
 export type HitWalls = 'none' | 'floor' | 'box' | 'bowl';
 export type HitDo = 'bounce' | 'slide' | 'stick' | 'pile';
 export type ClickMode = 'gather' | 'ripple' | 'implode' | 'emit' | 'shockwave' | 'none' | 'implodeHold' | 'thumb';
-export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links' | 'squares' | 'shards' | 'stars' | 'petals' | 'crosses' | 'neon' | 'flare' | 'embers' | 'hair' | 'threads' | 'ink' | 'lightning' | 'halftone' | 'bigpixels' | 'bubbles' | 'marbles' | 'liquid' | 'cells' | 'contours' | 'smoke' | 'glass' | 'sand' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime' | 'rivals' | 'mycelium' | 'ants' | 'termites' | 'turing' | 'ferro' | 'frost' | 'flames' | 'stained' | 'lowpoly' | 'fieldlines' | 'sketch' | 'fireflies' | 'brush' | 'sprite';
+export type Render = 'mixed' | 'dots' | 'circles' | 'glow' | 'bokeh' | 'rings' | 'sparkles' | 'arrows' | 'streaks' | 'comets' | 'ribbons' | 'glyphs' | 'links' | 'squares' | 'shards' | 'stars' | 'petals' | 'crosses' | 'neon' | 'flare' | 'embers' | 'hair' | 'threads' | 'ink' | 'lightning' | 'halftone' | 'bigpixels' | 'bubbles' | 'marbles' | 'liquid' | 'cells' | 'contours' | 'smoke' | 'glass' | 'sand' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime' | 'rivals' | 'mycelium' | 'ants' | 'termites' | 'colonise' | 'lenia' | 'turing' | 'ferro' | 'frost' | 'flames' | 'stained' | 'lowpoly' | 'fieldlines' | 'sketch' | 'fireflies' | 'brush' | 'sprite';
 export type KickAction = 'pulse' | 'wave' | 'both' | 'pump' | 'tick' | 'spawn' | 'none';
 export type SnareAction = 'swirl' | 'wave' | 'flash' | 'none';
 export type HatAction = 'sparkle' | 'none';
@@ -93,6 +93,7 @@ export interface Settings {
   flockCohesion: number;
   flockRange: number;
   space: number;
+  predators: number;
   spaceDist: number;
   shape: Shape;
   shapeText: string;
@@ -250,6 +251,7 @@ export interface Settings {
   sndTempo: number;
   sndStrings: number;
   sndStringCount: number;
+  sndStringOct: number;
   sndOctave: number;
   sndRange: number;
   sndSeq: number;
@@ -795,6 +797,7 @@ export const DEFAULTS: Settings = {
   flockCohesion: 1,
   flockRange: 40,
   space: 0,
+  predators: 0,
   spaceDist: 12,
   shape: 'none',
   shapeText: 'HELLO',
@@ -942,6 +945,7 @@ export const DEFAULTS: Settings = {
   sndTempo: 90,
   sndStrings: 0.7,
   sndStringCount: 6,
+  sndStringOct: 0,
   sndOctave: 0,
   sndRange: 2,
   sndSeq: 0,

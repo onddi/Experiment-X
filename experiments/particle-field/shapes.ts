@@ -441,6 +441,7 @@ export const GEO_SHAPES: [string, string][] = [
   ['heartline', 'Heart outline'], ['wave', 'Wave line'],
   ['octagon', 'Octagon'], ['rhombus', 'Rhombus'], ['star8', 'Eight-point star'], ['cross', 'Cross'], ['cardioid', 'Cardioid'], ['astroid', 'Astroid'],
   ['bfly', 'Butterfly curve'], ['lemniscate', 'Infinity loop'], ['flowerlife', 'Flower of life'], ['honeycomb', 'Honeycomb'], ['sierpinski', 'Sierpiński triangle'], ['trefoil', 'Trefoil'],
+  ['phyllo', 'Sunflower seeds'],
 ];
 
 function along(pts: number[][], u: number) {
@@ -496,7 +497,7 @@ function sierpinski(u: number, v: number): [number, number] {
 }
 
 /** A point on a curve, radius about 1. u runs along it; v (0–1) gives the line some width. */
-export function geoPoint(type: string, u: number, v: number, time: number, aspect: number): [number, number] {
+export function geoPoint(type: string, u: number, v: number, time: number, aspect: number, count = 1400): [number, number] {
   const wob = (v - 0.5) * 0.05;
   const TAU = Math.PI * 2;
   if (POLYS[type]) {
@@ -511,6 +512,15 @@ export function geoPoint(type: string, u: number, v: number, time: number, aspec
       const r = u < 1 / 6 ? 0.34 : u < 0.5 ? 0.67 : 1;
       const a = u * TAU * 7;
       return [Math.cos(a) * (r + wob), Math.sin(a) * (r + wob)];
+    }
+    case 'phyllo': {
+      // Phyllotaxis: seed k sits at the golden angle (137.5°) from the last,
+      // out at the square root of k, so they pack into the sunflower's spirals.
+      const N = Math.max(1, count);
+      const k = Math.min(N - 1, Math.floor(u * N));
+      const r = Math.sqrt((k + 0.5) / N);
+      const a = k * 2.399963229728653;
+      return [Math.cos(a) * r, Math.sin(a) * r];
     }
     case 'spiral': {
       const r = 0.06 + 0.94 * Math.sqrt(u);

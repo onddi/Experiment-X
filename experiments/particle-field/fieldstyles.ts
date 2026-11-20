@@ -14,12 +14,12 @@ export type FieldPen = Pick<CanvasRenderingContext2D, 'beginPath' | 'moveTo' | '
   globalAlpha: number;
   lineCap: CanvasLineCap;
 };
-export type FieldStyle = 'liquid' | 'cells' | 'contours' | 'smoke' | 'wash' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime' | 'turing' | 'ferro' | 'frost' | 'flames' | 'stained' | 'rivals' | 'mycelium' | 'ants' | 'termites';
-export const FIELD_STYLES = new Set<string>(['liquid', 'cells', 'contours', 'smoke', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'turing', 'ferro', 'frost', 'flames', 'stained', 'rivals', 'mycelium', 'ants', 'termites']);
+export type FieldStyle = 'liquid' | 'cells' | 'contours' | 'smoke' | 'wash' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime' | 'turing' | 'ferro' | 'frost' | 'flames' | 'stained' | 'rivals' | 'mycelium' | 'ants' | 'termites' | 'colonise' | 'lenia';
+export const FIELD_STYLES = new Set<string>(['liquid', 'cells', 'contours', 'smoke', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'turing', 'ferro', 'frost', 'flames', 'stained', 'rivals', 'mycelium', 'ants', 'termites', 'colonise', 'lenia']);
 // How many grid cells each look gets on a phone (sharp edges need more).
 // Reaction-diffusion runs many steps a frame, and its pattern is a few cells
 // wide, so it gets a coarser grid (which also makes the pattern bigger).
-const CELLS: Partial<Record<FieldStyle, number>> = { liquid: 130000, contours: 130000, lava: 130000, cells: 90000, caustics: 90000, marbling: 90000, slime: 90000, terrain: 70000, turing: 26000, ferro: 130000, stained: 90000, rivals: 90000, mycelium: 90000, ants: 70000, termites: 22000 };
+const CELLS: Partial<Record<FieldStyle, number>> = { liquid: 130000, contours: 130000, lava: 130000, cells: 90000, caustics: 90000, marbling: 90000, slime: 90000, terrain: 70000, turing: 26000, ferro: 130000, stained: 90000, rivals: 90000, mycelium: 90000, ants: 70000, termites: 22000, lenia: 14000 };
 // Glowing looks add light on a dark background.
 const ADDS = new Set<FieldStyle>(['aurora', 'slime', 'flames', 'rivals', 'mycelium', 'ants']);
 /** Styles whose particles steer by what the field holds (FieldRender.steer). */
@@ -144,6 +144,17 @@ export class FieldRender {
   // Per particle: carrying (ants, termites) and a short wait (termites).
   private mem = new Uint8Array(0);
   private grainReady = false;
+  // Space colonisation: the tree (node positions, parent, generation), and the attractors this frame.
+  private tx = new Float32Array(4000);
+  private ty = new Float32Array(4000);
+  private tp = new Int32Array(4000);
+  private tg = new Uint16Array(4000);
+  private tn = 0;
+  private tIdle = 0;
+  private tFade = 1;
+  // Lenia: the ring-shaped neighbourhood (offsets and weights) for this grid.
+  private lk: { o: Int32Array; dx: Int8Array; dy: Int8Array; w: Float32Array } | null = null;
+  private lkFor = '';
   private lavaFor: Rgb[] | null = null;
   private lavaRamp: number[][] = [];
 
@@ -210,6 +221,7 @@ export class FieldRender {
     this.sx.length = this.sy.length = this.sk.length = 0;
     // A cell about 40 px across on a phone; fewer, bigger cells for a crowd.
     this.maxSeeds = Math.round(Math.min(700, Math.max(120, (w * h) / 1500)) * (style === 'stained' ? 0.45 : 1));
+    if (style === 'colonise') this.maxSeeds = 500;
     this.stride = Math.max(1, Math.ceil(total / this.maxSeeds));
   }
 
@@ -256,7 +268,7 @@ export class FieldRender {
       }
       return;
     }
-    if (this.style === 'cells' || this.style === 'stained') {
+    if (this.style === 'cells' || this.style === 'stained' || this.style === 'colonise') {
       for (const i of list) {
         if (i % this.stride || this.sx.length >= this.maxSeeds) continue;
         this.sx.push(px[i]);
@@ -561,6 +573,233 @@ export class FieldRender {
     }
   }
 
+  /**
+   * Space colonisation (how leaves grow veins and trees grow branches): the
+   * particles are the light the tree reaches for. Each one pulls on the
+   * nearest twig within reach; every pulled twig grows a step toward the
+   * average pull. When it stops growing, the tree fades and a new one starts.
+   */
+  private colonise(pen: FieldPen, s: number, dt: number, light: boolean, alpha: number) {
+    const { w, h, sx, sy } = this;
+    const m = Math.min(w, h);
+    const D = Math.max(60, m * 0.2);
+    const kill = Math.max(8, m * 0.018);
+    const step = Math.max(4, m * 0.012);
+    const MAX = this.tx.length;
+    if (this.tn === 0) {
+      // Three seedlings along the bottom.
+      for (let k = 0; k < 3; k++) {
+        this.tx[k] = w * (0.25 + 0.25 * k);
+        this.ty[k] = h - 2;
+        this.tp[k] = -1;
+        this.tg[k] = 0;
+      }
+      this.tn = 3;
+      this.tIdle = 0;
+      this.tFade = 1;
+    }
+    const { tx, ty, tp, tg } = this;
+    const n0 = this.tn;
+    // Twigs in a grid, so each particle finds its nearest quickly.
+    const cols = Math.ceil(w / D) + 1;
+    const rows = Math.ceil(h / D) + 1;
+    const head = new Int32Array(cols * rows).fill(-1);
+    const next = new Int32Array(n0);
+    for (let j = 0; j < n0; j++) {
+      const k = Math.min(rows - 1, Math.max(0, (ty[j] / D) | 0)) * cols + Math.min(cols - 1, Math.max(0, (tx[j] / D) | 0));
+      next[j] = head[k];
+      head[k] = j;
+    }
+    const gx = new Float32Array(n0);
+    const gy = new Float32Array(n0);
+    const gc = new Uint16Array(n0);
+    for (let a = 0; a < sx.length; a++) {
+      const x = sx[a];
+      const y = sy[a];
+      const cx = (x / D) | 0;
+      const cy = (y / D) | 0;
+      let best = -1;
+      let bd = D * D;
+      for (let oy = -1; oy <= 1; oy++)
+        for (let ox = -1; ox <= 1; ox++) {
+          const X = cx + ox;
+          const Y = cy + oy;
+          if (X < 0 || Y < 0 || X >= cols || Y >= rows) continue;
+          for (let j = head[Y * cols + X]; j >= 0; j = next[j]) {
+            const d2 = (tx[j] - x) ** 2 + (ty[j] - y) ** 2;
+            if (d2 < bd) {
+              bd = d2;
+              best = j;
+            }
+          }
+        }
+      if (best < 0 || bd < kill * kill) continue;
+      const d = Math.sqrt(bd);
+      gx[best] += (x - tx[best]) / d;
+      gy[best] += (y - ty[best]) / d;
+      gc[best]++;
+    }
+    // Grow: each pulled twig a step toward its pull (a few dozen a frame).
+    let grew = 0;
+    const budget = Math.max(8, Math.round(40 * Math.min(3, dt * 60)));
+    if (this.tFade >= 1)
+      for (let j = 0; j < n0 && grew < budget && this.tn < MAX; j++) {
+        if (!gc[j]) continue;
+        const L = Math.hypot(gx[j], gy[j]);
+        if (L < 0.2) continue;
+        const k = this.tn++;
+        tx[k] = tx[j] + (gx[j] / L) * step + (Math.random() - 0.5) * step * 0.2;
+        ty[k] = ty[j] + (gy[j] / L) * step + (Math.random() - 0.5) * step * 0.2;
+        tp[k] = j;
+        tg[k] = Math.min(65535, tg[j] + 1);
+        grew++;
+      }
+    this.tIdle = grew ? 0 : this.tIdle + 1;
+    // Done (full, or nothing left to reach for a while): fade out, then start over.
+    if (this.tFade < 1 || this.tn >= MAX || this.tIdle > 90) {
+      this.tFade -= Math.min(0.1, dt * 0.5);
+      if (this.tFade <= 0) {
+        this.tn = 0;
+        return;
+      }
+    }
+    // Draw: older twigs thicker, colour along the palette by how far out they are.
+    let maxG = 1;
+    for (let j = 0; j < this.tn; j++) if (tg[j] > maxG) maxG = tg[j];
+    const base = Math.max(0.8, s * 0.22);
+    pen.lineCap = 'round';
+    const CB = 6;
+    const WB = 3;
+    for (let cbk = 0; cbk < CB; cbk++)
+      for (let wb = 0; wb < WB; wb++) {
+        let any = false;
+        for (let j = 0; j < this.tn; j++) {
+          const p = tp[j];
+          if (p < 0) continue;
+          const f = tg[j] / maxG;
+          if (Math.min(CB - 1, (f * CB) | 0) !== cbk) continue;
+          const age = 1 - j / this.tn;
+          if (Math.min(WB - 1, (age * age * WB) | 0) !== wb) continue;
+          if (!any) {
+            const col = this.pick(f);
+            pen.strokeStyle = light ? `rgb(${(col[0] * 0.6) | 0} ${(col[1] * 0.6) | 0} ${(col[2] * 0.6) | 0})` : `rgb(${col[0] | 0} ${col[1] | 0} ${col[2] | 0})`;
+            pen.lineWidth = base * (1 + wb * 1.6);
+            pen.globalAlpha = alpha * this.tFade;
+            pen.beginPath();
+            any = true;
+          }
+          pen.moveTo(tx[p], ty[p]);
+          pen.lineTo(tx[j], ty[j]);
+        }
+        if (any) pen.stroke();
+      }
+    pen.globalAlpha = alpha;
+  }
+
+  /**
+   * Lenia: a smooth "game of life". Each spot looks at a ring around it; a
+   * ring that's just full enough makes it grow, too empty or too full makes
+   * it fade. Blobs form that move, wobble and split. The particles feed it.
+   */
+  private lenia(dt: number, light: boolean) {
+    const { gw, gh, dens } = this;
+    const N = gw * gh;
+    const [A, U] = this.rd;
+    const R = 7;
+    const key = `${gw}x${gh}`;
+    if (!this.lk || this.lkFor !== key) {
+      const o: number[] = [];
+      const dx: number[] = [];
+      const dy: number[] = [];
+      const wt: number[] = [];
+      for (let y = -R; y <= R; y++)
+        for (let x = -R; x <= R; x++) {
+          const r = Math.hypot(x, y) / R;
+          if (r <= 0 || r >= 1) continue;
+          const k = Math.exp(4 - 1 / (r * (1 - r)));
+          if (k < 1e-3) continue;
+          o.push(y * gw + x);
+          dx.push(x);
+          dy.push(y);
+          wt.push(k);
+        }
+      const sum = wt.reduce((a, b) => a + b, 0);
+      this.lk = { o: Int32Array.from(o), dx: Int8Array.from(dx), dy: Int8Array.from(dy), w: Float32Array.from(wt.map((v) => v / sum)) };
+      this.lkFor = key;
+      this.rdReady = false;
+    }
+    if (!this.rdReady) {
+      A.fill(0);
+      this.rdReady = true;
+    }
+    // The crowd is the habitat: life grows only where the particles are
+    // (blurred), and fades away where they've left.
+    const Hb = this.rd[2];
+    Hb.set(dens);
+    boxBlur(Hb, this.tmp, gw, gh, 3);
+    boxBlur(Hb, this.tmp, gw, gh, 3);
+    let hmax = 0;
+    for (let i = 0; i < N; i++) if (Hb[i] > hmax) hmax = Hb[i];
+    const hk = hmax > 0 ? 4 / hmax : 0;
+    for (let i = 0; i < N; i++) Hb[i] = Math.min(1, Hb[i] * hk);
+    // When there's little life left, drop a fresh random patch where the
+    // crowd is densest.
+    let mass = 0;
+    for (let i = 0; i < N; i++) mass += A[i];
+    if (mass < N * 0.03 && Math.random() < 0.1) {
+      let best = (Math.random() * N) | 0;
+      for (let k = 0; k < 60; k++) {
+        const j = (Math.random() * N) | 0;
+        if (Hb[j] > Hb[best]) best = j;
+      }
+      const cx = best % gw;
+      const cy = (best / gw) | 0;
+      for (let y = -R * 2; y <= R * 2; y++)
+        for (let x = -R * 2; x <= R * 2; x++) {
+          const X = cx + x;
+          const Y = cy + y;
+          if (X < 0 || Y < 0 || X >= gw || Y >= gh) continue;
+          A[Y * gw + X] = Math.random();
+        }
+    }
+    const { o, dx, dy, w } = this.lk;
+    const K = o.length;
+    for (let y = 0; y < gh; y++)
+      for (let x = 0; x < gw; x++) {
+        const i = y * gw + x;
+        let u = 0;
+        if (x >= R && y >= R && x < gw - R && y < gh - R) for (let k = 0; k < K; k++) u += A[i + o[k]] * w[k];
+        else
+          for (let k = 0; k < K; k++) {
+            const X = x + dx[k];
+            const Y = y + dy[k];
+            if (X >= 0 && Y >= 0 && X < gw && Y < gh) u += A[Y * gw + X] * w[k];
+          }
+        U[i] = u;
+      }
+    const T = 0.1 * Math.min(2, dt * 60);
+    for (let i = 0; i < N; i++) {
+      const g = U[i] - 0.15;
+      const hb = Hb[i];
+      const v = A[i] + T * ((2 * Math.exp(-(g * g) / (2 * 0.03 * 0.03)) - 1) * hb - (1 - hb));
+      A[i] = v < 0 ? 0 : v > 1 ? 1 : v;
+    }
+    const d = this.img!.data;
+    for (let i = 0; i < N; i++) {
+      const o4 = i * 4;
+      const v = A[i];
+      if (v < 0.03) {
+        d[o4 + 3] = 0;
+        continue;
+      }
+      const col = this.pick(v);
+      d[o4] = col[0];
+      d[o4 + 1] = col[1];
+      d[o4 + 2] = col[2];
+      d[o4 + 3] = clamp01((v - 0.03) * 4) * (light ? 230 : 255);
+    }
+  }
+
   // A palette colour by position along it (0 the first, 1 the last).
   private pick(f: number): Rgb {
     const r = this.rgb;
@@ -763,6 +1002,8 @@ export class FieldRender {
     for (const a of this.rd) a.fill(0);
     this.grainReady = false;
     this.mem.fill(0);
+    this.tn = 0;
+    this.tFade = 1;
   }
 
   /**
@@ -782,6 +1023,8 @@ export class FieldRender {
       if (!this.any) return;
       this.ferro(s, t, light);
     } else if (st === 'frost') return this.frost(pen, s, t, dt, light, alpha);
+    else if (st === 'colonise') return this.colonise(pen, s, dt, light, alpha);
+    else if (st === 'lenia') this.lenia(dt, light);
     else if (st === 'flames') this.flames(s, t, dt);
     else if (st === 'smoke') this.smoke(s, t, dt, light);
     else if (st === 'lava') {
