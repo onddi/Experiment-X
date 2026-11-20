@@ -11,13 +11,14 @@
 //            t  third   u  root an octave up   ~  root, sliding in from the last note
 
 export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand' | '909' | 'linn' | 'lofi' | 'dub' | 'techno' | 'trap' | 'jungle' | 'glitch' | 'minimal' | 'hard'
-  | 'band' | 'studio' | 'rock' | 'jazzclub' | 'vintage' | 'rhythmbox' | 'afroperc' | 'tabla' | 'steel' | 'tape' | 'toy';
+  | 'band' | 'studio' | 'rock' | 'jazzclub' | 'vintage' | 'rhythmbox' | 'afroperc' | 'tabla' | 'steel' | 'tape' | 'toy' | 'bap' | 'vinyl';
 export const KIT_OPTIONS: [DrumKit, string][] = [
   ['soft', 'Soft'], ['808', '808 (boom and clap)'], ['punchy', 'Punchy (club)'], ['brush', 'Brushes (jazz)'], ['hand', 'Hand percussion'],
   ['909', '909 (house)'], ['linn', '80s drum machine'], ['lofi', 'Lo-fi (dusty)'], ['dub', 'Dub (rim and spring)'], ['techno', 'Techno (hard)'],
   ['trap', 'Trap (long 808)'], ['jungle', 'Jungle (breaks)'], ['glitch', 'Glitch (IDM)'], ['minimal', 'Minimal (ticks)'], ['hard', 'Hard (distorted kick)'],
   ['band', 'Band (acoustic)'], ['studio', 'Studio funk (tight)'], ['rock', 'Rock room (big)'], ['jazzclub', 'Jazz club (ride)'], ['vintage', 'Vintage 60s'],
   ['rhythmbox', 'Rhythm box (preset machine)'], ['afroperc', 'Afro percussion'], ['tabla', 'Tabla and dholak'], ['steel', 'Steel and gamelan'], ['tape', 'Tape-worn'], ['toy', 'Toy kit'],
+  ['bap', 'Boom bap (crunchy sampler)'], ['vinyl', 'Vinyl break (loose, roomy)'],
 ];
 
 /** A pitched body: start and end pitch, how fast it drops, how long it rings, loudness, wave. */
@@ -116,6 +117,21 @@ export const KITS: Record<DrumKit, KitDef> = {
     clap: { f: 1600, decay: 0.2, amp: 0.45, n: 4 }, rim: [2200, 2100, 0.01, 0.03, 0.3, 'square'],
     perc: [[640, 620, 0.01, 0.08, 0.1, 'square']], tom: [240, 140, 0.05, 0.22, 0.55, 'square'], crash: ['highpass', 6500, 0.8, 0.001, 1.4, 0.18], wet: 0.3,
   },
+  // Rap: a sampler's thump and crack (crunchy, dry), and a sampled funk break (loose, in a room).
+  bap: {
+    kick: { body: [140, 50, 0.04, 0.26, 0.92], click: 0.35 },
+    snare: { body: [215, 180, 0.02, 0.1, 0.32, 'triangle'], noise: ['highpass', 1800, 0.6, 0.001, 0.2, 0.56] },
+    hat: { type: 'bandpass', f: 7000, q: 1.4, closed: 0.04, open: 0.22, amp: 0.22 },
+    clap: { f: 1300, decay: 0.14, amp: 0.34, n: 3 }, rim: [1750, 1700, 0.01, 0.04, 0.26, 'triangle'],
+    perc: [[380, 350, 0.02, 0.12, 0.28]], tom: [200, 140, 0.07, 0.28, 0.55], crash: ['bandpass', 5200, 0.7, 0.004, 1, 0.13], wet: 0.12,
+  },
+  vinyl: {
+    kick: { body: [115, 50, 0.05, 0.3, 0.86], click: 0.2 },
+    snare: { body: [200, 170, 0.03, 0.13, 0.3, 'triangle'], noise: ['bandpass', 2600, 0.5, 0.002, 0.25, 0.55] },
+    hat: { type: 'bandpass', f: 7500, q: 0.8, closed: 0.045, open: 0.3, amp: 0.25 },
+    clap: { f: 1400, decay: 0.18, amp: 0.3, n: 3 }, rim: [1650, 1600, 0.01, 0.05, 0.27, 'triangle'],
+    perc: [[320, 300, 0.03, 0.17, 0.3]], tom: [190, 135, 0.07, 0.36, 0.55], crash: ['highpass', 4600, 0.5, 0.004, 1.7, 0.16], wet: 0.42,
+  },
   // Acoustic kits, made for the live grooves (ghost notes, toms and cymbals sound natural).
   band: {
     kick: { body: [110, 48, 0.04, 0.32, 0.85], click: 0.2 },
@@ -202,7 +218,8 @@ export const KITS: Record<DrumKit, KitDef> = {
 /** The drums a beat can use: kick, snare, clap, hat, open hat, rim, perc, tom, crash. */
 export const DRUM_ROWS = ['k', 's', 'c', 'h', 'o', 'r', 'p', 't', 'y'] as const;
 export type DrumRow = (typeof DRUM_ROWS)[number];
-export type Beat = { name: string } & Partial<Record<DrumRow | 'b', string>>;
+/** A beat; kit: its own kit, where the genre's would make every beat sound alike. */
+export type Beat = { name: string; kit?: DrumKit } & Partial<Record<DrumRow | 'b', string>>;
 export type FillStyle = 'roll' | 'toms' | 'hats' | 'glitch' | 'drop';
 export interface Genre {
   id: string;
@@ -313,18 +330,18 @@ export const GENRES: Genre[] = [
   },
   {
     id: 'rap', name: 'Rap & boom bap', bpm: 90, swing: 0.45, kit: 'lofi', bass: 'fingered', fill: 'toms', beats: [
-      { name: 'Boom bap', k: 'X......x.x......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b......b.b......' },
-      { name: 'Golden era', k: 'X.....x...X..x..', s: '....X..o.o..X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.....b...b..f..' },
+      { name: 'Boom bap', kit: 'bap', k: 'X......x.x......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b......b.b......' },
+      { name: 'Golden era', kit: 'vinyl', k: 'X.....x...X..x..', s: '....X..o.o..X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.....b...b..f..' },
       { name: 'Lazy', k: 'X.......X.x.....', s: '....X.......X..o', h: 'x.x.x.x.x.x.x.x.', b: 'b.......b.b.....' },
-      { name: 'Jazzy', k: 'X......xX.......', s: '....X.......X...', r: '..o...o...o..o..', h: 'x.ox.ox.x.ox.ox.', b: 'b..t..f.b..t..f.' },
-      { name: 'West coast', k: 'X.....x...x..x..', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', o: '..............X.', b: 'b.....bf..b..u..' },
+      { name: 'Jazzy', kit: 'jazzclub', k: 'X......xX.......', s: '....X.......X...', r: '..o...o...o..o..', h: 'x.ox.ox.x.ox.ox.', b: 'b..t..f.b..t..f.' },
+      { name: 'West coast', kit: '808', k: 'X.....x...x..x..', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', o: '..............X.', b: 'b.....bf..b..u..' },
       { name: 'Dusty break', k: 'X.X.......XX....', s: '....X..o.o..X..o', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.......bb....' },
-      { name: 'Head nod', k: 'X..x......X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b......b.....' },
-      { name: 'G-funk', k: 'X.....x.X.......', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..u..b.f..b.u..' },
-      { name: 'Half-time bap', k: 'X......x..x.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'b......b..b.....' },
+      { name: 'Head nod', kit: 'bap', k: 'X..x......X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b......b.....' },
+      { name: 'G-funk', kit: '808', k: 'X.....x.X.......', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..u..b.f..b.u..' },
+      { name: 'Half-time bap', kit: 'vinyl', k: 'X......x..x.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'b......b..b.....' },
     ],
     versions: [
-      { name: 'Lo-fi bap', from: 'Boom bap', sound: 'Lo-fi study', bpm: 86, swing: 0.5 },
+      { name: 'Lo-fi bap', from: 'Boom bap', sound: 'Lo-fi study', bpm: 86, swing: 0.5, kit: 'lofi' },
       { name: 'Jazz cypher', from: 'Jazzy', sound: 'Vibes café', bpm: 92, kit: 'brush', bass: 'upright', pat: 'walk' },
     ],
   },

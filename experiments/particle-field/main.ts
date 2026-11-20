@@ -17957,6 +17957,16 @@ function animLane(c: Extract<Control, { kind: 'range' }>, span: number): HTMLEle
 }
 
 // Beats by genre: genre chips, then that genre's beats (and a dice), in rows that scroll sideways.
+// Pick a beat of the genre; its own kit comes along, unless you'd picked a different kit.
+function pickBeatIdx(i: number) {
+  const g = drumGenre(settings.sndGenre);
+  const was = g ? (g.beats[settings.sndBeat]?.kit ?? g.kit) : null;
+  const next: Partial<Settings> = { sndBeat: i };
+  if (g && settings.sndKit === was) next.sndKit = g.beats[i]?.kit ?? g.kit;
+  Object.assign(settings, next);
+  changed(new Set(Object.keys(next) as (keyof Settings)[]));
+  refresh();
+}
 function renderDrumLib() {
   const box = document.createElement('div');
   box.className = 'fx-looks snd-presets snd-beats';
@@ -17965,18 +17975,14 @@ function renderDrumLib() {
     const g = drumGenre(id);
     const next: Partial<Settings> = { sndGenre: id, sndBeat: 0 };
     if (g) {
-      Object.assign(next, { sndKit: g.kit, sndTempo: g.bpm, sndSwing: g.swing, sndBassSound: g.bass, sndGrid: '' });
+      Object.assign(next, { sndKit: g.beats[0]?.kit ?? g.kit, sndTempo: g.bpm, sndSwing: g.swing, sndBassSound: g.bass, sndGrid: '' });
       if (settings.sndDrums === 0) next.sndDrums = 0.6;
     }
     Object.assign(settings, next);
     changed(new Set(Object.keys(next) as (keyof Settings)[]));
     refresh();
   };
-  const pickBeat = (i: number) => {
-    settings.sndBeat = i;
-    changed(new Set<keyof Settings>(['sndBeat']));
-    refresh();
-  };
+  const pickBeat = pickBeatIdx;
   const rows = (parent: HTMLElement, label: string) => {
     const h = document.createElement('h4');
     h.textContent = label;
@@ -18091,7 +18097,7 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
   const preset = [...mySoundPresets(), ...SOUND_PRESETS].find(([n]) => n === soundName)?.[1] ?? {};
   const look = soundOf(preset);
   if (g) {
-    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
+    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.beats[Math.max(0, bi)]?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
     look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.55);
     look.sndBass = Math.max(Number(look.sndBass) || 0, 0.5);
   } else if (st?.varBeats?.[v]) {
@@ -18103,7 +18109,7 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
     const bv = bg?.versions?.find((x) => x.name === name);
     const i = bg ? bg.beats.findIndex((x) => x.name === (bv?.from ?? name)) : -1;
     if (bg && i >= 0) {
-      Object.assign(look, { sndGenre: bg.id, sndBeat: i, sndKit: st.id === 'band' ? 'band' : (preset.sndKit ?? bv?.kit ?? bg.kit), sndSwing: preset.sndSwing ?? bv?.swing ?? bg.swing, sndGrid: '' });
+      Object.assign(look, { sndGenre: bg.id, sndBeat: i, sndKit: st.id === 'band' ? 'band' : (preset.sndKit ?? bv?.kit ?? bg.beats[i].kit ?? bg.kit), sndSwing: preset.sndSwing ?? bv?.swing ?? bg.swing, sndGrid: '' });
       look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.45);
     }
   }
@@ -18594,9 +18600,9 @@ function beatChips(): HTMLElement {
     };
     add('⚄', false, () => {
       const n = g.beats.length;
-      set('sndBeat', (settings.sndBeat + 1 + Math.floor(Math.random() * (n - 1))) % n);
+      pickBeatIdx((settings.sndBeat + 1 + Math.floor(Math.random() * (n - 1))) % n);
     });
-    for (const c of beatChoices(g, (i) => set('sndBeat', i))) add(c.name, c.on, c.go);
+    for (const c of beatChoices(g, pickBeatIdx)) add(c.name, c.on, c.go);
   };
   refreshers.push(draw);
   draw();
@@ -18719,7 +18725,7 @@ function liveCard(): [HTMLElement, HTMLElement] {
   dPrev.addEventListener('click', () => dress(-1));
   dNext.addEventListener('click', () => dress(1));
   // The style's own kit (Band has no beat of its own: the acoustic Band kit).
-  const styleKit = (): DrumKit | null => (styleNow().st?.id === 'band' ? 'band' : drumGenre(settings.sndGenre)?.kit ?? null);
+  const styleKit = (): DrumKit | null => (styleNow().st?.id === 'band' ? 'band' : (drumGenre(settings.sndGenre)?.beats[settings.sndBeat]?.kit ?? drumGenre(settings.sndGenre)?.kit) ?? null);
   dKit.addEventListener('click', () => {
     const k = styleKit();
     if (k) set('sndKit', k);
