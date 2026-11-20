@@ -402,10 +402,20 @@ void main(){
   }
   if (uExp != 0. || uCon != 0. || uSat != 0.) {
     // Exposure, contrast and saturation: plain adjustments before the looks.
-    vec3 rgb = c.rgb / max(c.a, 1e-3) * exp2(uExp * 1.5);
+    // Worked on the colour as it shows over black (the premultiplied one), so
+    // a see-through field (over a bottom layer) grades like an opaque one:
+    // faint glow darkened by contrast fades out instead of turning into a
+    // pale veil over what's underneath.
+    vec3 rgb = c.rgb * exp2(uExp * 1.5);
     rgb = (rgb - .5) * (1. + uCon) + .5;
     float l = dot(rgb, vec3(.3, .55, .15));
-    c.rgb = max(mix(vec3(l), rgb, 1. + uSat), 0.) * c.a;
+    rgb = clamp(mix(vec3(l), rgb, 1. + uSat), 0., 1.);
+    // Lower contrast lifts black to grey: only where there's picture, not
+    // over the empty, see-through parts.
+    rgb = max(rgb - max(.5 - .5 * (1. + uCon), 0.) * (1. - c.a), 0.);
+    float l0 = dot(c.rgb, vec3(.3, .55, .15));
+    float a = c.a < .999 ? c.a * clamp(dot(rgb, vec3(.3, .55, .15)) / max(l0, 1e-3), 0., 1.) : 1.;
+    c = vec4(rgb, max(a, max(rgb.r, max(rgb.g, rgb.b))));
   }
   if (uHue != 0.) c.rgb = max(hueTurn(c.rgb, uHue), 0.);
   if (uGrade != 0 && uGradeAmt > 0.) {
