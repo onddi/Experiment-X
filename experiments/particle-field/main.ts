@@ -7658,7 +7658,7 @@ const lensCtx = lensCanvas.getContext('2d')!;
 // FX folder: GPU looks over the finished frame, on their own canvas.
 const gpuFx = new GpuFx();
 lensCanvas.after(gpuFx.canvas);
-const gfxOn = () => gpuFx.ok && (settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxFeedback !== 'off' || settings.gfxLens !== 'off' || settings.gfxSurface !== 'off' || settings.gfxRays > 0 || settings.gfxFlare > 0 || settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0 || settings.gfxPoster > 1 || settings.gfxHueCycle > 0 || settings.gfxInvertDrop || settings.gfxDisplace > 0 || settings.gfxHaze > 0 || settings.gfxEcho > 0 || settings.gfxGlitch > 0);
+const gfxOn = () => gpuFx.ok && (settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxFeedback !== 'off' || settings.gfxLens !== 'off' || settings.gfxSurface !== 'off' || settings.gfxRays > 0 || settings.gfxFlare > 0 || settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0 || settings.gfxPoster > 1 || settings.gfxHueCycle > 0 || settings.gfxInvertDrop || settings.gfxDisplace > 0 || settings.gfxHaze > 0 || settings.gfxBlur !== 'off' || settings.gfxExposure !== 0 || settings.gfxContrast !== 0 || settings.gfxSat !== 0 || settings.gfxEcho > 0 || settings.gfxGlitch > 0);
 // What the field shows right now: the GPU looks, the lens pass or the plain canvas.
 const shownCanvas = () => (!gpuFx.canvas.hidden ? gpuFx.canvas : glOnly && glr ? glr.canvas : lensCanvas.hidden ? canvas : lensCanvas);
 let gfxWave: [number, number, number] = [0.5, 0.5, -10];
@@ -7815,6 +7815,8 @@ function gpuFrame(now: number) {
     surface: S.gfxSurface, cell: S.gfxCell * (under.width / Math.max(1, w)), surfMix: S.gfxSurfMix,
     grade: S.gfxGrade, gradeAmt: S.gfxGradeAmt, gradeA: gA, gradeB: gB, grain: S.gfxGrain, vignette: S.gfxVignette,
     poster: S.gfxPoster, hue: gfxHue, invert: gfxInvertEnv,
+    blur: S.gfxBlur, blurAmt: S.gfxBlurAmt, blurAt: S.gfxBlurAt === 'finger' ? [px, py] : [0.5, 0.5], blurAngle: S.gfxBlurAngle,
+    exposure: S.gfxExposure, contrast: S.gfxContrast, saturation: S.gfxSat,
     displace: S.gfxDisplace, haze: S.gfxHaze, echo: S.gfxEcho, echoDelay: S.gfxEchoDelay, echoSpread: S.gfxEchoSpread,
     glitch: S.gfxGlitch * gfxGlitchEnv, glitchBlock: S.gfxGlitchBlock, glitchSeed: gfxGlitchSeed,
   }, { t, kick: by(S.gfxLightBy, S.gfxLightAmt), kickF: by(S.gfxFeedBy, S.gfxFeedAmt), kickL: by(S.gfxLensBy, S.gfxLensAmt), kickS: by(S.gfxSurfBy, S.gfxSurfAmt), ptr: [px, py], ptrs, wave: gfxWave });
@@ -9671,6 +9673,7 @@ const BASS_SOUNDS: [string, string][] = [
 ];
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const GFX_LENSES: [string, string][] = [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort'], ['twirl', 'Whirlpool'], ['pinch', 'Pinch'], ['bulge', 'Bulge'], ['tilt', 'Tilt-shift'], ['mirrorx', 'Mirror ←→'], ['mirrory', 'Mirror ↑↓'], ['quad', 'Mirror four ways']];
+const GFX_BLURS: [string, string][] = [['off', 'Off'], ['zoom', 'Zoom'], ['spin', 'Spin'], ['motion', 'Motion']];
 const GFX_SURFACES: [string, string][] = [['off', 'Off'], ['led', 'LED wall'], ['halftone', 'Halftone'], ['ascii', 'ASCII'], ['crt', 'CRT'], ['thermal', 'Thermal'], ['mosaic', 'Mosaic'], ['stitch', 'Cross-stitch'], ['lego', 'Toy bricks'], ['vhs', 'VHS'], ['oil', 'Oil paint'], ['neon', 'Neon outline']];
 const FLOW_TYPES: [string, string][] = [
   ['waves', 'Currents (streams)'], ['curl', 'Smoke (stays spread)'], ['vortex', 'Vortex (orbits the centre)'], ['wind', 'Wind (gusts one way)'],
@@ -10874,6 +10877,15 @@ const CONTROLS: Control[] = [
     summary: () => [settings.gfxDisplace > 0 ? 'refract' : '', settings.gfxHaze > 0 ? 'haze' : ''].filter(Boolean).join(' · ') || 'off' },
   { kind: 'range', key: 'gfxDisplace', label: 'Refract', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'gfxHaze', label: 'Heat haze', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'section', id: 'gfxblur', label: 'Blur', tab: 'fx',
+    about: 'Blur that moves: zoom streaks out from the centre (or your finger), spin turns around it, motion smears the picture one way. With music it surges with the Lenses driver in FX and music.',
+    lock: ['gfxBlur', 'gfxBlurAmt', 'gfxBlurAt', 'gfxBlurAngle'],
+    power: { on: () => settings.gfxBlur !== 'off', off: { gfxBlur: 'off' }, start: { gfxBlur: 'zoom' } },
+    summary: () => GFX_BLURS.find(([k]) => k === settings.gfxBlur)?.[1].toLowerCase() ?? 'off' },
+  { kind: 'select', key: 'gfxBlur', label: 'Blur', options: GFX_BLURS },
+  { kind: 'range', key: 'gfxBlurAmt', label: 'Amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxBlur !== 'off' },
+  { kind: 'select', key: 'gfxBlurAt', label: 'From', options: [['centre', 'Centre'], ['finger', 'Your finger']], show: () => settings.gfxBlur === 'zoom' || settings.gfxBlur === 'spin' },
+  { kind: 'range', key: 'gfxBlurAngle', label: 'Direction', min: 0, max: 180, step: 5, format: (v) => (v === 0 ? 'sideways' : v === 90 ? 'up and down' : `${v}°`), show: () => settings.gfxBlur === 'motion' },
   { kind: 'section', id: 'gfxglitch', label: 'Glitch', tab: 'fx',
     about: 'Bursts of digital damage: bands slide sideways, blocks jump, colours tear apart, bright lines flash.',
     lock: ['gfxGlitch', 'gfxGlitchOn', 'gfxGlitchBlock'],
@@ -10893,9 +10905,12 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gfxSurfMix', label: 'Mix', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxSurface !== 'off' },
   { kind: 'section', id: 'gfxgrade', label: 'Grade', tab: 'fx',
     about: 'The last touch: tint the whole picture in two colours (or black and white, or the scene’s own palette), cut it into flat poster bands, turn the colours round the wheel, flash it inverted on the drop, add film grain and darken the corners.',
-    lock: ['gfxGrade', 'gfxGradeAmt', 'gfxGrain', 'gfxVignette', 'gfxPoster', 'gfxHueCycle', 'gfxInvertDrop'],
-    power: { on: () => settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0 || settings.gfxPoster > 1 || settings.gfxHueCycle > 0 || settings.gfxInvertDrop, off: { gfxGrade: 'off', gfxGrain: 0, gfxVignette: 0, gfxPoster: 0, gfxHueCycle: 0, gfxInvertDrop: false }, start: { gfxGrade: 'sunset' } },
-    summary: () => [settings.gfxGrade !== 'off' ? settings.gfxGrade : '', settings.gfxPoster > 1 ? 'poster' : '', settings.gfxHueCycle > 0 ? 'hue cycle' : '', settings.gfxInvertDrop ? 'invert on drop' : '', settings.gfxGrain > 0 ? 'grain' : '', settings.gfxVignette > 0 ? 'vignette' : ''].filter(Boolean).join(' · ') || 'off' },
+    lock: ['gfxGrade', 'gfxGradeAmt', 'gfxGrain', 'gfxVignette', 'gfxPoster', 'gfxHueCycle', 'gfxInvertDrop', 'gfxExposure', 'gfxContrast', 'gfxSat'],
+    power: { on: () => settings.gfxExposure !== 0 || settings.gfxContrast !== 0 || settings.gfxSat !== 0 || settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0 || settings.gfxPoster > 1 || settings.gfxHueCycle > 0 || settings.gfxInvertDrop, off: { gfxGrade: 'off', gfxGrain: 0, gfxVignette: 0, gfxPoster: 0, gfxHueCycle: 0, gfxInvertDrop: false, gfxExposure: 0, gfxContrast: 0, gfxSat: 0 }, start: { gfxGrade: 'sunset' } },
+    summary: () => [settings.gfxExposure || settings.gfxContrast || settings.gfxSat ? 'adjusted' : '', settings.gfxGrade !== 'off' ? settings.gfxGrade : '', settings.gfxPoster > 1 ? 'poster' : '', settings.gfxHueCycle > 0 ? 'hue cycle' : '', settings.gfxInvertDrop ? 'invert on drop' : '', settings.gfxGrain > 0 ? 'grain' : '', settings.gfxVignette > 0 ? 'vignette' : ''].filter(Boolean).join(' · ') || 'off' },
+  { kind: 'range', key: 'gfxExposure', label: 'Exposure', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as is' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}`) },
+  { kind: 'range', key: 'gfxContrast', label: 'Contrast', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as is' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}`) },
+  { kind: 'range', key: 'gfxSat', label: 'Saturation', min: -1, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as is' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}`) },
   { kind: 'select', key: 'gfxGrade', label: 'Colours', options: [['off', 'Off'], ['sunset', 'Sunset'], ['ocean', 'Ocean'], ['acid', 'Acid'], ['mono', 'Black & white'], ['scene', 'The scene’s palette']] },
   { kind: 'range', key: 'gfxGradeAmt', label: 'Amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxGrade !== 'off' },
   { kind: 'range', key: 'gfxPoster', label: 'Poster bands', min: 0, max: 8, step: 1, format: (v) => (v < 2 ? 'off' : `${v} steps`) },
@@ -10912,7 +10927,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gfxLightAmt', label: 'Light amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxLightBy !== 'off' },
   { kind: 'select', key: 'gfxFeedBy', label: 'Feedback and echoes', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Off']], show: () => settings.gfxKick > 0 },
   { kind: 'range', key: 'gfxFeedAmt', label: 'Feedback amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxFeedBy !== 'off' },
-  { kind: 'select', key: 'gfxLensBy', label: 'Lenses and displace', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Off']], show: () => settings.gfxKick > 0 },
+  { kind: 'select', key: 'gfxLensBy', label: 'Lenses, blur and displace', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Off']], show: () => settings.gfxKick > 0 },
   { kind: 'range', key: 'gfxLensAmt', label: 'Lens amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxLensBy !== 'off' },
   { kind: 'select', key: 'gfxSurfBy', label: 'Surface', options: [['kick', 'Kick'], ['snare', 'Snare'], ['bass', 'Bass'], ['voice', 'Voice'], ['off', 'Off']], show: () => settings.gfxKick > 0 },
   { kind: 'range', key: 'gfxSurfAmt', label: 'Surface amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxSurfBy !== 'off' },

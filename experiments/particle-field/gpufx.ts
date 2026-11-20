@@ -12,6 +12,7 @@ export type GpuFxParams = {
   surface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic' | 'stitch' | 'lego' | 'vhs' | 'oil' | 'neon'; cell: number; surfMix: number;
   grade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono' | 'scene'; gradeAmt: number; gradeA: [number, number, number]; gradeB: [number, number, number];
   grain: number; vignette: number; poster: number; hue: number; invert: number;
+  blur: 'off' | 'zoom' | 'spin' | 'motion'; blurAmt: number; blurAt: [number, number]; blurAngle: number; exposure: number; contrast: number; saturation: number;
   displace: number; haze: number; echo: number; echoDelay: number; echoSpread: number; glitch: number; glitchBlock: number; glitchSeed: number;
 };
 /** ptrs: up to four glass lens centres (0–1, y up); ptr: the finger (or a drifting point).
@@ -21,6 +22,7 @@ export type GpuFxFrame = { t: number; kick: number; kickF: number; kickL: number
 const LENS_ID = { off: 0, glass: 1, shock: 2, kaleido: 3, liquid: 4, fisheye: 5, sort: 6, twirl: 7, pinch: 8, bulge: 9, tilt: 10, mirrorx: 11, mirrory: 12, quad: 13 } as const;
 const SURF_ID = { off: 0, led: 1, halftone: 2, ascii: 3, crt: 4, thermal: 5, mosaic: 6, stitch: 7, lego: 8, vhs: 9, oil: 10, neon: 11 } as const;
 const FEED_ID = { off: 0, tunnel: 1, smear: 2, mirror: 3, melt: 4, spiral: 5, spread: 6 } as const;
+const BLUR_ID = { off: 0, zoom: 1, spin: 2, motion: 3 } as const;
 const GRADE_ID = { off: 0, sunset: 1, ocean: 2, acid: 3, mono: 4, scene: 5 } as const;
 // ASCII glyphs, darkest to brightest.
 const GLYPHS = ' .:-=+*#%@';
@@ -75,6 +77,7 @@ uniform int uLens, uSurf, uGrade, uCount, uEcho;
 uniform float uBloom, uSpread, uSplit, uRays, uFlare, uSize, uBend, uShock, uSlices, uLensMix, uCell, uSurfMix, uGradeAmt, uGrain, uVig;
 uniform float uPoster, uHue, uInvert, uDisp, uHaze, uEchoSpread, uGlitch, uBlock, uSeed;
 uniform float uKick, uKickL, uKickS, uKickF;
+uniform int uBlurMode; uniform float uBlur, uExp, uCon, uSat; uniform vec2 uBlurC, uBlurDir;
 uniform vec3 uTint, uGA, uGB;
 uniform vec2 uPtr; uniform vec2 uPtrs[4]; uniform vec3 uWave;
 vec4 px(vec2 uv){ return texture(uSrc, clamp(uv, .0005, .9995)); }
@@ -161,6 +164,24 @@ vec4 shade(vec2 uv, int lens){
       c = acc / 14.;
     }
     float l = dot(c.rgb, vec3(.3, .55, .15)); c.rgb = max(mix(vec3(l) * c.a, c.rgb, 1.3), 0.);
+  }
+  if (uBlurMode > 0 && uBlur > 0.) {
+    // Blur: zoom streaks out from a point, spin turns around it, motion smears one way.
+    float a = uBlur * (1. + uKickL * 2.);
+    vec4 acc = c;
+    for (int i = 1; i < 16; i++) {
+      float f = float(i) / 15.;
+      vec2 s;
+      if (uBlurMode == 1) s = (q - uBlurC) * (-f * .16 * a);
+      else if (uBlurMode == 2) {
+        vec2 d = q - uBlurC; d.x *= asp();
+        float an = (f - .5) * .22 * a, co = cos(an), si = sin(an);
+        d = mat2(co, si, -si, co) * d; d.x /= asp();
+        s = uBlurC + d - q;
+      } else s = uBlurDir * (f - .5) * .07 * a;
+      acc += px(q + s);
+    }
+    c = acc / 16.;
   }
   if (uSplit > 0. || fringe != vec2(0.)) {
     vec2 d = q - .5; vec2 s = d * uSplit * .018 * (.3 + length(d) * 2.) * (1. + uKick * 3.) + fringe;
@@ -378,6 +399,13 @@ void main(){
       acc = max(acc, b * keep);
     }
     c = max(c, acc);
+  }
+  if (uExp != 0. || uCon != 0. || uSat != 0.) {
+    // Exposure, contrast and saturation: plain adjustments before the looks.
+    vec3 rgb = c.rgb / max(c.a, 1e-3) * exp2(uExp * 1.5);
+    rgb = (rgb - .5) * (1. + uCon) + .5;
+    float l = dot(rgb, vec3(.3, .55, .15));
+    c.rgb = max(mix(vec3(l), rgb, 1. + uSat), 0.) * c.a;
   }
   if (uHue != 0.) c.rgb = max(hueTurn(c.rgb, uHue), 0.);
   if (uGrade != 0 && uGradeAmt > 0.) {
@@ -619,6 +647,13 @@ export class GpuFx {
     gl.uniform1f(u('main.uInvert'), P.invert);
     gl.uniform1f(u('main.uDisp'), P.displace);
     gl.uniform1f(u('main.uHaze'), P.haze);
+    gl.uniform1i(u('main.uBlurMode'), BLUR_ID[P.blur]);
+    gl.uniform1f(u('main.uBlur'), P.blurAmt);
+    gl.uniform2f(u('main.uBlurC'), P.blurAt[0], P.blurAt[1]);
+    gl.uniform2f(u('main.uBlurDir'), Math.cos((P.blurAngle * Math.PI) / 180) * (h / Math.max(1, w)), Math.sin((P.blurAngle * Math.PI) / 180));
+    gl.uniform1f(u('main.uExp'), P.exposure);
+    gl.uniform1f(u('main.uCon'), P.contrast);
+    gl.uniform1f(u('main.uSat'), P.saturation);
     gl.uniform1f(u('main.uGlitch'), P.glitch);
     gl.uniform1f(u('main.uBlock'), P.glitchBlock);
     gl.uniform1f(u('main.uSeed'), P.glitchSeed);

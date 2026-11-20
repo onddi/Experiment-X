@@ -599,6 +599,13 @@ export interface Settings {
   gfxInvertDrop: boolean;
   gfxDisplace: number;
   gfxHaze: number;
+  gfxBlur: 'off' | 'zoom' | 'spin' | 'motion';
+  gfxBlurAmt: number;
+  gfxBlurAt: 'centre' | 'finger';
+  gfxBlurAngle: number;
+  gfxExposure: number;
+  gfxContrast: number;
+  gfxSat: number;
   gfxEcho: number;
   gfxEchoDelay: number;
   gfxEchoSpread: number;
@@ -1263,6 +1270,13 @@ export const DEFAULTS: Settings = {
   gfxInvertDrop: false,
   gfxDisplace: 0,
   gfxHaze: 0,
+  gfxBlur: 'off',
+  gfxBlurAmt: 0.5,
+  gfxBlurAt: 'centre',
+  gfxBlurAngle: 0,
+  gfxExposure: 0,
+  gfxContrast: 0,
+  gfxSat: 0,
   gfxEcho: 0,
   gfxEchoDelay: 6,
   gfxEchoSpread: 0.3,
