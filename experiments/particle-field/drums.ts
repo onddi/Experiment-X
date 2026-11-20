@@ -155,6 +155,9 @@ export const GENRES: Genre[] = [
       { name: 'Broken', k: 'X.....x...X..x..', s: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', p: '.......?.......?', b: 'b.....b...b..u..' },
       { name: 'Acid drive', k: 'X...X...X...X...', c: '....x.......x...', h: 'oxoxoxoxoxoxoxox', b: 'b.ub.bf.b.ub.u.f' },
       { name: 'Dub techno', k: 'X...X...X...X...', r: '...?......x.....', h: '..x...x...x...x.', b: '..b...b...b...b.' },
+      { name: 'Peak time', k: 'X...X...X...X...', c: '....X.......X...', h: 'xxXxxxXxxxXxxxXx', o: '..x...x...x...x.', b: '..bb..bb..bb..bb' },
+      { name: 'Detroit', k: 'X...X...X...X...', c: '....x.......x...', h: 'x.xxx.xxx.xxx.xx', p: '..x.....x.x.....', b: 'b..b..b...b..b..' },
+      { name: 'Polymeter', k: 'X...X...X...X...', h: '..x.', p: 'x..', r: 'x....', b: '..b...b...b...b.' },
     ],
     versions: [
       { name: 'Warehouse', from: 'Industrial', sound: 'Acid techno', bpm: 136, bass: 'acid', pat: 'pump' },
@@ -170,6 +173,8 @@ export const GENRES: Genre[] = [
       { name: 'Jackin', k: 'X...X...X...X...', c: '....X..x....X...', h: 'xxoxxxoxxxoxxxox', s: '...o.....o.....o', b: '..b..b..b.b..b..' },
       { name: 'Garage two-step', k: 'X......x..X.....', s: '....X.......X...', h: '..x.o.x...x.o.x.', r: '.......o.......o', b: 'b.....b...b..u..' },
       { name: 'Chicago', k: 'X...X...X...X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: '...x.....x..x...', b: 'b..b..b...b..b..' },
+      { name: 'Tribal', k: 'X...X...X...X...', t: '..x...x.x..x..x.', p: 'x..x..x.x..x..x.', h: '..x...x...x...x.', b: '..b...b...b...b.' },
+      { name: 'Funky house', k: 'X...X...X...X...', c: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', o: '..X...X...X...X.', p: '...x.....x..x...', b: '..b..ob...b.bob.' },
     ],
     versions: [
       { name: 'Late night', from: 'Deep', sound: 'Night drive', bpm: 120, swing: 0.25, bass: 'round', pat: 'offbeat' },
@@ -184,6 +189,8 @@ export const GENRES: Genre[] = [
       { name: 'Skank', k: '........X.......', s: '........X.......', r: '..x...x...x...x.', h: 'x...x...x...x...', b: 'b...f...b..ub...' },
       { name: 'Nyabinghi', k: 'X.......X.......', t: '....x.......x...', p: 'x.ox.oox.ox.oox.', b: 'b.......f.......' },
       { name: 'Rub-a-dub', k: 'X.....X.X.......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b..b.b...f...' },
+      { name: 'Digital', k: 'X..x..x...X..x..', r: '....x.......x...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b..b...b..b..' },
+      { name: 'Lovers rock', k: '........X.......', r: '....o...x...o...', h: 'x.xox.xox.xox.xo', b: 'b...b.f.b...b.t.' },
     ],
     versions: [
       { name: 'Echo chamber', from: 'One drop', sound: 'Dub echoes', bpm: 70, bass: 'sub', pat: 'hold' },
@@ -197,6 +204,8 @@ export const GENRES: Genre[] = [
       { name: 'Tribal', k: 'X.....x...x.....', s: '........X.......', t: '..o...x.....x.o.', p: 'x..x..x..x..x...', h: 'o.o.o.o.o.o.o.o.' },
       { name: 'Riddim', k: 'X..x......X..x..', s: '........X.......', h: '....x.......x.x.', b: 'B..b......B..b..' },
       { name: 'Garage step', k: 'X.....x...x.....', s: '........X.....o.', h: 'x.?x..x.x.?x..x.', r: '...o.......o....', b: 'B.....b...b..f..' },
+      { name: 'Brostep', k: 'X.........X.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b.B..b.bb.' },
+      { name: 'Deep 140', k: 'X.....x...X.....', s: '........X.......', r: '..o.......o..o..', h: '..x...x...x...x.', b: 'B.........B.....' },
     ],
     versions: [
       { name: 'Deep halfstep', from: 'Halfstep', sound: 'Rolling sub', bass: 'sub', pat: 'hold' },
@@ -210,6 +219,8 @@ export const GENRES: Genre[] = [
       { name: 'Steppers', k: 'X...X...X...X...', s: '....X.......X...', r: '...x..x....x..x.', h: '..x...x...x...x.', b: 'b.....b.b.....b.' },
       { name: 'Reggaeton', k: 'X...X...X...X...', c: '...X..X....X..X.', h: 'x.x.x.x.x.x.x.x.', r: '..x.......x.....', b: 'b..b..b.b..b..b.' },
       { name: 'Moombahton', k: 'X...X...X...X...', s: '...X..X....X..X.', p: '..x...x...x...x.', o: '..............X.', b: 'b..b....b..b..u.' },
+      { name: 'Sleng teng', k: 'X..x..x.X..x..x.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b..b.b..b..b.' },
+      { name: 'Afro-dancehall', k: 'X...X...X...X...', s: '...x..x....x..x.', p: 'x..x..x...x.x...', h: 'xoxoxoxoxoxoxoxo', b: 'b..b..b...b.b...' },
     ],
     versions: [
       { name: 'Island', from: 'Dembow', sound: 'Steel band', bpm: 100, kit: 'hand', bass: 'round' },
@@ -224,6 +235,9 @@ export const GENRES: Genre[] = [
       { name: 'Jazzy', k: 'X......xX.......', s: '....X.......X...', r: '..o...o...o..o..', h: 'x.ox.ox.x.ox.ox.', b: 'b..t..f.b..t..f.' },
       { name: 'West coast', k: 'X.....x...x..x..', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', o: '..............X.', b: 'b.....bf..b..u..' },
       { name: 'Dusty break', k: 'X.X.......XX....', s: '....X..o.o..X..o', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.......bb....' },
+      { name: 'Head nod', k: 'X..x......X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b......b.....' },
+      { name: 'G-funk', k: 'X.....x.X.......', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..u..b.f..b.u..' },
+      { name: 'Half-time bap', k: 'X......x..x.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'b......b..b.....' },
     ],
     versions: [
       { name: 'Lo-fi bap', from: 'Boom bap', sound: 'Lo-fi study', bpm: 86, swing: 0.5 },
@@ -238,6 +252,9 @@ export const GENRES: Genre[] = [
       { name: 'Dark', k: 'X.....X...X.....', c: '........X.......', h: 'x...x...x...x2x.', o: '......X.........', b: 'B.....~...b.....' },
       { name: 'Bounce', k: 'X..X..X...X.....', c: '....X.......X...', h: 'x.x.x.x.x2x.x.x.', b: 'B..b..b...b.....' },
       { name: 'Stutter', k: 'X.X.......X.X...', c: '........X.....o.', h: '4.x.x.x.4.x.x.3.', b: 'B.~.......B.~...' },
+      { name: 'Melodic', k: 'X.......X.X.....', c: '........X.......', h: 'x.x.x.x.x.x.x.x.', o: '..............X.', b: 'B.......~.b.....' },
+      { name: 'Rage', k: 'X.X...X...X.X...', c: '........X.......', h: 'xxxxxxxxxxxxxxxx', b: 'B.B...B...B.B...' },
+      { name: 'Plugg', k: 'X.......X.......', c: '....X.......X...', h: 'x...x...x...x2..', b: 'B.......b.......' },
     ],
     versions: [
       { name: 'Space trap', from: 'Classic', sound: 'Deep space', bpm: 130, pat: 'hold' },
@@ -251,6 +268,8 @@ export const GENRES: Genre[] = [
       { name: 'Sliding', k: 'X..........X....', s: '........X.....X.', h: 'x..x..x.x..x.3x.', b: 'B..~..~...~..~..' },
       { name: 'Chicago drill', k: 'X...x.....x.....', s: '........X.......', h: 'x.x.x.x3x.x.x.x4', b: 'B...b.....b.....' },
       { name: 'Dark drill', k: 'X.......x.X.....', s: '........X....x..', h: 'x..x..x.x..x..3.', r: '...........o....', b: 'B.......~.B.....' },
+      { name: 'Brooklyn bounce', k: 'X......X..X.....', s: '........X.....x.', h: 'x..x..x.x..x..x.', p: '..o.....o.......', b: 'B......~..B.....' },
+      { name: 'Drill two-bar', k: 'X......x...X....X.........x..x..', s: '........X..x............X.......', h: 'x..x..x.x..x..x.', b: 'B.....~...~.b...B.........~..b..' },
     ],
     versions: [
       { name: 'UK drill choir', from: 'UK drill', sound: 'Cathedral', bpm: 140 },
@@ -266,6 +285,8 @@ export const GENRES: Genre[] = [
       { name: 'Liquid', k: 'X.........x.....', s: '....X.......X...', r: '..o.....o.....o.', h: 'x.?.x.?.x.?.x.?.', b: 'B.......f.b.....' },
       { name: 'Jungle', k: 'X.x...x...x.....', s: '....X..o.o..X..o', h: 'x?x?x?x?x?x?x?x?', t: '..............x.', b: 'B.....b...B.....' },
       { name: 'Halftime', k: 'X.........X.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'B.........b..b..' },
+      { name: 'Steppa', k: 'X.........X.....', s: '....X.......X...', h: '..x...x...x...x.', p: '.......o......o.', b: 'B..b......B..b..' },
+      { name: 'Minimal roller', k: 'X.........X.....', s: '....X.......X...', r: '..o..o....o..o..', h: 'xoxoxoxoxoxoxoxo', b: 'B.........b.....' },
     ],
     versions: [
       { name: 'Liquid lights', from: 'Liquid', sound: 'Northern lights', bpm: 174, bass: 'round', pat: 'walk' },
@@ -281,6 +302,8 @@ export const GENRES: Genre[] = [
       { name: 'Cloud', k: 'X...?...?...?.?.', s: '!.!.X.!.!.!.X.!.', h: '????????????????', p: '!!!!!!!!!!!!!!!!', b: 'b.......?.......' },
       { name: 'Seven', k: 'X.....X.......', s: '....X......X..', h: 'x.x.x.x.x.x.x.', r: 'o..o..o..o..o..o..o..', b: 'b......f......' },
       { name: 'Drill and bass', k: 'X.xX..x.X..x.x..', s: '....X2..3...X..4', h: 'x2x2x2x2x2x2x2x2', b: 'b.bb..b.b..b.b..' },
+      { name: 'Fives', k: 'X....', s: '..x......x', h: 'x.x', p: 'o...?..', b: 'b...b..' },
+      { name: 'Skitter', k: 'X..x.....x..x...', s: '....x..2....x.3.', h: 'x3x.xx2.x3x.xx4.', b: 'b..b.....b..b...' },
     ],
     versions: [
       { name: 'Rain glitch', from: 'Cloud', sound: 'Rain on glass', bpm: 96 },
@@ -295,6 +318,9 @@ export const GENRES: Genre[] = [
       { name: 'Bossa', k: 'X..x....X..x....', r: 'x..x..x...x..x..', h: 'x.x.x.x.x.x.x.x.', b: 'b..f....b..f....' },
       { name: 'Son clave', k: '...x.......x....', r: 'X..X..X...X.X...', p: 'x.x.x.x.x.x.x.x.', t: 'o..x.ox.o..x.ox.', b: '...b..b....b..f.' },
       { name: 'Highlife', k: 'X.......X.......', r: 'x.x..x.x.x..x.x.', h: '..x...x...x...x.', p: 'o.oo.oo.o.oo.oo.', b: 'b..b..f.b..b..f.' },
+      { name: 'Kuduro', k: 'X..X..X.X..X..X.', c: '....X.......X...', p: 'x.xx.xx.x.xx.xx.', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b.B..b..b.' },
+      { name: 'Cumbia', k: 'X.......X.......', s: '....x.......x...', p: 'x.xxx.xxx.xxx.xx', h: '..x...x...x...x.', b: 'b...f...b...f...' },
+      { name: 'Tumbao', k: 'X.......X.......', r: 'x..x...x..x.x...', t: '...x..x....x..x.', h: 'x.x.x.x.x.x.x.x.', b: '...b..b....b..b.' },
     ],
     versions: [
       { name: 'Marimba party', from: 'Afrobeats', sound: 'Marimba party', bpm: 108 },
@@ -309,6 +335,8 @@ export const GENRES: Genre[] = [
       { name: 'Electro', k: 'X......X..X.....', c: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', b: 'b......b..b..b..' },
       { name: 'Miami bass', k: 'X......X..X.....', c: '....X.......X...', h: 'XoxoXoxoXoxoXoxo', b: 'B......b..B.....' },
       { name: 'Breakbeat', k: 'X.........X..X..', s: '....X..o....X...', h: 'x.x.x.x.x.x.x.x.', o: '......X.........', b: 'b.........b..b..' },
+      { name: 'Nu skool', k: 'X.........X.X...', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', o: '......X.......X.', b: 'B.........b.b...' },
+      { name: 'Think break', k: 'X.x.......x.....', s: '....X..o.x..X..o', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.......b.....' },
     ],
     versions: [
       { name: 'Arcade electro', from: 'Electro', sound: 'Arcade', bpm: 118, bass: 'pulse' },
@@ -321,6 +349,10 @@ export const GENRES: Genre[] = [
       { name: 'Chillhop', k: 'X..x......X.....', s: '....X.......X...', h: 'xox.xox.xox.xox.', r: '.......o......o.', b: 'b..t......f.....' },
       { name: 'Rainy', k: 'X.........x.....', s: '....X.......X..o', h: '..x...x...x...x.', p: '?...?...?...?...', b: 'b.........f.....' },
       { name: 'Tape', k: 'X.....x.X.......', s: '....X..o....X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.....b.b.......' },
+      { name: 'Off-grid', k: 'X......xx.....x.', s: '....X.......X...', h: 'x.xx.x.xx.x.x.xx', b: 'b......bb.....b.' },
+      { name: 'Bedroom', k: 'X.....x.........', s: '....X.......X...', r: '..........o.....', h: '..x...x...x...x.', b: 'b.....b.........' },
+      { name: 'Sleepy', k: 'X.........X.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'b.........b.....' },
+      { name: 'Vinyl swing', k: 'X..x......X..x..', s: '....X.......X...', h: 'xoxoxoxoxoxoxoxo', b: 'b..t......b..f..' },
     ],
     versions: [
       { name: 'Café', from: 'Chillhop', sound: 'Vibes café', bpm: 84, kit: 'brush', bass: 'upright', pat: 'walk' },
@@ -334,6 +366,9 @@ export const GENRES: Genre[] = [
       { name: 'Progressive', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', r: '......x.......x.', b: '..b...b...b..fb.' },
       { name: 'Breakdown', h: '....x.......x...', r: '..............o.', b: 'B...............' },
       { name: 'Rolling', k: 'X...X...X...X...', c: '....x.......x...', h: 'xoxoxoxoxoxoxoxo', o: '..X...X...X...X.', b: '.bfb.bfb.bfb.bfb' },
+      { name: 'Hard trance', k: 'X...X...X...X...', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', o: '..X...X...X...X.', b: '.bbu.bbu.bbu.bbu' },
+      { name: 'Tech trance', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', r: '.x..x.x..x..x.x.', b: '..bb..bb..bb..bb' },
+      { name: 'Balearic', k: 'X.......X.......', c: '....x.......x...', h: 'x.x.x.x.x.x.x.x.', p: '...?.......?....', b: 'b...b...b...b...' },
     ],
     versions: [
       { name: 'Euphoric', from: 'Uplifting', sound: 'Northern lights', pat: 'offbeat' },
@@ -346,6 +381,9 @@ export const GENRES: Genre[] = [
       { name: 'Heavy', k: 'X.......X.X.....', s: '....X.......X..o', h: 'x.xox.xox.xox.xo', b: 'B.......b.b.....' },
       { name: 'Downtempo', k: 'X.....x...X.....', r: '....x.......x...', h: '..x...x...x...x.', p: '?.......?.......', b: 'b.....f...b.....' },
       { name: 'Slow break', k: 'X.X.......X.....', s: '....X..o....X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.b.......b.....' },
+      { name: 'Noir', k: 'X.......X.X.....', s: '....X.......X...', h: 'x...x...x...x...', r: '......o.......o.', b: 'b.......b.b.....' },
+      { name: 'Hip-hop dub', k: 'X.....x.X.....x.', s: '....X.......X...', h: 'x.xox.xox.xox.xo', b: 'b.....b.b.....b.' },
+      { name: 'Slow motion', k: 'X.........X.....', s: '........X.......', h: 'x...x...x...x...', p: '?.......?.......', b: 'b.........b.....' },
     ],
     versions: [
       { name: 'Smoky', from: 'Bristol', sound: 'Fog machine', bpm: 78, kit: 'dub' },
@@ -358,6 +396,9 @@ export const GENRES: Genre[] = [
       { name: 'Drift phonk', k: 'X..X..X...X..X..', c: '....X.......X...', h: 'x3x.x3x.x3x.x3x.', p: 'x.xx.x.xx.x.x.xx', b: 'B..~..B...~..B..' },
       { name: 'Brazilian phonk', k: 'X..X..X.X..X..X.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: '..x...x...x...x.', b: 'B..b..b.B..b..b.' },
       { name: 'Slow phonk', k: 'X.......X.x.....', c: '........X.......', h: 'x.x.x.x.x.x.x.x.', p: 'x.....x...x.....', b: 'B.......~.b.....' },
+      { name: 'Cowbell', k: 'X..X......X.....', c: '....X.......X...', p: 'x.x.xx.xx.x.xx.x', h: 'x.x.x.x.x.x.x.x.', b: 'B..b......B.....' },
+      { name: 'House phonk', k: 'X...X...X...X...', c: '....X.......X...', p: '..x...x...x...x.', h: 'xxxxxxxxxxxxxxxx', b: 'B...B...B...B...' },
+      { name: 'Rattle', k: 'X.....X...X.....', c: '........X.......', h: 'x.3.x.3.x.3.x.4.', p: 'x.....x...x.....', b: 'B.....B...B.....' },
     ],
     versions: [
       { name: 'Midnight drift', from: 'Drift phonk', sound: 'Night drive', bpm: 140 },
@@ -370,6 +411,9 @@ export const GENRES: Genre[] = [
       { name: 'Bed squeak', k: 'X..X..X...X.X.X.', c: '..X...X...X...X.', p: '...x......x..x..', b: 'B..b..b...b.....' },
       { name: 'Baltimore', k: 'X..X..X.X...X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b.b...b...' },
       { name: 'Footwork', k: 'X..X..X..X..X..X', c: '........X.......', h: 'x.x.x.x.x.x.x.x.', t: '..........x..x..', b: 'B.........b.....' },
+      { name: 'Five kick', k: 'X..X..X.X.X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b.b.b.....' },
+      { name: 'Club stutter', k: 'X..X..X...X.X.X.', c: '....X..x....X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b...b.b.b.' },
+      { name: 'Philly club', k: 'X..X..X.X..X..X.', c: '....X.......X...', h: '..x...x...x...x.', b: 'B..b..b.B..b..b.' },
     ],
     versions: [
       { name: 'Juke 160', from: 'Footwork', sound: 'Scanner', bpm: 160, kit: '808' },
@@ -382,6 +426,9 @@ export const GENRES: Genre[] = [
       { name: 'Gated', k: 'X.......X.......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', t: '..............x.', b: 'b.b.b.b.b.b.b.b.' },
       { name: 'Darksynth', k: 'X..X..X.X..X..X.', s: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', b: 'bbbbbbbbbbbbbbbb' },
       { name: 'Dreamwave', k: 'X.......X.x.....', s: '....X.......X...', h: '..x...x...x...x.', b: 'b.......b.f.....' },
+      { name: 'Retro funk', k: 'X.....x.X.......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.bb.bb.b.bb.bb.' },
+      { name: 'Chase', k: 'X...X...X...X...', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'bubububububububu' },
+      { name: 'Slow burn', k: 'X.......X.......', s: '....X.......X...', t: '..............xx', h: '..x...x...x...x.', b: 'b.......b.......' },
     ],
     versions: [
       { name: 'Night drive', from: 'Outrun', sound: 'Night drive', bpm: 96 },
@@ -394,6 +441,10 @@ export const GENRES: Genre[] = [
       { name: 'Ballad', s: 'o.o.o.o.o.o.o.o.', h: '....x.......x...', k: 'o.......o.......', b: 'b.......f.......' },
       { name: 'Bebop', r: 'x...x.x.x...x.x.', h: '....x.......x...', s: '..o..?....o..o..', k: 'o.....o.....x...', b: 'b...t...f...t...' },
       { name: 'Waltz', r: 'x...x.x...x.', k: 'o...........', h: '....x...x...', b: 'b...f...t...' },
+      { name: 'Shuffle', k: 'X.......X.......', s: '....X.......X...', h: 'x..xx..xx..xx..x', r: '...o.......o....', b: 'b...t...f...t...' },
+      { name: 'Jazz funk', k: 'X.....x...X.....', s: '....X..o.o..X...', h: 'x.xxx.xxx.xxx.xx', b: 'b.....b...b..f..' },
+      { name: 'Brushes', k: 'X.......X.......', s: 'oooooooooooooooo', h: '....x.......x...', b: 'b...t...f...u...' },
+      { name: 'Latin jazz', k: 'X..x..x.X..x..x.', r: 'x..x...x..x.x...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b...b..b.b...' },
     ],
     versions: [
       { name: 'Late night', from: 'Ballad', sound: 'Blues bar', bpm: 72 },
@@ -406,6 +457,9 @@ export const GENRES: Genre[] = [
       { name: 'Speed garage', k: 'X...X...X...X...', s: '....X.......X...', h: '..x...x...x...x.', o: '..X...X...X...X.', b: 'B..b..u.B..b..u.' },
       { name: 'Grime', k: 'X.......X.....x.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.......~.....b.' },
       { name: 'Bassline', k: 'X...X...X...X...', c: '....x.......x...', h: 'x.xxx.xxx.xxx.xx', b: 'b.ub.ub.b.ub.ub.' },
+      { name: 'Shuffled', k: 'X.........X.....', s: '....X.......X...', h: '.x.x.x.x.x.x.x.x', r: '..o...o.....o...', b: 'b.........b..b..' },
+      { name: '4x4 garage', k: 'X...X...X...X...', s: '....X.......X...', h: '..x...x...x...x.', r: '.......o......o.', b: '..b...bb..b...bb' },
+      { name: 'Breakstep', k: 'X.......X.X.....', s: '....X.......X..o', h: 'x.x.x.x.x.x.x.x.', b: 'B.......b.b.....' },
     ],
     versions: [
       { name: 'Grime 140', from: 'Grime', sound: 'Trap haze', bpm: 140, kit: 'punchy', bass: 'sub', swing: 0 },
@@ -418,6 +472,9 @@ export const GENRES: Genre[] = [
       { name: 'Nu-disco', k: 'X...X...X...X...', c: '....X.......X...', h: 'xoxoxoxoxoxoxoxo', p: '..x...x...x...x.', b: 'b..bu..bb..bu..b' },
       { name: 'French touch', k: 'X...X...X...X...', c: '....x.......x...', h: '..x...x...x...x.', b: 'b.bb.bb.b.bb.bb.' },
       { name: 'Italo', k: 'X...X...X...X...', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'bubububububububu' },
+      { name: 'Philly', k: 'X...X...X...X...', s: '....X.......X...', h: 'xoxoxoxoxoxoxoxo', o: '..X...X...X...X.', b: 'b.ub.ub.b.ub.ub.' },
+      { name: 'Boogie', k: 'X.....x.X.......', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b..b.f..f..u.' },
+      { name: 'Hi-NRG', k: 'X...X...X...X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'bubububububububu' },
     ],
     versions: [
       { name: 'Mirror ball', from: 'Disco', sound: 'Gospel organ', bpm: 116 },
@@ -429,6 +486,9 @@ export const GENRES: Genre[] = [
       { name: 'Bubblegum', k: 'X.....x...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.....b...~.....' },
       { name: 'Glitchcore', k: 'X.x...xX..X.x...', s: '....X..3....X.4.', h: 'x2x.x2x.x2x.x2x.', b: 'B.b...bB..B.b...' },
       { name: 'Digicore', k: 'X......X..X.....', c: '....X.......X...', h: 'x.x.3.x.x.x.3.x.', b: 'B......~..b.....' },
+      { name: 'Blown out', k: 'X.X...X...X.X...', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'B.B...B...B.B...' },
+      { name: 'Hyper trap', k: 'X......X..X.....', c: '........X.......', h: 'x.x3x.x4x.x3x.x4', b: 'B......~..B.....' },
+      { name: 'Pop punk', k: 'X.X.....X.X.....', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', y: 'X...............', b: 'b.b.b.b.b.b.b.b.' },
     ],
     versions: [
       { name: 'Sugar rush', from: 'Bubblegum', sound: 'Chiptune', bpm: 170, kit: 'trap' },
@@ -440,6 +500,9 @@ export const GENRES: Genre[] = [
       { name: 'Tamborzão', k: 'X..X..X...X..X..', c: '....X.......X...', t: '..x.....x..x....', b: 'B..b..b...b..b..' },
       { name: 'Mandelão', k: 'X.......X.......', p: '..x.x..x..x.x..x', c: '....X.......X...', b: 'B.......B.......' },
       { name: 'Funk carioca', k: 'X..X..X.X..X..X.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b.B..b..b.' },
+      { name: 'Bruxaria', k: 'X..X..X...X..X..', c: '...x..x....x..x.', h: 'x.x.x.x.x.x.x.x.', b: 'B..B..B...B..B..' },
+      { name: 'Montagem', k: 'X..X..X.X..X..X.', c: '....X.......X...', p: '..x.....x..x....', b: 'B..b..b.B..b..b.' },
+      { name: 'Funk 150', k: 'X..X..X...X.....', s: '...X..X....X..X.', h: 'x.x.x.x.x.x.x.x.', b: 'B.........B.....' },
     ],
     versions: [
       { name: 'Favela night', from: 'Mandelão', sound: 'Trap haze', bpm: 135 },
@@ -451,6 +514,9 @@ export const GENRES: Genre[] = [
       { name: 'Gqom', k: 'X..X..X.........', t: '...x..x...x..x..', h: '..x...x...x...x.', b: 'B.........b.....' },
       { name: 'Sgubhu', k: 'X..X..X...X.....', p: 'x..x..x.x..x..x.', r: '....x.......x...', b: 'B.....b...b.....' },
       { name: 'Durban', k: 'X.....X.....X...', t: '..x..x..x..x..x.', h: 'xoxoxoxoxoxoxoxo', b: 'B.....b.....b...' },
+      { name: 'Broken gqom', k: 'X..X.....X..X...', t: '..x..x..x.....x.', h: '..x...x...x...x.', b: 'B........b......' },
+      { name: 'Tribal gqom', k: 'X..X..X.........', p: 'x.xx.x.xx.x.xx.x', r: '....x.......x...', b: 'B.....b.........' },
+      { name: 'Gqom tech', k: 'X...X...X..X..X.', t: '..x...x...x.....', h: '..x...x...x...x.', b: 'B...b...b..b....' },
     ],
     versions: [
       { name: 'Dark gqom', from: 'Gqom', sound: 'Fog machine', bpm: 122, kit: 'hard' },
