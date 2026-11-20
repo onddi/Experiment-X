@@ -391,6 +391,7 @@ Object.assign(TIPS, {
   sndSeqTickSound: 'A tick on every eighth note that keeps time under the Steps, louder on the beat. Pick its sound, or Off.',
   sndGrainSound: 'What the grains are made of: the tiny sounds each moving particle makes.',
   sndGrainRate: 'How many grains play. Higher is a denser crackle or rain.',
+  sndGrainFrom: 'Which particles make the grains. Anywhere: any particle, more the busier the field. Fast movers: only quick ones, louder the faster they go. Bounces: one where each particle hits an edge or obstacle, as hard as it hit, and a spray on bursts.',
   sndGrainLen: 'How long each grain lasts, from a tiny click to a short note.',
   sndScanDir: 'How the Scanline crosses the field: left to right, top to bottom, back and forth, or round like a radar.',
   sndScanSound: 'The instrument the Scanline plays as it passes particles.',

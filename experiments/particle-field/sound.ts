@@ -20,7 +20,9 @@ export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano
 // The chimes' own sound, or 'same' to play whatever the strings play.
 export type HitSound = 'same' | Voice;
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
-export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood';
+export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood' | 'sand' | 'crickets' | 'sparks' | 'glass' | 'keys';
+/** Which particles make the grains: any at random, the fast movers, or the ones that bounce. */
+export type GrainFrom = 'any' | 'fast' | 'bounce';
 export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze' | 'strings';
 export type SndTimbre = Band | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
@@ -275,6 +277,7 @@ export interface SoundParams {
   grainSound: GrainSound;
   grainRate: number; // 0 … 1, 0.5 = as before
   grainLen: number; // 0 … 1, 0.5 = as before
+  grainFrom?: GrainFrom;
   seqSound?: HitSound; // Steps' own instrument ('same' = the main one)
   seqRate?: number; // play every 1, 2 or 4 sixteenths
   seqNotes?: number; // most notes a step, 0 = by how busy the music is
@@ -381,6 +384,7 @@ export interface SoundFrame {
   px: Float32Array;
   py: Float32Array;
   ox: Float32Array; // where each particle was a frame ago
+  oy: Float32Array;
   tone: Float32Array; // 0..1 along the palette
   dead: ArrayLike<number> | null;
   speed: number; // 0..1, how busy the field is
@@ -1911,7 +1915,26 @@ export class ParticleSound {
         return this.body(0, 845, 840, 0.01, 0.12, 0.05 * k, 'square', 0.1);
       case 'hat': return this.hiss(0, 'highpass', 8500, 0.8, 0.001, 0.035, 0.14 * k, pan * 0.4, 0.1);
       // Soft: a breath of noise, as before (on time now, without the grains' jitter).
-      default: return this.hiss(0, 'bandpass', 5000, 6, 0.004, 0.012, 0.1 * k, pan, 0.1);
+      default: {
+        const ctx = this.ctx;
+        const t = ctx.currentTime;
+        const src = ctx.createBufferSource();
+        src.buffer = this.noise;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 4600;
+        bp.Q.value = 4;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.32 * k, t + 0.004);
+        g.gain.linearRampToValueAtTime(0, t + 0.018);
+        const pn = ctx.createStereoPanner();
+        pn.pan.value = pan;
+        src.connect(bp).connect(g).connect(pn);
+        this.send(pn, 0.1);
+        src.start(t, Math.random() * 0.9, 0.03);
+        src.onended = () => pn.disconnect();
+      }
     }
   }
 
@@ -1976,6 +1999,102 @@ export class ParticleSound {
       src.start(t, Math.random() * 0.9, 0.012);
       stop = t + len;
       src.onended = () => setTimeout(() => pn.disconnect(), len * 1000 + 50);
+    } else if (kind === 'sand') {
+      // Sand: a soft, dull hiss, a little longer, like grains sliding.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1200 + hi * 2600;
+      lp.Q.value = 0.5;
+      const len = 0.035 * lenK;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amt * 0.5 * (0.5 + Math.random() * 0.5), t + len * 0.4);
+      g.gain.linearRampToValueAtTime(0, t + len);
+      src.connect(lp).connect(g);
+      src.start(t, Math.random() * 0.9, len + 0.01);
+      src.onended = () => pn.disconnect();
+    } else if (kind === 'crickets') {
+      // A cricket: a high tone in three quick pulses.
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = 3800 + hi * 1600 + Math.random() * 200;
+      const pulse = 0.009 * lenK;
+      const a = amt * 0.09;
+      g.gain.setValueAtTime(0, t);
+      for (let p = 0; p < 3; p++) {
+        const t0 = t + p * pulse * 1.7;
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(a, t0 + pulse * 0.3);
+        g.gain.linearRampToValueAtTime(0, t0 + pulse);
+      }
+      o.connect(g);
+      o.start(t);
+      o.stop(t + pulse * 5.2);
+      o.onended = () => pn.disconnect();
+    } else if (kind === 'sparks') {
+      // A spark: a crack of bright noise and a tiny high blip that falls.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 5000;
+      const len = 0.008 * lenK;
+      g.gain.setValueAtTime(amt * 0.7, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      src.connect(hp).connect(g);
+      src.start(t, Math.random() * 0.9, len + 0.01);
+      const o = ctx.createOscillator();
+      const og = ctx.createGain();
+      o.frequency.setValueAtTime(6000 + hi * 3000, t);
+      o.frequency.exponentialRampToValueAtTime(2500, t + 0.03 * lenK);
+      og.gain.setValueAtTime(amt * 0.05, t);
+      og.gain.exponentialRampToValueAtTime(0.0005, t + 0.03 * lenK);
+      o.connect(og).connect(pn);
+      o.start(t);
+      o.stop(t + 0.03 * lenK + 0.01);
+      src.onended = () => setTimeout(() => pn.disconnect(), 60);
+    } else if (kind === 'glass') {
+      // Glass: a small chime on the scale, with a bell's out-of-tune overtone.
+      const f = Math.min(5000, this.freq(Math.round(hi * (this.L * 2)), 79));
+      const len = 0.18 * lenK;
+      for (const [r, a] of [[1, 0.09], [2.76, 0.04]] as const) {
+        const o = ctx.createOscillator();
+        o.frequency.value = f * r;
+        const og = ctx.createGain();
+        og.gain.setValueAtTime(0, t);
+        og.gain.linearRampToValueAtTime(amt * a * (0.5 + Math.random() * 0.5), t + 0.002);
+        og.gain.exponentialRampToValueAtTime(0.0005, t + len / r);
+        o.connect(og).connect(g);
+        o.start(t);
+        o.stop(t + len + 0.01);
+      }
+      g.gain.value = 1;
+      setTimeout(() => pn.disconnect(), (len + 0.1) * 1000 + 16);
+    } else if (kind === 'keys') {
+      // Typewriter keys: a hard click and a low thunk under it.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 2800 + hi * 1800;
+      bp.Q.value = 2;
+      const len = 0.012 * lenK;
+      g.gain.setValueAtTime(amt * 1.1, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      src.connect(bp).connect(g);
+      src.start(t, Math.random() * 0.9, len + 0.01);
+      const o = ctx.createOscillator();
+      const og = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(180, t);
+      o.frequency.exponentialRampToValueAtTime(90, t + 0.03);
+      og.gain.setValueAtTime(amt * 0.12, t);
+      og.gain.exponentialRampToValueAtTime(0.0005, t + 0.04);
+      o.connect(og).connect(pn);
+      o.start(t);
+      o.stop(t + 0.05);
+      o.onended = () => pn.disconnect();
     } else {
       // Notes: a tiny tone on the scale (granular glitter); bubbles rise in pitch.
       const o = ctx.createOscillator();
@@ -3426,11 +3545,41 @@ export class ParticleSound {
       this.grainDebt += F.dt * P.grain * (15 + F.speed * 140) * room * rateK;
       let g = Math.min(rateK > 1.5 ? 16 : 8, Math.floor(this.grainDebt));
       this.grainDebt -= g;
+      const from = P.grainFrom ?? 'any';
+      if (from === 'bounce') {
+        // Bounces: a grain where each particle hits (as hard as it hit), and a
+        // spray of them when the field bursts.
+        g = 0;
+        this.grainDebt = 0;
+        const H = F.hits;
+        const m = H.length / 4;
+        const step = Math.max(1, Math.floor(m / (rateK > 1.5 ? 16 : 10)));
+        for (let k = 0; k < m; k += step) {
+          this.levels[LI.grains] = Math.max(this.levels[LI.grains], P.grain * 0.6);
+          if (this.audible('grains')) this.grainOf(H[k * 4], H[k * 4 + 1], w, h, P.grain * (0.35 + 0.9 * H[k * 4 + 2]), 0.4 + 0.6 * H[k * 4 + 2]);
+        }
+        if (F.thump > 0.2) g = Math.round(4 + F.thump * 8);
+      }
+      // A screen's width a second, about: the pace that counts as fast.
+      const fast = (w * F.dt) / 2.5;
       while (g-- > 0) {
-        const i = (Math.random() * F.n) | 0;
-        if (F.dead && F.dead[i]) continue;
+        let i = (Math.random() * F.n) | 0;
+        let v = 0;
+        if (from === 'fast') {
+          // Fast movers: the quickest of a few picked at random, if it's quick enough.
+          let best = -1;
+          for (let t = 0; t < 6; t++) {
+            const j = (Math.random() * F.n) | 0;
+            if (F.dead && F.dead[j]) continue;
+            const d = Math.hypot(F.px[j] - F.ox[j], F.py[j] - F.oy[j]);
+            if (d > v) (v = d), (best = j);
+          }
+          if (best < 0 || v < fast * 0.35) continue;
+          i = best;
+        } else if (F.dead && F.dead[i]) continue;
         this.levels[LI.grains] = Math.max(this.levels[LI.grains], P.grain * 0.6);
-        if (this.audible('grains')) this.grainOf(F.px[i], F.py[i], w, h, P.grain, F.speed);
+        const amt = from === 'fast' ? P.grain * Math.min(1.4, 0.4 + v / fast) : P.grain;
+        if (this.audible('grains')) this.grainOf(F.px[i], F.py[i], w, h, amt, from === 'fast' ? Math.min(1, v / fast) : F.speed);
       }
     } else this.grainDebt = 0;
 
