@@ -10377,9 +10377,12 @@ function musicPicker(styles = false) {
           const list = G().filter((g) => g.id !== settings.sndGroove && (liveRail.startsWith('g:') ? g.style === liveRail.slice(2) : liveRail === 'saved' ? keptGrooves().includes(g.id) : true));
           return rollLive(list);
         }
-        // Generated: Random plays one of the listed presets; the dice next
-        // to Style makes a brand-new song.
-        return false;
+        // All genres: one of the listed presets. A genre: a brand-new song in it.
+        if (musicRail === 'all') return false;
+        const st = styleById(musicRail);
+        if (!st || !RECIPES[st.id]) return false;
+        useStyle(st, `~${newSeed()}`);
+        return true;
       },
     },
     items: () => {
@@ -18471,7 +18474,14 @@ function keepSong(id: string, v: string, keep: boolean) {
 // The dice: a new song in the genre picked in the list, or the one playing
 // (any genre with All genres, or when none is picked).
 function randomStyle() {
-  // The genre picked in the list wins (All genres: any), then the one playing.
+  // All genres: one of the presets, any genre (never the one playing).
+  if (musicRail === 'all') {
+    const cur = settings.sndStyle;
+    const all = STYLES.flatMap((st) => styleVars(st).map((v) => [st, v] as const)).filter(([st, v]) => `${st.id}/${v}` !== cur);
+    const pick = all[(Math.random() * all.length) | 0];
+    if (pick) return useStyle(pick[0], pick[1]);
+  }
+  // A genre picked in the list (or the one playing): a brand-new song in it.
   const now = musicRail === 'all' ? null : styleById(musicRail) ?? styleNow().st;
   const rolls = STYLES.filter((x) => RECIPES[x.id]);
   const st = now && RECIPES[now.id] ? now : rolls[(Math.random() * rolls.length) | 0];
@@ -18532,7 +18542,7 @@ function renderSoundPage(body: HTMLElement) {
   const sMain = mk('button', 'sndp-style-main', '<small>Style</small><b></b><span>sets the instruments, beat, bass, chords, tempo and effects</span>');
   const dice = mk('button', 'sndp-dice', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/></svg>');
   dice.setAttribute('aria-label', 'New song');
-  dice.title = 'A brand-new song in the picked genre (any genre with All genres). Random in the list plays one of the presets.';
+  dice.title = 'All genres: a random preset. A genre: a brand-new song in it.';
   dice.addEventListener('click', () => {
     if (settings.sndDrumSrc !== 'live') return randomStyle();
     void grooves().then((all) => rollLive(all.filter((g) => g.id !== settings.sndGroove)));
@@ -18640,7 +18650,7 @@ function renderSoundPage(body: HTMLElement) {
     sMain.querySelector('small')!.textContent = live ? 'Groove' : 'Style';
     sMain.querySelector('span')!.textContent = live ? (g ? `drummer ${g.drummer} · ${g.bpm} BPM · ${g.bars} bars, as played` : '') : 'sets the instruments, beat, bass, chords, tempo and effects';
     acts.hidden = live;
-    dice.title = live ? 'Another groove, with a song around it that suits it' : 'A brand-new song in the picked genre (any genre with All genres). Random in the list plays one of the presets.';
+    dice.title = live ? 'Another groove, with a song around it that suits it' : 'All genres: a random preset. A genre: a brand-new song in it.';
     paintKeep();
     paintPick();
   });
