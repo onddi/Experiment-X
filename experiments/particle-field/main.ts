@@ -18066,14 +18066,17 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
   return look;
 }
 function useStyle(st: Style | null, v: string, quiet = false) {
-  // Live drums keep playing through a new song: the groove's tempo and the kit stay.
+  // MIDI drums keep playing through a new song at the groove's tempo; the
+  // song's kit plays them (Band: the acoustic kit), and a song without drums
+  // keeps the level they had.
   const g = settings.sndDrumSrc === 'live' ? grooveById(settings.sndGroove) : null;
-  const { sndKit: kit, sndDrums: drums, sndKickPunch: punch } = settings;
+  const drums = settings.sndDrums;
   Object.assign(settings, styleLook(st, v));
   if (settings.sndVol === 0) settings.sndVol = 0.7;
   const songBpm = settings.sndTempo;
   if (g) {
-    Object.assign(settings, { sndTempo: g.bpm, sndKit: kit, sndDrums: drums, sndKickPunch: punch });
+    Object.assign(settings, { sndTempo: g.bpm, sndDrums: settings.sndDrums || drums || 0.7 });
+    if (st?.id === 'band') settings.sndKit = 'band';
     beatTempo = songBpm;
   }
   changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
