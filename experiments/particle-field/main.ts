@@ -20624,7 +20624,8 @@ function openStudioFromMenu() {
 // seconds) while the sound plays, pause the sound, which is the usual cause.
 let sndSlow = 0;
 // Build and drop: the particles gather to the middle through the build and
-// burst out on the drop (with the Music reactions' drop, when they're on).
+// burst out on the drop. These are the Music reactions' Build-up › Pull in and
+// Drop › Burst, so turning those off (or Music off) stops them here too.
 let buildGather = false;
 let dropPending = false;
 let songSec = -1;
@@ -20632,10 +20633,11 @@ function songFrame(S: ParticleSound) {
   S.setForm(settings.sndSongForm);
   S.songVary = settings.sndSongVary;
   paintSongStrip(S);
-  buildGather = S.buildU > 0.45;
+  const burst = bypass.has('music') ? 0 : settings.audioDrop;
+  buildGather = burst > 0 && settings.audioDropBuild && S.buildU > 0.45;
   if (S.takeDrop()) {
     buildGather = false;
-    explode(w / 2, h / 2, 1.4);
+    if (burst > 0) explode(w / 2, h / 2, 1.4 * Math.min(1.5, burst));
     dropPending = true;
   }
   // Song mode: a new section. With the crossfader on, drops go to scene B.
