@@ -18598,6 +18598,11 @@ function renderSoundPage(body: HTMLElement) {
   const formRow = songDet.querySelector('[data-key="sndSongForm"]');
   const varyRow = songDet.querySelector('[data-key="sndSongVary"]');
   songBtns?.after(...[songStrip, formRow, varyRow].filter((e): e is HTMLElement => !!e));
+  // Arrangement and Variation only mean something in Song mode.
+  refreshers.push(() => {
+    const on = !!snd?.songOn;
+    for (const r of [formRow, varyRow]) if (r instanceof HTMLElement && r.hidden === on) r.hidden = !on;
+  });
   const mixP = panelOf('mix');
   group(mixP, 'Feel', ['sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove']);
   group(mixP, 'Space', ['sndReverb', 'sndVerb', 'sndShimmer', 'sndEcho', 'sndPing']);
@@ -18829,8 +18834,19 @@ function liveCard(): [HTMLElement, HTMLElement] {
   dNext.setAttribute('aria-label', 'Next style');
   dRow.append(dPrev, dMid, dNext);
   const dKit = el('button', 'sndp-chip');
+  // Drums only: the other instruments go quiet (the studio's solo), to hear
+  // just the groove while picking one. Picking a style brings them back.
+  const dSolo = el('button', 'sndp-chip', 'Drums only');
+  dSolo.title = 'Hear only the drums while you pick a groove';
+  dSolo.addEventListener('click', () => {
+    if (!snd) return;
+    snd.solo = snd.solo === 'drums' ? null : 'drums';
+    soloAt = styleNow().name;
+    sig = '';
+    draw();
+  });
   const chips = el('div', 'sndp-live-chips');
-  chips.append(dKit);
+  chips.append(dSolo, dKit);
   const credit = el('p', 'sndp-live-credit', GROOVE_CREDIT);
   // Tap the name for every genre and song (the same picker as Generated).
   const dPick = el('div', 'sndp-pick sndp-live-pick');
@@ -18866,7 +18882,12 @@ function liveCard(): [HTMLElement, HTMLElement] {
     const fit = dressFor(cur()?.style ?? '');
     return [...fit.map((id) => styleById(id)).filter((st): st is Style => !!st), ...STYLES.filter((st) => !fit.includes(st.id))];
   };
+  let soloAt = '';
+  const unsolo = () => {
+    if (snd?.solo === 'drums') snd.solo = null;
+  };
   const dress = (d: number) => {
+    unsolo();
     const L = order();
     const i = L.findIndex((st) => st.id === styleNow().st?.id);
     const st = L[(i + d + L.length) % L.length];
@@ -18886,7 +18907,9 @@ function liveCard(): [HTMLElement, HTMLElement] {
     const n = styleNow();
     const dk = styleKit();
     const fits = !!n.st && dressFor(cur()?.style ?? '').includes(n.st.id);
-    const nxt = [live, settings.sndGroove, n.name, fits, settings.sndKit].join('|');
+    if (snd?.solo === 'drums' && n.name !== soloAt) unsolo();
+    const solo = snd?.solo === 'drums';
+    const nxt = [live, settings.sndGroove, n.name, fits, settings.sndKit, solo].join('|');
     if (nxt === sig) return;
     sig = nxt;
     tBeat.classList.toggle('on', !live);
@@ -18895,11 +18918,12 @@ function liveCard(): [HTMLElement, HTMLElement] {
     tLive.setAttribute('aria-pressed', String(live));
     body.hidden = !live;
     if (!live) return;
-    dMid.querySelector('b')!.textContent = n.name;
+    dMid.querySelector('b')!.textContent = solo ? 'Drums only' : n.name;
+    dSolo.classList.toggle('on', solo);
+    dSolo.setAttribute('aria-pressed', String(solo));
     dMid.querySelector('small')!.textContent = fits || !cur() ? 'Around the drums' : `Around the drums · ${cur()!.style} suits ${dressFor(cur()!.style).map((id) => styleById(id)?.name).filter(Boolean).slice(0, 2).join(' or ') || 'any style'}`;
     dKit.hidden = !dk || settings.sndKit === dk;
     if (dk) dKit.textContent = `Use the ${n.st ? n.st.name : 'song'} kit (${optLabel(KIT_OPTIONS, dk)})`;
-    chips.hidden = dKit.hidden;
   };
   refreshers.push(draw);
   draw();
