@@ -7060,10 +7060,40 @@ function delaunay(X: Float64Array, Y: Float64Array, n0: number): number[] {
 }
 let lpX = new Float64Array(0);
 let lpY = new Float64Array(0);
+const lpCell = new Map<number, number>();
 function drawLowPoly(s: number) {
-  sceneGather(380);
-  const m = sceneIdx.length;
+  // A 3D shape: only its near side becomes the surface, and each corner
+  // sits at its real depth, so the facets turn with the shape.
+  const deep = settings.shape === 'solid';
+  sceneGather(deep ? 760 : 380);
+  let m = sceneIdx.length;
   if (m < 3) return;
+  const D = Math.min(w, h) * 0.45;
+  let dzMax = Infinity;
+  if (deep) {
+    const cs = Math.sqrt((w * h) / m) * 1.6;
+    const gw = Math.ceil(w / cs) + 2;
+    const cellOf = (q: number) => (Math.floor(py[sceneIdx[q]] / cs) + 1) * gw + Math.floor(px[sceneIdx[q]] / cs) + 1;
+    lpCell.clear();
+    for (let q = 0; q < m; q++) {
+      const c = cellOf(q);
+      const z = pz[sceneIdx[q]];
+      if (!(z <= (lpCell.get(c) ?? -1))) lpCell.set(c, z);
+    }
+    const thr = (cs * 1.1) / D;
+    let k = 0;
+    for (let q = 0; q < m; q++) {
+      const c = cellOf(q);
+      let top = -1;
+      for (let dy = -gw; dy <= gw; dy += gw) for (let dx = -1; dx <= 1; dx++) top = Math.max(top, lpCell.get(c + dy + dx) ?? -1);
+      if (pz[sceneIdx[q]] < top - thr) continue;
+      sceneIdx[k] = sceneIdx[q];
+      sceneK[k++] = sceneK[q];
+    }
+    m = sceneIdx.length = sceneK.length = k;
+    if (m < 3) return;
+    dzMax = cs * 3;
+  }
   if (lpX.length < m + 3) {
     lpX = new Float64Array(m + 3);
     lpY = new Float64Array(m + 3);
@@ -7079,7 +7109,7 @@ function drawLowPoly(s: number) {
   const maxE = (Math.max(40, spacing * 2.6) + s * 4) ** 2;
   // Each corner sits at its own height, so the facets catch the light differently.
   const H = Math.max(14, spacing * 0.9);
-  const zOf = (q: number) => (styleHash(sceneIdx[q]) - 0.5) * H;
+  const zOf = deep ? (q: number) => pz[sceneIdx[q]] * D + (styleHash(sceneIdx[q]) - 0.5) * H * 0.25 : (q: number) => (styleHash(sceneIdx[q]) - 0.5) * H;
   // Batched by colour (the corner's shade and a few light levels), one path each.
   lpGroups.clear();
   for (let j = 0; j < tris.length; j += 3) {
@@ -7087,6 +7117,7 @@ function drawLowPoly(s: number) {
     const ax = lpX[a], ay = lpY[a], bx = lpX[b], by = lpY[b], cx = lpX[c], cy = lpY[c];
     if ((ax - bx) ** 2 + (ay - by) ** 2 > maxE || (bx - cx) ** 2 + (by - cy) ** 2 > maxE || (cx - ax) ** 2 + (cy - ay) ** 2 > maxE) continue;
     const az = zOf(a), bz = zOf(b), cz = zOf(c);
+    if (Math.max(az, bz, cz) - Math.min(az, bz, cz) > dzMax) continue;
     const ux = bx - ax, uy = by - ay, uz = bz - az;
     const vx2 = cx - ax, vy2 = cy - ay, vz = cz - az;
     let nx = uy * vz - uz * vy2, ny = uz * vx2 - ux * vz, nz = ux * vy2 - uy * vx2;
@@ -7337,6 +7368,9 @@ function drawSubstance(style: string, s: number, light: boolean) {
   if (style === 'sand') drawSand(dt);
   else {
     fieldR.soft = settings.fieldSoft;
+    fieldR.depth = settings.depth;
+    fieldR.fog = Math.min(1, settings.depthFog + macro.fog);
+    fieldR.pz = pz;
     fieldR.bass = reacting() ? Math.max(audio.levels.bass, audio.levels.pulse * 0.8) : 0;
     fieldR.begin(style === 'glass' ? 'wash' : (style as 'liquid'), w, h, n, shadeRgb);
     for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1, vx, vy);

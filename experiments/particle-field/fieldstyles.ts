@@ -122,6 +122,13 @@ export class FieldRender {
   // Reaction-diffusion: the two chemicals (now and next), and whether they're set up.
   private rd: Float32Array[] = [];
   private rdReady = false;
+  /** 3D depth: each particle's nearness (0 far, 1 near), how much far ones dim, and fog. */
+  pz: Float32Array | null = null;
+  depth = 0;
+  fog = 0;
+  // The nearest particle in each cell this frame (-1: none), and a spare.
+  private zn = new Float32Array(0);
+  private zw = new Float32Array(0);
   private dropP = 0;
   private c3 = [0, 0, 0];
   /** Softness, 0..1 (0.5 is the default look). */
@@ -160,6 +167,8 @@ export class FieldRender {
       this.cg = new Float32Array(N);
       this.cb = new Float32Array(N);
       this.tmp = new Float32Array(N);
+      this.zn = new Float32Array(N);
+      this.zw = new Float32Array(N);
       this.sm = [0, 1, 2, 3].map(() => new Float32Array(N));
       this.smNext = [0, 1, 2, 3].map(() => new Float32Array(N));
       this.vu = new Float32Array(N);
@@ -182,6 +191,8 @@ export class FieldRender {
         this.vw.fill(0);
       }
     }
+    if (this.depth > 0) this.zn.fill(-1);
+    this.total = total;
     this.dropP = Math.min(0.5, 0.7 / Math.max(1, total));
     this.sx.length = this.sy.length = this.sk.length = 0;
     // A cell about 40 px across on a phone; fewer, bigger cells for a crowd.
@@ -193,6 +204,17 @@ export class FieldRender {
   add(px: Float32Array, py: Float32Array, list: number[], k: number, a: number, vx?: Float32Array, vy?: Float32Array) {
     if (!list.length || a <= 0) return;
     this.any = true;
+    const pz = this.depth > 0 ? this.pz : null;
+    if (pz) {
+      const { c, gw, gh, zn } = this;
+      for (const i of list) {
+        const x = (px[i] / c) | 0;
+        const y = (py[i] / c) | 0;
+        if (x < 0 || y < 0 || x >= gw || y >= gh) continue;
+        const o = y * gw + x;
+        if (pz[i] > zn[o]) zn[o] = pz[i];
+      }
+    }
     if (this.style === 'rain') {
       // A few particles a frame fall as drops: a dent in the surface, in their colour.
       const [h, , R, G, B, W] = this.rain;
@@ -297,6 +319,51 @@ export class FieldRender {
     }
   }
 
+  // 3D depth and fog, as the particle styles have them: each spot dims by how
+  // far back the nearest particle around it is (spots with none stay as they are).
+  private depthFade(s: number) {
+    const { gw, gh, zn, zw, tmp } = this;
+    const N = gw * gh;
+    if (tmp.length !== N) return;
+    // The nearest particle within reach (a max filter, across then down)…
+    // (as far as the crowd's spacing, so a sparse near side still covers the far one)…
+    const r = Math.max(1, Math.round(Math.max(10, s * 5, 1.7 * Math.sqrt((this.w * this.h) / Math.max(1, this.total))) / this.c));
+    for (let y = 0; y < gh; y++)
+      for (let x = 0; x < gw; x++) {
+        let m = -1;
+        for (let q = Math.max(0, x - r), e = Math.min(gw - 1, x + r); q <= e; q++) m = Math.max(m, zn[y * gw + q]);
+        tmp[y * gw + x] = m;
+      }
+    const k = this.zsum(N);
+    const dp = this.depth;
+    const fog = this.fog;
+    for (let x = 0; x < gw; x++)
+      for (let y = 0; y < gh; y++) {
+        let m = -1;
+        for (let q = Math.max(0, y - r), e = Math.min(gh - 1, y + r); q <= e; q++) m = Math.max(m, tmp[q * gw + x]);
+        // …sets how much this spot dims, as a particle that far back would.
+        let f = 1;
+        if (m >= 0) {
+          f = dp <= 1 ? 1 + (0.3 + m * 0.7 - 1) * dp : Math.pow(0.3 + m * 0.7, dp);
+          if (fog > 0) {
+            const g = clamp01((1 - m - 0.2) / 0.55);
+            f *= 1 - fog * 0.95 * g * g * (3 - 2 * g);
+          }
+        }
+        k[y * gw + x] = f;
+      }
+    // Smoothed, so the dimming has no seams.
+    boxBlur(k, zw, gw, gh, Math.max(1, r >> 1));
+    const d = this.img!.data;
+    for (let i = 0; i < N; i++) if (k[i] < 0.999) d[i * 4 + 3] *= k[i];
+  }
+  private zbuf = new Float32Array(0);
+  private total = 1;
+  private zsum(N: number) {
+    if (this.zbuf.length !== N) this.zbuf = new Float32Array(N);
+    return this.zbuf;
+  }
+
   /** Smoke left over from earlier frames still drifts after the particles go. */
   forget() {
     for (const a of this.sm) a.fill(0);
@@ -340,6 +407,7 @@ export class FieldRender {
       if (!this.any) return;
       this.liquid(s, light);
     }
+    if (this.depth > 0 && this.pz) this.depthFade(s);
     this.g.putImageData(this.img!, 0, 0);
     ctx.save();
     ctx.globalCompositeOperation = ADDS.has(st) && !light ? 'lighter' : 'source-over';
