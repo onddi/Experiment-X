@@ -27,7 +27,7 @@ export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
 export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808' | 'dist808' | 'growl' | 'rubber' | 'deep' | 'fretless' | 'brass' | 'psy' | 'chip';
 import { bandsOf } from './audio.ts';
-import { KITS, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
+import { KITS, GENRES, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
 export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet' | 'analog' | 'vox' | 'drone' | 'mist' | 'supersaw' | 'harmonium' | 'cosmic';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
@@ -366,6 +366,10 @@ export interface SoundParams {
   fills: number; // a fill every this many bars (0 = none)
   follow: number; // a calm field thins the beat, a busy one adds hats
   beatChange: number; // a new beat in the genre every this many bars (0 = stay)
+  /** Live drums: a groove played by a real drummer, instead of the genre's beat. */
+  groove?: import('./grooves.ts').Groove | null;
+  grooveTight?: number; // 0 = timing as played … 1 = on the grid
+  grooveDyn?: number; // 1 = loudness as played … 0 = all even
   grid: string; // Beat grid edits: 64 chars, 4 rows (kick, snare, hat, bass) × 16 steps; '+' forces a hit, '-' silences one
 }
 
@@ -2522,6 +2526,7 @@ export class ParticleSound {
     return this.beatIdx;
   }
   private beatOf(P: SoundParams, tick: number, s: number) {
+    if (P.groove) return { g: genreById(P.genre) ?? GENRES[0], beat: P.groove.beat, bar: Math.floor(tick / 16) };
     const g = P.genre ? genreById(P.genre) : undefined;
     if (!g) return null;
     if (P.genre !== this.beatGenre || P.beat !== this.beatSet) {
@@ -2627,6 +2632,43 @@ export class ParticleSound {
       const late = loose > 0 && r !== 'k' ? Math.random() * 0.012 * loose : 0;
       for (let j = 0; j < h.n; j++) this.hit(r, k * accent * ROW_GAIN[r] * h.v * (h.n > 1 ? 0.55 + (0.45 * (j + 1)) / h.n : 1), sw + j * gap + late, down);
     }
+  }
+
+  /** Live drums: the groove's hits that fall in this sixteenth, at their own
+   *  time and loudness (pulled toward the grid and evened out as asked). */
+  private liveDrums(P: SoundParams, G: import('./grooves.ts').Groove, tick: number, s: number, stepDur: number, k: number, ed: (row: number, nat: boolean) => boolean) {
+    const loop = G.bars * 16;
+    const i0 = tick % loop;
+    const from = i0 / 4, to = (i0 + 1) / 4;
+    const tight = P.grooveTight ?? 0, dyn = P.grooveDyn ?? 1;
+    // First hit at or after this step (the hits are sorted by time).
+    let lo = 0, hi = G.pos.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (G.pos[m] < from) lo = m + 1;
+      else hi = m;
+    }
+    const rowOf = (r: DrumRow) => (r === 'k' ? 0 : r === 's' || r === 'c' || r === 'r' ? 1 : r === 'h' || r === 'o' ? 2 : -1);
+    const has = [false, false, false];
+    for (let i = lo; i < G.pos.length && G.pos[i] < to; i++) {
+      const r = G.row[i];
+      const gr = rowOf(r);
+      if (gr >= 0) has[gr] = true;
+      if (gr >= 0 && !ed(gr, true)) continue;
+      const p = G.pos[i];
+      const q = Math.round(p * 4) / 4;
+      const at = Math.max(0, (p + (q - p) * tight - from) * 4 * stepDur);
+      const v = G.vel[i] * dyn + 0.7 * (1 - dyn);
+      if (gr >= 0) this.gridNow[gr * 16 + s] = 1;
+      this.hit(r, k * ROW_GAIN[r] * (0.2 + v * 0.95), at, G.down[i]);
+    }
+    // Beat grid edits: '+' adds a hit where the drummer played none.
+    (['k', 's', 'h'] as DrumRow[]).forEach((r, gr) => {
+      if (!has[gr] && ed(gr, false)) {
+        this.gridNow[gr * 16 + s] = 1;
+        this.hit(r, k * ROW_GAIN[r] * 0.8, 0);
+      }
+    });
   }
 
   /** A section's beat move on this step's hits: thinner, hats only, or busier. */
@@ -3315,7 +3357,8 @@ export class ParticleSound {
       }
 
       this.stepNow = s;
-      if (P.drums > 0 && B) this.beatDrums(P, B, tick, s, sw, stepDur, P.drums * (fit ? 0.4 : 1), e, onKick, ed);
+      if (P.drums > 0 && P.groove) this.liveDrums(P, P.groove, tick, s, stepDur, P.drums * (fit ? 0.4 : 1), ed);
+      else if (P.drums > 0 && B) this.beatDrums(P, B, tick, s, sw, stepDur, P.drums * (fit ? 0.4 : 1), e, onKick, ed);
       // Drums: the beat comes from the field. Particles low in this column
       // add kicks, in the middle snares, high up hi-hats; busier plays more.
       else if (P.drums > 0) {

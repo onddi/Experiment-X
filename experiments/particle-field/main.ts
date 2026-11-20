@@ -17,8 +17,9 @@ import { GpuFx } from './gpufx.ts';
 import { FONT_OPTS, addFontCss, fontCss, fontReady, fontStyle } from './fonts.ts';
 import type { ParticleSound, SoundParams, Layer, BeatMove, PicMove } from './sound.ts';
 import { STYLES, styleById, type Style } from './styles.ts';
-import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './drums.ts';
+import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre, type DrumKit } from './drums.ts';
 import { GENRE_FEEL } from './beatlearn.ts';
+import { GROOVE_CREDIT, closestGroove, dressFor, grooveById, grooves, groovesNow, type Groove } from './grooves.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { FieldRender, FIELD_STYLES, SandLayer } from './fieldstyles.ts';
@@ -479,7 +480,7 @@ const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.
 // What plays: each layer on or off; off remembers its level for when it comes back.
 const SND_LAYER_CHIPS: [string, keyof Settings][] = [['Strings', 'sndStrings'], ['Pad', 'sndDrone'], ['Steps', 'sndSeq'], ['Chimes', 'sndHits'], ['Grains', 'sndGrain'], ['Scanline', 'sndScan'], ['Touch', 'sndTouch'], ['Bass', 'sndBass'], ['Drums', 'sndDrums'], ['Accents', 'sndAccents']];
 const SND_MEM_KEY = 'particle-field:sound-layer-levels';
-const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSongVary', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndNoteDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub', 'sndPolishAmt', 'sndVerb', 'sndUnisonAmt', 'sndWaveAmt', 'sndHumanAmt'] as const;
+const SND_KEYS = ['sndVol', 'sndField', 'sndScale', 'sndKey', 'sndTimbre', 'sndProg', 'sndTempo', 'sndStrings', 'sndStringCount', 'sndOctave', 'sndRange', 'sndSeq', 'sndAccents', 'sndHits', 'sndHitSound', 'sndSeqSound', 'sndSeqRate', 'sndSeqNotes', 'sndSeqSens', 'sndSongForm', 'sndSongVary', 'sndSeqStyle', 'sndSeqVary', 'sndSeqTick', 'sndGrainSound', 'sndGrainRate', 'sndGrainLen', 'sndDrone', 'sndGrain', 'sndScan', 'sndScanSecs', 'sndScanDir', 'sndScanSound', 'sndScanNotes', 'sndTouch', 'sndAccScene', 'sndAccShape', 'sndAccBirth', 'sndAccBurst', 'sndAccVoice', 'sndMBusy', 'sndMBright', 'sndMSpace', 'sndMGroove', 'sndTouchSound', 'sndTouchMode', 'sndTouchGlide', 'sndTouchVib', 'sndTouchAxis', 'sndTouchOct', 'sndReverb', 'sndMusic', 'sndShow', 'sndProgText', 'sndChordMove', 'sndChordBars', 'sndLength', 'sndDyn', 'sndBend', 'sndSwing', 'sndArp', 'sndEcho', 'sndSweep', 'sndChorus', 'sndDepth', 'sndBass', 'sndBassSound', 'sndDrums', 'sndKit', 'sndGenre', 'sndStyle', 'sndBeat', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndPadSound', 'sndPadPump', 'sndPadTone', 'sndPadWidth', 'sndPadBreath', 'sndPadGlide', 'sndPadHold', 'sndPadOct', 'sndBassTone', 'sndBassMove', 'sndBassPattern', 'sndBassWalk', 'sndBassOct', 'sndBassGlide', 'sndBassLen', 'sndBassGhost', 'sndAttack', 'sndBright', 'sndDrive', 'sndLofi', 'sndMove', 'sndBassDrive', 'sndNoteDrive', 'sndPing', 'sndPhaser', 'sndTrem', 'sndTremMode', 'sndShimmer', 'sndGlue', 'sndTape', 'sndGrid', 'sndLowEnd', 'sndKickPunch', 'sndSub', 'sndPolishAmt', 'sndVerb', 'sndUnisonAmt', 'sndWaveAmt', 'sndHumanAmt', 'sndDrumSrc', 'sndGroove', 'sndGrooveTight', 'sndGrooveDyn'] as const;
 const SND_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 let sndOn = false;
 const sndHitQ: number[] = [];
@@ -9672,18 +9673,34 @@ function musicPicker() {
     const on = settings.sndStyle === id;
     return { name: songLabel(v), id, sub: on && styleNow().edited ? 'changed · tap to reset' : sub, on, fav: st ? savedSongs(st.id).includes(v) : undefined };
   };
-  return railPicker({
+  // Live drums (beta): grooves by real drummers, at the bottom of the rail.
+  const G = () => groovesNow() ?? [];
+  const gItem = (g: Groove, sub = `${g.bpm} BPM · ${g.bars} bars · drummer ${g.drummer}`): RailItem => ({
+    name: g.name, id: `live:${g.id}`, sub, on: settings.sndDrumSrc === 'live' && settings.sndGroove === g.id, fav: keptGrooves().includes(g.id),
+  });
+  const keptG = () => keptGrooves().map((id) => G().find((g) => g.id === id)).filter((g): g is Groove => !!g);
+  if (!groovesNow() && (musicRail === 'live' || keptGrooves().length)) void grooves().then(() => picker.draw());
+  const picker = railPicker({
     rail: () => [
-      ['saved', '★ Saved', allSaved().length],
+      ['saved', '★ Saved', allSaved().length + keptG().length],
       ['all', 'All genres', STYLES.reduce((n, st) => n + styleVars(st).length, 0)],
       ...STYLES.map((st): [string, string, number] => [st.id, st.name, musicSongs(st.id).length]),
       ...(mySoundPresets().length ? [['yours', 'Yours', mySoundPresets().length] as [string, string, number]] : []),
+      ['live', 'Live drums β', G().length || 145],
     ],
     now: () => musicRail,
-    setRail: (id) => (musicRail = id),
+    setRail: (id) => {
+      musicRail = id;
+      if (id === 'live' && !groovesNow()) void grooves().then(() => picker.draw());
+    },
     random: {
       skip: [],
       roll: () => {
+        if (musicRail === 'live') {
+          const list = G().filter((g) => g.id !== settings.sndGroove);
+          if (list.length) setLive(list[(Math.random() * list.length) | 0]);
+          return !!list.length;
+        }
         if (musicRail === 'all') return (randomStyle(), true);
         const st = styleById(musicRail);
         if (!st || !RECIPES[st.id]) return false;
@@ -9692,22 +9709,30 @@ function musicPicker() {
       },
     },
     items: () => {
-      if (musicRail === 'saved') return allSaved().map(([st, v]) => item(st, v, st.name));
+      if (musicRail === 'live') return G().map((g) => gItem(g));
+      if (musicRail === 'saved') return [...allSaved().map(([st, v]) => item(st, v, st.name)), ...keptG().map((g) => gItem(g, 'Live drums'))];
       if (musicRail === 'yours') return musicSongs('yours').map((v) => item(null, v));
       if (musicRail === 'all') return STYLES.flatMap((st) => styleVars(st).map((v) => item(st, v, st.name)));
       const st = styleById(musicRail);
       return st ? musicSongs(st.id).map((v) => item(st, v)) : [];
     },
     pick: (key) => {
+      if (key.startsWith('live:')) {
+        const g = grooveById(key.slice(5));
+        if (g) setLive(g);
+        return;
+      }
       const [sid, v] = splitKey(key);
       useStyle(styleById(sid) ?? null, v);
     },
     fav: (key) => {
+      if (key.startsWith('live:')) return keepGroove(key.slice(5), !keptGrooves().includes(key.slice(5)));
       const [sid, v] = splitKey(key);
       if (sid === 'yours') return;
       keepSong(sid, v, !savedSongs(sid).includes(v));
     },
   });
+  return picker;
 }
 // Next / previous vibe in the gallery's family and order, None first.
 function stepVibe(d: number) {
@@ -10674,14 +10699,16 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndDrums', label: 'Drums', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'select', key: 'sndKit', label: 'Drum kit', options: KIT_OPTIONS, show: () => settings.sndDrums > 0 },
   { kind: 'range', key: 'sndKickPunch', label: 'Kick punch', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'kit only' : pct(v)), show: () => settings.sndDrums > 0 },
-  { kind: 'range', key: 'sndVary', label: 'Variation', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as written' : pct(v)), show: () => !!settings.sndGenre },
+  { kind: 'range', key: 'sndGrooveTight', label: 'Feel', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as played' : v === 1 ? 'on the grid' : `${pct(v)} to the grid`), show: () => settings.sndDrumSrc === 'live' },
+  { kind: 'range', key: 'sndGrooveDyn', label: 'Dynamics', min: 0, max: 1, step: 0.05, format: (v) => (v === 1 ? 'as played' : v === 0 ? 'even' : pct(v)), show: () => settings.sndDrumSrc === 'live' },
+  { kind: 'range', key: 'sndVary', label: 'Variation', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'as written' : pct(v)), show: () => !!settings.sndGenre && settings.sndDrumSrc !== 'live' },
   { kind: 'toggle', key: 'sndMove', label: 'Drums move the field', show: () => settings.sndDrums > 0 },
   { kind: 'toggle', key: 'sndNoteDrive', label: 'Notes colour the picture' },
   { kind: 'note', text: 'With no music playing, the drums play your Music reactions (Music › When…): Kick hits, Snare hits (a ripple starts at the column that played it), Hats tick and A crash hits.', show: () => settings.sndDrums > 0 && settings.sndMove },
-  { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrums > 0 },
-  { kind: 'range', key: 'sndFollow', label: 'Follow the field', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !!settings.sndGenre },
-  { kind: 'range', key: 'sndBeatChange', label: 'New beat', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'stay' : `every ${v} bars`), show: () => !!settings.sndGenre },
-  { kind: 'range', key: 'sndSwing', label: 'Swing', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'straight' : pct(v)) },
+  { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrums > 0 && settings.sndDrumSrc !== 'live' },
+  { kind: 'range', key: 'sndFollow', label: 'Follow the field', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !!settings.sndGenre && settings.sndDrumSrc !== 'live' },
+  { kind: 'range', key: 'sndBeatChange', label: 'New beat', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'stay' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrumSrc !== 'live' },
+  { kind: 'range', key: 'sndSwing', label: 'Swing', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'straight' : pct(v)), show: () => settings.sndDrumSrc !== 'live' },
   { kind: 'select', key: 'sndPadSound', label: 'Pad sound', options: PAD_SOUNDS, show: () => settings.sndDrone > 0 },
   { kind: 'toggle', key: 'sndPadHold', label: 'Play when still', show: () => settings.sndDrone > 0 },
   { kind: 'select', key: 'sndPadOct', label: 'Octave', options: [['low', 'Low'], ['mid', 'Mid'], ['high', 'High']], show: () => settings.sndDrone > 0 },
@@ -17585,10 +17612,11 @@ function paintTrackLights(s: ParticleSound) {
   }
 }
 const SND_TRACKS: SndTrack[] = [
-  { name: 'Drums', how: 'The screen is read left to right in 16 columns, one per sixteenth note. Particles crowding low in a column add a kick, in the middle a snare, high up a hi-hat, and a faster field plays more. A beat from the library plays as written, and a lively field adds to it.', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndKit', 'sndKickPunch', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
+  { name: 'Drums', how: 'The screen is read left to right in 16 columns, one per sixteenth note. Particles crowding low in a column add a kick, in the middle a snare, high up a hi-hat, and a faster field plays more. A beat from the library plays as written, and a lively field adds to it.', key: 'sndDrums', dot: '#e9e9f0', beats: true, keys: ['sndKit', 'sndKickPunch', 'sndGrooveTight', 'sndGrooveDyn', 'sndVary', 'sndFills', 'sndFollow', 'sndBeatChange', 'sndSwing'],
     sub: () => {
       const g = drumGenre(settings.sndGenre);
       const kit = optLabel(KIT_OPTIONS, settings.sndKit);
+      if (settings.sndDrumSrc === 'live') return `Live · ${grooveById(settings.sndGroove)?.name ?? 'groove'} · ${kit}`;
       return g ? `${g.beats[settings.sndBeat]?.name ?? g.name} · ${kit}` : `follows the field · ${kit}`;
     } },
   { name: 'Bass', how: 'Plays the root of the chord, low. A calm field holds one long note a bar. As the particles speed up it walks between root and fifth, then plays eighth notes.', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassPattern', 'sndBassMove', 'sndBassWalk', 'sndBassSound', 'sndBassOct', 'sndSub', 'sndBassTone', 'sndBassGlide', 'sndBassLen', 'sndBassGhost'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
@@ -17637,10 +17665,24 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
   look.sndStyle = `${st?.id ?? 'yours'}/${v}`;
   return look;
 }
-function useStyle(st: Style | null, v: string) {
+function useStyle(st: Style | null, v: string, quiet = false) {
+  // Live drums keep playing through a new song: the groove's tempo and the kit stay.
+  const g = settings.sndDrumSrc === 'live' ? grooveById(settings.sndGroove) : null;
+  const { sndKit: kit, sndDrums: drums, sndKickPunch: punch } = settings;
   Object.assign(settings, styleLook(st, v));
   if (settings.sndVol === 0) settings.sndVol = 0.7;
+  const songBpm = settings.sndTempo;
+  if (g) {
+    Object.assign(settings, { sndTempo: g.bpm, sndKit: kit, sndDrums: drums, sndKickPunch: punch });
+    beatTempo = songBpm;
+  }
   changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
+  if (g && !quiet)
+    showToast(`Drums stay Live · ${g.name}`, ["Use this song's beat", () => {
+      settings.sndDrumSrc = 'beat';
+      settings.sndTempo = songBpm;
+      changed(new Set<keyof Settings>(['sndDrumSrc', 'sndTempo']));
+    }]);
 }
 // Rolled songs you kept, per genre: the dice only shuffles, Save keeps one.
 const SND_SONGS_KEY = 'particle-field:songs';
@@ -17670,7 +17712,8 @@ function styleNow(): { st: Style | null; v: string; name: string; edited: boolea
   }
   const L = styleLook(st, v) as Record<string, unknown>;
   const S = settings as unknown as Record<string, unknown>;
-  const edited = SND_LOOK_KEYS.some((k) => S[k] !== L[k]);
+  const live = settings.sndDrumSrc === 'live';
+  const edited = SND_LOOK_KEYS.some((k) => S[k] !== L[k] && !(live && (k === 'sndTempo' || k === 'sndKit' || k === 'sndSwing')));
   return { st, v, name: st ? `${st.name} · ${isRoll(v) ? songName(Number(v.slice(1)) || 0) : v}` : v, edited };
 }
 function renderSoundPage(body: HTMLElement) {
@@ -17786,7 +17829,7 @@ function renderSoundPage(body: HTMLElement) {
     pick.hidden = !pick.hidden;
     sMain.setAttribute('aria-expanded', String(!pick.hidden));
     if (!pick.hidden) {
-      if (musicRail !== 'all') musicRail = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : musicRail);
+      if (musicRail !== 'all' && musicRail !== 'live') musicRail = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : musicRail);
       paintPick();
       pick.querySelector<HTMLElement>('.rp-item.on')?.scrollIntoView({ block: 'nearest' });
     }
@@ -17794,6 +17837,14 @@ function renderSoundPage(body: HTMLElement) {
   const paintPick = () => {
     del.hidden = !settings.sndStyle.startsWith('yours/');
     if (!pick.hidden) picker.draw();
+  };
+  openSongPicker = (rail) => {
+    musicRail = rail;
+    if (rail === 'live' && !groovesNow()) void grooves().then(() => picker.draw());
+    pick.hidden = false;
+    sMain.setAttribute('aria-expanded', 'true');
+    paintPick();
+    style.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
   refreshers.push(() => {
     const n = styleNow();
@@ -17837,7 +17888,7 @@ function renderSoundPage(body: HTMLElement) {
     det.style.setProperty('--accent-bg', `color-mix(in oklch, ${t.dot} 18%, transparent)`);
     // What drives it: how the particles play this part.
     det.append(mk('p', 'sndp-how', t.how));
-    if (t.beats) det.append(beatChips(), patternFold());
+    if (t.beats) det.append(liveCard(), beatChips(), patternFold());
     for (const k of t.keys) {
       const e = take(k);
       if (e) det.append(e);
@@ -18053,6 +18104,7 @@ function beatChips(): HTMLElement {
   let sig = '';
   const draw = () => {
     const g = drumGenre(settings.sndGenre);
+    box.hidden = settings.sndDrumSrc === 'live';
     const next = `${settings.sndGenre}|${settings.sndBeat}|${settings.sndStyle}`;
     if (next === sig) return;
     sig = next;
@@ -18079,6 +18131,165 @@ function beatChips(): HTMLElement {
       set('sndBeat', (settings.sndBeat + 1 + Math.floor(Math.random() * (n - 1))) % n);
     });
     for (const c of beatChoices(g, (i) => set('sndBeat', i))) add(c.name, c.on, c.go);
+  };
+  refreshers.push(draw);
+  draw();
+  return box;
+}
+// --- Live drums (beta) ---------------------------------------------------------
+// The Drums layer plays either the genre's beat or a live groove by a real
+// drummer (grooves.ts), never both. Kit, Kick punch and the level are shared;
+// the beat-only settings hide in Live and keep their values for Beat.
+const KEPT_GROOVES_KEY = 'particle-field:grooves-kept';
+const keptGrooves = () => readJson<string[]>(KEPT_GROOVES_KEY, []);
+function keepGroove(id: string, keep: boolean) {
+  writeJson(KEPT_GROOVES_KEY, [...(keep ? [id] : []), ...keptGrooves().filter((x) => x !== id)]);
+  showToast(keep ? 'Kept in Saved' : 'Removed from Saved');
+  refresh();
+}
+// The song's tempo while Live (the groove sets its own), for going back to Beat.
+let beatTempo = 0;
+function setLive(g: Groove) {
+  const first = settings.sndDrumSrc !== 'live';
+  if (first) beatTempo = settings.sndTempo;
+  const next: Partial<Settings> = { sndDrumSrc: 'live', sndGroove: g.id, sndTempo: g.bpm, sndGrid: '' };
+  if (settings.sndDrums === 0) next.sndDrums = 0.7;
+  Object.assign(settings, next);
+  changed(new Set(Object.keys(next) as (keyof Settings)[]));
+}
+function setBeat() {
+  const next: Partial<Settings> = { sndDrumSrc: 'beat' };
+  if (beatTempo) next.sndTempo = beatTempo;
+  beatTempo = 0;
+  Object.assign(settings, next);
+  changed(new Set(Object.keys(next) as (keyof Settings)[]));
+}
+// Opens the Sound page's song picker on a rail (the Live drums one from the Drums card).
+let openSongPicker: ((rail: string) => void) | null = null;
+// Dress: the instruments around the groove. "Keep my song" leaves them; a genre
+// plays its first song around the drums (Undo by stepping back to Keep my song).
+let dressI = 0;
+let dressWas: Record<string, unknown> | null = null;
+function liveCard(): HTMLElement {
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    if (e instanceof HTMLButtonElement) e.type = 'button';
+    return e;
+  };
+  const box = el('div', 'sndp-live');
+  const tabs = el('div', 'mtabs sndp-live-tabs');
+  tabs.setAttribute('role', 'group');
+  tabs.setAttribute('aria-label', 'Drums play');
+  const tBeat = el('button', '', 'Beat');
+  const tLive = el('button', '');
+  tLive.innerHTML = 'Live <small>beta</small>';
+  tabs.append(tBeat, tLive);
+  const body = el('div', 'sndp-live-body');
+  // The groove: name, who played it, ‹ › through the list, Change, keep.
+  const gRow = el('div', 'sndp-live-g');
+  const prev = el('button', 'sndp-live-step', '‹');
+  prev.setAttribute('aria-label', 'Previous groove');
+  const gMid = el('button', 'sndp-live-name');
+  gMid.innerHTML = '<b></b><small></small>';
+  gMid.title = 'Pick another groove';
+  const next = el('button', 'sndp-live-step', '›');
+  next.setAttribute('aria-label', 'Next groove');
+  const keepB = el('button', 'sndp-dice sndp-keep');
+  keepB.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>';
+  gRow.append(prev, gMid, next, keepB);
+  // Dress.
+  const dRow = el('div', 'sndp-live-d');
+  const dPrev = el('button', 'sndp-live-step', '‹');
+  dPrev.setAttribute('aria-label', 'Previous dress');
+  const dMid = el('div', 'sndp-live-name');
+  dMid.innerHTML = '<small>Dress · what plays around the drums</small><b></b>';
+  const dNext = el('button', 'sndp-live-step', '›');
+  dNext.setAttribute('aria-label', 'Next dress');
+  dRow.append(dPrev, dMid, dNext);
+  const dKit = el('button', 'sndp-chip sndp-live-kit');
+  const credit = el('p', 'sndp-live-credit', GROOVE_CREDIT);
+  body.append(gRow, dRow, dKit, credit);
+  box.append(tabs, body);
+
+  const list = () => groovesNow() ?? [];
+  const cur = () => grooveById(settings.sndGroove);
+  const goLive = async () => {
+    const all = await grooves();
+    const pick = cur() ?? closestGroove(all, settings.sndGenre, drumGenre(settings.sndGenre)?.beats[settings.sndBeat], settings.sndTempo);
+    if (pick) setLive(pick);
+  };
+  tBeat.addEventListener('click', () => settings.sndDrumSrc === 'live' && setBeat());
+  tLive.addEventListener('click', () => void goLive());
+  const step = (d: number) => {
+    const L = list();
+    if (!L.length) return;
+    const i = L.findIndex((g) => g.id === settings.sndGroove);
+    setLive(L[(i + d + L.length) % L.length]);
+  };
+  prev.addEventListener('click', () => step(-1));
+  next.addEventListener('click', () => step(1));
+  gMid.addEventListener('click', () => openSongPicker?.('live'));
+  keepB.addEventListener('click', () => settings.sndGroove && keepGroove(settings.sndGroove, !keptGrooves().includes(settings.sndGroove)));
+  // Dress: the genres that suit this groove's style first, then the rest.
+  const dresses = () => {
+    const fit = new Set(dressFor(cur()?.style ?? ''));
+    return ['', ...STYLES.filter((st) => fit.has(st.id)).map((st) => st.id), ...STYLES.filter((st) => !fit.has(st.id)).map((st) => st.id)];
+  };
+  const dress = (d: number) => {
+    const D = dresses();
+    const i = (dressI + d + D.length) % D.length;
+    const S = settings as unknown as Record<string, unknown>;
+    if (dressI === 0) dressWas = Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, S[k]]));
+    dressI = i;
+    const st = styleById(D[i]);
+    if (st) useStyle(st, styleVars(st)[0], true);
+    else if (dressWas) {
+      const g = cur();
+      Object.assign(settings, dressWas);
+      if (g) settings.sndTempo = g.bpm;
+      changed(new Set(SND_LOOK_KEYS));
+      dressWas = null;
+    }
+    draw();
+  };
+  dPrev.addEventListener('click', () => dress(-1));
+  dNext.addEventListener('click', () => dress(1));
+  // The dress's own kit (Band has no beat of its own: the acoustic Band kit).
+  const dressKit = (): DrumKit | null => {
+    const st = styleById(dresses()[dressI]);
+    return st?.id === 'band' ? 'band' : drumGenre(st ? st.beat : settings.sndGenre)?.kit ?? null;
+  };
+  dKit.addEventListener('click', () => {
+    const k = dressKit();
+    if (k) set('sndKit', k);
+  });
+  let sig = '';
+  const draw = () => {
+    const live = settings.sndDrumSrc === 'live';
+    const g = cur();
+    const st = styleById(dresses()[dressI]);
+    const dk = dressKit();
+    const nxt = [live, g?.id, dressI, settings.sndKit, keptGrooves().includes(settings.sndGroove), !!groovesNow()].join('|');
+    if (nxt === sig) return;
+    sig = nxt;
+    tBeat.classList.toggle('on', !live);
+    tLive.classList.toggle('on', live);
+    tBeat.setAttribute('aria-pressed', String(!live));
+    tLive.setAttribute('aria-pressed', String(live));
+    body.hidden = !live;
+    if (!live) return;
+    if (!groovesNow()) void grooves().then(() => ((sig = ''), draw()));
+    gMid.querySelector('b')!.textContent = g?.name ?? 'Loading grooves…';
+    gMid.querySelector('small')!.textContent = g ? `Drummer ${g.drummer} · ${g.bpm} BPM · ${g.bars} bars · tap for all` : '';
+    const kept = !!g && keptGrooves().includes(g.id);
+    keepB.classList.toggle('on', kept);
+    keepB.setAttribute('aria-pressed', String(kept));
+    keepB.setAttribute('aria-label', kept ? 'Kept in Saved' : 'Keep in Saved');
+    dMid.querySelector('b')!.textContent = st ? st.name : 'Keep my song';
+    dKit.hidden = !dk || settings.sndKit === dk;
+    if (dk) dKit.textContent = `Use the ${st ? st.name : 'song'} kit (${optLabel(KIT_OPTIONS, dk)})`;
   };
   refreshers.push(draw);
   draw();
@@ -18165,6 +18376,7 @@ function patternFold(): HTMLElement {
   });
   reset.addEventListener('click', () => set('sndGrid', ''));
   const draw = () => {
+    box.hidden = settings.sndDrumSrc === 'live';
     const feel = GENRE_FEEL[settings.sndGenre];
     learnB.hidden = !feel;
     learnB.classList.toggle('on', learn);
@@ -18215,7 +18427,9 @@ function patternFold(): HTMLElement {
 // (tap to open its slider), Freeze and Stop all.
 // --- Sound presets: the whole Particle sound setup at once ---------------------
 // (Volume and how it fits with music are yours, so presets leave them.)
-const SND_LOOK_KEYS = SND_KEYS.filter((k) => k !== 'sndVol' && k !== 'sndMusic' && k !== 'sndShow');
+// Live drums stay as they are when the song changes (a groove is not part of a song).
+const SND_LIVE_KEYS: string[] = ['sndDrumSrc', 'sndGroove', 'sndGrooveTight', 'sndGrooveDyn'];
+const SND_LOOK_KEYS = SND_KEYS.filter((k) => k !== 'sndVol' && k !== 'sndMusic' && k !== 'sndShow' && !SND_LIVE_KEYS.includes(k));
 const SND_OFF: Partial<Settings> = { sndStrings: 0, sndDrone: 0, sndSeq: 0, sndHits: 0, sndGrain: 0, sndScan: 0, sndTouch: 0.6, sndAccents: 0.6 };
 // A beat grid from four 16-step rows (kick, snare, hat, bass): '+' forces a hit, '.' leaves it to the field.
 const beat = (...rows: string[]) => rows.join('');
@@ -19733,10 +19947,13 @@ function sndParams(): SoundParams {
     sndReverb: cl(R.sndReverb * space), sndEcho: cl(R.sndEcho * space), sndChorus: cl(R.sndChorus * space),
     sndBass: cl(R.sndBass * groove + lift), sndDrums: cl(R.sndDrums * groove + lift), sndSwing: cl(R.sndSwing + (R.sndMGroove - 0.5) * 0.4),
   });
+  // Live drums: the groove (the grooves load the first time Live is on).
+  const liveG = S.sndDrumSrc === 'live' ? grooveById(S.sndGroove) : null;
+  if (S.sndDrumSrc === 'live' && !groovesNow()) void grooves();
   return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, accScene: S.sndAccScene, accShape: S.sndAccShape, accBirth: S.sndAccBirth, accBurst: S.sndAccBurst, accVoice: S.sndAccVoice, hits: S.sndHits, hitSound: S.sndHitSound, seqSound: S.sndSeqSound, seqRate: Number(S.sndSeqRate), seqNotes: S.sndSeqNotes, seqSens: S.sndSeqSens, seqStyle: S.sndSeqStyle, seqVary: S.sndSeqVary, seqTick: S.sndSeqTick, grainSound: S.sndGrainSound, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, scanDir: S.sndScanDir, scanSound: S.sndScanSound, scanNotes: S.sndScanNotes, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
-    length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: S.sndSwing, arp: S.sndArp,
-    echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, bassMove: S.sndBassMove, bassPattern: S.sndBassPattern, bassWalk: S.sndBassWalk, bassOct: S.sndBassOct === 'sub' ? -1 : S.sndBassOct === 'mid' ? 1 : 0, bassGlide: S.sndBassGlide, bassLen: S.sndBassLen, bassGhost: S.sndBassGhost, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, padTone: S.sndPadTone, padWidth: S.sndPadWidth, padBreath: S.sndPadBreath, padGlide: S.sndPadGlide, padHold: S.sndPadHold, padOct: S.sndPadOct === 'low' ? -1 : S.sndPadOct === 'high' ? 1 : 0, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, ping: S.sndPing, phaser: S.sndPhaser, trem: S.sndTrem, tremMode: S.sndTremMode, shimmer: S.sndShimmer, glue: S.sndGlue, lowEnd: S.sndLowEnd, kickPunch: S.sndKickPunch, sub: S.sndSub, tape: S.sndTape, grid: S.sndGrid, polish: S.sndPolishAmt, verb: S.sndVerb, unison: S.sndUnisonAmt, wave: S.sndWaveAmt, human: S.sndHumanAmt };
+    length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: liveG ? 0 : S.sndSwing, arp: S.sndArp,
+    echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, bassMove: S.sndBassMove, bassPattern: S.sndBassPattern, bassWalk: S.sndBassWalk, bassOct: S.sndBassOct === 'sub' ? -1 : S.sndBassOct === 'mid' ? 1 : 0, bassGlide: S.sndBassGlide, bassLen: S.sndBassLen, bassGhost: S.sndBassGhost, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, padTone: S.sndPadTone, padWidth: S.sndPadWidth, padBreath: S.sndPadBreath, padGlide: S.sndPadGlide, padHold: S.sndPadHold, padOct: S.sndPadOct === 'low' ? -1 : S.sndPadOct === 'high' ? 1 : 0, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, ping: S.sndPing, phaser: S.sndPhaser, trem: S.sndTrem, tremMode: S.sndTremMode, shimmer: S.sndShimmer, glue: S.sndGlue, lowEnd: S.sndLowEnd, kickPunch: S.sndKickPunch, sub: S.sndSub, tape: S.sndTape, groove: liveG, grooveTight: S.sndGrooveTight, grooveDyn: S.sndGrooveDyn, grid: S.sndGrid, polish: S.sndPolishAmt, verb: S.sndVerb, unison: S.sndUnisonAmt, wave: S.sndWaveAmt, human: S.sndHumanAmt };
 }
 // Your chords: "1 5 6 4" (or 1-5-6-4, I V vi IV) to scale degrees from 0.
 const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };

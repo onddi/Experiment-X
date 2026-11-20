@@ -78,6 +78,8 @@ export const TIPS: Record<string, string> = {
   sndFills: 'A fill on the last beat of every few bars, in the genre\'s way: a snare roll, toms down the kit, hi-hat rolls, a glitch, or a dub drop. A crash lands on the next bar.',
   sndFollow: 'Lets the field play the drummer: a calm field thins the beat down to its main hits, a busy one adds hi-hats.',
   sndBeatChange: 'Moves on to another beat in the same genre every few bars, and when the music drops.',
+  sndGrooveTight: 'Live drums: how much the drummer’s own timing is kept. As played keeps every push and drag; toward the grid pulls each hit onto its sixteenth.',
+  sndGrooveDyn: 'Live drums: how much of the drummer’s soft and hard hits is kept. Even plays every hit at about the same loudness.',
   sndPadSound: 'The pad’s voice. Soft: plain and round. Strings: a bowed ensemble. Organ: hollow and steady. Choir: “aah” voices whose vowel slowly drifts. Shimmer: wide and bright.',
   sndBassTone: 'Darker or brighter bass: moves the bass’s filter down or up.',
   sndAttack: 'How notes start. Struck is instant, like a mallet; turning it up makes notes swell in, like a bow or breath.',

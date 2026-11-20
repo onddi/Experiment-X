@@ -10,11 +10,14 @@
 // Bass row:  B  root, accented   b  root   o  root, soft   f  fifth
 //            t  third   u  root an octave up   ~  root, sliding in from the last note
 
-export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand' | '909' | 'linn' | 'lofi' | 'dub' | 'techno' | 'trap' | 'jungle' | 'glitch' | 'minimal' | 'hard';
+export type DrumKit = 'soft' | '808' | 'punchy' | 'brush' | 'hand' | '909' | 'linn' | 'lofi' | 'dub' | 'techno' | 'trap' | 'jungle' | 'glitch' | 'minimal' | 'hard'
+  | 'band' | 'studio' | 'rock' | 'jazzclub' | 'vintage' | 'rhythmbox' | 'afroperc' | 'tabla' | 'steel' | 'tape' | 'toy';
 export const KIT_OPTIONS: [DrumKit, string][] = [
   ['soft', 'Soft'], ['808', '808 (boom and clap)'], ['punchy', 'Punchy (club)'], ['brush', 'Brushes (jazz)'], ['hand', 'Hand percussion'],
   ['909', '909 (house)'], ['linn', '80s drum machine'], ['lofi', 'Lo-fi (dusty)'], ['dub', 'Dub (rim and spring)'], ['techno', 'Techno (hard)'],
   ['trap', 'Trap (long 808)'], ['jungle', 'Jungle (breaks)'], ['glitch', 'Glitch (IDM)'], ['minimal', 'Minimal (ticks)'], ['hard', 'Hard (distorted kick)'],
+  ['band', 'Band (acoustic)'], ['studio', 'Studio funk (tight)'], ['rock', 'Rock room (big)'], ['jazzclub', 'Jazz club (ride)'], ['vintage', 'Vintage 60s'],
+  ['rhythmbox', 'Rhythm box (preset machine)'], ['afroperc', 'Afro percussion'], ['tabla', 'Tabla and dholak'], ['steel', 'Steel and gamelan'], ['tape', 'Tape-worn'], ['toy', 'Toy kit'],
 ];
 
 /** A pitched body: start and end pitch, how fast it drops, how long it rings, loudness, wave. */
@@ -112,6 +115,87 @@ export const KITS: Record<DrumKit, KitDef> = {
     hat: { type: 'highpass', f: 9000, q: 1, closed: 0.03, open: 0.22, amp: 0.28, ping: 0.6 },
     clap: { f: 1600, decay: 0.2, amp: 0.45, n: 4 }, rim: [2200, 2100, 0.01, 0.03, 0.3, 'square'],
     perc: [[640, 620, 0.01, 0.08, 0.1, 'square']], tom: [240, 140, 0.05, 0.22, 0.55, 'square'], crash: ['highpass', 6500, 0.8, 0.001, 1.4, 0.18], wet: 0.3,
+  },
+  // Acoustic kits, made for the live grooves (ghost notes, toms and cymbals sound natural).
+  band: {
+    kick: { body: [110, 48, 0.04, 0.32, 0.85], click: 0.2 },
+    snare: { body: [190, 165, 0.03, 0.12, 0.3, 'triangle'], noise: ['bandpass', 3000, 0.5, 0.002, 0.22, 0.5] },
+    hat: { type: 'bandpass', f: 8000, q: 0.7, closed: 0.05, open: 0.35, amp: 0.26 },
+    clap: { f: 1400, decay: 0.16, amp: 0.3, n: 3 }, rim: [1700, 1650, 0.01, 0.05, 0.28, 'triangle'],
+    perc: [[330, 300, 0.03, 0.18, 0.3]], tom: [180, 130, 0.06, 0.35, 0.55], crash: ['highpass', 5000, 0.6, 0.003, 1.6, 0.18], wet: 0.35,
+  },
+  studio: {
+    kick: { body: [130, 52, 0.03, 0.22, 0.85], click: 0.3 },
+    snare: { body: [230, 200, 0.02, 0.09, 0.3, 'triangle'], noise: ['highpass', 2200, 0.7, 0.001, 0.14, 0.5] },
+    hat: { type: 'highpass', f: 9500, q: 0.8, closed: 0.035, open: 0.25, amp: 0.27 },
+    clap: { f: 1500, decay: 0.12, amp: 0.32, n: 3 }, rim: [1900, 1850, 0.01, 0.04, 0.28, 'triangle'],
+    perc: [[420, 400, 0.02, 0.12, 0.3]], tom: [210, 150, 0.05, 0.25, 0.55], crash: ['highpass', 6000, 0.7, 0.002, 1.2, 0.16], wet: 0.1,
+  },
+  rock: {
+    kick: { body: [100, 45, 0.05, 0.4, 0.95], click: 0.25, sub: [60, 45, 0.1, 0.4, 0.4] },
+    snare: { body: [180, 150, 0.03, 0.16, 0.35, 'triangle'], noise: ['bandpass', 2600, 0.5, 0.002, 0.32, 0.6] },
+    hat: { type: 'bandpass', f: 7500, q: 0.6, closed: 0.06, open: 0.45, amp: 0.3 },
+    clap: { f: 1300, decay: 0.2, amp: 0.34, n: 3 }, rim: [1600, 1550, 0.01, 0.05, 0.3, 'triangle'],
+    perc: [[300, 280, 0.03, 0.2, 0.3]], tom: [160, 110, 0.08, 0.5, 0.65], crash: ['highpass', 4500, 0.5, 0.003, 2, 0.22], wet: 0.55,
+  },
+  jazzclub: {
+    kick: { body: [90, 55, 0.05, 0.25, 0.5] },
+    snare: { body: [200, 180, 0.03, 0.1, 0.2, 'triangle'], noise: ['bandpass', 3500, 0.4, 0.01, 0.2, 0.32] },
+    hat: { type: 'bandpass', f: 10000, q: 1.5, closed: 0.05, open: 0.5, amp: 0.22, ping: 0.4 },
+    clap: { f: 2200, decay: 0.18, amp: 0.2, n: 2 }, rim: [1500, 1450, 0.02, 0.05, 0.2],
+    perc: [[300, 280, 0.03, 0.2, 0.25]], tom: [170, 140, 0.1, 0.4, 0.4], crash: ['highpass', 4200, 0.5, 0.01, 1.8, 0.12], wet: 0.4,
+  },
+  vintage: {
+    kick: { body: [95, 55, 0.05, 0.28, 0.7, 'triangle'] },
+    snare: { body: [210, 180, 0.03, 0.12, 0.3, 'triangle'], noise: ['bandpass', 2000, 0.8, 0.003, 0.2, 0.45] },
+    hat: { type: 'bandpass', f: 6500, q: 1, closed: 0.05, open: 0.3, amp: 0.22 },
+    clap: { f: 1200, decay: 0.18, amp: 0.28, n: 3 }, rim: [1400, 1350, 0.02, 0.05, 0.25, 'triangle'],
+    perc: [[350, 320, 0.03, 0.16, 0.28]], tom: [170, 130, 0.08, 0.35, 0.5], crash: ['bandpass', 4000, 0.6, 0.004, 1.4, 0.16], wet: 0.45,
+  },
+  // A preset rhythm machine from before drum machines got punchy.
+  rhythmbox: {
+    kick: { body: [120, 90, 0.02, 0.12, 0.7] },
+    snare: { body: [400, 380, 0.01, 0.04, 0.15, 'triangle'], noise: ['highpass', 3500, 0.8, 0.001, 0.07, 0.35] },
+    hat: { type: 'highpass', f: 10000, q: 2, closed: 0.02, open: 0.1, amp: 0.18 },
+    clap: { f: 1800, decay: 0.08, amp: 0.25, n: 2 }, rim: [2400, 2400, 0.005, 0.02, 0.25, 'square'],
+    perc: [[800, 800, 0.01, 0.05, 0.15, 'square']], tom: [300, 260, 0.03, 0.12, 0.4], crash: ['highpass', 7000, 1, 0.001, 0.5, 0.12], wet: 0.2,
+  },
+  // World: hand drums, bells and metal on the usual drum parts.
+  afroperc: {
+    kick: { body: [85, 60, 0.06, 0.3, 0.75] },
+    snare: { body: [380, 340, 0.02, 0.1, 0.4], noise: ['bandpass', 4000, 0.5, 0.002, 0.06, 0.2] },
+    hat: { type: 'bandpass', f: 6000, q: 2, closed: 0.04, open: 0.15, amp: 0.25 },
+    clap: { f: 1800, decay: 0.12, amp: 0.3, n: 4 }, rim: [2600, 2600, 0.002, 0.25, 0.12, 'triangle'],
+    perc: [[330, 300, 0.03, 0.18, 0.4], [2600, 2600, 0.002, 0.25, 0.08, 'triangle']], tom: [240, 200, 0.06, 0.3, 0.55], crash: ['bandpass', 6500, 1, 0.02, 0.6, 0.2], wet: 0.3,
+  },
+  tabla: {
+    kick: { body: [80, 110, 0.15, 0.4, 0.7] },
+    snare: { body: [520, 500, 0.01, 0.25, 0.45], noise: ['bandpass', 3000, 1, 0.001, 0.03, 0.1] },
+    hat: { type: 'highpass', f: 7000, q: 1, closed: 0.02, open: 0.08, amp: 0.15 },
+    clap: { f: 1600, decay: 0.1, amp: 0.25, n: 3 }, rim: [620, 600, 0.01, 0.2, 0.35],
+    perc: [[620, 600, 0.01, 0.2, 0.35]], tom: [180, 150, 0.08, 0.4, 0.5], crash: ['bandpass', 5000, 1, 0.01, 0.8, 0.12], wet: 0.35,
+  },
+  steel: {
+    kick: { body: [100, 60, 0.04, 0.3, 0.75] },
+    snare: { body: [700, 690, 0.005, 0.4, 0.25, 'triangle'], noise: ['highpass', 5000, 1, 0.001, 0.03, 0.1] },
+    hat: { type: 'bandpass', f: 5200, q: 6, closed: 0.08, open: 0.5, amp: 0.2, ping: 1 },
+    clap: { f: 2000, decay: 0.1, amp: 0.2, n: 2 }, rim: [1046, 1046, 0.005, 0.4, 0.15, 'triangle'],
+    perc: [[523, 523, 0.005, 0.6, 0.2, 'triangle'], [1046, 1046, 0.005, 0.4, 0.08]], tom: [392, 392, 0.005, 0.5, 0.35, 'triangle'], crash: ['bandpass', 3000, 3, 0.005, 2.2, 0.14], wet: 0.45,
+  },
+  // Textures.
+  tape: {
+    kick: { body: [100, 50, 0.05, 0.3, 0.8] },
+    snare: { body: [190, 170, 0.03, 0.12, 0.3, 'triangle'], noise: ['lowpass', 2500, 0.6, 0.003, 0.2, 0.55] },
+    hat: { type: 'bandpass', f: 6000, q: 0.6, closed: 0.05, open: 0.3, amp: 0.22 },
+    clap: { f: 1100, decay: 0.18, amp: 0.28, n: 3 }, rim: [1300, 1250, 0.02, 0.05, 0.22, 'triangle'],
+    perc: [[300, 280, 0.03, 0.18, 0.28]], tom: [170, 130, 0.08, 0.35, 0.5], crash: ['bandpass', 3500, 0.5, 0.004, 1.4, 0.14], wet: 0.3,
+  },
+  toy: {
+    kick: { body: [300, 200, 0.02, 0.06, 0.4, 'square'] },
+    snare: { body: [900, 850, 0.01, 0.03, 0.2, 'square'], noise: ['highpass', 6000, 1, 0.001, 0.04, 0.2] },
+    hat: { type: 'highpass', f: 11000, q: 2, closed: 0.015, open: 0.05, amp: 0.12 },
+    clap: { f: 2500, decay: 0.06, amp: 0.2, n: 2 }, rim: [3000, 3000, 0.005, 0.02, 0.2, 'square'],
+    perc: [[1200, 1200, 0.005, 0.05, 0.12, 'square']], tom: [600, 500, 0.02, 0.08, 0.3, 'square'], crash: ['highpass', 8000, 1, 0.001, 0.4, 0.1], wet: 0.15,
   },
 };
 

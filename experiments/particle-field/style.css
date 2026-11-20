@@ -3134,6 +3134,19 @@ body.peek > :not(#app), body.peek #app > :not(#stage), body.peek #fab { opacity:
 .sndp-pat-notes p { display: flex; gap: 8px; margin: 0; font-size: 12px; line-height: 1.45; color: var(--label); }
 .sndp-pat-notes p::before { content: ''; flex: none; width: 10px; height: 10px; margin-top: 3px; border-radius: 3px; background: rgb(255 255 255 / 0.12); }
 .sndp-pat-notes p.m::before { background: none; box-shadow: inset 0 0 0 2px #ffd166; }
+.sndp-live-tabs { margin: 2px 0 4px; }
+.sndp-live-tabs small { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.7; margin-left: 2px; }
+.sndp-live-body { display: flex; flex-direction: column; gap: 6px; }
+.sndp-live-body[hidden], .sndp-live-kit[hidden] { display: none; }
+.sndp-live-g, .sndp-live-d { display: flex; align-items: stretch; gap: 6px; }
+.sndp-live-step { flex: none; width: 40px; min-height: 48px; border-radius: 10px; border: 1px solid var(--line); background: rgb(255 255 255 / 0.03); color: var(--label); font: inherit; font-size: 18px; cursor: pointer; }
+.sndp-live-name { flex: 1; min-width: 0; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 8px; border-radius: 10px; border: 1px solid var(--line); background: rgb(255 255 255 / 0.03); color: var(--text); font: inherit; text-align: center; }
+button.sndp-live-name { cursor: pointer; }
+.sndp-live-name b { font-size: 13.5px; font-weight: 600; }
+.sndp-live-name small { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sndp-live-g .sndp-keep { flex: none; align-self: center; }
+.sndp-live-kit { align-self: flex-start; }
+.sndp-live-credit { margin: 2px 2px 0; font-size: 10.5px; line-height: 1.4; color: var(--muted); }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

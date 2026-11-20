@@ -243,6 +243,10 @@ export interface Settings {
   sndSub: number;
   sndTape: number;
   sndGrid: string;
+  sndDrumSrc: 'beat' | 'live'; // the Drums layer plays the genre's beat, or a live groove (beta)
+  sndGroove: string; // the live groove's id
+  sndGrooveTight: number; // 0 = the drummer's timing … 1 = on the grid
+  sndGrooveDyn: number; // 1 = the drummer's loudness … 0 = even
   sndTempo: number;
   sndStrings: number;
   sndStringCount: number;
@@ -921,6 +925,10 @@ export const DEFAULTS: Settings = {
   sndSub: 0,
   sndTape: 0,
   sndGrid: '',
+  sndDrumSrc: 'beat',
+  sndGroove: '',
+  sndGrooveTight: 0,
+  sndGrooveDyn: 1,
   sndTempo: 90,
   sndStrings: 0.7,
   sndStringCount: 6,
