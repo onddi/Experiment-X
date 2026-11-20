@@ -16,13 +16,17 @@ export interface GrooveInfo {
   bars: number;
   ev: string;
 }
-export interface Groove extends GrooveInfo {
-  name: string;
-  /** Hits sorted by time: position in beats, the drum, tom step down, velocity 0-1. */
+/** Hits sorted by time: position in beats, the drum, tom step down, velocity 0-1. */
+export interface Hits {
   pos: Float32Array;
   row: DrumRow[];
   down: Uint8Array;
   vel: Float32Array;
+}
+export interface Groove extends GrooveInfo, Hits {
+  name: string;
+  /** One-bar fills played by drummers in this style (or a close one). */
+  fills: Hits[];
   /** Its first bar on the 16-step grid, as a beat (with a bass line on the kicks). */
   beat: Beat;
 }
@@ -31,18 +35,25 @@ const D36 = '0123456789abcdefghijklmnopqrstuvwxyz';
 // The recorded drums onto this app's drums: toms step down (t u v), the ride plays as a hat.
 const ROW: Record<string, [DrumRow, number]> = { k: ['k', 0], s: ['s', 0], r: ['r', 0], h: ['h', 0], i: ['h', 0], o: ['o', 0], t: ['t', 0], u: ['t', 1], v: ['t', 2], y: ['y', 0] };
 
-function parse(g: GrooveInfo): Groove {
-  const n = Math.floor(g.ev.length / 5);
+function hits(ev: string): Hits {
+  const n = Math.floor(ev.length / 5);
   const pos = new Float32Array(n), vel = new Float32Array(n), down = new Uint8Array(n);
   const row: DrumRow[] = [];
   for (let i = 0; i < n; i++) {
-    const e = g.ev.slice(i * 5, i * 5 + 5);
+    const e = ev.slice(i * 5, i * 5 + 5);
     pos[i] = (D36.indexOf(e[0]) * 1296 + D36.indexOf(e[1]) * 36 + D36.indexOf(e[2])) / 96;
     const [r, d] = ROW[e[3]] ?? ['h', 0];
     row.push(r);
     down[i] = d;
     vel[i] = D36.indexOf(e[4]) / 35;
   }
+  return { pos, row, down, vel };
+}
+// Styles with no fills of their own borrow a close one's.
+const FILL_FROM: Record<string, string> = { Rock: 'Punk', Latin: 'Afro-Cuban', Afrobeat: 'Afro-Cuban', Highlife: 'Afro-Cuban', 'Middle Eastern': 'Afro-Cuban', Dance: 'Pop', Blues: 'Soul' };
+function parse(g: GrooveInfo, fills: Record<string, Hits[]>): Groove {
+  const { pos, row, down, vel } = hits(g.ev);
+  const n = pos.length;
   // The first bar as a 16-step beat: loudest hit per drum and step.
   const best: Partial<Record<DrumRow, number[]>> = {};
   for (let i = 0; i < n && pos[i] < 3.94; i++) {
@@ -52,14 +63,17 @@ function parse(g: GrooveInfo): Groove {
   const beat: Beat = { name: `${g.style} ${g.n}` };
   for (const [r, v] of Object.entries(best) as [DrumRow, number[]][]) beat[r] = v.map((x) => (x === 0 ? '.' : x > 0.75 ? 'X' : x > 0.35 ? 'x' : 'o')).join('');
   if (beat.k) beat.b = [...beat.k].map((c, i) => (c === '.' ? '.' : i === 0 ? 'B' : 'b')).join('');
-  return { ...g, name: beat.name, pos, row, down, vel, beat };
+  return { ...g, name: beat.name, pos, row, down, vel, beat, fills: fills[g.style] ?? fills[FILL_FROM[g.style]] ?? fills.Funk ?? [] };
 }
 
 let all: Promise<Groove[]> | null = null;
 let loaded: Groove[] | null = null;
 /** Every groove, loaded the first time it is asked for. */
 export function grooves(): Promise<Groove[]> {
-  all ??= import('./grooves/data.json').then((m) => (loaded = (m.default as unknown as GrooveInfo[]).map(parse)));
+  all ??= Promise.all([import('./grooves/data.json'), import('./grooves/fills.json')]).then(([m, f]) => {
+    const fills = Object.fromEntries(Object.entries(f.default as Record<string, string[]>).map(([st, list]) => [st, list.map(hits)]));
+    return (loaded = (m.default as unknown as GrooveInfo[]).map((g) => parse(g, fills)));
+  });
   return all;
 }
 /** The grooves if they have loaded already (null until then). */

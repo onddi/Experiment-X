@@ -2636,8 +2636,15 @@ export class ParticleSound {
 
   /** Live drums: the groove's hits that fall in this sixteenth, at their own
    *  time and loudness (pulled toward the grid and evened out as asked). */
-  private liveDrums(P: SoundParams, G: import('./grooves.ts').Groove, tick: number, s: number, stepDur: number, k: number, ed: (row: number, nat: boolean) => boolean) {
-    const loop = G.bars * 16;
+  private liveDrums(P: SoundParams, Gr: import('./grooves.ts').Groove, tick: number, s: number, stepDur: number, k: number, ed: (row: number, nat: boolean) => boolean) {
+    // Fills: every so many bars, the last bar is one of the drummers' fills
+    // (a different one each time), and the next bar opens with a crash.
+    const bar = Math.floor(tick / 16);
+    const fl = P.fills > 0 && Gr.fills.length ? P.fills : 0;
+    const inFill = fl > 0 && bar % fl === fl - 1;
+    const G = inFill ? Gr.fills[Math.floor(bar / fl) % Gr.fills.length] : Gr;
+    if (fl > 0 && s === 0 && bar > 0 && bar % fl === 0) this.hit('y', k * ROW_GAIN.y * 0.7, 0);
+    const loop = inFill ? 16 : Gr.bars * 16;
     const i0 = tick % loop;
     const from = i0 / 4, to = (i0 + 1) / 4;
     const tight = P.grooveTight ?? 0, dyn = P.grooveDyn ?? 1;

@@ -10073,7 +10073,7 @@ function musicPicker(styles = false) {
     const L = G();
     return [
       ['saved', '★ Kept', keptG().length],
-      ['all', 'All grooves', L.length || 145],
+      ['all', 'All grooves', L.length || 244],
       ...grooveStyles(L).map((st): [string, string, number] => [`g:${st}`, st, L.filter((g) => g.style === st).length]),
     ];
   };
@@ -11105,7 +11105,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'sndMove', label: 'Drums move the field', show: () => settings.sndDrums > 0 },
   { kind: 'toggle', key: 'sndNoteDrive', label: 'Notes colour the picture' },
   { kind: 'note', text: 'With no music playing, the drums play your Music reactions (Music › When…): Kick hits, Snare hits (a ripple starts at the column that played it), Hats tick and A crash hits.', show: () => settings.sndDrums > 0 && settings.sndMove },
-  { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrums > 0 && settings.sndDrumSrc !== 'live' },
+  { kind: 'range', key: 'sndFills', label: 'Fills', min: 0, max: 16, step: 4, format: (v) => (v === 0 ? 'off' : `every ${v} bars`), show: () => (!!settings.sndGenre || settings.sndDrumSrc === 'live') && settings.sndDrums > 0 },
   { kind: 'range', key: 'sndFollow', label: 'Follow the field', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => !!settings.sndGenre && settings.sndDrumSrc !== 'live' },
   { kind: 'range', key: 'sndBeatChange', label: 'New beat', min: 0, max: 32, step: 4, format: (v) => (v === 0 ? 'stay' : `every ${v} bars`), show: () => !!settings.sndGenre && settings.sndDrumSrc !== 'live' },
   { kind: 'range', key: 'sndSwing', label: 'Swing', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'straight' : pct(v)), show: () => settings.sndDrumSrc !== 'live' },
