@@ -10050,7 +10050,8 @@ function musicStep(d: number) {
   useStyle(styleById(id) ?? null, v);
   showToast(songLabel(v));
 }
-function musicPicker() {
+/** The song picker. styles: always the genres and songs, even with MIDI drums (Around the drums). */
+function musicPicker(styles = false) {
   const cur = () => styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : '');
   if (!musicRail) musicRail = cur() || STYLES[0].id;
   const allSaved = () => STYLES.flatMap((st) => savedSongs(st.id).map((v) => [st, v] as const));
@@ -10067,7 +10068,7 @@ function musicPicker() {
   const keptG = () => keptGrooves().map((id) => G().find((g) => g.id === id)).filter((g): g is Groove => !!g);
   if (!groovesNow() && settings.sndDrumSrc === 'live') void grooves().then(() => picker.draw());
   // With Live drums the picker lists grooves, by the style they were played in.
-  const isLive = () => settings.sndDrumSrc === 'live';
+  const isLive = () => !styles && settings.sndDrumSrc === 'live';
   const liveRails = (): [string, string, number][] => {
     const L = G();
     return [
@@ -10122,7 +10123,7 @@ function musicPicker() {
         return;
       }
       const [sid, v] = splitKey(key);
-      useStyle(styleById(sid) ?? null, v);
+      useStyle(styleById(sid) ?? null, v, styles);
     },
     fav: (key) => {
       if (key.startsWith('live:')) return keepGroove(key.slice(5), !keptGrooves().includes(key.slice(5)));
@@ -18604,8 +18605,10 @@ function liveCard(): [HTMLElement, HTMLElement] {
   const dRow = el('div', 'sndp-live-d');
   const dPrev = el('button', 'sndp-live-step', '‹');
   dPrev.setAttribute('aria-label', 'Previous style');
-  const dMid = el('div', 'sndp-live-name');
+  const dMid = el('button', 'sndp-live-name');
   dMid.innerHTML = '<small>Around the drums</small><b></b>';
+  dMid.setAttribute('aria-expanded', 'false');
+  dMid.title = 'Pick the style that plays around the groove';
   const dNext = el('button', 'sndp-live-step', '›');
   dNext.setAttribute('aria-label', 'Next style');
   dRow.append(dPrev, dMid, dNext);
@@ -18613,7 +18616,26 @@ function liveCard(): [HTMLElement, HTMLElement] {
   const chips = el('div', 'sndp-live-chips');
   chips.append(dKit);
   const credit = el('p', 'sndp-live-credit', GROOVE_CREDIT);
-  body.append(dRow, chips, credit);
+  // Tap the name for every genre and song (the same picker as Generated).
+  const dPick = el('div', 'sndp-pick sndp-live-pick');
+  dPick.hidden = true;
+  let dPicker: ReturnType<typeof musicPicker> | null = null;
+  dMid.addEventListener('click', () => {
+    dPick.hidden = !dPick.hidden;
+    dMid.setAttribute('aria-expanded', String(!dPick.hidden));
+    if (dPick.hidden) return;
+    if (!dPicker) {
+      dPicker = musicPicker(true);
+      dPick.append(dPicker.el);
+    }
+    if (musicRail !== 'all') musicRail = styleNow().st?.id ?? musicRail;
+    dPicker.draw();
+    dPick.querySelector<HTMLElement>('.rp-item.on')?.scrollIntoView({ block: 'nearest' });
+  });
+  refreshers.push(() => {
+    if (!dPick.hidden && dPicker) dPicker.draw();
+  });
+  body.append(dRow, dPick, chips, credit);
 
   const cur = () => grooveById(settings.sndGroove);
   const goLive = async () => {
