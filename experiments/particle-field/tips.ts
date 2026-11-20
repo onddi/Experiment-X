@@ -395,7 +395,7 @@ Object.assign(TIPS, {
   sndGrainLen: 'How long each grain lasts, from a tiny click to a short note.',
   sndScanDir: 'How the Scanline crosses the field: left to right, top to bottom, back and forth, or round like a radar.',
   sndScanSound: 'The instrument the Scanline plays as it passes particles.',
-  sndScanNotes: 'How many notes the Scanline can play at once as it passes a crowd.',
+  sndScanNotes: 'How busy the Scanline plays: the sweep is 16 steps, and each step plays up to half this many notes, from the thickest crowds under the line.',
   sndAccScene: 'A new scene rolls the chord upward like a harp.',
   sndAccShape: 'A rising whoosh when particles form a shape (a word, an icon, a picture).',
   sndAccBirth: 'Three high notes ring when dozens of particles are born at once.',

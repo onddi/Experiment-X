@@ -647,6 +647,8 @@ export class ParticleSound {
   /** Where the scanline is in its sweep, 0..1 (scanPos: where it is drawn, 0..1). */
   scanX = 0;
   scanPos = 0;
+  private scanSlot = -1;
+  private scanBeat = -1;
 
   constructor(p: SoundParams) {
     this.p = p;
@@ -3583,46 +3585,70 @@ export class ParticleSound {
       }
     } else this.grainDebt = 0;
 
-    // Scanline: one sweep per bar (or every Sweep time seconds), playing a
-    // few of the particles it passes.
+    // Scanline: one sweep per bar (or every Sweep time seconds), playing the
+    // crowds it passes, a slice at a time.
     this.cur = 'scan';
     if (P.scan > 0 && F.n > 0) {
       const secs = P.music === 'along' && F.musicOn && F.bpm > 40 ? (4 * 60) / F.bpm : P.scanSecs;
       const dir = P.scanDir ?? 'across';
       // Back and forth takes two sweeps' time for the round trip.
       const posOf = (ph: number) => (dir === 'bounce' ? (ph < 0.5 ? ph * 2 : 2 - ph * 2) : ph);
-      const before = this.scanX;
-      this.scanX += F.dt / (dir === 'bounce' ? secs * 2 : secs);
-      let wrapped = this.scanX >= 1;
-      if (wrapped) this.scanX -= 1;
-      let a = posOf(before), b = (this.scanPos = posOf(this.scanX));
-      if (dir === 'bounce') {
-        wrapped = false;
-        if (a > b) [a, b] = [b, a];
+      // With the music's own beat running, the sweep locks to it: a whole
+      // number of bars (the nearest to Sweep time), starting on a bar.
+      const going = this.beat !== this.scanBeat;
+      this.scanBeat = this.beat;
+      const tempo = this.p.tempo || 0;
+      if (going && tempo > 40) {
+        const bars = Math.max(1, Math.round(secs / ((4 * 60) / tempo)));
+        const span = bars * 4 * (dir === 'bounce' ? 2 : 1);
+        this.scanX = (this.beat % span) / span;
+      } else {
+        this.scanX += F.dt / (dir === 'bounce' ? secs * 2 : secs);
+        if (this.scanX >= 1) this.scanX -= 1;
       }
+      const b = (this.scanPos = posOf(this.scanX));
       // Where each particle is along the sweep, 0..1, and the note it gets.
       const cx = w / 2, cy = h / 2, far = Math.hypot(cx, cy);
       const along = (i: number) => (dir === 'down' ? F.py[i] / h : dir === 'radar' ? (Math.atan2(F.py[i] - cy, F.px[i] - cx) / (Math.PI * 2) + 1.25) % 1 : F.px[i] / w);
       // Across: height sets the note. Down: left low, right high. Radar: nearer the middle, higher.
       const pitchY = (i: number) => (dir === 'down' ? h - (F.px[i] / w) * h : dir === 'radar' ? (Math.hypot(F.px[i] - cx, F.py[i] - cy) / far) * h : F.py[i]);
       const voiceOf = (i: number) => (P.scanSound && P.scanSound !== 'same' ? P.scanSound : this.voiceFor(F.tone[i] ?? 0.5));
-      const most = P.scanNotes ?? 4;
-      const seen = new Set<number>();
-      let found = 0;
-      const step = Math.max(1, Math.floor(F.n / 3000));
-      for (let i = (Math.random() * step) | 0; i < F.n && found < most; i += step) {
-        if (F.dead && F.dead[i]) continue;
-        const x = F.px[i];
-        const u = along(i);
-        if (wrapped ? u >= a || u < b : u >= a && u < b) {
-          const d = this.degAt(pitchY(i), h);
-          if (seen.has(d)) continue;
-          seen.add(d);
-          found++;
-          if (gate()) {
+      // In steps: the sweep is 16 slices (16th notes when it's a bar long).
+      // Entering a slice plays its crowds at once, the thickest few, like
+      // Steps; so it keeps time instead of firing at every particle it passes.
+      const SL = 16;
+      const slot = Math.min(SL - 1, Math.floor(b * SL));
+      if (slot !== this.scanSlot) {
+        this.scanSlot = slot;
+        const lo = slot / SL, hi = (slot + 1) / SL;
+        const most = Math.max(1, Math.ceil((P.scanNotes ?? 4) / 2));
+        const R = 24;
+        const cnt = new Float32Array(R);
+        const who = new Int32Array(R).fill(-1);
+        let tot = 0;
+        const step = Math.max(1, Math.floor(F.n / 4000));
+        for (let i = (Math.random() * step) | 0; i < F.n; i += step) {
+          if (F.dead && F.dead[i]) continue;
+          const u = along(i);
+          if (u < lo || u >= hi) continue;
+          const r = Math.min(R - 1, Math.max(0, Math.floor((pitchY(i) / h) * R)));
+          cnt[r]++;
+          tot++;
+          if (who[r] < 0 || Math.random() < 1 / cnt[r]) who[r] = i;
+        }
+        if (tot && gate()) {
+          const mean = (F.n / step / SL) / R;
+          const rows = [...cnt.keys()].filter((r) => cnt[r] > mean * 0.8).sort((x, y) => cnt[y] - cnt[x]).slice(0, most);
+          const seen = new Set<number>();
+          for (const r of rows) {
+            const i = who[r];
+            const d = this.degAt(pitchY(i), h);
+            if (seen.has(d)) continue;
+            seen.add(d);
             const mv = F.px[i] - F.ox[i];
             const vrel = Math.abs(mv) / Math.max(1e-3, this.moveAvg);
-            this.note(d, P.scan * 0.45 * this.dynOf(vrel) * Math.min(1, Math.sqrt(4 / Math.max(1, most))), (x / w) * 1.6 - 0.8, voiceOf(i), 0, { z: F.pz[i], bend: this.bendOf(vrel, mv >= 0 ? 1 : -1) });
+            const thick = Math.min(1.3, 0.55 + cnt[r] / (mean * 6));
+            this.note(d, P.scan * 0.42 * thick * this.dynOf(vrel) * Math.min(1, Math.sqrt(3 / rows.length)), (F.px[i] / w) * 1.6 - 0.8, voiceOf(i), 0, { z: F.pz[i], bend: this.bendOf(vrel, mv >= 0 ? 1 : -1) });
           }
         }
       }
