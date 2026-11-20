@@ -150,6 +150,7 @@ export class FieldRender {
   private tp = new Int32Array(4000);
   private tg = new Uint16Array(4000);
   private tn = 0;
+  private tWait = 0;
   private tIdle = 0;
   private tFade = 1;
   // Lenia: the ring-shaped neighbourhood (offsets and weights) for this grid.
@@ -582,19 +583,38 @@ export class FieldRender {
   private colonise(pen: FieldPen, s: number, dt: number, light: boolean, alpha: number) {
     const { w, h, sx, sy } = this;
     const m = Math.min(w, h);
-    const D = Math.max(60, m * 0.2);
-    const kill = Math.max(8, m * 0.018);
-    const step = Math.max(4, m * 0.012);
+    const D = Math.max(36, m * 0.11);
+    const kill = Math.max(6, m * 0.014);
+    const step = Math.max(3, m * 0.009);
     const MAX = this.tx.length;
     if (this.tn === 0) {
-      // Three seedlings along the bottom.
-      for (let k = 0; k < 3; k++) {
-        this.tx[k] = w * (0.25 + 0.25 * k);
-        this.ty[k] = h - 2;
+      // Let the crowd settle into its shape first (a word flies in), then root.
+      if (sx.length < 8 || ++this.tWait < 100) return;
+      this.tWait = 0;
+      // Seedlings at the foot of the crowd: the lowest particle in each wide
+      // column, so a word or a shape grows from its own base, letter by letter,
+      // and a full screen of particles from the bottom edge.
+      const cw = D * 1.6;
+      const nc = Math.max(1, Math.ceil(w / cw));
+      const low = new Int32Array(nc).fill(-1);
+      for (let a = 0; a < sx.length; a++) {
+        const c = Math.min(nc - 1, (sx[a] / cw) | 0);
+        if (c < 0) continue;
+        if (low[c] < 0 || sy[a] > sy[low[c]]) low[c] = a;
+      }
+      let k = 0;
+      for (let c = 0; c < nc && k < 12; c++) {
+        const a = low[c];
+        if (a < 0) continue;
+        // A crowd reaching the bottom edge roots on the edge itself.
+        this.tx[k] = sx[a];
+        this.ty[k] = sy[a] > h - D ? h - 2 : sy[a];
         this.tp[k] = -1;
         this.tg[k] = 0;
+        k++;
       }
-      this.tn = 3;
+      if (!k) return;
+      this.tn = k;
       this.tIdle = 0;
       this.tFade = 1;
     }
@@ -613,6 +633,7 @@ export class FieldRender {
     const gx = new Float32Array(n0);
     const gy = new Float32Array(n0);
     const gc = new Uint16Array(n0);
+    let lost = -1; // a particle no twig can reach yet
     for (let a = 0; a < sx.length; a++) {
       const x = sx[a];
       const y = sy[a];
@@ -633,6 +654,7 @@ export class FieldRender {
             }
           }
         }
+      if (best < 0 && (lost < 0 || Math.random() < 0.02)) lost = a;
       if (best < 0 || bd < kill * kill) continue;
       const d = Math.sqrt(bd);
       gx[best] += (x - tx[best]) / d;
@@ -654,6 +676,16 @@ export class FieldRender {
         tg[k] = Math.min(65535, tg[j] + 1);
         grew++;
       }
+    // Stuck, but part of the crowd is out of reach (a second line of text,
+    // an island): a new seedling sprouts there.
+    if (!grew && lost >= 0 && this.tFade >= 1 && this.tIdle > 15 && this.tn < MAX) {
+      const k = this.tn++;
+      tx[k] = sx[lost];
+      ty[k] = sy[lost];
+      tp[k] = -1;
+      tg[k] = 0;
+      grew = 1;
+    }
     this.tIdle = grew ? 0 : this.tIdle + 1;
     // Done (full, or nothing left to reach for a while): fade out, then start over.
     if (this.tFade < 1 || this.tn >= MAX || this.tIdle > 90) {
