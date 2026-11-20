@@ -22,6 +22,10 @@ export interface Hits {
   row: DrumRow[];
   down: Uint8Array;
   vel: Float32Array;
+  /** How far ahead (−) or behind (+) the beat the drummer sits on average, in beats. */
+  lead: number;
+  /** How late the off-beat 16ths come (the drummer's swing), as the engine's swing amount. */
+  swing: number;
 }
 export interface Groove extends GrooveInfo, Hits {
   name: string;
@@ -47,12 +51,32 @@ function hits(ev: string): Hits {
     down[i] = d;
     vel[i] = D36.indexOf(e[4]) / 35;
   }
-  return { pos, row, down, vel };
+  // The pocket: the firm kicks and snares near the 8th-note grid. Recorded
+  // against a click, a drummer still sits a little ahead or behind it; the
+  // bass and chords play on the grid, so the drums are moved onto it.
+  let sum = 0, cnt = 0;
+  for (let i = 0; i < n; i++) {
+    if ((row[i] !== 'k' && row[i] !== 's') || vel[i] < 0.4) continue;
+    const d = pos[i] - Math.round(pos[i] * 2) / 2;
+    if (Math.abs(d) < 0.1) (sum += d), cnt++;
+  }
+  const lead = cnt >= 4 ? sum / cnt : 0;
+  // Swing: how late the off-beat 16ths land (once the pocket is taken out).
+  let late = 0, offs = 0;
+  for (let i = 0; i < n; i++) {
+    const p = pos[i] - lead;
+    const q = Math.round(p * 2) / 2;
+    const d = p - q;
+    if (d > 0.12 && d < 0.4) (late += d - 0.25), offs++;
+    else if (d < -0.12 && d > -0.4) (late += d + 0.25), offs++;
+  }
+  const swing = offs >= Math.max(4, n * 0.1) ? Math.max(0, Math.min(0.6, (late / offs) * 8)) : 0;
+  return { pos, row, down, vel, lead, swing };
 }
 // Styles with no fills of their own borrow a close one's.
 const FILL_FROM: Record<string, string> = { Rock: 'Punk', Latin: 'Afro-Cuban', Afrobeat: 'Afro-Cuban', Highlife: 'Afro-Cuban', 'Middle Eastern': 'Afro-Cuban', Dance: 'Pop', Blues: 'Soul' };
 function parse(g: GrooveInfo, fills: Record<string, Hits[]>): Groove {
-  const { pos, row, down, vel } = hits(g.ev);
+  const { pos, row, down, vel, lead, swing } = hits(g.ev);
   const n = pos.length;
   // The first bar as a 16-step beat: loudest hit per drum and step.
   const best: Partial<Record<DrumRow, number[]>> = {};
@@ -63,7 +87,7 @@ function parse(g: GrooveInfo, fills: Record<string, Hits[]>): Groove {
   const beat: Beat = { name: `${g.style} ${g.n}` };
   for (const [r, v] of Object.entries(best) as [DrumRow, number[]][]) beat[r] = v.map((x) => (x === 0 ? '.' : x > 0.75 ? 'X' : x > 0.35 ? 'x' : 'o')).join('');
   if (beat.k) beat.b = [...beat.k].map((c, i) => (c === '.' ? '.' : i === 0 ? 'B' : 'b')).join('');
-  return { ...g, name: beat.name, pos, row, down, vel, beat, fills: fills[g.style] ?? fills[FILL_FROM[g.style]] ?? fills.Funk ?? [] };
+  return { ...g, name: beat.name, pos, row, down, vel, lead, swing, beat, fills: fills[g.style] ?? fills[FILL_FROM[g.style]] ?? fills.Funk ?? [] };
 }
 
 let all: Promise<Groove[]> | null = null;

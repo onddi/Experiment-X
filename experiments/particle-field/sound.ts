@@ -2662,7 +2662,8 @@ export class ParticleSound {
       const gr = rowOf(r);
       if (gr >= 0) has[gr] = true;
       if (gr >= 0 && !ed(gr, true)) continue;
-      const p = G.pos[i];
+      // Onto the grid: the drummer's pocket taken out (see grooves.ts).
+      const p = G.pos[i] - G.lead;
       const q = Math.round(p * 4) / 4;
       const at = Math.max(0, (p + (q - p) * tight - from) * 4 * stepDur);
       const v = G.vel[i] * dyn + 0.7 * (1 - dyn);
