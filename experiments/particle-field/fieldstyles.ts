@@ -152,9 +152,12 @@ export class FieldRender {
     const fine = want > 40000;
     // Softness: low is a finer grid and less blur, high the other way.
     const sf = this.soft;
-    const more = sf < 0.5 ? 1 + (0.5 - sf) * 1.1 : 1 - (sf - 0.5) * 0.8;
+    // Down to 0 the soft looks get up to 3× the cells (the already fine ones
+    // 1.8×), and the cells can shrink to about
+    // a screen pixel, so the soft looks (Flames, Smoke, Aurora…) can go crisp.
+    const more = sf < 0.5 ? 1 + (0.5 - sf) * (want > 40000 ? 1.6 : 4) : 1 - (sf - 0.5) * 0.8;
     const cells = (w * h > 600000 ? want * 1.6 : want) * more;
-    const c = Math.max((fine ? 1.5 : 2.5) * (sf < 0.5 ? 0.8 + 0.4 * sf : 1), Math.sqrt((w * h) / cells));
+    const c = Math.max((fine ? 1.5 : 2.5) * (sf < 0.5 ? 0.5 + sf : 1), Math.sqrt((w * h) / cells));
     const gw = Math.ceil(w / c) + 1;
     const gh = Math.ceil(h / c) + 1;
     if (gw !== this.gw || gh !== this.gh || Math.abs(c - this.c) > 0.01) {
