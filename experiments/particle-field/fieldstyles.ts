@@ -14,14 +14,16 @@ export type FieldPen = Pick<CanvasRenderingContext2D, 'beginPath' | 'moveTo' | '
   globalAlpha: number;
   lineCap: CanvasLineCap;
 };
-export type FieldStyle = 'liquid' | 'cells' | 'contours' | 'smoke' | 'wash' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime' | 'turing' | 'ferro' | 'frost' | 'flames' | 'stained';
-export const FIELD_STYLES = new Set<string>(['liquid', 'cells', 'contours', 'smoke', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'turing', 'ferro', 'frost', 'flames', 'stained']);
+export type FieldStyle = 'liquid' | 'cells' | 'contours' | 'smoke' | 'wash' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime' | 'turing' | 'ferro' | 'frost' | 'flames' | 'stained' | 'rivals' | 'mycelium' | 'ants' | 'termites';
+export const FIELD_STYLES = new Set<string>(['liquid', 'cells', 'contours', 'smoke', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'turing', 'ferro', 'frost', 'flames', 'stained', 'rivals', 'mycelium', 'ants', 'termites']);
 // How many grid cells each look gets on a phone (sharp edges need more).
 // Reaction-diffusion runs many steps a frame, and its pattern is a few cells
 // wide, so it gets a coarser grid (which also makes the pattern bigger).
-const CELLS: Partial<Record<FieldStyle, number>> = { liquid: 130000, contours: 130000, lava: 130000, cells: 90000, caustics: 90000, marbling: 90000, slime: 90000, terrain: 70000, turing: 26000, ferro: 130000, stained: 90000 };
+const CELLS: Partial<Record<FieldStyle, number>> = { liquid: 130000, contours: 130000, lava: 130000, cells: 90000, caustics: 90000, marbling: 90000, slime: 90000, terrain: 70000, turing: 26000, ferro: 130000, stained: 90000, rivals: 90000, mycelium: 90000, ants: 70000, termites: 22000 };
 // Glowing looks add light on a dark background.
-const ADDS = new Set<FieldStyle>(['aurora', 'slime', 'flames']);
+const ADDS = new Set<FieldStyle>(['aurora', 'slime', 'flames', 'rivals', 'mycelium', 'ants']);
+/** Styles whose particles steer by what the field holds (FieldRender.steer). */
+export const STEER_STYLES = new Set<string>(['slime', 'rivals', 'mycelium', 'ants', 'termites']);
 // A cheap smooth noise, -1..1.
 const wob = (x: number, y: number, t: number) => (Math.sin(x * 0.21 + t * 1.3 + Math.sin(y * 0.13 - t * 0.7) * 2) + Math.sin(y * 0.17 - t * 1.1 + Math.sin(x * 0.09 + t * 0.5) * 2)) * 0.5;
 // A colour ramp: stops at even steps along 0..1.
@@ -137,6 +139,11 @@ export class FieldRender {
   soft = 0.5;
   /** The music's low end, 0..1 (Ferrofluid's spikes rise with it). */
   bass = 0;
+  /** Ant trails: where the food is (wells), in CSS px. */
+  targets: [number, number][] = [];
+  // Per particle: carrying (ants, termites) and a short wait (termites).
+  private mem = new Uint8Array(0);
+  private grainReady = false;
   private lavaFor: Rgb[] | null = null;
   private lavaRamp: number[][] = [];
 
@@ -182,6 +189,7 @@ export class FieldRender {
       this.rain = [0, 1, 2, 3, 4, 5].map(() => new Float32Array(N));
       this.rd = [0, 1, 2, 3].map(() => new Float32Array(N));
       this.rdReady = false;
+      this.grainReady = false;
       this.canvas.width = gw;
       this.canvas.height = gh;
       this.img = this.g.createImageData(gw, gh);
@@ -283,6 +291,11 @@ export class FieldRender {
       cr[o] += w00 * r; cr[o + 1] += w10 * r; cr[o + gw] += w01 * r; cr[o + gw + 1] += w11 * r;
       cg[o] += w00 * g; cg[o + 1] += w10 * g; cg[o + gw] += w01 * g; cg[o + gw + 1] += w11 * g;
       cb[o] += w00 * b; cb[o + 1] += w10 * b; cb[o + gw] += w01 * b; cb[o + gw + 1] += w11 * b;
+      if (this.style === 'rivals') {
+        // Each of three species lays its own trail.
+        const T = this.rd[i % 3];
+        T[o] += w00 * 0.35; T[o + 1] += w10 * 0.35; T[o + gw] += w01 * 0.35; T[o + gw + 1] += w11 * 0.35;
+      }
       if (vx && vy && (this.style === 'marbling' || this.style === 'frost')) {
         const { vu, vv, vw } = this;
         const u = vx[i];
@@ -300,6 +313,16 @@ export class FieldRender {
    * them moving, too (a mould never stops).
    */
   steer(px: Float32Array, py: Float32Array, vx: Float32Array, vy: Float32Array, n: number, dt: number) {
+    if (this.mem.length < n) {
+      const m = new Uint8Array(n + 256);
+      m.set(this.mem);
+      this.mem = m;
+    }
+    const st = this.style;
+    if (st === 'rivals') return this.steerRivals(px, py, vx, vy, n, dt);
+    if (st === 'mycelium') return this.steerMycelium(px, py, vx, vy, n, dt);
+    if (st === 'ants') return this.steerAnts(px, py, vx, vy, n, dt);
+    if (st === 'termites') return this.steerTermites(px, py, vx, vy, n);
     const T = this.sm[0];
     if (!T || !T.length) return;
     const { c, gw, gh } = this;
@@ -324,6 +347,365 @@ export class FieldRender {
       sp = Math.max(sp, 0.9);
       vx[i] = Math.cos(a) * sp;
       vy[i] = Math.sin(a) * sp;
+    }
+  }
+
+  // A heading and speed from a velocity (a random heading when still).
+  private static head(u: number, v: number) {
+    const sp = Math.hypot(u, v);
+    return [sp > 1e-4 ? Math.atan2(v, u) : Math.random() * Math.PI * 2, sp];
+  }
+
+  /** Rival slimes: like the mould, but each species follows its own trail and shies from the others'. */
+  private steerRivals(px: Float32Array, py: Float32Array, vx: Float32Array, vy: Float32Array, n: number, dt: number) {
+    const [A, B, C] = this.rd;
+    if (!A || !A.length) return;
+    const { c, gw, gh } = this;
+    const SA = 0.6;
+    const SD = 11;
+    const turn = Math.min(1, dt * 60) * 0.35;
+    const L = [A, B, C];
+    for (let i = 0; i < n; i++) {
+      const own = L[i % 3];
+      const o1 = L[(i + 1) % 3];
+      const o2 = L[(i + 2) % 3];
+      const smell = (x: number, y: number) => {
+        const gx = x / c - 0.5;
+        const gy = y / c - 0.5;
+        return sample(own, gw, gh, gx, gy) - 0.9 * (sample(o1, gw, gh, gx, gy) + sample(o2, gw, gh, gx, gy));
+      };
+      let [a, sp] = FieldRender.head(vx[i], vy[i]);
+      const x = px[i];
+      const y = py[i];
+      const f = smell(x + Math.cos(a) * SD, y + Math.sin(a) * SD);
+      const l = smell(x + Math.cos(a - SA) * SD, y + Math.sin(a - SA) * SD);
+      const r = smell(x + Math.cos(a + SA) * SD, y + Math.sin(a + SA) * SD);
+      if (f >= l && f >= r) a += (Math.random() - 0.5) * 0.1;
+      else if (l > r) a -= turn;
+      else if (r > l) a += turn;
+      else a += (Math.random() - 0.5) * turn * 2;
+      sp = Math.max(sp, 0.9);
+      vx[i] = Math.cos(a) * sp;
+      vy[i] = Math.sin(a) * sp;
+    }
+  }
+
+  /** Mycelium: growing tips wander, leave a lasting thread, and branch off another tip when they run into a vein. */
+  private steerMycelium(px: Float32Array, py: Float32Array, vx: Float32Array, vy: Float32Array, n: number, dt: number) {
+    const M = this.sm[0];
+    if (!M || !M.length || n < 2) return;
+    const { c, gw, gh } = this;
+    const at = (x: number, y: number) => sample(M, gw, gh, x / c - 0.5, y / c - 0.5);
+    const SD = Math.max(6, c * 2.2);
+    const turn = Math.min(1, dt * 60) * 0.18;
+    // A few hundred growing tips; the rest of the crowd moves as the scene says.
+    const every = Math.max(1, Math.round(n / 140));
+    const [, R, G, B] = this.sm;
+    for (let i = 0; i < n; i += every) {
+      let [a, sp] = FieldRender.head(vx[i], vy[i]);
+      const x = px[i];
+      const y = py[i];
+      const f = at(x + Math.cos(a) * SD, y + Math.sin(a) * SD);
+      if (f > 0.4 && Math.random() < 0.5) {
+        // Ran into a vein: this tip stops, and grows on as a branch of another tip.
+        const j = ((Math.random() * (n / every)) | 0) * every;
+        px[i] = px[j];
+        py[i] = py[j];
+        a = Math.atan2(vy[j], vx[j]) + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5);
+      } else if (Math.random() < 0.004) {
+        // Now and then a tip forks: another tip jumps here and grows off at an angle.
+        const j = ((Math.random() * (n / every)) | 0) * every;
+        if (j !== i) {
+          px[j] = x;
+          py[j] = y;
+          const b = a + (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.4);
+          const sj = Math.max(0.8, Math.hypot(vx[j], vy[j]));
+          vx[j] = Math.cos(b) * sj;
+          vy[j] = Math.sin(b) * sj;
+        }
+      } else {
+        // Wander, and lean away from the denser side, so the threads spread out.
+        const l = at(x + Math.cos(a - 0.7) * SD, y + Math.sin(a - 0.7) * SD);
+        const r = at(x + Math.cos(a + 0.7) * SD, y + Math.sin(a + 0.7) * SD);
+        a += (Math.random() - 0.5) * 0.12 + (l > r ? turn : r > l ? -turn : 0);
+      }
+      // The thread: a line of cells along this step, in this tip's colour.
+      const col = this.pick(((i / every) % 7) / 6);
+      const steps = Math.max(1, Math.ceil(sp / c));
+      for (let k = 0; k < steps; k++) {
+        const ix = ((px[i] + (vx[i] * k) / steps) / c) | 0;
+        const iy = ((py[i] + (vy[i] * k) / steps) / c) | 0;
+        if (ix < 0 || iy < 0 || ix >= gw || iy >= gh) continue;
+        const o = iy * gw + ix;
+        if (M[o] < 1.2) {
+          M[o] += 0.6;
+          R[o] += col[0] * 0.6;
+          G[o] += col[1] * 0.6;
+          B[o] += col[2] * 0.6;
+        }
+      }
+      sp = Math.min(2.2, Math.max(sp, 0.8));
+      vx[i] = Math.cos(a) * sp;
+      vy[i] = Math.sin(a) * sp;
+    }
+  }
+
+  // Ant trails: the food (wells, or three spots) and the nest (the middle).
+  private antSpots(): [number, number][] {
+    const { w, h } = this;
+    return this.targets.length ? this.targets : [[w * 0.18, h * 0.25], [w * 0.82, h * 0.3], [w * 0.5, h * 0.85]];
+  }
+
+  /** Ant trails: searchers follow the food scent and lay a home scent; carriers do the opposite. */
+  private steerAnts(px: Float32Array, py: Float32Array, vx: Float32Array, vy: Float32Array, n: number, dt: number) {
+    const [H, F] = this.sm;
+    if (!H || !H.length) return;
+    const { c, gw, gh, mem, w, h } = this;
+    const food = this.antSpots();
+    const nx = w / 2;
+    const ny = h / 2;
+    const SA = 0.55;
+    const SD = 14;
+    const turn = Math.min(1, dt * 60) * 0.3;
+    const R = Math.max(18, Math.min(w, h) * 0.04);
+    for (let i = 0; i < n; i++) {
+      let [a, sp] = FieldRender.head(vx[i], vy[i]);
+      const x = px[i];
+      const y = py[i];
+      const carry = mem[i] & 1;
+      const T = carry ? H : F;
+      const at = (xx: number, yy: number) => sample(T, gw, gh, xx / c - 0.5, yy / c - 0.5);
+      const f = at(x + Math.cos(a) * SD, y + Math.sin(a) * SD);
+      const l = at(x + Math.cos(a - SA) * SD, y + Math.sin(a - SA) * SD);
+      const r = at(x + Math.cos(a + SA) * SD, y + Math.sin(a + SA) * SD);
+      if (f >= l && f >= r && f > 0.02) a += (Math.random() - 0.5) * 0.12;
+      else if (l > r + 0.01) a -= turn;
+      else if (r > l + 0.01) a += turn;
+      else a += (Math.random() - 0.5) * 0.5;
+      // A faint sense of direction toward the goal, so the first trails form.
+      let gx = nx;
+      let gy = ny;
+      if (!carry) {
+        let best = Infinity;
+        for (const [fx, fy] of food) {
+          const d = Math.hypot(fx - x, fy - y);
+          if (d < best) {
+            best = d;
+            gx = fx;
+            gy = fy;
+          }
+        }
+      }
+      const want = Math.atan2(gy - y, gx - x);
+      a += Math.sin(want - a) * 0.03;
+      if (Math.hypot(gx - x, gy - y) < R) {
+        mem[i] = carry ? 0 : 1;
+        a += Math.PI;
+      }
+      // Lay the other scent where it stands.
+      const ix = (x / c) | 0;
+      const iy = (y / c) | 0;
+      if (ix >= 0 && iy >= 0 && ix < gw && iy < gh) {
+        const L = carry ? F : H;
+        const o = iy * gw + ix;
+        L[o] = Math.min(4, L[o] + (carry ? 0.6 : 0.35));
+      }
+      sp = Math.min(3, Math.max(sp, 1.1));
+      vx[i] = Math.cos(a) * sp;
+      vy[i] = Math.sin(a) * sp;
+    }
+  }
+
+  /** Termites: wander; pick up a grain where there is one, drop it next to another. */
+  private steerTermites(px: Float32Array, py: Float32Array, vx: Float32Array, vy: Float32Array, n: number) {
+    const G = this.sm[0];
+    if (!G || !G.length || !this.grainReady) return;
+    const { c, gw, gh, mem } = this;
+    for (let i = 0; i < n; i++) {
+      let [a, sp] = FieldRender.head(vx[i], vy[i]);
+      a += (Math.random() - 0.5) * 0.9;
+      const ix = (px[i] / c) | 0;
+      const iy = (py[i] / c) | 0;
+      let m = mem[i];
+      const carry = m & 1;
+      let wait = m >> 1;
+      if (wait > 0) wait--;
+      else if (ix > 0 && iy > 0 && ix < gw - 1 && iy < gh - 1) {
+        const o = iy * gw + ix;
+        if (!carry && G[o] > 0.5) {
+          G[o] = 0;
+          m = 1;
+          wait = 12;
+        } else if (carry && G[o] > 0.5) {
+          // Drop it in an empty spot beside this grain.
+          const k0 = (Math.random() * 8) | 0;
+          for (let k = 0; k < 8; k++) {
+            const q = (k0 + k) % 8;
+            const dx = [1, 1, 0, -1, -1, -1, 0, 1][q];
+            const dy = [0, 1, 1, 1, 0, -1, -1, -1][q];
+            const o2 = o + dy * gw + dx;
+            if (G[o2] < 0.5) {
+              G[o2] = 1;
+              m = 0;
+              wait = 12;
+              a += Math.PI;
+              break;
+            }
+          }
+        }
+      }
+      mem[i] = ((m & 1) | (Math.min(127, wait) << 1)) & 255;
+      sp = Math.min(2.5, Math.max(sp, 1));
+      vx[i] = Math.cos(a) * sp;
+      vy[i] = Math.sin(a) * sp;
+    }
+  }
+
+  // A palette colour by position along it (0 the first, 1 the last).
+  private pick(f: number): Rgb {
+    const r = this.rgb;
+    return r[Math.round(clamp01(f) * (r.length - 1))] ?? [255, 255, 255];
+  }
+
+  private rivals(dt: number, light: boolean) {
+    const { gw, gh } = this;
+    const N = gw * gh;
+    const keep = Math.pow(0.92, Math.min(3, dt * 60));
+    const [A, B, C] = this.rd;
+    for (const T of [A, B, C]) {
+      for (let i = 0; i < N; i++) T[i] *= keep;
+      boxBlur(T, this.tmp, gw, gh, 1);
+    }
+    const ca = this.pick(0.1);
+    const cb2 = this.pick(0.55);
+    const cc = this.pick(1);
+    const d = this.img!.data;
+    for (let i = 0; i < N; i++) {
+      const o = i * 4;
+      const a = A[i];
+      const b = B[i];
+      const e = C[i];
+      const m = Math.max(a, b, e);
+      if (m < 0.003) {
+        d[o + 3] = 0;
+        continue;
+      }
+      // The strongest species wins the colour; borders blend a little.
+      const wa = (a / m) ** 4;
+      const wb = (b / m) ** 4;
+      const we = (e / m) ** 4;
+      const ws = wa + wb + we;
+      const hot = clamp01((m - 0.6) * 0.5);
+      for (let k = 0; k < 3; k++) {
+        const v = (ca[k] * wa + cb2[k] * wb + cc[k] * we) / ws;
+        d[o + k] = v + (255 - v) * hot;
+      }
+      d[o + 3] = (1 - Math.exp(-m * 1.4)) * (light ? 230 : 255);
+    }
+  }
+
+  private mycelium(dt: number, light: boolean) {
+    const { gw, gh } = this;
+    const [M, R, G, B] = this.sm;
+    const N = gw * gh;
+    // Threads last: they dim over several seconds while new ones grow.
+    const keep = Math.pow(0.997, Math.min(3, dt * 60));
+    for (let i = 0; i < N; i++) {
+      M[i] *= keep;
+      R[i] *= keep;
+      G[i] *= keep;
+      B[i] *= keep;
+    }
+    const d = this.img!.data;
+    for (let i = 0; i < N; i++) {
+      const o = i * 4;
+      const v = M[i];
+      if (v < 0.01) {
+        d[o + 3] = 0;
+        continue;
+      }
+      const inv = 1 / v;
+      const hot = clamp01((v - 1.2) * 0.4);
+      d[o] = Math.min(255, R[i] * inv + (255 - R[i] * inv) * hot);
+      d[o + 1] = Math.min(255, G[i] * inv + (255 - G[i] * inv) * hot);
+      d[o + 2] = Math.min(255, B[i] * inv + (255 - B[i] * inv) * hot);
+      d[o + 3] = (1 - Math.exp(-v * 2.2)) * (light ? 230 : 255);
+    }
+  }
+
+  private antTrails(dt: number, light: boolean) {
+    const { gw, gh, c } = this;
+    const [H, F] = this.sm;
+    const N = gw * gh;
+    const keep = Math.pow(0.985, Math.min(3, dt * 60));
+    for (let i = 0; i < N; i++) {
+      H[i] *= keep;
+      F[i] *= keep;
+    }
+    // The food and the nest smell of themselves.
+    const spot = (T: Float32Array, x: number, y: number, v: number) => {
+      const r = Math.max(2, Math.round(Math.min(this.w, this.h) * 0.03 / c));
+      const cx = (x / c) | 0;
+      const cy = (y / c) | 0;
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          const X = cx + dx;
+          const Y = cy + dy;
+          if (X < 0 || Y < 0 || X >= gw || Y >= gh || dx * dx + dy * dy > r * r) continue;
+          T[Y * gw + X] = Math.max(T[Y * gw + X], v);
+        }
+    };
+    for (const [x, y] of this.antSpots()) spot(F, x, y, 3);
+    spot(H, this.w / 2, this.h / 2, 3);
+    boxBlur(H, this.tmp, gw, gh, 1);
+    boxBlur(F, this.tmp, gw, gh, 1);
+    const ch = this.pick(0.15);
+    const cf = this.pick(0.95);
+    const d = this.img!.data;
+    for (let i = 0; i < N; i++) {
+      const o = i * 4;
+      const hv = H[i] * 0.15;
+      const fv = F[i];
+      const m = hv + fv;
+      if (m < 0.01) {
+        d[o + 3] = 0;
+        continue;
+      }
+      const hot = clamp01((fv - 1.5) * 0.4);
+      for (let k = 0; k < 3; k++) {
+        const v = (ch[k] * hv + cf[k] * fv) / m;
+        d[o + k] = v + (255 - v) * hot;
+      }
+      d[o + 3] = (1 - Math.exp(-m * 1.3)) * (light ? 230 : 255);
+    }
+  }
+
+  private termites() {
+    const { gw, gh } = this;
+    const [G, S] = this.sm;
+    const N = gw * gh;
+    if (!this.grainReady) {
+      // Scatter the grains once.
+      // Several grains for every termite, so most lie about rather than being carried.
+      const fill = Math.min(0.35, Math.max(0.08, (3 * this.total) / N));
+      for (let i = 0; i < N; i++) G[i] = Math.random() < fill ? 1 : 0;
+      this.grainReady = true;
+    }
+    // Mounds: how crowded each grain's neighbourhood is picks its colour.
+    S.set(G);
+    boxBlur(S, this.tmp, gw, gh, 2);
+    const d = this.img!.data;
+    for (let i = 0; i < N; i++) {
+      const o = i * 4;
+      if (G[i] < 0.5) {
+        d[o + 3] = 0;
+        continue;
+      }
+      const col = this.pick(clamp01((S[i] - 0.08) * 2));
+      d[o] = col[0];
+      d[o + 1] = col[1];
+      d[o + 2] = col[2];
+      d[o + 3] = 255;
     }
   }
 
@@ -378,6 +760,9 @@ export class FieldRender {
     for (const a of this.rain) a.fill(0);
     this.rdReady = false;
     this.frosts.length = 0;
+    for (const a of this.rd) a.fill(0);
+    this.grainReady = false;
+    this.mem.fill(0);
   }
 
   /**
@@ -408,6 +793,10 @@ export class FieldRender {
     else if (st === 'marbling') this.marbling(s, dt);
     else if (st === 'rain') this.rainSurface(t, dt, light);
     else if (st === 'slime') this.slime(dt, light);
+    else if (st === 'rivals') this.rivals(dt, light);
+    else if (st === 'mycelium') this.mycelium(dt, light);
+    else if (st === 'ants') this.antTrails(dt, light);
+    else if (st === 'termites') this.termites();
     else if (st === 'wash') {
       if (!this.any) return;
       this.wash(s);

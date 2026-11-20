@@ -22,7 +22,7 @@ import { GENRE_FEEL } from './beatlearn.ts';
 import { GROOVE_CREDIT, closestGroove, dressFor, grooveById, grooveStyles, grooves, groovesNow, type Groove } from './grooves.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
-import { FieldRender, FIELD_STYLES, SandLayer } from './fieldstyles.ts';
+import { FieldRender, FIELD_STYLES, STEER_STYLES, SandLayer } from './fieldstyles.ts';
 import { RECIPES, rollSong, songName, newSeed } from './recipes.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
 
@@ -7417,7 +7417,10 @@ function drawSubstance(style: string, s: number, light: boolean) {
     for (let L = 0; L < FADE_LEVELS; L++) for (let k = 0; k < SHADES; k++) fieldR.add(px, py, fadeBuckets[L][k], k, (L + 0.5) / FADE_LEVELS, vx, vy);
     fieldR.draw(ctx, s, t, dt, light, 1, style === 'frost' ? penFor() : ctx);
     if (style === 'glass') drawGlass(s);
-    if (style === 'slime') fieldR.steer(px, py, vx, vy, n, dt);
+    if (STEER_STYLES.has(style)) {
+      if (style === 'ants') fieldR.targets = wellList().map((q): [number, number] => [q.x * w, q.y * h]);
+      fieldR.steer(px, py, vx, vy, n, dt);
+    }
   }
   if (glOnly) {
     glDirty2d = true;
@@ -9692,7 +9695,7 @@ const RENDERS: [string, string][] = [
   ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'], ['marbles', 'Marbles'],
   ['liquid', 'Liquid'], ['cells', 'Cells'], ['contours', 'Contours'], ['smoke', 'Smoke'], ['glass', 'Glass drops'], ['sand', 'Sand'],
-  ['lava', 'Lava'], ['terrain', 'Terrain'], ['caustics', 'Caustics'], ['aurora', 'Aurora'], ['marbling', 'Marbling'], ['rain', 'Rain on water'], ['slime', 'Slime mould'],
+  ['lava', 'Lava'], ['terrain', 'Terrain'], ['caustics', 'Caustics'], ['aurora', 'Aurora'], ['marbling', 'Marbling'], ['rain', 'Rain on water'], ['slime', 'Slime mould'], ['rivals', 'Rival slimes'], ['mycelium', 'Mycelium'], ['ants', 'Ant trails'], ['termites', 'Termites'],
   ['turing', 'Coral (reaction-diffusion)'], ['ferro', 'Ferrofluid'], ['frost', 'Frost'], ['flames', 'Flames'], ['stained', 'Stained glass'],
   ['lowpoly', 'Low-poly'], ['fieldlines', 'Field lines'], ['sketch', 'Pencil sketch'], ['fireflies', 'Fireflies'], ['brush', 'Brush strokes'],
   ['sprite', 'Your sprite (image or sheet)'],
@@ -23112,7 +23115,7 @@ setInterval(stageName, 300);
 let arrangeEl: HTMLElement | null = null;
 const LITE_KEY = 'pf-arrange-lite';
 const LITE: Partial<Settings> = { trail: 0, glow: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioTunnel: 0, audioKaleido: 0 };
-const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'turing', 'ferro', 'frost', 'flames', 'stained', 'lowpoly', 'fieldlines', 'sketch', 'fireflies', 'brush']);
+const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'rivals', 'mycelium', 'ants', 'termites', 'turing', 'ferro', 'frost', 'flames', 'stained', 'lowpoly', 'fieldlines', 'sketch', 'fireflies', 'brush']);
 let liteScene = '';
 // Outline: while arranging, skip the simulation and draw only the shape's
 // spots (a light dotted outline), so dragging stays snappy on phones.

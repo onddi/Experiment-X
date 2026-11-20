@@ -29,7 +29,7 @@ export const TIPS: Record<string, string> = {
   viewFlipH: 'Mirrors the picture, for projecting from behind a screen.',
   viewFlipV: 'Turns the picture upside down, for a ceiling-mounted projector.',
   // Look
-  render: 'How each particle is drawn: dots, glows, lines, letters and more. Liquid, Cells, Contours, Smoke, Sand, Lava, Terrain, Caustics, Aurora, Marbling, Rain on water, Slime mould, Coral, Ferrofluid, Frost, Flames and Stained glass draw the whole field as one substance instead; Low-poly and Field lines draw from the whole crowd at once; Glass drops turn each particle into a lens over a soft haze of colour.',
+  render: 'How each particle is drawn: dots, glows, lines, letters and more. Liquid, Cells, Contours, Smoke, Sand, Lava, Terrain, Caustics, Aurora, Marbling, Rain on water, Slime mould, Rival slimes, Mycelium, Ant trails, Termites, Coral, Ferrofluid, Frost, Flames and Stained glass draw the whole field as one substance instead; Low-poly and Field lines draw from the whole crowd at once; Glass drops turn each particle into a lens over a soft haze of colour.',
   mixStyles: 'Draws particles in a mix of styles instead of one.',
   size: 'How big each particle is.',
   trail: 'How long particles leave a fading streak behind them.',
