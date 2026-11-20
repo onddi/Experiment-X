@@ -7940,6 +7940,27 @@ const lensOn = () => {
 };
 
 
+// What Music drives moves right now: one short phrase per lens that's on.
+function lensDrives(): string[] {
+  const S = settings;
+  return [
+    [S.audioKaleido > 0, 'kaleidoscope turns with the bass'],
+    [S.lensMirror !== 'off', 'mirror swaps at drops'],
+    [S.lensTiles >= 2, 'tiles change every few bars'],
+    [S.lensZoom > 0, 'zoom surges on kicks'],
+    [S.lensSplit > 0, 'colours split on kicks'],
+    [S.lensGlitch > 0, 'glitch fires on beats'],
+    [S.lensDots > 0, 'dots swell on kicks'],
+    [S.lensTwirl > 0, 'twirl spins with the bass'],
+    [S.lensWave > 0, 'waves swell with the bass'],
+    [S.lensRipple > 0, 'a ripple on each kick'],
+    [S.lensFan > 0, 'fan turns with the bass'],
+    [S.lensShatter > 0, 'shards burst at drops'],
+    [S.lensEcho > 0, 'echoes flash on kicks'],
+    [S.lensGlow > 0, 'glow breathes with the level'],
+  ].filter(([on]) => on).map(([, t]) => t as string);
+}
+
 // Draw src into g with a transform about the centre, clipped by a path.
 function lensClipDraw(g: CanvasRenderingContext2D, src: HTMLCanvasElement, clip: (g: CanvasRenderingContext2D) => void, rot: number, sc: number) {
   const cw = src.width;
@@ -10721,8 +10742,8 @@ const CONTROLS: Control[] = [
   { kind: 'sub', label: 'Light' },
   ...LENS_MORE.slice(6).map(([key, label]): Control => ({ kind: 'range', key, label, min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) })),
   { kind: 'sub', label: 'Music' },
-  { kind: 'range', key: 'lensMusic', label: 'Moves with the music', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
-  { kind: 'note', text: 'They stack, in this order. With music (Moves with the music): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. The twirl spins and winds tighter on kicks, waves swell with the bass, a ripple goes out on each kick, shards burst at a drop, echoes flash and the glow breathes. Without music they drift by themselves. Every one can go on a knob (Field knobs & gestures).' },
+  { kind: 'range', key: 'lensMusic', label: 'Music drives', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
+  { kind: 'note', text: 'They stack, in this order. With music (Music drives): the zoom surges on kicks, the kaleidoscope turns with the bass and reverses at a drop (two extra sides for two bars), tiles step 2 → 3 → 4 every few bars, the mirror swaps at each drop, dots swell and colours split on the kick, the glitch fires on beats. The twirl spins and winds tighter on kicks, waves swell with the bass, a ripple goes out on each kick, shards burst at a drop, echoes flash and the glow breathes. Without music they drift by themselves. Every one can go on a knob (Field knobs & gestures).' },
 
   // FX: GPU looks over the finished frame (gpufx.ts).
   { kind: 'section', id: 'gfxlooks', label: 'FX looks', tab: 'fx',
@@ -15064,7 +15085,7 @@ const CAMERA_GRID: MgGrid = {
 const LENS_GRID: MgGrid = {
   list: true,
   chips: true,
-  cols: ['Basics', 'Twists and warps', 'Breaking it up', 'Light', 'Music'],
+  cols: ['Basics', 'Twists and warps', 'Breaking it up', 'Light'],
   rows: [{
     name: 'Lens',
     cells: [
@@ -15084,7 +15105,6 @@ const LENS_GRID: MgGrid = {
       LENS_MORE.slice(0, 4).map(([k, l]) => mgRange(l, k, 1)),
       LENS_MORE.slice(4, 6).map(([k, l]) => mgRange(l, k, 1)),
       LENS_MORE.slice(6).map(([k, l]) => mgRange(l, k, 1)),
-      [mgRange('Moves with the music', 'lensMusic', 1, { note: 'Effects stack in the order of the + menu. With music the zoom surges on kicks, the kaleidoscope turns with the bass, tiles step every few bars.' })],
     ],
   }],
 };
@@ -15876,6 +15896,29 @@ function renderMixGrid(which: 'music' | 'camera' | 'lens') {
   });
   refreshers.push(label);
 
+  // Lens: one strength for how much the music moves the effects, on top,
+  // with a line saying what it moves now.
+  if (grid === LENS_GRID) {
+    const c = ctlOf('lensMusic');
+    if (c && c.kind === 'range') {
+      const std = stdRange(c);
+      const box = document.createElement('div');
+      box.className = 'mg-music';
+      const what = document.createElement('p');
+      what.className = 'mg-drives';
+      box.append(std.el, what);
+      const paint = () => {
+        const on = lensDrives();
+        box.hidden = !on.length;
+        if (!on.length) return;
+        std.update();
+        what.textContent = settings.lensMusic > 0 ? on.join(' · ') : 'Off: the effects drift by themselves.';
+      };
+      draws.push(paint);
+      paint();
+      wrap.append(box);
+    }
+  }
   wrap.append(grid.list ? list : table, hint, detail);
   if (!grid.chips) wrap.append(classic);
   return wrap;

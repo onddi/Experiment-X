@@ -114,7 +114,7 @@ export const TIPS: Record<string, string> = {
   lensSplit: 'Splits the colour channels apart, like a misaligned print.',
   lensGlitch: 'Digital glitches: shifted slices and broken lines.',
   lensDots: 'Shows the picture as a grid of LED dots.',
-  lensMusic: 'How much the lens effects move with the music.',
+  lensMusic: 'How much the music moves the lens effects that are on. The line under it says what each one does. Without music they drift by themselves.',
   depth: 'Gives particles depth: far ones smaller and dimmer.',
   depthParallax: 'How much near and far particles move apart when the view moves.',
   // Shape
