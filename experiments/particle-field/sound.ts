@@ -16,7 +16,7 @@
 // notes is capped so thousands of particles can't turn into noise.
 
 export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
-export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop';
+export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop' | 'bird' | 'frog' | 'talkdrum' | 'bowl';
 // The chimes' own sound, or 'same' to play whatever the strings play.
 export type HitSound = 'same' | Voice;
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
@@ -151,6 +151,11 @@ const VOICES: Record<Voice, VoiceDef> = {
   gong: { type: 'sine', ratio: 1.48, level: 0.5, fade: 0.8, decay: 3.5, octave: -1, fm: [1.41, 0.8], wobble: [0.8, 0.25], gain: 1.3 },
   wood: { type: 'triangle', ratio: 2.7, level: 0.6, fade: 0.1, decay: 0.18, gain: 2.6 },
   drop: { type: 'sine', ratio: 2, level: 0.1, fade: 0.2, decay: 0.3, octave: 1, bend: -700, gain: 2 },
+  // Living sounds: like Bubbles, the pitch moves inside every note.
+  bird: { type: 'sine', ratio: 2, level: 0.06, fade: 0.2, decay: 0.2, octave: 2, bend: -1200, vibrato: 45, gain: 1.1 },
+  frog: { type: 'triangle', ratio: 2, level: 0.35, fade: 0.4, decay: 0.3, octave: -1, bend: -250, wobble: [26, 0.85], sweep: [1600, 500], gain: 2 },
+  talkdrum: { type: 'sine', ratio: 1.5, level: 0.25, fade: 0.15, decay: 0.55, bend: 600, fm: [1.6, 0.5], gain: 2.2 },
+  bowl: { type: 'sine', ratio: 2.76, level: 0.35, fade: 0.8, decay: 3.6, attack: 0.02, wobble: [1.4, 0.35], fm: [5.4, 0.04], gain: 1.1 },
 };
 
 // Bass sounds, built like a synth patch: a few oscillators (detuned for
