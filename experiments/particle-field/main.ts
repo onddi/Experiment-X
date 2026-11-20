@@ -2479,8 +2479,7 @@ function modelTick(now: number) {
   if (!modelSolid()) return;
   const slot = S.shapeSolid;
   if (slot in EXAMPLE_MODELS && !hasModel(slot)) {
-    // Fetch the other examples too, so switching between them morphs straight across.
-    for (const k of [slot, ...Object.keys(EXAMPLE_MODELS)]) loadExample(k);
+    loadExample(slot);
     return;
   }
   const clips = modelClips(slot);
@@ -2496,12 +2495,18 @@ function modelTick(now: number) {
 }
 const modelSolid = () => settings.shape === 'solid' && MODEL_SOLIDS.includes(settings.shapeSolid);
 const shownClips = () => (modelSolid() ? modelClips(settings.shapeSolid) : []);
-// The bundled animated examples, from Khronos's glTF sample models (textures
-// stripped): the fox (CC0 model by PixelMannen; CC BY 4.0 rigging and animation
-// by tomkranis, glTF by AsoboStudio and scurest) and Cesium Man (CC BY 4.0, Cesium).
-const EXAMPLE_MODELS: Record<string, [string, URL]> = {
-  fox: ['Fox', new URL('./models/fox.glb', import.meta.url)],
-  walker: ['Walking figure', new URL('./models/walker.glb', import.meta.url)],
+// The bundled animated examples (textures stripped; credits in models/README.md):
+// name, file, the clip to start on (1-based), the credit line, and the angle it shows best from.
+const EXAMPLE_MODELS: Record<string, [string, URL, number, string, number]> = {
+  fox: ['Fox', new URL('./models/fox.glb', import.meta.url), 3, 'Fox model by PixelMannen (CC0), rigging and animation by tomkranis (CC BY 4.0), glTF by AsoboStudio and scurest (CC BY 4.0), from Khronos’s glTF sample models.', 60],
+  walker: ['Walking figure', new URL('./models/walker.glb', import.meta.url), 1, 'Cesium Man by Cesium (CC BY 4.0), from Khronos’s glTF sample models.', 30],
+  horse: ['Horse', new URL('./models/horse.glb', import.meta.url), 1, 'Horse by mirada, from ro.me (3 Dreams of Black, Apache 2.0), via three.js.', 70],
+  flamingo: ['Flamingo', new URL('./models/flamingo.glb', import.meta.url), 1, 'Flamingo by mirada, from ro.me (3 Dreams of Black, Apache 2.0), via three.js.', 35],
+  parrot: ['Parrot', new URL('./models/parrot.glb', import.meta.url), 1, 'Parrot by mirada, from ro.me (3 Dreams of Black, Apache 2.0), via three.js.', 35],
+  stork: ['Stork', new URL('./models/stork.glb', import.meta.url), 1, 'Stork by mirada, from ro.me (3 Dreams of Black, Apache 2.0), via three.js.', 35],
+  robot: ['Robot', new URL('./models/robot.glb', import.meta.url), 1, 'Robot by Tomás Laulhé (Quaternius, CC0), expressions by Don McCurdy, via three.js. 14 moves under Animation.', 25],
+  cat: ['Cat', new URL('./models/cat.glb', import.meta.url), 4, 'Cat by Vuena (CC0). 12 moves under Animation.', 60],
+  owl: ['Owl', new URL('./models/owl.glb', import.meta.url), 4, 'Owl by Vuena (CC0). 12 moves under Animation.', 40],
 };
 const exampleLoading = new Set<string>();
 function loadExample(slot: string) {
@@ -10830,8 +10835,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'modelSpeed', label: 'Animation speed', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => shownClips().length > 0 && settings.modelClip > 0 },
   { kind: 'toggle', key: 'modelBeat', label: 'Speed follows the music', show: () => shownClips().length > 0 && settings.modelClip > 0 },
   { kind: 'note', text: 'OBJ, STL or GLB files. A GLB with animations (bones or blend shapes) plays them; FBX can be turned into GLB in Blender. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
-  { kind: 'note', text: 'Fox model by PixelMannen (CC0), rigging and animation by tomkranis (CC BY 4.0), glTF by AsoboStudio and scurest (CC BY 4.0), from Khronos’s glTF sample models.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'fox' },
-  { kind: 'note', text: 'Cesium Man by Cesium (CC BY 4.0), from Khronos’s glTF sample models.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'walker' },
+  ...Object.entries(EXAMPLE_MODELS).map(([id, m]): Control => ({ kind: 'note', text: m[3], show: () => settings.shape === 'solid' && settings.shapeSolid === id })),
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
   { kind: 'note', text: '3D shapes look best with depth on; it turns on with them. Tilt, light and shade and facing are in Depth & light (Look tab).', show: () => settings.shape === 'solid' },
@@ -13833,6 +13837,13 @@ function changed(keys: Set<keyof Settings>, morphing = false) {
   if (keys.has('glyphSet') || keys.has('glyphText')) buildGlyphs();
   if (keys.has('shape') && settings.shape === 'solid' && settings.depth === 0) {
     settings.depth = 0.7;
+    refresh();
+  }
+  // An example model starts on its liveliest move, turned to show it (a scene that sets them keeps its own).
+  if (keys.has('shapeSolid') && !keys.has('modelClip') && EXAMPLE_MODELS[settings.shapeSolid]) {
+    settings.modelClip = EXAMPLE_MODELS[settings.shapeSolid][2];
+    if (!keys.has('shapeFacing')) settings.shapeFacing = EXAMPLE_MODELS[settings.shapeSolid][4];
+    modelT = 0;
     refresh();
   }
   // The first 3D shape this visit: say it can be turned.

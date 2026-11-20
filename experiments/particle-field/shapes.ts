@@ -598,17 +598,16 @@ export const SOLID_SHAPES: [string, string][] = [
   ['lissajous', 'Lissajous knot'], ['torusknot', 'Torus knot'], ['klein', 'Klein bottle'],
   ['flower', 'Flower'], ['tornado', 'Tornado'], ['jelly', 'Jellyfish'],
   ['hourglass', 'Hourglass'], ['crystals', 'Crystal cluster'], ['gyro', 'Gyroscope'],
-  ['fox', 'Running fox (animated)'], ['walker', 'Walking figure (animated)'],
+  ['fox', 'Running fox (animated)'], ['walker', 'Walking figure (animated)'], ['horse', 'Galloping horse (animated)'],
+  ['flamingo', 'Flamingo (animated)'], ['parrot', 'Parrot (animated)'], ['stork', 'Stork (animated)'],
+  ['robot', 'Dancing robot (animated)'], ['cat', 'Cat (animated)'], ['owl', 'Owl (animated)'],
   ['model', 'Your 3D model (OBJ, STL, glTF)'],
 ];
 // 3D models: surface points (x, y, z) per solid. "model" is yours (a rocket
-// until you load one); "fox" and "walker" are the bundled, animated examples.
+// until you load one); the rest are the bundled, animated examples.
 type ModelSlot = { pts: Float32Array | null; rest: Float32Array | null; anim: ModelAnim | null; name: string };
-const slots: Record<string, ModelSlot> = {
-  model: { pts: null, rest: null, anim: null, name: '' },
-  fox: { pts: null, rest: null, anim: null, name: '' },
-  walker: { pts: null, rest: null, anim: null, name: '' },
-};
+const EXAMPLE_SLOTS = ['fox', 'walker', 'horse', 'flamingo', 'parrot', 'stork', 'robot', 'cat', 'owl'];
+const slots: Record<string, ModelSlot> = Object.fromEntries(['model', ...EXAMPLE_SLOTS].map((k) => [k, { pts: null, rest: null, anim: null, name: '' }]));
 export const MODEL_SOLIDS = Object.keys(slots);
 export function setModel(pts: Float32Array, name: string, anim: ModelAnim | null = null, slot = 'model') {
   const m = slots[slot];
@@ -688,7 +687,14 @@ export function solidPoint(type: string, u: number, v: number): [number, number,
   const TAU = Math.PI * 2;
   switch (type) {
     case 'fox':
-    case 'walker': {
+    case 'walker':
+    case 'horse':
+    case 'flamingo':
+    case 'parrot':
+    case 'stork':
+    case 'robot':
+    case 'cat':
+    case 'owl': {
       // A sphere for the moment it takes to load.
       const fp = slots[type].pts;
       if (!fp) return solidPoint('sphere', u, v);
