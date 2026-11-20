@@ -81,7 +81,7 @@ export const TIPS: Record<string, string> = {
   sndBeatChange: 'Moves on to another beat in the same genre every few bars, and when the music drops.',
   sndGrooveTight: 'MIDI drums: how much the drummer’s own timing is kept. As played keeps every push and drag; toward the grid pulls each hit onto its sixteenth.',
   sndGrooveDyn: 'MIDI drums: how much of the drummer’s soft and hard hits is kept. Even plays every hit at about the same loudness.',
-  sndPadSound: 'The pad’s voice. Soft: plain and round. Strings: a bowed ensemble. Organ: hollow and steady. Choir: “aah” voices whose vowel slowly drifts. Shimmer: wide and bright.',
+  sndPadSound: 'The pad’s voice. Soft: plain and round. Strings: a bowed ensemble. Organ: hollow and steady. Choir: “aah” voices whose vowel slowly drifts. Shimmer: wide and bright. Gated, Reverse swell and Resonant sweep move in time; Ocean, Wind, Rain, Whale song, Crickets and Distant storm are nature, tuned to the chord.',
   sndBassTone: 'Darker or brighter bass: moves the bass’s filter down or up.',
   sndAttack: 'How notes start. Struck is instant, like a mallet; turning it up makes notes swell in, like a bow or breath.',
   sndBright: 'A tilt over everything: darker and softer, or brighter and crisper.',

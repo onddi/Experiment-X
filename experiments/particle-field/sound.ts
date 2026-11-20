@@ -31,7 +31,7 @@ export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'pi
 import { bandsOf } from './audio.ts';
 import { KITS, GENRES, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
-export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet' | 'analog' | 'vox' | 'drone' | 'mist' | 'supersaw' | 'harmonium' | 'cosmic';
+export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet' | 'analog' | 'vox' | 'drone' | 'mist' | 'supersaw' | 'harmonium' | 'cosmic' | 'gated' | 'reverse' | 'sweep' | 'bells' | 'ocean' | 'whisper' | 'throat' | 'frozen' | 'wind' | 'rain' | 'whale' | 'crickets' | 'storm';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 /** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
 export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | Voice;
@@ -233,7 +233,15 @@ function satCurve(k: number) {
 // `drift`: cents each oscillator wanders; `air`: breathy noise on top;
 // `up`: semitones up or down; `sub`: a sine an octave under the root;
 // `swell`: how much a new chord blooms.
-interface PadDef { w: [OscillatorType, OscillatorType]; spread: number; width: number; cut: number; q: number; band?: number; color: 0 | 4 | 7 | 9; drift: number; air: number; gain: number; up?: number; sub: number; swell: number }
+interface PadDef {
+  w: [OscillatorType, OscillatorType]; spread: number; width: number; cut: number; q: number; band?: number; color: 0 | 4 | 7 | 9; drift: number; air: number; gain: number; up?: number; sub: number; swell: number;
+  // Movement in the level: chopped in time (gate), sucked in backwards each
+  // few beats (reverse), slow waves, random flicker (grains, rain), or a
+  // tremolo. Rate: per beat (gate), beats per swell (reverse), else Hz.
+  move?: 'gate' | 'reverse' | 'waves' | 'flicker' | 'trem'; mRate?: number; mDepth?: number;
+  sweepAmt?: number; sweepHz?: number; // the filter sweeping slowly, in octaves
+  airAt?: number; airQ?: number; airSweep?: number; // the noise: its own pitch (Hz), how narrow, and a slow sweep (octaves)
+}
 const PADS: Record<PadSound, PadDef> = {
   soft: { w: ['sine', 'triangle'], spread: 6, width: 0.5, cut: 1, q: 0.3, color: 0, drift: 3, air: 0, gain: 1, sub: 0.25, swell: 0.6 },
   strings: { w: ['sawtooth', 'sawtooth'], spread: 12, width: 0.8, cut: 1.3, q: 0.8, color: 7, drift: 5, air: 0.15, gain: 1.14, sub: 0.2, swell: 1 },
@@ -261,6 +269,21 @@ const PADS: Record<PadSound, PadDef> = {
   supersaw: { w: ['sawtooth', 'sawtooth'], spread: 24, width: 1, cut: 2.8, q: 0.6, color: 4, drift: 4, air: 0.1, gain: 0.75, sub: 0.15, swell: 0.8 },
   harmonium: { w: ['square', 'sawtooth'], spread: 3, width: 0.4, cut: 1.4, q: 1, band: 1600, color: 7, drift: 1.5, air: 0.05, gain: 2.2, sub: 0.1, swell: 0.5 },
   cosmic: { w: ['triangle', 'sawtooth'], spread: 12, width: 1, cut: 2, q: 4, color: 4, drift: 3, air: 0.4, gain: 0.8, up: 12, sub: 0.2, swell: 1.5 },
+  // Pads that move.
+  gated: { w: ['sawtooth', 'sawtooth'], spread: 16, width: 0.9, cut: 2, q: 0.8, color: 4, drift: 3, air: 0.05, gain: 0.85, sub: 0.15, swell: 0.6, move: 'gate', mRate: 4, mDepth: 0.9 },
+  reverse: { w: ['sawtooth', 'triangle'], spread: 10, width: 0.8, cut: 1.4, q: 0.6, color: 7, drift: 4, air: 0.15, gain: 1, sub: 0.2, swell: 0.5, move: 'reverse', mRate: 2, mDepth: 0.95 },
+  sweep: { w: ['sawtooth', 'square'], spread: 12, width: 0.8, cut: 1, q: 6, color: 7, drift: 4, air: 0, gain: 0.75, sub: 0.2, swell: 0.8, sweepAmt: 2, sweepHz: 0.07 },
+  bells: { w: ['sine', 'sine'], spread: 7, width: 0.9, cut: 4, q: 0.3, color: 9, drift: 2, air: 0.1, gain: 0.9, up: 12, sub: 0, swell: 0.5, move: 'trem', mRate: 5.5, mDepth: 0.35 },
+  whisper: { w: ['triangle', 'sawtooth'], spread: 9, width: 0.9, cut: 1, q: 3, band: 800, color: 0, drift: 6, air: 2, airAt: 3200, airQ: 1.5, gain: 3, sub: 0, swell: 1 },
+  throat: { w: ['sawtooth', 'sawtooth'], spread: 2, width: 0.3, cut: 1, q: 8, band: 400, color: 7, drift: 1, air: 0, gain: 2.2, up: -24, sub: 0.5, swell: 2, sweepAmt: 1.2, sweepHz: 0.25 },
+  frozen: { w: ['triangle', 'sine'], spread: 22, width: 1, cut: 3, q: 0.3, color: 9, drift: 6, air: 0.3, airAt: 6000, gain: 0.9, up: 12, sub: 0, swell: 1.2, move: 'flicker', mRate: 18, mDepth: 0.6 },
+  // Nature: mostly tuned noise, breathing.
+  ocean: { w: ['sine', 'sine'], spread: 10, width: 1, cut: 0.6, q: 0.3, color: 9, drift: 4, air: 7, airAt: 700, airQ: 0.4, gain: 0.9, sub: 0.15, swell: 1, move: 'waves', mRate: 0.09, mDepth: 0.75 },
+  wind: { w: ['sine', 'sine'], spread: 14, width: 1, cut: 0.8, q: 0.3, color: 9, drift: 8, air: 8, airAt: 900, airQ: 6, airSweep: 1.5, gain: 0.7, sub: 0, swell: 1, move: 'waves', mRate: 0.05, mDepth: 0.5 },
+  rain: { w: ['sine', 'triangle'], spread: 8, width: 1, cut: 0.9, q: 0.3, color: 9, drift: 3, air: 5, airAt: 5000, airQ: 0.6, gain: 0.8, sub: 0.1, swell: 0.8, move: 'flicker', mRate: 30, mDepth: 0.35 },
+  whale: { w: ['sine', 'triangle'], spread: 4, width: 0.8, cut: 0.5, q: 1, color: 4, drift: 70, air: 0.3, airAt: 400, gain: 1, up: -12, sub: 0.3, swell: 2, sweepAmt: 0.8, sweepHz: 0.04 },
+  crickets: { w: ['sine', 'sine'], spread: 3, width: 1, cut: 3, q: 0.3, color: 9, drift: 2, air: 1, airAt: 4500, airQ: 8, gain: 0.6, up: 24, sub: 0, swell: 0.4, move: 'trem', mRate: 16, mDepth: 0.9 },
+  storm: { w: ['triangle', 'sawtooth'], spread: 6, width: 1, cut: 0.4, q: 0.5, color: 4, drift: 6, air: 6, airAt: 220, airQ: 0.5, gain: 1, up: -12, sub: 0.4, swell: 1.6, move: 'waves', mRate: 0.03, mDepth: 0.6 },
 };
 
 export interface SoundParams {
@@ -636,6 +659,9 @@ export class ParticleSound {
   private padSwell = 0;
   private padTick = 0;
   private padDuck!: GainNode;
+  private padMove!: GainNode;
+  private padTrem!: OscillatorNode;
+  private padTremAmt!: GainNode;
   private padBeat = -1;
   private padPumpAt = 0;
   // Strings: when each last rang (ms).
@@ -723,9 +749,17 @@ export class ParticleSound {
     this.padGain = ctx.createGain();
     this.padGain.gain.value = 0;
     this.padFilter.connect(this.padGain);
-    // Pump: a gain after everything, dipped on each kick.
+    // Movement (gated, reverse, waves …), then Pump: a gain after
+    // everything, dipped on each kick.
+    this.padMove = ctx.createGain();
+    // Tremolo (bells, crickets): a real LFO on the level, too fast for frames.
+    this.padTrem = ctx.createOscillator();
+    this.padTremAmt = ctx.createGain();
+    this.padTremAmt.gain.value = 0;
+    this.padTrem.connect(this.padTremAmt).connect(this.padMove.gain);
+    this.padTrem.start();
     this.padDuck = ctx.createGain();
-    this.padGain.connect(this.padDuck);
+    this.padGain.connect(this.padMove).connect(this.padDuck);
     // Mix polish's sidechain (a plain 1 unless that's on).
     this.scPad = ctx.createGain();
     this.padDuck.connect(this.scPad);
@@ -1119,7 +1153,43 @@ export class ParticleSound {
     this.padOsc.forEach((o, k) => (o.type = d.w[k % 2]));
     this.padFilter.type = d.band ? 'bandpass' : 'lowpass';
     this.padFilter.Q.value = d.q;
+    this.padAir.Q.value = d.airQ ?? 0.7;
+    const now = this.ctx.currentTime;
+    if (!d.move) this.padMove.gain.setTargetAtTime(1, now, 0.05);
+    const trem = d.move === 'trem' ? (d.mDepth ?? 0.5) / 2 : 0;
+    this.padTremAmt.gain.setTargetAtTime(trem, now, 0.05);
+    if (trem) this.padTrem.frequency.setValueAtTime(d.mRate ?? 5, now);
     this.padChord = '';
+  }
+
+  // The pad's own movement, a frame at a time.
+  private padMoveTick(pd: PadDef, t: number) {
+    const depth = pd.mDepth ?? 0.5;
+    const rate = pd.mRate ?? 1;
+    const fr = (x: number) => x - Math.floor(x);
+    let v = 1;
+    let tc = 0.05;
+    if (pd.move === 'gate') {
+      v = fr(this.beat * rate) < 0.55 ? 1 : 1 - depth;
+      tc = 0.006;
+    } else if (pd.move === 'reverse') {
+      const ph = fr(this.beat / rate);
+      v = 1 - depth + depth * ph * ph;
+      tc = ph < 0.04 ? 0.004 : 0.02;
+    } else if (pd.move === 'waves') {
+      // Two slow swells against each other, so no two waves are the same.
+      const a = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * rate);
+      const b = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * rate * 1.618 + 1);
+      v = 1 - depth * (1 - a * (0.6 + 0.4 * b));
+      tc = 0.3;
+    } else if (pd.move === 'flicker') {
+      v = 1 - depth * Math.random();
+      tc = 1 / Math.max(4, rate);
+    } else if (pd.move === 'trem') {
+      v = 1 - depth / 2; // the LFO swings it either side
+      tc = 0.1;
+    }
+    this.padMove.gain.setTargetAtTime(v, t, tc);
   }
 
   // Pump: duck the pad at `when`, back up over most of a beat.
@@ -3237,7 +3307,7 @@ export class ParticleSound {
         if (this.padX) for (const o of [...this.padX.uni.slice(slot * 4, slot * 4 + 4), this.padX.wA[slot], this.padX.wB[slot]]) o.frequency.setTargetAtTime(hz(m) * oc, t, glide);
       });
       this.padSub.frequency.setTargetAtTime(hz(v.sub) * Math.min(1, oc), t, glide);
-      this.padAir.frequency.setTargetAtTime(Math.min(9000, hz(v.notes[3]) * oc * 8), t, 0.6);
+      if (!pd.airAt) this.padAir.frequency.setTargetAtTime(Math.min(9000, hz(v.notes[3]) * oc * 8), t, 0.6);
       if (!first) this.padSwell = 1;
     }
     // A burst in the field (births, a drop) blooms the pad too.
@@ -3267,7 +3337,10 @@ export class ParticleSound {
       const f = pd.band
         ? (pd.band + this.energy * pd.band * 0.8 + Math.sin(this.padLfo * 0.37) * pd.band * 0.28) * bloom
         : (400 + this.energy * 1800 + F.spread * 400) * pd.cut * sweep * bloom * (0.75 + 0.6 * F.speed);
-      this.padFilter.frequency.setTargetAtTime(Math.min(16000, f * 2 ** ((P.padTone ?? 0) * 1.6)), t, 0.5);
+      const sw = pd.sweepAmt ? pd.sweepAmt * Math.sin(t * Math.PI * 2 * (pd.sweepHz ?? 0.1)) : 0;
+      this.padFilter.frequency.setTargetAtTime(Math.min(16000, f * 2 ** ((P.padTone ?? 0) * 1.6 + sw)), t, 0.5);
+      if (pd.airAt) this.padAir.frequency.setTargetAtTime(Math.min(12000, pd.airAt * 2 ** ((pd.airSweep ?? 0) * Math.sin(t * Math.PI * 2 * 0.06) + (P.padTone ?? 0))), t, 0.4);
+      if (pd.move) this.padMoveTick(pd, t);
       this.padSubGain.gain.setTargetAtTime(pd.sub * 0.22, t, 0.5);
       this.padAirGain.gain.setTargetAtTime(pd.air * 0.05 * (0.6 + this.energy) * (1 + swell), t, 0.5);
       // Drift and sway, a few times a second (cheap): each oscillator wanders
