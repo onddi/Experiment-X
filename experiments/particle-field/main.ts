@@ -7818,6 +7818,9 @@ let gfxGlitchSeed = 0;
 let gfxGlitchNext = 0;
 let gfxInvertEnv = 0;
 let gfxHue = 0;
+// In a layer: the base field's hue cycle, so stacked scenes turn together
+// (out of step, two coloured layers average out to grey).
+let baseCycle: number | null = null;
 let gfxLastT = 0;
 const GFX_TINTS: Record<Settings['gfxTint'], [number, number, number]> = { white: [1, 1, 1], warm: [1.15, 0.78, 0.45], cool: [0.55, 0.85, 1.25], pink: [1.25, 0.5, 0.95], green: [0.5, 1.2, 0.6], gold: [1.2, 0.95, 0.4], amber: [1.25, 0.65, 0.25], red: [1.3, 0.4, 0.35], rose: [1.2, 0.7, 0.8], violet: [0.85, 0.5, 1.3], blue: [0.45, 0.6, 1.35], ice: [0.75, 1.0, 1.2], teal: [0.4, 1.1, 1.05], mint: [0.65, 1.2, 0.85], lime: [0.85, 1.25, 0.35] };
 // The scene's own palette as two grade colours: its background (lifted a touch) and its brightest colour.
@@ -7899,6 +7902,7 @@ function gpuFrame(now: number) {
   } else gfxGlitchEnv = 0;
   gfxInvertEnv = S.gfxInvertDrop && music && L.drop ? 1 : gfxInvertEnv * 0.9;
   gfxHue = (gfxHue + dt * S.gfxHueCycle * (0.6 + by(S.gfxLightBy, S.gfxLightAmt) * 3)) % (Math.PI * 2);
+  if (baseCycle !== null && S.gfxHueCycle > 0) gfxHue = baseCycle;
   const [gA, gB] = S.gfxGrade === 'scene' ? gfxSceneGrade() : [[0, 0, 0] as [number, number, number], [1, 1, 1] as [number, number, number]];
   const ptrIn = pointer.x > -1000;
   const px = ptrIn ? pointer.x / w : 0.5 + Math.sin(t * 0.5) * 0.28;
@@ -9324,6 +9328,8 @@ class FieldLayer {
     // The music: the base's spectrum each frame, so the layer's reactions
     // run on the same sound without a mic of its own.
     if (this.frame) {
+      // The music colour shift too: the layer turns with this field.
+      this.post({ hue: settings.audioHue !== 'off' ? hueNow : null, cycle: settings.gfxHueCycle > 0 ? gfxHue : null });
       const sp = audio.frameOut();
       if (sp) {
         this.post({ spectrum: sp });
@@ -9473,6 +9479,8 @@ if (TOP_LAYER) {
       }
       if (typeof d.down === 'boolean') pointer.down = d.down;
     }
+    if ('hue' in d) baseHue = typeof d.hue === 'number' ? d.hue : null;
+    if ('cycle' in d) baseCycle = typeof d.cycle === 'number' ? d.cycle : null;
     if ('spectrum' in d) {
       if (!d.spectrum) {
         if (audio.source === 'feed') audio.stop();
@@ -11988,6 +11996,8 @@ function morphTo(target: Settings, morphSec = settings.morph) {
 // --- music visuals: colour, camera, auto VJ ------------------------------------
 
 let hueNow = 0;
+// In a layer: the base field's music colour shift, so both turn together.
+let baseHue: number | null = null;
 let hueTarget = 0;
 let hueWander = 0;
 // Song variation's picture now, and where it's easing to (see songLookTo).
@@ -12104,12 +12114,17 @@ function musicVisuals(now: number) {
       hueTarget = Math.sin(hueWander) * S.audioHueAmt + (S.audioDrop > 0 ? 120 * L.dropEnv : 0);
     } else if (S.audioHue !== 'off' && L.drop && S.audioDrop > 0) hueTarget += S.audioHue === 'drop' ? S.audioHueAmt * 3 : 150;
     hueNow += (hueTarget - hueNow) * Math.min(1, dt * 5);
+    // A layer turns with the base field, so stacked scenes stay in step.
+    if (baseHue !== null) hueNow = hueTarget = baseHue;
     // A light background would tint and glow with the filter, so paper-like
     // palettes only get the saturation.
     if (!lightBg) {
       const bright = 1 + S.audioBright * (L.level * 0.5 - 0.15 + L.dropEnv * 0.6);
       parts.push(`hue-rotate(${(hueNow % 360).toFixed(1)}deg)`, `brightness(${bright.toFixed(2)})`);
     }
+  } else if (baseHue !== null && S.audioHue !== 'off') {
+    hueNow = hueTarget = baseHue;
+    if (!lightBg) parts.push(`hue-rotate(${(hueNow % 360).toFixed(1)}deg)`);
   } else hueNow = hueTarget = 0;
   // Hi-hat twinkle: a quick lift in brightness on each hat.
   twinkleA = on && S.audioHatTwinkle > 0 && L.hat ? 0.18 * S.audioHatTwinkle : twinkleA * 0.8;
