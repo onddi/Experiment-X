@@ -7666,6 +7666,42 @@ let gfxNextWave = 0;
 let gfxKickEnv = 0;
 // Each FX group's own music push (0..1, before How much), and the glitch burst.
 const gfxDrive = { kick: 0, snare: 0, bass: 0, voice: 0, off: 0 };
+// FX and music: each group's row shows its driver live, with the Reactions
+// list's meter, so you can see when it's meant to move.
+const FX_BY = ['gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy'] as const;
+let fxMeters: [HTMLElement, (typeof FX_BY)[number]][] = [];
+let fxMeterScan = 0;
+function fxDrivers(music: boolean) {
+  const L = audio.levels;
+  gfxDrive.kick = music ? clamp01(L.pulse) : 0;
+  gfxDrive.snare = music ? clamp01(L.snareEnv) : 0;
+  gfxDrive.bass = music ? clamp01(Math.max(L.sub, L.liftLevel)) : 0;
+  gfxDrive.voice = music ? clamp01(L.vocal) : 0;
+  fxMeterTick(performance.now());
+}
+function fxMeterTick(now: number) {
+  if (now > fxMeterScan) {
+    fxMeterScan = now + 600;
+    fxMeters = [];
+    for (const k of FX_BY)
+      for (const row of document.querySelectorAll<HTMLElement>(`.row[data-key="${k}"]`)) {
+        let m = row.querySelector<HTMLElement>(':scope > .fx-meter');
+        if (!m) {
+          m = document.createElement('em');
+          m.className = 'mg-meter nohi fx-meter';
+          m.innerHTML = '<u></u>';
+          row.append(m);
+        }
+        fxMeters.push([m, k]);
+      }
+  }
+  for (const [m, k] of fxMeters) {
+    if (!m.offsetParent) continue;
+    const v = settings.gfxKick > 0 ? gfxDrive[settings[k]] : 0;
+    (m.firstElementChild as HTMLElement).style.width = `${Math.round(v * 100)}%`;
+    m.classList.toggle('hit', v > 0.5);
+  }
+}
 let gfxGlitchEnv = 0;
 let gfxGlitchSeed = 0;
 let gfxGlitchNext = 0;
@@ -7721,7 +7757,7 @@ function gpuFrame(now: number) {
       gpuFx.reset();
     }
   }
-  if (!on) return;
+  if (!on) return fxDrivers(reacting());
   if (under.style.opacity !== '0') under.style.opacity = '0';
   if (under === lensCanvas && canvas.style.opacity !== '0') canvas.style.opacity = '0';
   const g = gpuFx.canvas;
@@ -7735,10 +7771,7 @@ function gpuFrame(now: number) {
   const L = audio.levels;
   const music = reacting();
   gfxKickEnv = Math.max(gfxKickEnv * 0.88, music ? clamp01(L.pulse) * S.gfxKick : 0);
-  gfxDrive.kick = music ? clamp01(L.pulse) : 0;
-  gfxDrive.snare = music ? clamp01(L.snareEnv) : 0;
-  gfxDrive.bass = music ? clamp01(Math.max(L.sub, L.liftLevel)) : 0;
-  gfxDrive.voice = music ? clamp01(L.vocal) : 0;
+  fxDrivers(music);
   const by = (k: Settings['gfxLightBy'], amt = 1) => gfxDrive[k] * S.gfxKick * amt;
   const dt = Math.min(0.1, Math.max(0, t - gfxLastT));
   gfxLastT = t;
