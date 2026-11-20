@@ -18,6 +18,7 @@ import { FONT_OPTS, addFontCss, fontCss, fontReady, fontStyle } from './fonts.ts
 import type { ParticleSound, SoundParams, Layer, BeatMove, PicMove } from './sound.ts';
 import { STYLES, styleById, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre } from './drums.ts';
+import { GENRE_FEEL } from './beatlearn.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { FieldRender, FIELD_STYLES, SandLayer } from './fieldstyles.ts';
@@ -17571,6 +17572,7 @@ const TIMBRES: [string, string][] = [['colour', 'Chimes band'], ['lounge', 'Loun
 const TRACK_LAYER: Record<string, Layer> = { sndDrums: 'drums', sndBass: 'bass', sndStrings: 'strings', sndDrone: 'pad', sndSeq: 'steps', sndHits: 'chimes', sndGrain: 'grains', sndScan: 'scan', sndTouch: 'touch', sndAccents: 'accents' };
 let trackLights: { el: HTMLElement; layer: Layer; v: number }[] = [];
 function paintTrackLights(s: ParticleSound) {
+  patPaint?.(s);
   if (!trackLights.length) return;
   trackLights = trackLights.filter((t) => t.el.isConnected);
   for (const t of trackLights) {
@@ -17835,7 +17837,7 @@ function renderSoundPage(body: HTMLElement) {
     det.style.setProperty('--accent-bg', `color-mix(in oklch, ${t.dot} 18%, transparent)`);
     // What drives it: how the particles play this part.
     det.append(mk('p', 'sndp-how', t.how));
-    if (t.beats) det.append(beatChips());
+    if (t.beats) det.append(beatChips(), patternFold());
     for (const k of t.keys) {
       const e = take(k);
       if (e) det.append(e);
@@ -18080,6 +18082,133 @@ function beatChips(): HTMLElement {
   };
   refreshers.push(draw);
   draw();
+  return box;
+}
+// The Drums track's pattern: a small strip of what's playing that opens into
+// the full grid. Tap a step to add a hit or silence one (the same edits as the
+// Studio's Beat tab); Learn rings the hits that make the genre what it is.
+const PAT_LEARN_KEY = 'pf-pattern-learn';
+const PAT_ROWS: [string, string][] = [['Kick', '#93a9ff'], ['Snare', '#c7b8ff'], ['Hat', '#7be0c3'], ['Bass', '#ff9b5c']];
+const PAT_CHARS = ['k', 'sc', 'ho', 'b'];
+let patPaint: ((s: ParticleSound) => void) | null = null;
+function patternFold(): HTMLElement {
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  };
+  const box = el('div', 'sndp-pat');
+  const head = el('button', 'sndp-pat-head');
+  head.type = 'button';
+  head.setAttribute('aria-expanded', 'false');
+  const mini = el('span', 'sndp-pat-mini');
+  mini.setAttribute('aria-hidden', 'true');
+  const minis: HTMLElement[] = [];
+  for (let k = 0; k < 48; k++) minis.push(mini.appendChild(el('i')));
+  const hint = el('span', 'sndp-pat-hint');
+  head.append(el('span', '', 'Pattern'), mini, hint);
+  const body = el('div', 'sndp-pat-body');
+  body.hidden = true;
+  const bar = el('div', 'sndp-pat-bar');
+  const learnB = el('button', 'sndp-chip', 'Learn');
+  learnB.type = 'button';
+  const reset = el('button', 'sndp-chip', 'Reset');
+  reset.type = 'button';
+  bar.append(el('span', '', 'Tap a step to add or silence a hit'), learnB, reset);
+  const grid = el('div', 'sndp-pat-grid');
+  const cells: HTMLButtonElement[] = [];
+  PAT_ROWS.forEach(([name, c], r) => {
+    grid.append(el('b', '', name));
+    for (let s = 0; s < 16; s++) {
+      const b = el('button', 'sndp-pat-cell');
+      b.type = 'button';
+      b.style.setProperty('--rc', c);
+      b.setAttribute('aria-label', `${name}, step ${s + 1}`);
+      if (s % 4 === 0) b.classList.add('bar4');
+      b.addEventListener('click', () => edit(r * 16 + s));
+      grid.append(b);
+      cells.push(b);
+    }
+  });
+  const notes = el('div', 'sndp-pat-notes');
+  body.append(bar, grid, notes);
+  box.append(head, body);
+
+  let learn = readJson<boolean>(PAT_LEARN_KEY, false);
+  let marks = new Set<number>();
+  // Whether the written beat has a hit on this cell.
+  const written = (k: number) => {
+    const g = drumGenre(settings.sndGenre);
+    const bt = g?.beats[settings.sndBeat];
+    if (!bt) return false;
+    const r = Math.floor(k / 16), s = k % 16;
+    return [...PAT_CHARS[r]].some((ch) => {
+      const line = bt[ch as keyof typeof bt];
+      return !!line && ch !== 'name' && line[s % line.length] !== '.';
+    });
+  };
+  const edit = (k: number) => {
+    const g = settings.sndGrid.padEnd(64, '.').split('');
+    g[k] = g[k] !== '.' ? '.' : written(k) ? '-' : '+';
+    const s = g.join('');
+    set('sndGrid', /^\.*$/.test(s) ? '' : s);
+  };
+  head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.setAttribute('aria-expanded', String(!body.hidden));
+  });
+  learnB.addEventListener('click', () => {
+    learn = !learn;
+    writeJson(PAT_LEARN_KEY, learn);
+    draw();
+  });
+  reset.addEventListener('click', () => set('sndGrid', ''));
+  const draw = () => {
+    const feel = GENRE_FEEL[settings.sndGenre];
+    learnB.hidden = !feel;
+    learnB.classList.toggle('on', learn);
+    learnB.setAttribute('aria-pressed', String(learn));
+    marks = new Set();
+    notes.innerHTML = '';
+    notes.hidden = !feel || !learn;
+    if (!feel || !learn) return;
+    for (const [text, r, steps] of feel) {
+      const hit = steps.map((s) => r * 16 + s).filter(written);
+      hit.forEach((k) => marks.add(k));
+      notes.append(el('p', hit.length ? 'm' : '', text));
+    }
+  };
+  refreshers.push(draw);
+  draw();
+  patPaint = (S) => {
+    if (!box.isConnected || !box.offsetParent) return;
+    const st = Math.floor(S.beatNow * 4) % 16;
+    const ed = settings.sndGrid;
+    const open = !body.hidden;
+    let n = 0;
+    for (let k = 0; k < 64; k++) {
+      const s = k % 16;
+      const hit = s <= st ? S.gridNow[k] : S.gridLast[k];
+      const e = ed[k] ?? '.';
+      if (e !== '.') n++;
+      if (k < 48) {
+        minis[k].classList.toggle('on', !!hit && e !== '-');
+        minis[k].classList.toggle('now', s === st);
+      }
+      if (!open) continue;
+      const c = cells[k];
+      c.classList.toggle('hit', !!hit && e !== '-');
+      c.classList.toggle('ghost', s > st && !!hit);
+      c.classList.toggle('add', e === '+');
+      c.classList.toggle('cut', e === '-');
+      c.classList.toggle('now', s === st);
+      c.classList.toggle('mark', marks.has(k));
+    }
+    const h = open ? 'Close' : n ? `${n} edit${n > 1 ? 's' : ''}` : 'Edit';
+    if (hint.textContent !== h) hint.textContent = h;
+    reset.hidden = !n;
+  };
   return box;
 }
 // What's moving: the Play folder's card. The clock, each moving setting
