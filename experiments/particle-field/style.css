@@ -2939,6 +2939,7 @@ body.gl-only canvas#c { opacity: 0; }
 .sndp-var i { font-style: normal; color: var(--muted); padding: 4px 6px; }
 .sndp-var.on { background: rgba(154, 168, 255, 0.14); font-weight: 650; }
 .sndp-acts { display: flex; gap: 6px; }
+.sndp-acts[hidden] { display: none; }
 .sndp-acts button { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
 .sndp-tracks, .sndp-lines { display: flex; flex-direction: column; border-radius: 14px; background: rgb(255 255 255 / 0.035); overflow: hidden; }
 .sndp-trk, .sndp-line { border-bottom: 1px solid rgb(255 255 255 / 0.05); }
@@ -3147,7 +3148,7 @@ button.sndp-live-name { cursor: pointer; }
 .sndp-live-name small { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .sndp-live-g .sndp-keep { flex: none; align-self: center; }
 .sndp-live-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sndp-live-chips:not(:has(> :not([hidden]))) { display: none; }
+.sndp-live-chips[hidden], .sndp-live-chips > [hidden] { display: none; }
 .sndp-live-credit { margin: 2px 2px 0; font-size: 10.5px; line-height: 1.4; color: var(--muted); }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }

@@ -19,7 +19,7 @@ import type { ParticleSound, SoundParams, Layer, BeatMove, PicMove } from './sou
 import { STYLES, styleById, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre, type DrumKit } from './drums.ts';
 import { GENRE_FEEL } from './beatlearn.ts';
-import { GROOVE_CREDIT, closestGroove, dressFor, grooveById, grooves, groovesNow, type Groove } from './grooves.ts';
+import { GROOVE_CREDIT, closestGroove, dressFor, grooveById, grooveStyles, grooves, groovesNow, type Groove } from './grooves.ts';
 import type { SoundStudio, StudioMode, StudioTab } from './soundview.ts';
 import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLES, cycleLabel, type Anim, type Wave as AWave, type Ease } from './animate.ts';
 import { FieldRender, FIELD_STYLES, SandLayer } from './fieldstyles.ts';
@@ -10029,6 +10029,8 @@ function vibePicker() {
 // Music: genres down the side, each genre's songs on the right. ★ keeps a
 // song (rolled ones too) in Saved; the dice rolls a new song in the genre.
 let musicRail = '';
+// The rail the picker shows with Live drums (grooves by style).
+let liveRail = 'all';
 function musicSongs(id: string): string[] {
   const st = styleById(id);
   if (id === 'yours') return mySoundPresets().map(([n]) => n);
@@ -10063,25 +10065,34 @@ function musicPicker() {
     name: g.name, id: `live:${g.id}`, sub, on: settings.sndDrumSrc === 'live' && settings.sndGroove === g.id, fav: keptGrooves().includes(g.id),
   });
   const keptG = () => keptGrooves().map((id) => G().find((g) => g.id === id)).filter((g): g is Groove => !!g);
-  if (!groovesNow() && (musicRail === 'live' || keptGrooves().length)) void grooves().then(() => picker.draw());
+  if (!groovesNow() && settings.sndDrumSrc === 'live') void grooves().then(() => picker.draw());
+  // With Live drums the picker lists grooves, by the style they were played in.
+  const isLive = () => settings.sndDrumSrc === 'live';
+  const liveRails = (): [string, string, number][] => {
+    const L = G();
+    return [
+      ['saved', '★ Kept', keptG().length],
+      ['all', 'All grooves', L.length || 145],
+      ...grooveStyles(L).map((st): [string, string, number] => [`g:${st}`, st, L.filter((g) => g.style === st).length]),
+    ];
+  };
   const picker = railPicker({
-    rail: () => [
-      ['saved', '★ Saved', allSaved().length + keptG().length],
+    rail: () => isLive() ? liveRails() : [
+      ['saved', '★ Saved', allSaved().length],
       ['all', 'All genres', STYLES.reduce((n, st) => n + styleVars(st).length, 0)],
       ...STYLES.map((st): [string, string, number] => [st.id, st.name, musicSongs(st.id).length]),
       ...(mySoundPresets().length ? [['yours', 'Yours', mySoundPresets().length] as [string, string, number]] : []),
-      ['live', 'Live drums β', G().length || 145],
     ],
-    now: () => musicRail,
+    now: () => (isLive() ? liveRail : musicRail),
     setRail: (id) => {
-      musicRail = id;
-      if (id === 'live' && !groovesNow()) void grooves().then(() => picker.draw());
+      if (isLive()) liveRail = id;
+      else musicRail = id;
     },
     random: {
       skip: [],
       roll: () => {
-        if (musicRail === 'live') {
-          const list = G().filter((g) => g.id !== settings.sndGroove);
+        if (isLive()) {
+          const list = G().filter((g) => g.id !== settings.sndGroove && (liveRail.startsWith('g:') ? g.style === liveRail.slice(2) : liveRail === 'saved' ? keptGrooves().includes(g.id) : true));
           if (list.length) setLive(list[(Math.random() * list.length) | 0]);
           return !!list.length;
         }
@@ -10093,8 +10104,12 @@ function musicPicker() {
       },
     },
     items: () => {
-      if (musicRail === 'live') return G().map((g) => gItem(g));
-      if (musicRail === 'saved') return [...allSaved().map(([st, v]) => item(st, v, st.name)), ...keptG().map((g) => gItem(g, 'Live drums'))];
+      if (isLive()) {
+        if (liveRail === 'saved') return keptG().map((g) => gItem(g));
+        if (liveRail.startsWith('g:')) return G().filter((g) => g.style === liveRail.slice(2)).map((g) => gItem(g));
+        return G().map((g) => gItem(g));
+      }
+      if (musicRail === 'saved') return allSaved().map(([st, v]) => item(st, v, st.name));
       if (musicRail === 'yours') return musicSongs('yours').map((v) => item(null, v));
       if (musicRail === 'all') return STYLES.flatMap((st) => styleVars(st).map((v) => item(st, v, st.name)));
       const st = styleById(musicRail);
@@ -18000,7 +18015,7 @@ const SND_TRACKS: SndTrack[] = [
     sub: () => {
       const g = drumGenre(settings.sndGenre);
       const kit = optLabel(KIT_OPTIONS, settings.sndKit);
-      if (settings.sndDrumSrc === 'live') return `Live · ${grooveById(settings.sndGroove)?.name ?? 'groove'} · ${kit}`;
+      if (settings.sndDrumSrc === 'live') return `MIDI · ${grooveById(settings.sndGroove)?.name ?? 'groove'} · ${kit}`;
       return g ? `${g.beats[settings.sndBeat]?.name ?? g.name} · ${kit}` : `follows the field · ${kit}`;
     } },
   { name: 'Bass', how: 'Plays the root of the chord, low. A calm field holds one long note a bar. As the particles speed up it walks between root and fifth, then plays eighth notes.', key: 'sndBass', dot: '#f0a46a', keys: ['sndBassPattern', 'sndBassMove', 'sndBassWalk', 'sndBassSound', 'sndBassOct', 'sndSub', 'sndBassTone', 'sndBassGlide', 'sndBassLen', 'sndBassGhost'], sub: () => optLabel(BASS_SOUNDS, settings.sndBassSound) },
@@ -18062,7 +18077,7 @@ function useStyle(st: Style | null, v: string, quiet = false) {
   }
   changed(new Set([...SND_LOOK_KEYS, 'sndVol']));
   if (g && !quiet)
-    showToast(`Drums stay Live · ${g.name}`, ["Use this song's beat", () => {
+    showToast(`MIDI drums stay on · ${g.name}`, ["Use this song's beat", () => {
       settings.sndDrumSrc = 'beat';
       settings.sndTempo = songBpm;
       changed(new Set<keyof Settings>(['sndDrumSrc', 'sndTempo']));
@@ -18142,11 +18157,16 @@ function renderSoundPage(body: HTMLElement) {
   const dice = mk('button', 'sndp-dice', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/></svg>');
   dice.setAttribute('aria-label', 'New song');
   dice.title = 'New song in the picked genre (any genre with All genres)';
-  dice.addEventListener('click', randomStyle);
+  dice.addEventListener('click', () => {
+    if (settings.sndDrumSrc !== 'live') return randomStyle();
+    const list = (groovesNow() ?? []).filter((g) => g.id !== settings.sndGroove);
+    if (list.length) setLive(list[(Math.random() * list.length) | 0]);
+  });
   // Save: keeps the song the dice rolled, so it's in the genre's list.
   const keep = mk('button', 'sndp-dice sndp-keep', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>');
   keep.hidden = true;
   keep.addEventListener('click', () => {
+    if (settings.sndDrumSrc === 'live') return settings.sndGroove && keepGroove(settings.sndGroove, !keptGrooves().includes(settings.sndGroove));
     const n = styleNow();
     if (!n.st || !isRoll(n.v)) return;
     const was = savedSongs(n.st.id).includes(n.v);
@@ -18156,6 +18176,15 @@ function renderSoundPage(body: HTMLElement) {
     paintPick();
   });
   const paintKeep = () => {
+    if (settings.sndDrumSrc === 'live') {
+      const on = keptGrooves().includes(settings.sndGroove);
+      keep.hidden = !settings.sndGroove;
+      keep.classList.toggle('on', on);
+      keep.setAttribute('aria-pressed', String(on));
+      keep.setAttribute('aria-label', on ? 'Kept groove' : 'Keep groove');
+      keep.title = on ? 'Kept: tap to remove' : 'Keep this groove';
+      return;
+    }
     const n = styleNow();
     const roll = !!n.st && isRoll(n.v);
     keep.hidden = !roll;
@@ -18213,7 +18242,10 @@ function renderSoundPage(body: HTMLElement) {
     pick.hidden = !pick.hidden;
     sMain.setAttribute('aria-expanded', String(!pick.hidden));
     if (!pick.hidden) {
-      if (musicRail !== 'all' && musicRail !== 'live') musicRail = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : musicRail);
+      if (settings.sndDrumSrc === 'live') {
+        const g = grooveById(settings.sndGroove);
+        if (liveRail !== 'all' && liveRail !== 'saved' && g) liveRail = `g:${g.style}`;
+      } else if (musicRail !== 'all') musicRail = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : musicRail);
       paintPick();
       pick.querySelector<HTMLElement>('.rp-item.on')?.scrollIntoView({ block: 'nearest' });
     }
@@ -18222,21 +18254,18 @@ function renderSoundPage(body: HTMLElement) {
     del.hidden = !settings.sndStyle.startsWith('yours/');
     if (!pick.hidden) picker.draw();
   };
-  openSongPicker = (rail) => {
-    musicRail = rail;
-    if (rail === 'live' && !groovesNow()) void grooves().then(() => picker.draw());
-    pick.hidden = false;
-    sMain.setAttribute('aria-expanded', 'true');
-    paintPick();
-    style.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  };
+
   refreshers.push(() => {
     const n = styleNow();
-    sMain.querySelector('b')!.textContent = n.name + (n.edited ? ' · changed' : '');
-    // With Live drums the style is what plays around the groove.
+    // With Live drums the card is the groove; the style moves to its own row.
     const live = settings.sndDrumSrc === 'live';
-    sMain.querySelector('small')!.textContent = live ? 'Around the drums' : 'Style';
-    sMain.querySelector('span')!.textContent = live ? 'sets the instruments, bass, chords and effects around the groove' : 'sets the instruments, beat, bass, chords, tempo and effects';
+    const g = live ? grooveById(settings.sndGroove) : null;
+    if (live && !groovesNow()) void grooves().then(refresh);
+    sMain.querySelector('b')!.textContent = live ? (g ? g.name : 'Loading grooves…') : n.name + (n.edited ? ' · changed' : '');
+    sMain.querySelector('small')!.textContent = live ? 'Groove' : 'Style';
+    sMain.querySelector('span')!.textContent = live ? (g ? `drummer ${g.drummer} · ${g.bpm} BPM · ${g.bars} bars, as played` : '') : 'sets the instruments, beat, bass, chords, tempo and effects';
+    acts.hidden = live;
+    dice.title = live ? 'Another groove' : 'New song in the picked genre (any genre with All genres)';
     paintKeep();
     paintPick();
   });
@@ -18414,7 +18443,8 @@ function renderSoundPage(body: HTMLElement) {
   vol.append(levelBar('sndVol', 'Volume'), volV);
   refreshers.push(() => (volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off'));
   const studioBtn = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('sound studio'));
-  page.append(liveCard(), style, pick, tabBar, ...panels.map(([, p]) => p));
+  const [liveTabs, liveBody] = liveCard();
+  page.append(liveTabs, style, pick, liveBody, tabBar, ...panels.map(([, p]) => p));
   // Sliders throughout (fill rows), whatever the view.
   page.classList.add('std-fill');
   body.prepend(vol, page);
@@ -18552,9 +18582,7 @@ function setBeat() {
   Object.assign(settings, next);
   changed(new Set(Object.keys(next) as (keyof Settings)[]));
 }
-// Opens the Sound page's song picker on a rail (the Live drums one from the Drums card).
-let openSongPicker: ((rail: string) => void) | null = null;
-function liveCard(): HTMLElement {
+function liveCard(): [HTMLElement, HTMLElement] {
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -18562,46 +18590,31 @@ function liveCard(): HTMLElement {
     if (e instanceof HTMLButtonElement) e.type = 'button';
     return e;
   };
-  const box = el('div', 'sndp-live');
+  // The switch, above the song: which kind of drums play.
   const tabs = el('div', 'mtabs sndp-live-tabs');
   tabs.setAttribute('role', 'group');
-  tabs.setAttribute('aria-label', 'Drums play');
-  const tBeat = el('button', '', 'Written beats');
+  tabs.setAttribute('aria-label', 'Drums');
+  const tBeat = el('button', '', 'Generated');
   const tLive = el('button', '');
-  tLive.innerHTML = 'Live drums <small>beta</small>';
+  tLive.innerHTML = 'MIDI drums <small>beta</small>';
   tabs.append(tBeat, tLive);
+  // Under the groove: the style that plays around it, ‹ › through the styles
+  // that suit the groove first; and the style's own kit.
   const body = el('div', 'sndp-live-body');
-  // The groove: name, who played it, ‹ › through the list, Change, keep.
-  const gRow = el('div', 'sndp-live-g');
-  const prev = el('button', 'sndp-live-step', '‹');
-  prev.setAttribute('aria-label', 'Previous groove');
-  const gMid = el('button', 'sndp-live-name');
-  gMid.innerHTML = '<b></b><small></small>';
-  gMid.title = 'Pick another groove';
-  const next = el('button', 'sndp-live-step', '›');
-  next.setAttribute('aria-label', 'Next groove');
-  const keepB = el('button', 'sndp-dice sndp-keep');
-  keepB.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>';
-  gRow.append(prev, gMid, next, keepB);
-  // A style that suits the groove, offered when the current one doesn't.
-  const dFit = el('button', 'sndp-chip sndp-live-kit');
-  const fitStyle = () => {
-    const g = cur();
-    const ids = g ? dressFor(g.style) : [];
-    return ids.includes(styleNow().st?.id ?? '') ? null : styleById(ids[0] ?? '') ?? null;
-  };
-  dFit.addEventListener('click', () => {
-    const st = fitStyle();
-    if (st) useStyle(st, styleVars(st)[0]);
-  });
-  const dKit = el('button', 'sndp-chip sndp-live-kit');
-  const credit = el('p', 'sndp-live-credit', GROOVE_CREDIT);
+  const dRow = el('div', 'sndp-live-d');
+  const dPrev = el('button', 'sndp-live-step', '‹');
+  dPrev.setAttribute('aria-label', 'Previous style');
+  const dMid = el('div', 'sndp-live-name');
+  dMid.innerHTML = '<small>Around the drums</small><b></b>';
+  const dNext = el('button', 'sndp-live-step', '›');
+  dNext.setAttribute('aria-label', 'Next style');
+  dRow.append(dPrev, dMid, dNext);
+  const dKit = el('button', 'sndp-chip');
   const chips = el('div', 'sndp-live-chips');
-  chips.append(dFit, dKit);
-  body.append(gRow, chips, credit);
-  box.append(tabs, body);
+  chips.append(dKit);
+  const credit = el('p', 'sndp-live-credit', GROOVE_CREDIT);
+  body.append(dRow, chips, credit);
 
-  const list = () => groovesNow() ?? [];
   const cur = () => grooveById(settings.sndGroove);
   const goLive = async () => {
     const all = await grooves();
@@ -18610,16 +18623,19 @@ function liveCard(): HTMLElement {
   };
   tBeat.addEventListener('click', () => settings.sndDrumSrc === 'live' && setBeat());
   tLive.addEventListener('click', () => void goLive());
-  const step = (d: number) => {
-    const L = list();
-    if (!L.length) return;
-    const i = L.findIndex((g) => g.id === settings.sndGroove);
-    setLive(L[(i + d + L.length) % L.length]);
+  // The styles in order: those that suit this groove first, then the rest.
+  const order = () => {
+    const fit = dressFor(cur()?.style ?? '');
+    return [...fit.map((id) => styleById(id)).filter((st): st is Style => !!st), ...STYLES.filter((st) => !fit.includes(st.id))];
   };
-  prev.addEventListener('click', () => step(-1));
-  next.addEventListener('click', () => step(1));
-  gMid.addEventListener('click', () => openSongPicker?.('live'));
-  keepB.addEventListener('click', () => settings.sndGroove && keepGroove(settings.sndGroove, !keptGrooves().includes(settings.sndGroove)));
+  const dress = (d: number) => {
+    const L = order();
+    const i = L.findIndex((st) => st.id === styleNow().st?.id);
+    const st = L[(i + d + L.length) % L.length];
+    useStyle(st, styleVars(st)[0], true);
+  };
+  dPrev.addEventListener('click', () => dress(-1));
+  dNext.addEventListener('click', () => dress(1));
   // The style's own kit (Band has no beat of its own: the acoustic Band kit).
   const styleKit = (): DrumKit | null => (styleNow().st?.id === 'band' ? 'band' : drumGenre(settings.sndGenre)?.kit ?? null);
   dKit.addEventListener('click', () => {
@@ -18629,10 +18645,10 @@ function liveCard(): HTMLElement {
   let sig = '';
   const draw = () => {
     const live = settings.sndDrumSrc === 'live';
-    const g = cur();
-    const st = styleNow().st;
+    const n = styleNow();
     const dk = styleKit();
-    const nxt = [live, g?.id, st?.id, settings.sndGenre, settings.sndKit, keptGrooves().includes(settings.sndGroove), !!groovesNow()].join('|');
+    const fits = !!n.st && dressFor(cur()?.style ?? '').includes(n.st.id);
+    const nxt = [live, settings.sndGroove, n.name, fits, settings.sndKit].join('|');
     if (nxt === sig) return;
     sig = nxt;
     tBeat.classList.toggle('on', !live);
@@ -18641,22 +18657,15 @@ function liveCard(): HTMLElement {
     tLive.setAttribute('aria-pressed', String(live));
     body.hidden = !live;
     if (!live) return;
-    if (!groovesNow()) void grooves().then(() => ((sig = ''), draw()));
-    gMid.querySelector('b')!.textContent = g?.name ?? 'Loading grooves…';
-    gMid.querySelector('small')!.textContent = g ? `Drummer ${g.drummer} · ${g.bpm} BPM · ${g.bars} bars · tap for all` : '';
-    const kept = !!g && keptGrooves().includes(g.id);
-    keepB.classList.toggle('on', kept);
-    keepB.setAttribute('aria-pressed', String(kept));
-    keepB.setAttribute('aria-label', kept ? 'Kept in Saved' : 'Keep in Saved');
-    const fs = fitStyle();
-    dFit.hidden = !fs;
-    if (fs) dFit.textContent = `Play ${fs.name} around it`;
+    dMid.querySelector('b')!.textContent = n.name;
+    dMid.querySelector('small')!.textContent = fits || !cur() ? 'Around the drums' : `Around the drums · ${cur()!.style} suits ${dressFor(cur()!.style).map((id) => styleById(id)?.name).filter(Boolean).slice(0, 2).join(' or ') || 'any style'}`;
     dKit.hidden = !dk || settings.sndKit === dk;
-    if (dk) dKit.textContent = `Use the ${st ? st.name : 'song'} kit (${optLabel(KIT_OPTIONS, dk)})`;
+    if (dk) dKit.textContent = `Use the ${n.st ? n.st.name : 'song'} kit (${optLabel(KIT_OPTIONS, dk)})`;
+    chips.hidden = dKit.hidden;
   };
   refreshers.push(draw);
   draw();
-  return box;
+  return [tabs, body];
 }
 // The Drums track's pattern: a small strip of what's playing that opens into
 // the full grid. Tap a step to add a hit or silence one (the same edits as the
@@ -18712,9 +18721,10 @@ function patternFold(): HTMLElement {
   let learn = readJson<boolean>(PAT_LEARN_KEY, false);
   let marks = new Set<number>();
   // Whether the written beat has a hit on this cell.
+  // (With Live drums, the groove's first bar as the drummer played it.)
   const written = (k: number) => {
-    const g = drumGenre(settings.sndGenre);
-    const bt = g?.beats[settings.sndBeat];
+    const live = settings.sndDrumSrc === 'live';
+    const bt = live ? grooveById(settings.sndGroove)?.beat : drumGenre(settings.sndGenre)?.beats[settings.sndBeat];
     if (!bt) return false;
     const r = Math.floor(k / 16), s = k % 16;
     return [...PAT_CHARS[r]].some((ch) => {
@@ -18739,8 +18749,8 @@ function patternFold(): HTMLElement {
   });
   reset.addEventListener('click', () => set('sndGrid', ''));
   const draw = () => {
-    box.hidden = settings.sndDrumSrc === 'live';
-    const feel = GENRE_FEEL[settings.sndGenre];
+    // Learn is about a genre's written beats, so not for a live groove.
+    const feel = settings.sndDrumSrc === 'live' ? undefined : GENRE_FEEL[settings.sndGenre];
     learnB.hidden = !feel;
     learnB.classList.toggle('on', learn);
     learnB.setAttribute('aria-pressed', String(learn));
