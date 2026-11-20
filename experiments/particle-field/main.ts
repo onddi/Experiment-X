@@ -11812,6 +11812,7 @@ function morphTo(target: Settings, morphSec = settings.morph) {
 
 let hueNow = 0;
 let hueTarget = 0;
+let hueWander = 0;
 // Song variation's picture now, and where it's easing to (see songLookTo).
 const songLook = { hue: 0, sat: 1, bright: 1, zoom: 1 };
 const songLookT = { hue: 0, sat: 1, bright: 1, zoom: 1 };
@@ -11919,8 +11920,12 @@ function musicVisuals(now: number) {
   if (on && (S.audioHue !== 'off' || S.audioBright > 0)) {
     if (S.audioHue === 'beat' && L.beat) hueTarget += S.audioHueAmt;
     if (S.audioHue === 'bar' && L.bar) hueTarget += S.audioHueAmt;
-    if (S.audioHue === 'drift') hueTarget += S.audioHueAmt * (0.1 + L.level * 0.5) * dt;
-    if (S.audioHue !== 'off' && L.drop && S.audioDrop > 0) hueTarget += S.audioHue === 'drop' ? S.audioHueAmt * 3 : 150;
+    // Drift wanders around the palette's own colours (± the Shift by amount,
+    // faster with the energy) and comes back; a drop swings it out for a moment.
+    if (S.audioHue === 'drift') {
+      hueWander += dt * (0.05 + L.level * 0.25);
+      hueTarget = Math.sin(hueWander) * S.audioHueAmt + (S.audioDrop > 0 ? 120 * L.dropEnv : 0);
+    } else if (S.audioHue !== 'off' && L.drop && S.audioDrop > 0) hueTarget += S.audioHue === 'drop' ? S.audioHueAmt * 3 : 150;
     hueNow += (hueTarget - hueNow) * Math.min(1, dt * 5);
     // A light background would tint and glow with the filter, so paper-like
     // palettes only get the saturation.
