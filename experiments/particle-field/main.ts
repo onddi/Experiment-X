@@ -18233,6 +18233,10 @@ function renderSoundPage(body: HTMLElement) {
   refreshers.push(() => {
     const n = styleNow();
     sMain.querySelector('b')!.textContent = n.name + (n.edited ? ' · changed' : '');
+    // With Live drums the style is what plays around the groove.
+    const live = settings.sndDrumSrc === 'live';
+    sMain.querySelector('small')!.textContent = live ? 'Around the drums' : 'Style';
+    sMain.querySelector('span')!.textContent = live ? 'sets the instruments, bass, chords and effects around the groove' : 'sets the instruments, beat, bass, chords, tempo and effects';
     paintKeep();
     paintPick();
   });
@@ -18272,7 +18276,7 @@ function renderSoundPage(body: HTMLElement) {
     det.style.setProperty('--accent-bg', `color-mix(in oklch, ${t.dot} 18%, transparent)`);
     // What drives it: how the particles play this part.
     det.append(mk('p', 'sndp-how', t.how));
-    if (t.beats) det.append(liveCard(), beatChips(), patternFold());
+    if (t.beats) det.append(beatChips(), patternFold());
     for (const k of t.keys) {
       const e = take(k);
       if (e) det.append(e);
@@ -18410,7 +18414,7 @@ function renderSoundPage(body: HTMLElement) {
   vol.append(levelBar('sndVol', 'Volume'), volV);
   refreshers.push(() => (volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off'));
   const studioBtn = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('sound studio'));
-  page.append(style, pick, tabBar, ...panels.map(([, p]) => p));
+  page.append(liveCard(), style, pick, tabBar, ...panels.map(([, p]) => p));
   // Sliders throughout (fill rows), whatever the view.
   page.classList.add('std-fill');
   body.prepend(vol, page);
@@ -18550,10 +18554,6 @@ function setBeat() {
 }
 // Opens the Sound page's song picker on a rail (the Live drums one from the Drums card).
 let openSongPicker: ((rail: string) => void) | null = null;
-// Dress: the instruments around the groove. "Keep my song" leaves them; a genre
-// plays its first song around the drums (Undo by stepping back to Keep my song).
-let dressI = 0;
-let dressWas: Record<string, unknown> | null = null;
 function liveCard(): HTMLElement {
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
     const e = document.createElement(tag);
@@ -18566,9 +18566,9 @@ function liveCard(): HTMLElement {
   const tabs = el('div', 'mtabs sndp-live-tabs');
   tabs.setAttribute('role', 'group');
   tabs.setAttribute('aria-label', 'Drums play');
-  const tBeat = el('button', '', 'Beat');
+  const tBeat = el('button', '', 'Written beats');
   const tLive = el('button', '');
-  tLive.innerHTML = 'Live <small>beta</small>';
+  tLive.innerHTML = 'Live drums <small>beta</small>';
   tabs.append(tBeat, tLive);
   const body = el('div', 'sndp-live-body');
   // The groove: name, who played it, ‹ › through the list, Change, keep.
@@ -18583,18 +18583,22 @@ function liveCard(): HTMLElement {
   const keepB = el('button', 'sndp-dice sndp-keep');
   keepB.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>';
   gRow.append(prev, gMid, next, keepB);
-  // Dress.
-  const dRow = el('div', 'sndp-live-d');
-  const dPrev = el('button', 'sndp-live-step', '‹');
-  dPrev.setAttribute('aria-label', 'Previous dress');
-  const dMid = el('div', 'sndp-live-name');
-  dMid.innerHTML = '<small>Dress · what plays around the drums</small><b></b>';
-  const dNext = el('button', 'sndp-live-step', '›');
-  dNext.setAttribute('aria-label', 'Next dress');
-  dRow.append(dPrev, dMid, dNext);
+  // A style that suits the groove, offered when the current one doesn't.
+  const dFit = el('button', 'sndp-chip sndp-live-kit');
+  const fitStyle = () => {
+    const g = cur();
+    const ids = g ? dressFor(g.style) : [];
+    return ids.includes(styleNow().st?.id ?? '') ? null : styleById(ids[0] ?? '') ?? null;
+  };
+  dFit.addEventListener('click', () => {
+    const st = fitStyle();
+    if (st) useStyle(st, styleVars(st)[0]);
+  });
   const dKit = el('button', 'sndp-chip sndp-live-kit');
   const credit = el('p', 'sndp-live-credit', GROOVE_CREDIT);
-  body.append(gRow, dRow, dKit, credit);
+  const chips = el('div', 'sndp-live-chips');
+  chips.append(dFit, dKit);
+  body.append(gRow, chips, credit);
   box.append(tabs, body);
 
   const list = () => groovesNow() ?? [];
@@ -18616,46 +18620,19 @@ function liveCard(): HTMLElement {
   next.addEventListener('click', () => step(1));
   gMid.addEventListener('click', () => openSongPicker?.('live'));
   keepB.addEventListener('click', () => settings.sndGroove && keepGroove(settings.sndGroove, !keptGrooves().includes(settings.sndGroove)));
-  // Dress: the genres that suit this groove's style first, then the rest.
-  const dresses = () => {
-    const fit = new Set(dressFor(cur()?.style ?? ''));
-    return ['', ...STYLES.filter((st) => fit.has(st.id)).map((st) => st.id), ...STYLES.filter((st) => !fit.has(st.id)).map((st) => st.id)];
-  };
-  const dress = (d: number) => {
-    const D = dresses();
-    const i = (dressI + d + D.length) % D.length;
-    const S = settings as unknown as Record<string, unknown>;
-    if (dressI === 0) dressWas = Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, S[k]]));
-    dressI = i;
-    const st = styleById(D[i]);
-    if (st) useStyle(st, styleVars(st)[0], true);
-    else if (dressWas) {
-      const g = cur();
-      Object.assign(settings, dressWas);
-      if (g) settings.sndTempo = g.bpm;
-      changed(new Set(SND_LOOK_KEYS));
-      dressWas = null;
-    }
-    draw();
-  };
-  dPrev.addEventListener('click', () => dress(-1));
-  dNext.addEventListener('click', () => dress(1));
-  // The dress's own kit (Band has no beat of its own: the acoustic Band kit).
-  const dressKit = (): DrumKit | null => {
-    const st = styleById(dresses()[dressI]);
-    return st?.id === 'band' ? 'band' : drumGenre(st ? st.beat : settings.sndGenre)?.kit ?? null;
-  };
+  // The style's own kit (Band has no beat of its own: the acoustic Band kit).
+  const styleKit = (): DrumKit | null => (styleNow().st?.id === 'band' ? 'band' : drumGenre(settings.sndGenre)?.kit ?? null);
   dKit.addEventListener('click', () => {
-    const k = dressKit();
+    const k = styleKit();
     if (k) set('sndKit', k);
   });
   let sig = '';
   const draw = () => {
     const live = settings.sndDrumSrc === 'live';
     const g = cur();
-    const st = styleById(dresses()[dressI]);
-    const dk = dressKit();
-    const nxt = [live, g?.id, dressI, settings.sndKit, keptGrooves().includes(settings.sndGroove), !!groovesNow()].join('|');
+    const st = styleNow().st;
+    const dk = styleKit();
+    const nxt = [live, g?.id, st?.id, settings.sndGenre, settings.sndKit, keptGrooves().includes(settings.sndGroove), !!groovesNow()].join('|');
     if (nxt === sig) return;
     sig = nxt;
     tBeat.classList.toggle('on', !live);
@@ -18671,7 +18648,9 @@ function liveCard(): HTMLElement {
     keepB.classList.toggle('on', kept);
     keepB.setAttribute('aria-pressed', String(kept));
     keepB.setAttribute('aria-label', kept ? 'Kept in Saved' : 'Keep in Saved');
-    dMid.querySelector('b')!.textContent = st ? st.name : 'Keep my song';
+    const fs = fitStyle();
+    dFit.hidden = !fs;
+    if (fs) dFit.textContent = `Play ${fs.name} around it`;
     dKit.hidden = !dk || settings.sndKit === dk;
     if (dk) dKit.textContent = `Use the ${st ? st.name : 'song'} kit (${optLabel(KIT_OPTIONS, dk)})`;
   };
