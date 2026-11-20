@@ -22801,8 +22801,11 @@ function uPlace() {
       if (!ubar.matches(':hover') && !dockMoreEl?.classList.contains('open')) ubar.classList.add('rest');
     }, 2600);
   };
-  window.addEventListener('pointermove', (e) => e.pointerType === 'mouse' && wake(), { passive: true });
+  // Desktop: only the mouse near the bottom edge brings it back, so moving
+  // around the field leaves the stage clear. It shows briefly on load.
+  window.addEventListener('pointermove', (e) => e.pointerType === 'mouse' && e.clientY > innerHeight - 140 && wake(), { passive: true });
   ubar.addEventListener('pointerleave', wake);
+  wake();
   addEventListener('resize', () => uPaint(true));
 }
 ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
