@@ -11784,6 +11784,11 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
   // else off. Lock the Lens card to keep yours through scene changes.
   const target = { ...DEFAULTS, ...(keepAudio ? audioSettings() : {}), ...p, ...playSettings(), ...own, ...hands } as Settings;
   for (const k of MUSIC_KEYS) if (keepAudio && !(k in p) && fromScene(k)) (target as unknown as Record<string, unknown>)[k] = D[k];
+  // A scene with its own Sound setup brings all of it: what it doesn't mention
+  // (settings added since it was made, like MIDI drums) goes back to the
+  // default instead of staying as the last scene left it.
+  if (keepAudio && SND_KEYS.some((k) => k !== 'sndVol' && k in p))
+    for (const k of SND_KEYS) if (k !== 'sndVol' && !(k in p)) (target as unknown as Record<string, unknown>)[k] = D[k];
   // Locked cards keep what they have, whichever scene loads.
   for (const k of lockedKeys()) (target as unknown as Record<string, unknown>)[k] = settings[k];
   // The screen fit belongs to the room, not the scene.
