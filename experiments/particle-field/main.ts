@@ -2498,6 +2498,12 @@ function modelTick(now: number) {
   modelT += dt * S.modelSpeed * beat;
   poseModel(Math.min(clip, clips.length - 1), modelT, slot);
 }
+// A clip's name as words: "ThumbsUp" → "Thumbs up"; a lone clip with a file name ("horse_A_") just moves.
+function clipLabel(name: string, count: number) {
+  if (count === 1 && /_/.test(name)) return 'Moving';
+  const t = name.replace(/_+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim().toLowerCase();
+  return t ? t[0].toUpperCase() + t.slice(1) : name;
+}
 const modelSolid = () => settings.shape === 'solid' && MODEL_SOLIDS.includes(settings.shapeSolid);
 const shownClips = () => (modelSolid() ? modelClips(settings.shapeSolid) : []);
 // The bundled animated examples (textures stripped; credits in models/README.md):
@@ -10841,7 +10847,8 @@ const CONTROLS: Control[] = [
   { kind: 'buttons', buttons: [['New seed', () => set('patSeed', settings.patSeed + 1)]], show: () => settings.shape === 'pattern' && isFillPattern(settings.shapePattern) },
   { kind: 'select', key: 'shapeSolid', label: 'Solid', options: SOLID_SHAPES, show: () => settings.shape === 'solid' },
   { kind: 'buttons', buttons: [['Load a 3D model…', () => modelInput.click()]], show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
-  { kind: 'range', key: 'modelClip', label: 'Animation', min: 0, max: 32, step: 1, format: (v) => { const c = shownClips(); return v === 0 ? 'still' : c[Math.min(v, c.length) - 1]?.name ?? '—'; }, show: () => shownClips().length > 0 },
+  // The model's own moves by name (a list, since each model has its own).
+  { kind: 'select', key: 'modelClip', label: 'Animation', get options(): [string, string][] { return [['0', 'Still'], ...shownClips().map((c, i): [string, string] => [String(i + 1), clipLabel(c.name, shownClips().length)])]; }, show: () => shownClips().length > 0 },
   { kind: 'range', key: 'modelSpeed', label: 'Animation speed', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(2)}×`, show: () => shownClips().length > 0 && settings.modelClip > 0 },
   { kind: 'toggle', key: 'modelBeat', label: 'Speed follows the music', show: () => shownClips().length > 0 && settings.modelClip > 0 },
   { kind: 'note', text: 'OBJ, STL or GLB files. A GLB with animations (bones or blend shapes) plays them; FBX can be turned into GLB in Blender. Until you load one it shows an example rocket. Used for this session only.', show: () => settings.shape === 'solid' && settings.shapeSolid === 'model' },
@@ -11490,6 +11497,8 @@ const refreshers: (() => void)[] = [];
 const pauseButtons: HTMLButtonElement[] = [];
 
 function set<K extends keyof Settings>(k: K, v: Settings[K]) {
+  // A list that picks a number hands it over as text.
+  if (typeof settings[k] === 'number' && typeof v === 'string') v = Number(v) as Settings[K];
   if (settings[k] === v) return;
   settings[k] = v;
   changed(new Set([k]));
@@ -12825,7 +12834,7 @@ function heldLabel(k: string, v: unknown) {
   const c = CONTROLS.find((x) => 'key' in x && x.key === k);
   if (!c || !('label' in c)) return `${k} ${String(v)}`;
   if (c.kind === 'range') return `${c.label} ${c.format ? c.format(v as number) : String(v)}`;
-  if (c.kind === 'select') return `${c.label}: ${c.options.find(([o]) => o === v)?.[1] ?? String(v)}`;
+  if (c.kind === 'select') return `${c.label}: ${c.options.find(([o]) => o === String(v))?.[1] ?? String(v)}`;
   return `${c.label}: ${v === true ? 'on' : v === false ? 'off' : String(v)}`;
 }
 let tlIdx = -1; // clip playing, -1 before the start
@@ -19756,7 +19765,7 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
     };
   }
   const step = (d: number) => {
-    const i = c.options.findIndex(([k]) => k === src.get(c.key));
+    const i = c.options.findIndex(([k]) => k === String(src.get(c.key)));
     const n = c.options.length;
     src.put(c.key, c.options[(i + d + n) % n][0]);
   };
@@ -19781,7 +19790,7 @@ function rackRow(c: Extract<Control, { kind: 'select' | 'choice' | 'toggle' }>, 
   return {
     el,
     update: () => {
-      txt.textContent = c.options.find(([k]) => k === src.get(c.key))?.[1] ?? String(src.get(c.key));
+      txt.textContent = c.options.find(([k]) => k === String(src.get(c.key)))?.[1] ?? String(src.get(c.key));
       if (fontPick) {
         addFontCss();
         txt.style.cssText = fontStyle(String(src.get(c.key)));
