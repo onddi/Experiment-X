@@ -388,6 +388,7 @@ Object.assign(TIPS, {
   sndSeqStyle: 'How a step plays its crowded rows: all at once, strummed low to high, or one note a step as an arpeggio (up, down, up and down, or random).',
   sndSeqVary: 'Makes Steps less mechanical: louder and softer notes, the odd rest, octave jumps and quick repeats.',
   sndSeqTick: 'A soft tick on the off beats that keeps time under the Steps.',
+  sndSeqTickSound: 'A tick on every eighth note that keeps time under the Steps, louder on the beat. Pick its sound, or Off.',
   sndGrainSound: 'What the grains are made of: the tiny sounds each moving particle makes.',
   sndGrainRate: 'How many grains play. Higher is a denser crackle or rain.',
   sndGrainLen: 'How long each grain lasts, from a tiny click to a short note.',

@@ -281,6 +281,8 @@ export interface Settings {
   sndSeqStyle: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random';
   sndSeqVary: number;
   sndSeqTick: boolean;
+  /** The pulse tick's sound (off turns it off; older saves use sndSeqTick). */
+  sndSeqTickSound: string;
   sndScanDir: 'across' | 'down' | 'bounce' | 'radar';
   sndScanSound: import('./sound.ts').HitSound;
   sndScanNotes: number;
@@ -960,6 +962,7 @@ export const DEFAULTS: Settings = {
   sndSeqStyle: 'chord',
   sndSeqVary: 0,
   sndSeqTick: true,
+  sndSeqTickSound: 'soft',
   sndScanDir: 'across',
   sndScanSound: 'same',
   sndScanNotes: 4,

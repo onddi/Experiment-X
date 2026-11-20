@@ -281,7 +281,7 @@ export interface SoundParams {
   seqSens?: number; // 0 … 1: how small a crowd still plays (0.5 = as before)
   seqStyle?: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random'; // how a step's notes play
   seqVary?: number; // 0 … 1: accents, skips, octave jumps and quick repeats
-  seqTick?: boolean; // the soft pulse tick
+  seqTick?: string; // the pulse tick's sound ('off': none)
   scan: number;
   scanSecs: number;
   scanDir?: 'across' | 'down' | 'bounce' | 'radar';
@@ -1899,6 +1899,22 @@ export class ParticleSound {
     src.onended = () => pn.disconnect();
   }
 
+  // The Steps' pulse tick, on the eighth notes (k: louder on the beat).
+  private pulseTick(kind: string, k: number, pan: number) {
+    switch (kind) {
+      case 'click': return this.body(0, 1800, 1700, 0.01, 0.03, 0.16 * k, 'sine', 0.05);
+      case 'wood': return this.body(0, 1100, 950, 0.02, 0.07, 0.22 * k, 'triangle', 0.15);
+      case 'rim': return this.body(0, 1750, 1680, 0.01, 0.045, 0.2 * k, 'triangle', 0.12);
+      case 'shaker': return this.hiss(0, 'highpass', 6500, 0.8, 0.012, 0.05, 0.12 * k, pan * 0.6, 0.15);
+      case 'cowbell':
+        this.body(0, 560, 555, 0.01, 0.12, 0.07 * k, 'square', 0.1);
+        return this.body(0, 845, 840, 0.01, 0.12, 0.05 * k, 'square', 0.1);
+      case 'hat': return this.hiss(0, 'highpass', 8500, 0.8, 0.001, 0.035, 0.14 * k, pan * 0.4, 0.1);
+      // Soft: a breath of noise, as before (on time now, without the grains' jitter).
+      default: return this.hiss(0, 'bandpass', 5000, 6, 0.004, 0.012, 0.1 * k, pan, 0.1);
+    }
+  }
+
   // One grain in the chosen sound. Height sets the pitch or brightness, x the pan.
   private grainOf(x: number, y: number, w: number, h: number, amt: number, speed: number) {
     const P = this.p;
@@ -3252,7 +3268,7 @@ export class ParticleSound {
       // tone), with a soft tick for the pulse.
       if (P.seq > 0) {
         this.cur = 'steps';
-        if (s % 2 === 0 && !onKick && P.seqTick !== false && this.audible('steps')) this.grain(x0, h * 0.15, w, h, P.seq * (s % 4 === 0 ? 0.35 : 0.18), 0.9, 0.012, 0.1);
+        if (s % 2 === 0 && !onKick && (P.seqTick ?? 'soft') !== 'off' && this.audible('steps')) this.pulseTick(P.seqTick ?? 'soft', P.seq * (s % 4 === 0 ? 1 : 0.55), (x0 / w) * 1.6 - 0.8);
         let played = 0;
         const every = P.seqRate ?? 1;
         if (tot && s % every === 0 && gate()) {
