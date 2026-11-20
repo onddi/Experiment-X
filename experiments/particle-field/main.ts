@@ -5486,11 +5486,24 @@ function emitOne(i: number) {
       break;
     }
     case 'edges': {
-      const side = (Math.random() * 4) | 0;
-      x = side === 0 ? 0 : side === 1 ? w - 0.5 : Math.random() * w;
-      y = side === 2 ? 0 : side === 3 ? h - 0.5 : Math.random() * h;
-      nx = side === 0 ? 1 : side === 1 ? -1 : 0;
-      ny = side === 2 ? 1 : side === 3 ? -1 : 0;
+      // The edges of the screen as you see it: with the view spinning, pick
+      // a point on the screen's edge and turn it back into the field, so
+      // births never draw the field's own (rotated) border as a line.
+      for (let tries = 0; tries < 8; tries++) {
+        const side = (Math.random() * 4) | 0;
+        x = side === 0 ? 0 : side === 1 ? w - 0.5 : Math.random() * w;
+        y = side === 2 ? 0 : side === 3 ? h - 0.5 : Math.random() * h;
+        nx = side === 0 ? 1 : side === 1 ? -1 : 0;
+        ny = side === 2 ? 1 : side === 3 ? -1 : 0;
+        if (camA === 0) break;
+        [x, y] = unspin(x, y);
+        const c = Math.cos(-camA);
+        const sn = Math.sin(-camA);
+        [nx, ny] = [nx * c - ny * sn, nx * sn + ny * c];
+        if (x >= 0 && y >= 0 && x < w && y < h) break;
+      }
+      x = Math.min(w - 0.5, Math.max(0, x));
+      y = Math.min(h - 0.5, Math.max(0, y));
       break;
     }
   }
