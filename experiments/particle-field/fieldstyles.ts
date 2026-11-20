@@ -6,12 +6,22 @@
 // edges stay soft at a fraction of the cost of full resolution.
 
 type Rgb = readonly [number, number, number] | number[];
-export type FieldStyle = 'liquid' | 'cells' | 'contours' | 'smoke' | 'wash' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime';
-export const FIELD_STYLES = new Set<string>(['liquid', 'cells', 'contours', 'smoke', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime']);
+/** What Frost draws its crystals with: the 2D context, or the GPU pen that acts like one. */
+export type FieldPen = Pick<CanvasRenderingContext2D, 'beginPath' | 'moveTo' | 'lineTo' | 'arc' | 'stroke' | 'fill'> & {
+  strokeStyle: string | CanvasGradient | CanvasPattern;
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  lineWidth: number;
+  globalAlpha: number;
+  lineCap: CanvasLineCap;
+};
+export type FieldStyle = 'liquid' | 'cells' | 'contours' | 'smoke' | 'wash' | 'lava' | 'terrain' | 'caustics' | 'aurora' | 'marbling' | 'rain' | 'slime' | 'turing' | 'ferro' | 'frost' | 'flames' | 'stained';
+export const FIELD_STYLES = new Set<string>(['liquid', 'cells', 'contours', 'smoke', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'turing', 'ferro', 'frost', 'flames', 'stained']);
 // How many grid cells each look gets on a phone (sharp edges need more).
-const CELLS: Partial<Record<FieldStyle, number>> = { liquid: 130000, contours: 130000, lava: 130000, cells: 90000, caustics: 90000, marbling: 90000, slime: 90000, terrain: 70000 };
+// Reaction-diffusion runs many steps a frame, and its pattern is a few cells
+// wide, so it gets a coarser grid (which also makes the pattern bigger).
+const CELLS: Partial<Record<FieldStyle, number>> = { liquid: 130000, contours: 130000, lava: 130000, cells: 90000, caustics: 90000, marbling: 90000, slime: 90000, terrain: 70000, turing: 26000, ferro: 130000, stained: 90000 };
 // Glowing looks add light on a dark background.
-const ADDS = new Set<FieldStyle>(['aurora', 'slime']);
+const ADDS = new Set<FieldStyle>(['aurora', 'slime', 'flames']);
 // A cheap smooth noise, -1..1.
 const wob = (x: number, y: number, t: number) => (Math.sin(x * 0.21 + t * 1.3 + Math.sin(y * 0.13 - t * 0.7) * 2) + Math.sin(y * 0.17 - t * 1.1 + Math.sin(x * 0.09 + t * 0.5) * 2)) * 0.5;
 // A colour ramp: stops at even steps along 0..1.
@@ -109,10 +119,15 @@ export class FieldRender {
   private vw = new Float32Array(0);
   // Rain on water: the surface now and a frame ago, and the colour the drops leave.
   private rain: Float32Array[] = [];
+  // Reaction-diffusion: the two chemicals (now and next), and whether they're set up.
+  private rd: Float32Array[] = [];
+  private rdReady = false;
   private dropP = 0;
   private c3 = [0, 0, 0];
   /** Softness, 0..1 (0.5 is the default look). */
   soft = 0.5;
+  /** The music's low end, 0..1 (Ferrofluid's spikes rise with it). */
+  bass = 0;
   private lavaFor: Rgb[] | null = null;
   private lavaRamp: number[][] = [];
 
@@ -151,6 +166,8 @@ export class FieldRender {
       this.vv = new Float32Array(N);
       this.vw = new Float32Array(N);
       this.rain = [0, 1, 2, 3, 4, 5].map(() => new Float32Array(N));
+      this.rd = [0, 1, 2, 3].map(() => new Float32Array(N));
+      this.rdReady = false;
       this.canvas.width = gw;
       this.canvas.height = gh;
       this.img = this.g.createImageData(gw, gh);
@@ -168,7 +185,7 @@ export class FieldRender {
     this.dropP = Math.min(0.5, 0.7 / Math.max(1, total));
     this.sx.length = this.sy.length = this.sk.length = 0;
     // A cell about 40 px across on a phone; fewer, bigger cells for a crowd.
-    this.maxSeeds = Math.round(Math.min(700, Math.max(120, (w * h) / 1500)));
+    this.maxSeeds = Math.round(Math.min(700, Math.max(120, (w * h) / 1500)) * (style === 'stained' ? 0.45 : 1));
     this.stride = Math.max(1, Math.ceil(total / this.maxSeeds));
   }
 
@@ -204,7 +221,7 @@ export class FieldRender {
       }
       return;
     }
-    if (this.style === 'cells') {
+    if (this.style === 'cells' || this.style === 'stained') {
       for (const i of list) {
         if (i % this.stride || this.sx.length >= this.maxSeeds) continue;
         this.sx.push(px[i]);
@@ -284,21 +301,29 @@ export class FieldRender {
   forget() {
     for (const a of this.sm) a.fill(0);
     for (const a of this.rain) a.fill(0);
+    this.rdReady = false;
+    this.frosts.length = 0;
   }
 
   /**
    * Draw the frame onto ctx (in CSS pixels). s: the particle size; t: seconds;
    * dt: this frame's seconds; light: a light background.
    */
-  draw(ctx: CanvasRenderingContext2D, s: number, t: number, dt: number, light: boolean, alpha = 1) {
+  draw(ctx: CanvasRenderingContext2D, s: number, t: number, dt: number, light: boolean, alpha = 1, pen: FieldPen = ctx) {
     const st = this.style;
     if (st === 'contours') {
       if (!this.any) return;
       this.contours(s, light);
-    } else if (st === 'cells') {
+    } else if (st === 'cells' || st === 'stained') {
       if (!this.sx.length) return;
-      this.cells(s, light);
-    } else if (st === 'smoke') this.smoke(s, t, dt, light);
+      this.cells(s, light, st === 'stained', t);
+    } else if (st === 'turing') this.turing(s, dt, light);
+    else if (st === 'ferro') {
+      if (!this.any) return;
+      this.ferro(s, t, light);
+    } else if (st === 'frost') return this.frost(pen, s, t, dt, light, alpha);
+    else if (st === 'flames') this.flames(s, t, dt);
+    else if (st === 'smoke') this.smoke(s, t, dt, light);
     else if (st === 'lava') {
       if (!this.any) return;
       this.lava(s, t);
@@ -771,7 +796,7 @@ export class FieldRender {
 
   // Cells: each pixel belongs to its nearest particle. A thin bright wall
   // where two meet; inside, a glow round the particle like a nucleus.
-  private cells(s: number, light: boolean) {
+  private cells(s: number, light: boolean, glass = false, t = 0) {
     const { gw, gh, c, sx, sy, sk } = this;
     const ns = sx.length;
     const B = Math.max(8, Math.sqrt((this.w * this.h) / ns));
@@ -842,6 +867,23 @@ export class FieldRender {
         // Distance to the wall: to the line halfway between the two nearest.
         const e = j2 >= 0 ? (d2 - d1) / Math.max(1e-3, Math.hypot(sx[j2] - sx[j1], sy[j2] - sy[j1])) : B;
         const col = this.rgb[sk[j1]] ?? [255, 255, 255];
+        if (glass) {
+          // Stained glass: lead between the panes; each pane lit from behind,
+          // brightest toward the top left, with the glass's own ripples.
+          const lead = Math.max(1.6, s * 0.9);
+          const inLead = clamp01(1 - (e * 0.5 - lead) / c);
+          const sun = 0.55 + 0.45 * clamp01(1 - (X / this.w) * 0.6 - (Y / this.h) * 0.6 + 0.3);
+          const ripple = 0.86 + 0.14 * wob(X * 0.11 + sk[j1] * 7, Y * 0.11 + j1, t * 0.15);
+          // A little shade along the lead, as the glass sits in its frame.
+          const rim = 1 - 0.35 * clamp01(1 - (e * 0.5 - lead) / (c * 4 + lead * 2));
+          const k = sun * ripple * rim * (light ? 1 : 1.12);
+          const lr = light ? 40 : 18, lg = light ? 38 : 16, lb = light ? 36 : 14;
+          d[o] = Math.min(255, col[0] * k) * (1 - inLead) + lr * inLead;
+          d[o + 1] = Math.min(255, col[1] * k) * (1 - inLead) + lg * inLead;
+          d[o + 2] = Math.min(255, col[2] * k) * (1 - inLead) + lb * inLead;
+          d[o + 3] = 255;
+          continue;
+        }
         // Inside: dim colour, brighter toward the middle, and the nucleus itself.
         const glow = 0.28 + 0.4 * clamp01(1 - r1 / (B * 0.75)) ** 2;
         const core = clamp01((nuc - r1) / c + 0.5);
@@ -868,6 +910,286 @@ export class FieldRender {
         d[o + 2] = b;
         d[o + 3] = 235;
       }
+    }
+  }
+
+  // Reaction-diffusion (Gray-Scott): two chemicals, one feeding on the other,
+  // grow coral and spots wherever the particles have been. Particles seed it
+  // and keep it alive; where they leave, it starves and shrinks back.
+  private turing(s: number, dt: number, light: boolean) {
+    const { gw, gh } = this;
+    const N = gw * gh;
+    let [U, V, U2, V2] = this.rd;
+    if (!this.rdReady) {
+      U.fill(1);
+      V.fill(0);
+      this.rdReady = true;
+    }
+    const norm = this.any ? this.blur(Math.max(4, s * 3), true, 1) : 0;
+    const [L, R, G, B] = this.sm;
+    const { dens, cr, cg, cb } = this;
+    const f = Math.min(3, dt * 60);
+    const keep = Math.pow(0.992, f);
+    for (let i = 0; i < N; i++) {
+      const D = dens[i] * norm;
+      L[i] = L[i] * keep + D * 0.05 * f;
+      R[i] = R[i] * keep + cr[i] * norm * 0.05 * f;
+      G[i] = G[i] * keep + cg[i] * norm * 0.05 * f;
+      B[i] = B[i] * keep + cb[i] * norm * 0.05 * f;
+      // A few fresh seeds where the crowd is.
+      if (D > 0.4 && V[i] < 0.2 && Math.random() < 0.004 * f) V[i] = 0.6;
+    }
+    // Coral: feed 0.055, kill 0.062. Kill rises where nothing lives, so the
+    // pattern dies back there.
+    const F = 0.0545;
+    const steps = Math.round(6 * Math.min(1.5, f));
+    for (let k = 0; k < steps; k++) {
+      for (let y = 1; y < gh - 1; y++) {
+        for (let x = 1; x < gw - 1; x++) {
+          const i = y * gw + x;
+          const u = U[i];
+          const v = V[i];
+          const lu = (U[i - 1] + U[i + 1] + U[i - gw] + U[i + gw]) * 0.2 + (U[i - gw - 1] + U[i - gw + 1] + U[i + gw - 1] + U[i + gw + 1]) * 0.05 - u;
+          const lv = (V[i - 1] + V[i + 1] + V[i - gw] + V[i + gw]) * 0.2 + (V[i - gw - 1] + V[i - gw + 1] + V[i + gw - 1] + V[i + gw + 1]) * 0.05 - v;
+          const life = L[i];
+          const K = 0.062 + 0.012 * clamp01(1 - life * 3);
+          const uvv = u * v * v;
+          U2[i] = u + (lu - uvv + F * (1 - u));
+          V2[i] = v + (0.5 * lv + uvv - (K + F) * v);
+        }
+      }
+      [U, U2] = [U2, U];
+      [V, V2] = [V2, V];
+    }
+    this.rd = [U, V, U2, V2];
+    const d = this.img!.data;
+    const mid = this.rgb[(this.rgb.length / 2) | 0] ?? [255, 255, 255];
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const i = y * gw + x;
+        const o = i * 4;
+        const v = V[i];
+        const a = clamp01((v - 0.12) * 7);
+        if (a <= 0 || x === 0 || y === 0 || x === gw - 1 || y === gh - 1) {
+          d[o + 3] = 0;
+          continue;
+        }
+        // Lit like a relief: the ridges catch the light from the top left.
+        const sh = clamp01(0.75 + (V[i - 1] - V[i + 1] + V[i - gw] - V[i + gw]) * 3);
+        const w = L[i];
+        const inv = w > 0.002 ? 1 / w : 0;
+        const r = inv ? R[i] * inv : mid[0];
+        const g = inv ? G[i] * inv : mid[1];
+        const b = inv ? B[i] * inv : mid[2];
+        const k = (light ? 0.75 : 0.65) + sh * 0.55;
+        d[o] = Math.min(255, r * k);
+        d[o + 1] = Math.min(255, g * k);
+        d[o + 2] = Math.min(255, b * k);
+        d[o + 3] = a * 255;
+      }
+    }
+  }
+
+  // Ferrofluid: a black, glossy liquid. Where it's deep it stands up in a
+  // lattice of spikes, taller with the bass; the rims catch the palette.
+  private ferro(s: number, t: number, light: boolean) {
+    const norm = this.blur(Math.max(7, s * 5), true);
+    const { gw, gh, c, dens, cr, cg, cb, tmp } = this;
+    const d = this.img!.data;
+    const th = 0.35;
+    const lam = Math.max(9, s * 6);
+    const kf = (Math.PI * 2) / lam;
+    const amp = 0.55 + 1.6 * this.bass;
+    const rot = t * 0.03;
+    const a1x = Math.cos(rot) * kf, a1y = Math.sin(rot) * kf;
+    const a2x = Math.cos(rot + 2.094) * kf, a2y = Math.sin(rot + 2.094) * kf;
+    const a3x = Math.cos(rot + 4.189) * kf, a3y = Math.sin(rot + 4.189) * kf;
+    // The height: the pool, plus spikes where it's deep enough.
+    for (let y = 0; y < gh; y++) {
+      const Y = y * c;
+      for (let x = 0; x < gw; x++) {
+        const i = y * gw + x;
+        const D = Math.min(2, dens[i] * norm);
+        if (D < th * 0.5) {
+          tmp[i] = D;
+          continue;
+        }
+        const X = x * c;
+        const hex = (Math.cos(a1x * X + a1y * Y) + Math.cos(a2x * X + a2y * Y) + Math.cos(a3x * X + a3y * Y)) / 3;
+        const sp = Math.max(0, hex) ** 3;
+        tmp[i] = D + sp * amp * clamp01((D - 0.55) * 1.2);
+      }
+    }
+    const lx = -0.45, ly = -0.6, lz = 0.66;
+    let hx = lx, hy = ly, hz = lz + 1;
+    const hl = Math.hypot(hx, hy, hz);
+    hx /= hl; hy /= hl; hz /= hl;
+    const base = light ? 22 : 8;
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const i = y * gw + x;
+        const o = i * 4;
+        const D = dens[i] * norm;
+        if (D < th * 0.5 || x === 0 || y === 0 || x === gw - 1 || y === gh - 1) {
+          d[o + 3] = 0;
+          continue;
+        }
+        const gx = (tmp[i + 1] - tmp[i - 1]) * 0.5;
+        const gy = (tmp[i + gw] - tmp[i - gw]) * 0.5;
+        const bx = (dens[i + 1] - dens[i - 1]) * 0.5 * norm;
+        const by = (dens[i + gw] - dens[i - gw]) * 0.5 * norm;
+        const a = clamp01((D - th) / Math.max(Math.hypot(bx, by), 0.04) + 0.5);
+        if (a <= 0) {
+          d[o + 3] = 0;
+          continue;
+        }
+        let nx = -gx * 4, ny = -gy * 4, nz = 1;
+        const nl = Math.hypot(nx, ny, nz);
+        nx /= nl; ny /= nl; nz /= nl;
+        const diff = Math.max(0, nx * lx + ny * ly + nz * lz);
+        const spec = Math.max(0, nx * hx + ny * hy + nz * hz) ** 60 * 1.1 + Math.max(0, nx * hx + ny * hy + nz * hz) ** 8 * 0.12;
+        // The palette shows on the steep sides, like a reflection.
+        const rimK = (1 - nz) ** 1.5 * 0.9;
+        const inv = 1 / Math.max(1e-6, dens[i]);
+        d[o] = Math.min(255, base + diff * 14 + cr[i] * inv * rimK + 255 * spec);
+        d[o + 1] = Math.min(255, base + diff * 14 + cg[i] * inv * rimK + 255 * spec);
+        d[o + 2] = Math.min(255, base + 2 + diff * 16 + cb[i] * inv * rimK + 255 * spec);
+        d[o + 3] = a * 255;
+      }
+    }
+  }
+
+  // Frost: ice crystals grow where the particles are, six arms each with
+  // feathered side branches, in the colour of the crowd that started them.
+  // Where the particles leave, the crystals melt back.
+  private frosts: { x: number; y: number; a: number; L: number; r: number; col: number[]; seed: number }[] = [];
+  private frost(ctx: FieldPen, s: number, t: number, dt: number, light: boolean, alpha: number) {
+    const { gw, gh, c } = this;
+    const N = gw * gh;
+    const norm = this.any ? this.blur(Math.max(6, s * 4), true, 1) : 0;
+    const [M] = this.sm;
+    const { dens, cr, cg, cb } = this;
+    const f = Math.min(3, dt * 60);
+    const keep = Math.pow(0.985, f);
+    for (let i = 0; i < N; i++) M[i] = M[i] * keep + dens[i] * norm * 0.06 * f;
+    const fr = this.frosts;
+    const big = Math.sqrt(this.w * this.h);
+    const maxN = Math.round(Math.min(90, Math.max(25, (this.w * this.h) / 9000)));
+    // New crystals: a few tries a frame at random spots in the crowd.
+    for (let k = 0; k < 4 && fr.length < maxN; k++) {
+      if (Math.random() > 0.35 * f) continue;
+      const i = (Math.random() * N) | 0;
+      const D = dens[i] * norm;
+      if (D < 0.5) continue;
+      const x = ((i % gw) + 0.5) * c;
+      const y = (((i / gw) | 0) + 0.5) * c;
+      const L = big * (0.035 + 0.05 * Math.random()) + s * 4;
+      if (fr.some((q) => (q.x - x) ** 2 + (q.y - y) ** 2 < ((q.L + L) * 0.75) ** 2)) continue;
+      const inv = 1 / Math.max(1e-6, dens[i]);
+      fr.push({ x, y, a: Math.random() * Math.PI, L, r: 0, col: [cr[i] * inv, cg[i] * inv, cb[i] * inv], seed: Math.random() * 1000 });
+    }
+    ctx.lineCap = 'round';
+    for (let q = fr.length - 1; q >= 0; q--) {
+      const C = fr[q];
+      const m = sample(M, gw, gh, C.x / c - 0.5, C.y / c - 0.5);
+      // Grows while it's damp here, melts back where it's dry.
+      if (m > 0.05) C.r = Math.min(C.L, C.r + C.L * 0.012 * f);
+      else C.r -= C.L * 0.01 * f;
+      if (C.r <= 0) {
+        fr.splice(q, 1);
+        continue;
+      }
+      const [r0, g0, b0] = C.col;
+      const col = light ? `rgb(${(r0 * 0.45 + 30) | 0} ${(g0 * 0.45 + 55) | 0} ${(b0 * 0.45 + 85) | 0})` : `rgb(${Math.min(255, r0 * 0.4 + 150) | 0} ${Math.min(255, g0 * 0.4 + 165) | 0} ${Math.min(255, b0 * 0.4 + 185) | 0})`;
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = alpha * 0.9 * Math.min(1, C.r / (C.L * 0.15));
+      const lw = Math.max(1.1, s * 0.3);
+      ctx.lineWidth = lw * 1.4;
+      ctx.beginPath();
+      const step = Math.max(5, C.L * 0.14);
+      const branches: number[] = [];
+      for (let k = 0; k < 6; k++) {
+        // Each arm a little different in length.
+        const h = Math.sin(C.seed + k * 7.1) * 0.5 + 0.5;
+        const len = C.r * (0.75 + 0.25 * h);
+        const an = C.a + (k * Math.PI) / 3;
+        const ux = Math.cos(an), uy = Math.sin(an);
+        ctx.moveTo(C.x, C.y);
+        ctx.lineTo(C.x + ux * len, C.y + uy * len);
+        // Side branches at 60°, longest near the middle of the arm.
+        for (let p = step; p < len - 2; p += step) {
+          const bl = Math.min(len - p, C.L * (0.75 + 0.25 * h) - p) * 0.42 * (0.8 + 0.4 * Math.sin(C.seed * 3 + p));
+          if (bl < 1.5) continue;
+          const bx = C.x + ux * p, by = C.y + uy * p;
+          for (const sd of [-1, 1]) {
+            const ba = an + sd * (Math.PI / 3);
+            branches.push(bx, by, bx + Math.cos(ba) * bl, by + Math.sin(ba) * bl);
+          }
+        }
+      }
+      ctx.stroke();
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      for (let j = 0; j < branches.length; j += 4) {
+        ctx.moveTo(branches[j], branches[j + 1]);
+        ctx.lineTo(branches[j + 2], branches[j + 3]);
+      }
+      ctx.stroke();
+      // A glint at the heart, twinkling.
+      const tw = 0.5 + 0.5 * Math.sin(t * 2.3 + C.seed);
+      ctx.fillStyle = light ? col : '#fff';
+      ctx.globalAlpha = alpha * (0.4 + 0.6 * tw) * Math.min(1, C.r / (C.L * 0.3));
+      ctx.beginPath();
+      ctx.arc(C.x, C.y, Math.max(1, s * 0.5) * (1 + tw * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Flames: heat rises off the crowds, flickering, and cools as it goes, in
+  // the palette's colours from dark to white hot.
+  private flames(s: number, t: number, dt: number) {
+    const { gw, gh, c } = this;
+    const norm = this.any ? this.blur(Math.max(3, s * 2), false, 1) : 0;
+    const [S] = this.sm;
+    const [S2] = this.smNext;
+    const f = Math.min(3, dt * 60);
+    const rise = (95 * dt) / c;
+    const { dens } = this;
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const i = y * gw + x;
+        // Where this cell's heat came from: below, licking side to side.
+        const w1 = wob(x * 0.55, y * 0.45 + t * 6, t * 2.2);
+        const ux = w1 * 0.7 * f;
+        const uy = -rise * (1 + 0.35 * wob(x * 0.3 + 9, y * 0.3, t * 1.7));
+        // Tongues: it cools faster in some places than others.
+        const cool = 0.035 + 0.05 * Math.max(0, wob(x * 0.35 - 4, y * 0.25 + t * 4, t));
+        S2[i] = sample(S, gw, gh, x - ux, y - uy) * Math.pow(1 - cool, f) + Math.min(1.5, dens[i] * norm) * 0.07 * f;
+      }
+    }
+    this.sm[0] = S2;
+    this.smNext[0] = S;
+    if (this.lavaFor !== this.rgb) {
+      this.lavaFor = this.rgb;
+      this.lavaRamp = lavaStops(this.rgb);
+    }
+    const stops = this.lavaRamp;
+    const out = this.c3;
+    const d = this.img!.data;
+    for (let i = 0, N = gw * gh; i < N; i++) {
+      const o = i * 4;
+      const h = S2[i];
+      if (h < 0.01) {
+        d[o + 3] = 0;
+        continue;
+      }
+      const v = 1 - Math.exp(-h * 0.9);
+      ramp(stops, 0.1 + v * 0.9, out);
+      d[o] = out[0];
+      d[o + 1] = out[1];
+      d[o + 2] = out[2];
+      d[o + 3] = clamp01(v * 1.8) * 255;
     }
   }
 

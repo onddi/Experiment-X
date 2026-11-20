@@ -6561,6 +6561,9 @@ function glShape(style: Render, list: number[], k: number, s: number) {
       G.pushR(img, px[i], py[i], r * 2, r * 0.9, a, A);
     }
   } else if (style === 'threads' || style === 'lightning') drawPairs(style, list, k, s);
+  else if (style === 'fireflies') drawFireflies(list, k, s);
+  else if (style === 'sketch') drawSketch(list, k, s);
+  else if (style === 'brush') drawBrush(list, k, s);
   else if (style === 'ribbons') drawRibbons(list, k, s);
   else if (style === 'glyphs') drawGlyphsGL(list, k, s);
   else return false;
@@ -6684,6 +6687,12 @@ function drawStyle(style: Render, list: number[], k: number, s: number) {
     ctx.stroke();
   } else if (style === 'threads' || style === 'lightning') {
     drawPairs(style, list, k, s);
+  } else if (style === 'fireflies') {
+    drawFireflies(list, k, s);
+  } else if (style === 'sketch') {
+    drawSketch(list, k, s);
+  } else if (style === 'brush') {
+    drawBrush(list, k, s);
   } else if (style === 'streaks') {
     ctx.strokeStyle = shades[k];
     ctx.lineWidth = s;
@@ -6829,6 +6838,377 @@ function drawPairs(style: string, list: number[], k: number, s: number) {
   } else P.stroke();
 }
 
+// Fireflies: each one blinks on its own clock, nudged toward the others'
+// (and toward the kick when music plays), so the crowd slowly falls into
+// flashing together, the way real fireflies do.
+let ffPh = new Float32Array(0);
+let ffT = -1;
+let ffLast = 0;
+let ffMeanS = 0;
+let ffMeanC = 0;
+function fireflyStep() {
+  if (ffT === t) return;
+  ffT = t;
+  const now = performance.now();
+  const dt = Math.min(0.1, Math.max(0, (now - ffLast) / 1000));
+  ffLast = now;
+  if (ffPh.length < px.length) {
+    const was = ffPh;
+    ffPh = new Float32Array(px.length);
+    ffPh.set(was);
+    for (let i = was.length; i < ffPh.length; i++) ffPh[i] = Math.random() * Math.PI * 2;
+  }
+  const beat = reacting() && audio.levels.beat;
+  const pull = Math.hypot(ffMeanS, ffMeanC);
+  const toward = Math.atan2(ffMeanS, ffMeanC);
+  let ss = 0;
+  let cc = 0;
+  for (let i = 0; i < n; i++) {
+    let p = ffPh[i];
+    p += dt * (Math.PI * 2 * (0.55 + 0.3 * rnd[i]) + 1.4 * pull * Math.sin(toward - p));
+    // A kick pulls everyone a little toward flashing now.
+    if (beat) p += 0.6 * Math.sin(-p);
+    p %= Math.PI * 2;
+    if (p < 0) p += Math.PI * 2;
+    ffPh[i] = p;
+    ss += Math.sin(p);
+    cc += Math.cos(p);
+  }
+  ffMeanS = ss / Math.max(1, n);
+  ffMeanC = cc / Math.max(1, n);
+}
+function drawFireflies(list: number[], k: number, s: number) {
+  fireflyStep();
+  const img = spriteFor('glow', k);
+  const A = ctx.globalAlpha;
+  for (const i of list) {
+    // A quick flash just after the phase passes zero, then dark.
+    const fl = Math.exp(-ffPh[i] * 1.1);
+    const d = Math.max(3, s) * 6 * (uniformSize ? 1 : psz[i]) * (0.3 + 0.9 * fl);
+    ctx.globalAlpha = A * (0.22 + 0.78 * fl);
+    stamp(img, px[i], py[i], d);
+  }
+  ctx.globalAlpha = A;
+}
+
+// Pencil sketch: a few short hatched strokes per particle, all leaning the
+// same way, with some crossed the other way; light lines on paper.
+function drawSketch(list: number[], k: number, s: number) {
+  const P = penFor();
+  const A = ctx.globalAlpha;
+  P.strokeStyle = shades[k];
+  P.lineWidth = Math.max(0.6, s * 0.25);
+  P.lineCap = 'round';
+  P.globalAlpha = A * 0.7;
+  P.beginPath();
+  for (const i of list) {
+    const z = Math.max(2.2, s) * (uniformSize ? 1 : psz[i]);
+    const L = z * 4.5;
+    const sp = z * 0.8;
+    const lines = (a: number, m: number) => {
+      const ux = Math.cos(a);
+      const uy = Math.sin(a);
+      for (let q = 0; q < m; q++) {
+        const off = (q - (m - 1) / 2) * sp;
+        const j = (styleHash(i * 7 + q) - 0.5) * L * 0.4;
+        const len = L * (0.7 + 0.5 * styleHash(i * 13 + q));
+        const cx = px[i] - uy * off + ux * j;
+        const cy = py[i] + ux * off + uy * j;
+        P.moveTo(cx - (ux * len) / 2, cy - (uy * len) / 2);
+        P.lineTo(cx + (ux * len) / 2, cy + (uy * len) / 2);
+      }
+    };
+    lines(-0.85 + (rnd[i] - 0.5) * 0.2, 3);
+    if (gl[i] > 0.6) lines(0.75 + (rnd[i] - 0.5) * 0.2, 2);
+  }
+  P.stroke();
+  P.globalAlpha = A;
+}
+
+// Brush strokes: a wide, see-through stroke along the way each particle is
+// heading, bent a little, with two bristle lines through it.
+function drawBrush(list: number[], k: number, s: number) {
+  const P = penFor();
+  const A = ctx.globalAlpha;
+  P.strokeStyle = shades[k];
+  P.lineCap = 'round';
+  const path = (side: number, short: number) => {
+    for (const i of list) {
+      const z = Math.max(2.5, s) * (uniformSize ? 1 : psz[i]);
+      const v = Math.hypot(vx[i], vy[i]);
+      const a = v > 0.05 ? Math.atan2(vy[i], vx[i]) : gl[i] * 6.28;
+      const ux = Math.cos(a);
+      const uy = Math.sin(a);
+      const L = z * 7 * (0.7 + 0.5 * rnd[i]) * short;
+      const bend = (rnd[i] - 0.5) * L * 0.45;
+      const o = side * Math.max(1.4, z * 0.5);
+      const x = px[i] - uy * o;
+      const y = py[i] + ux * o;
+      P.moveTo(x - ux * L, y - uy * L);
+      P.quadraticCurveTo(x - ux * L * 0.5 - uy * bend, y - uy * L * 0.5 + ux * bend, x, y);
+    }
+  };
+  P.globalAlpha = A * 0.4;
+  P.lineWidth = Math.max(4, s * 2.2);
+  P.beginPath();
+  path(0, 1);
+  P.stroke();
+  P.globalAlpha = A * 0.85;
+  P.lineWidth = Math.max(0.8, s * 0.35);
+  P.beginPath();
+  path(-1, 0.85);
+  path(1, 0.7);
+  P.stroke();
+  P.globalAlpha = A;
+}
+
+// Styles drawn from the whole crowd at once, on the 2D picture: Low-poly
+// (the particles are the corners of flat-shaded triangles) and Field lines
+// (crowds as magnet poles, with the lines running between them).
+const SCENE_STYLES = new Set(['lowpoly', 'fieldlines']);
+const sceneIdx: number[] = [];
+const sceneK: number[] = [];
+function sceneGather(max: number) {
+  sceneIdx.length = sceneK.length = 0;
+  let tot = 0;
+  for (const bk of buckets) tot += bk.length;
+  for (const lv of fadeBuckets) for (const bk of lv) tot += bk.length;
+  const stride = Math.max(1, Math.ceil(tot / max));
+  const take = (bks: number[][]) => {
+    for (let k = 0; k < bks.length; k++)
+      for (const i of bks[k])
+        if (i % stride === 0) {
+          sceneIdx.push(i);
+          sceneK.push(k);
+        }
+  };
+  take(buckets);
+  for (const lv of fadeBuckets) take(lv);
+}
+function drawScene(style: string, s: number, light: boolean) {
+  if (style === 'fieldlines') {
+    const was = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'source-over';
+    drawFieldLines(s, light);
+    ctx.globalCompositeOperation = was;
+    return;
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  drawLowPoly(s);
+  ctx.restore();
+  if (glOnly) {
+    glDirty2d = true;
+    glTake2d('over');
+  }
+}
+
+// Delaunay triangles (Bowyer-Watson, sweeping left to right so finished
+// triangles drop out early). Returns vertex indices, three per triangle.
+function delaunay(X: Float64Array, Y: Float64Array, n0: number): number[] {
+  const order = Array.from({ length: n0 }, (_, i) => i).sort((a, b) => X[a] - X[b]);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < n0; i++) {
+    if (X[i] < x0) x0 = X[i];
+    if (X[i] > x1) x1 = X[i];
+    if (Y[i] < y0) y0 = Y[i];
+    if (Y[i] > y1) y1 = Y[i];
+  }
+  const dm = Math.max(x1 - x0, y1 - y0, 1) * 20;
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  X[n0] = mx - dm; Y[n0] = my - dm;
+  X[n0 + 1] = mx; Y[n0 + 1] = my + dm;
+  X[n0 + 2] = mx + dm; Y[n0 + 2] = my - dm;
+  type T = [number, number, number, number, number, number];
+  const circ = (a: number, b: number, c: number): T => {
+    const ax = X[a], ay = Y[a], bx = X[b], by = Y[b], cx = X[c], cy = Y[c];
+    const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+    if (Math.abs(d) < 1e-9) return [a, b, c, ax, ay, Infinity];
+    const a2 = ax * ax + ay * ay, b2 = bx * bx + by * by, c2 = cx * cx + cy * cy;
+    const ux = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d;
+    const uy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d;
+    return [a, b, c, ux, uy, (ax - ux) ** 2 + (ay - uy) ** 2];
+  };
+  let open: T[] = [circ(n0, n0 + 1, n0 + 2)];
+  const done: T[] = [];
+  const edges = new Map<number, number>();
+  for (const p of order) {
+    const x = X[p], y = Y[p];
+    edges.clear();
+    const keep: T[] = [];
+    for (const tr of open) {
+      const dx = x - tr[3];
+      if (dx > 0 && dx * dx > tr[5]) {
+        done.push(tr);
+        continue;
+      }
+      const dy = y - tr[4];
+      if (dx * dx + dy * dy <= tr[5]) {
+        for (const [u, v] of [[tr[0], tr[1]], [tr[1], tr[2]], [tr[2], tr[0]]]) {
+          const key = u < v ? u * 65536 + v : v * 65536 + u;
+          edges.set(key, (edges.get(key) ?? 0) + 1);
+        }
+      } else keep.push(tr);
+    }
+    for (const [key, c] of edges) if (c === 1) keep.push(circ(Math.floor(key / 65536), key % 65536, p));
+    open = keep;
+  }
+  const out: number[] = [];
+  for (const tr of done.concat(open)) if (tr[0] < n0 && tr[1] < n0 && tr[2] < n0) out.push(tr[0], tr[1], tr[2]);
+  return out;
+}
+let lpX = new Float64Array(0);
+let lpY = new Float64Array(0);
+function drawLowPoly(s: number) {
+  sceneGather(380);
+  const m = sceneIdx.length;
+  if (m < 3) return;
+  if (lpX.length < m + 3) {
+    lpX = new Float64Array(m + 3);
+    lpY = new Float64Array(m + 3);
+  }
+  // A hair of jitter so no two points sit exactly on top of each other.
+  for (let q = 0; q < m; q++) {
+    const i = sceneIdx[q];
+    lpX[q] = px[i] + rnd[i] * 0.01;
+    lpY[q] = py[i] + gl[i] * 0.01;
+  }
+  const tris = delaunay(lpX, lpY, m);
+  const spacing = Math.sqrt((w * h) / m);
+  const maxE = (Math.max(40, spacing * 2.6) + s * 4) ** 2;
+  // Each corner sits at its own height, so the facets catch the light differently.
+  const H = Math.max(14, spacing * 0.9);
+  const zOf = (q: number) => (styleHash(sceneIdx[q]) - 0.5) * H;
+  // Batched by colour (the corner's shade and a few light levels), one path each.
+  lpGroups.clear();
+  for (let j = 0; j < tris.length; j += 3) {
+    const a = tris[j], b = tris[j + 1], c = tris[j + 2];
+    const ax = lpX[a], ay = lpY[a], bx = lpX[b], by = lpY[b], cx = lpX[c], cy = lpY[c];
+    if ((ax - bx) ** 2 + (ay - by) ** 2 > maxE || (bx - cx) ** 2 + (by - cy) ** 2 > maxE || (cx - ax) ** 2 + (cy - ay) ** 2 > maxE) continue;
+    const az = zOf(a), bz = zOf(b), cz = zOf(c);
+    const ux = bx - ax, uy = by - ay, uz = bz - az;
+    const vx2 = cx - ax, vy2 = cy - ay, vz = cz - az;
+    let nx = uy * vz - uz * vy2, ny = uz * vx2 - ux * vz, nz = ux * vy2 - uy * vx2;
+    if (nz < 0) (nx = -nx), (ny = -ny), (nz = -nz);
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    const lit = Math.max(0, (nx * -0.4 + ny * -0.55 + nz * 0.73) / nl);
+    // The middle corner's colour, so neighbouring facets blend.
+    const kk = sceneK[[a, b, c].sort((p, q) => sceneK[p] - sceneK[q])[1]];
+    const key = kk * 8 + Math.min(7, (lit * 8) | 0);
+    let g = lpGroups.get(key);
+    if (!g) lpGroups.set(key, (g = []));
+    g.push(ax, ay, bx, by, cx, cy);
+  }
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 0.8;
+  for (const [key, g] of lpGroups) {
+    const C = shadeRgb[key >> 3] ?? [255, 255, 255];
+    const lit = 0.55 + 0.65 * (((key & 7) + 0.5) / 8);
+    ctx.fillStyle = ctx.strokeStyle = `rgb(${Math.min(255, C[0] * lit) | 0} ${Math.min(255, C[1] * lit) | 0} ${Math.min(255, C[2] * lit) | 0})`;
+    ctx.beginPath();
+    for (let q = 0; q < g.length; q += 6) {
+      ctx.moveTo(g[q], g[q + 1]);
+      ctx.lineTo(g[q + 2], g[q + 3]);
+      ctx.lineTo(g[q + 4], g[q + 5]);
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
+}
+const lpGroups = new Map<number, number[]>();
+
+// Field lines: a few particles act as magnet poles, north and south in
+// turn, each as strong as the crowd around it. Lines run from the north
+// poles round to the south ones, and follow the poles as they drift.
+function drawFieldLines(s: number, light: boolean) {
+  sceneGather(3000);
+  const m = sceneIdx.length;
+  if (!m) return;
+  const NP = Math.max(6, Math.min(14, Math.round(Math.sqrt((w * h) / 26000))));
+  // The poles: particles picked by number, so the same ones stay poles.
+  const all: number[] = [];
+  for (const bk of buckets) for (const i of bk) all.push(i);
+  if (all.length < 2) return;
+  all.sort((a, b) => a - b);
+  const PI: number[] = [];
+  for (let j = 0; j < NP && j < all.length; j++) PI.push(all[Math.floor(((j + 0.5) * all.length) / NP)]);
+  const np = PI.length;
+  const PX = PI.map((i) => px[i]);
+  const PY = PI.map((i) => py[i]);
+  // Strength: how many particles are near (from the gathered sample).
+  const R2 = (Math.sqrt((w * h) / np) * 0.5) ** 2;
+  const Q = PI.map((_, j) => {
+    let c = 0;
+    for (const i of sceneIdx) if ((px[i] - PX[j]) ** 2 + (py[i] - PY[j]) ** 2 < R2) c++;
+    return (j % 2 ? -1 : 1) * (0.6 + Math.sqrt(c / Math.max(1, m / np)));
+  });
+  const kOf = new Map<number, number>();
+  for (let q = 0; q < m; q++) kOf.set(sceneIdx[q], sceneK[q]);
+  let tot = 0;
+  for (const q of Q) if (q > 0) tot += q;
+  const r0 = 5 + s;
+  const stepL = 3;
+  const P = penFor();
+  P.lineCap = 'round';
+  P.lineJoin = 'round';
+  P.lineWidth = Math.max(1.2, s * 0.4);
+  P.globalAlpha = light ? 0.8 : 0.75;
+  for (let j = 0; j < np; j++) {
+    if (Q[j] <= 0) continue;
+    P.strokeStyle = shades[kOf.get(PI[j]) ?? 0] ?? '#fff';
+    const lines = Math.max(6, Math.round((Q[j] / Math.max(1e-6, tot)) * 11 * np));
+    P.beginPath();
+    for (let l = 0; l < lines; l++) {
+      const a0 = ((l + 0.5) / lines) * Math.PI * 2;
+      let x = PX[j] + Math.cos(a0) * r0;
+      let y = PY[j] + Math.sin(a0) * r0;
+      P.moveTo(x, y);
+      for (let st = 0; st < 90; st++) {
+        let ex = 0, ey = 0, hit = -1, near = Infinity;
+        for (let q = 0; q < np; q++) {
+          const dx = x - PX[q];
+          const dy = y - PY[q];
+          const d2 = dx * dx + dy * dy + 1;
+          if (d2 < near) near = d2;
+          if (Q[q] < 0 && d2 < r0 * r0) hit = q;
+          ex += (Q[q] * dx) / d2;
+          ey += (Q[q] * dy) / d2;
+        }
+        if (hit >= 0) {
+          P.lineTo(PX[hit], PY[hit]);
+          break;
+        }
+        const el = Math.hypot(ex, ey);
+        if (el < 1e-9) break;
+        // Small steps near a pole, where lines bend hard; long ones out in the open.
+        const sl = Math.min(28, Math.max(stepL, Math.sqrt(near) * 0.22));
+        x += (ex / el) * sl;
+        y += (ey / el) * sl;
+        P.lineTo(x, y);
+        if (x < -30 || y < -30 || x > w + 30 || y > h + 30) break;
+      }
+    }
+    P.stroke();
+  }
+  // The particles themselves, small and faint, and the poles a little bigger.
+  P.globalAlpha = 0.5;
+  for (let k = 0; k < SHADES; k++) {
+    if (!buckets[k].length) continue;
+    P.fillStyle = shades[k];
+    P.beginPath();
+    for (const i of buckets[k]) P.rect(px[i] - s * 0.35, py[i] - s * 0.35, s * 0.7, s * 0.7);
+    P.fill();
+  }
+  P.globalAlpha = 1;
+  for (let j = 0; j < np; j++) {
+    P.fillStyle = shades[kOf.get(PI[j]) ?? 0] ?? '#fff';
+    P.beginPath();
+    P.arc(PX[j], PY[j], Math.max(2, s * 1.1), 0, Math.PI * 2);
+    P.fill();
+  }
+}
+
 // Halftone (dots on a fixed grid, bigger where more particles are) and big
 // pixels (chunky grid-snapped squares, an 8-bit look).
 const gridCount = new Map<number, number>();
@@ -6881,7 +7261,7 @@ function drawGrid(style: string, bks: number[][], s: number) {
 const MIXABLE: [string, string][] = [
   ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
   ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
-  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'], ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'], ['hair', 'Hair'], ['ink', 'Ink'], ['bubbles', 'Bubbles'], ['sprite', 'Your sprite'],
+  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'], ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'], ['hair', 'Hair'], ['ink', 'Ink'], ['bubbles', 'Bubbles'], ['fireflies', 'Fireflies'], ['sketch', 'Pencil sketch'], ['brush', 'Brush strokes'], ['sprite', 'Your sprite'],
 ];
 
 function mixStyles(): Render[] {
@@ -6957,10 +7337,11 @@ function drawSubstance(style: string, s: number, light: boolean) {
   if (style === 'sand') drawSand(dt);
   else {
     fieldR.soft = settings.fieldSoft;
+    fieldR.bass = reacting() ? Math.max(audio.levels.bass, audio.levels.pulse * 0.8) : 0;
     fieldR.begin(style === 'glass' ? 'wash' : (style as 'liquid'), w, h, n, shadeRgb);
     for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1, vx, vy);
     for (let L = 0; L < FADE_LEVELS; L++) for (let k = 0; k < SHADES; k++) fieldR.add(px, py, fadeBuckets[L][k], k, (L + 0.5) / FADE_LEVELS, vx, vy);
-    fieldR.draw(ctx, s, t, dt, light);
+    fieldR.draw(ctx, s, t, dt, light, 1, style === 'frost' ? penFor() : ctx);
     if (style === 'glass') drawGlass(s);
     if (style === 'slime') fieldR.steer(px, py, vx, vy, n, dt);
   }
@@ -8207,6 +8588,7 @@ function draw() {
   }
   if (settings.render === 'links') drawLinks();
   if (SUBSTANCES.has(settings.render)) drawSubstance(settings.render, s, light);
+  else if (SCENE_STYLES.has(settings.render)) drawScene(settings.render, s, light);
   else {
     drawBuckets(buckets, s);
     // Fading particles, drawn in a few alpha steps to keep draw calls batched.
@@ -9168,6 +9550,8 @@ const RENDERS: [string, string][] = [
   ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'], ['marbles', 'Marbles'],
   ['liquid', 'Liquid'], ['cells', 'Cells'], ['contours', 'Contours'], ['smoke', 'Smoke'], ['glass', 'Glass drops'], ['sand', 'Sand'],
   ['lava', 'Lava'], ['terrain', 'Terrain'], ['caustics', 'Caustics'], ['aurora', 'Aurora'], ['marbling', 'Marbling'], ['rain', 'Rain on water'], ['slime', 'Slime mould'],
+  ['turing', 'Coral (reaction-diffusion)'], ['ferro', 'Ferrofluid'], ['frost', 'Frost'], ['flames', 'Flames'], ['stained', 'Stained glass'],
+  ['lowpoly', 'Low-poly'], ['fieldlines', 'Field lines'], ['sketch', 'Pencil sketch'], ['fireflies', 'Fireflies'], ['brush', 'Brush strokes'],
   ['sprite', 'Your sprite (image or sheet)'],
   ['mixed', 'Mixed'],
 ];
@@ -22418,7 +22802,7 @@ setInterval(stageName, 300);
 let arrangeEl: HTMLElement | null = null;
 const LITE_KEY = 'pf-arrange-lite';
 const LITE: Partial<Settings> = { trail: 0, glow: false, lensMirror: 'off', lensTiles: 0, lensZoom: 0, lensSplit: 0, lensGlitch: 0, lensDots: 0, lensTwirl: 0, lensWave: 0, lensRipple: 0, lensFan: 0, lensShatter: 0, lensSlices: 0, lensEcho: 0, lensGlow: 0, lensCrt: 0, audioTunnel: 0, audioKaleido: 0 };
-const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime']);
+const HEAVY_STYLES = new Set(['ribbons', 'threads', 'lightning', 'halftone', 'bigpixels', 'mixed', 'ink', 'flare', 'neon', 'bokeh', 'bubbles', 'glow', 'embers', 'hair', 'links', 'comets', 'liquid', 'cells', 'contours', 'smoke', 'glass', 'sand', 'lava', 'terrain', 'caustics', 'aurora', 'marbling', 'rain', 'slime', 'turing', 'ferro', 'frost', 'flames', 'stained', 'lowpoly', 'fieldlines', 'sketch', 'fireflies', 'brush']);
 let liteScene = '';
 // Outline: while arranging, skip the simulation and draw only the shape's
 // spots (a light dotted outline), so dragging stays snappy on phones.
