@@ -18061,6 +18061,18 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
     Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
     look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.55);
     look.sndBass = Math.max(Number(look.sndBass) || 0, 0.5);
+  } else if (st?.varBeats?.[v]) {
+    // A song that borrows a written beat (see Style.varBeats): its own sound
+    // and tempo; the beat's kit unless the song has one (Band: the acoustic kit).
+    const [gid, name] = st.varBeats[v];
+    const bg = drumGenre(gid);
+    // A beat by name, or one of the genre's versions of a beat.
+    const bv = bg?.versions?.find((x) => x.name === name);
+    const i = bg ? bg.beats.findIndex((x) => x.name === (bv?.from ?? name)) : -1;
+    if (bg && i >= 0) {
+      Object.assign(look, { sndGenre: bg.id, sndBeat: i, sndKit: st.id === 'band' ? 'band' : (preset.sndKit ?? bv?.kit ?? bg.kit), sndSwing: preset.sndSwing ?? bv?.swing ?? bg.swing, sndGrid: '' });
+      look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.45);
+    }
   }
   look.sndStyle = `${st?.id ?? 'yours'}/${v}`;
   return look;

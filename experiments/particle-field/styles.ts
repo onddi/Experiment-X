@@ -9,13 +9,22 @@ export interface Style {
   beat: string;
   /** Sound presets by name, each one variation. */
   vars: string[];
+  /**
+   * For a genre without a beat of its own: songs that borrow a written beat
+   * from a drum genre that suits them (genre id, beat name). The song keeps its
+   * own sound and tempo; songs not listed stay with drums that follow the field.
+   */
+  varBeats?: Record<string, [string, string]>;
 }
 
 export const STYLES: Style[] = [
   { id: 'ambient', name: 'Ambient', beat: '', vars: ['Deep space', 'Rain on glass', 'Northern lights', 'Wind chimes', 'Cathedral', 'Music box night', 'Harp garden'] },
-  { id: 'world', name: 'World', beat: '', vars: ['Koto temple', 'Flute forest', 'Kalimba campfire', 'Gamelan', 'Steel band'] },
-  { id: 'band', name: 'Band', beat: '', vars: ['Lounge', 'Blues bar', 'Gospel organ', 'Vibes café'] },
-  { id: 'synth', name: 'Synth', beat: '', vars: ['Night drive', 'Synthwave', 'Chiptune', 'Arcade', 'Scanner'] },
+  { id: 'world', name: 'World', beat: '', vars: ['Koto temple', 'Flute forest', 'Kalimba campfire', 'Gamelan', 'Steel band'],
+    varBeats: { 'Kalimba campfire': ['afro', 'Highlife'], Gamelan: ['afro', 'Gamelan clave'], 'Steel band': ['dancehall', 'Island'] } },
+  { id: 'band', name: 'Band', beat: '', vars: ['Lounge', 'Blues bar', 'Gospel organ', 'Vibes café'],
+    varBeats: { Lounge: ['jazz', 'Late night'], 'Blues bar': ['jazz', 'Shuffle'], 'Gospel organ': ['jazz', 'Ballad'], 'Vibes café': ['jazz', 'Swing'] } },
+  { id: 'synth', name: 'Synth', beat: '', vars: ['Night drive', 'Synthwave', 'Chiptune', 'Arcade', 'Scanner'],
+    varBeats: { 'Night drive': ['synthwave', 'Night drive'], Synthwave: ['synthwave', 'Outrun'], Chiptune: ['synthwave', 'Arcade run'], Arcade: ['breaks', 'Arcade electro'] } },
   { id: 'lofi', name: 'Lo-fi', beat: 'lofi', vars: ['Lo-fi study', 'Vibes café', 'Fog machine'] },
   { id: 'house', name: 'House', beat: 'house', vars: ['House', 'Night drive'] },
   { id: 'techno', name: 'Techno', beat: 'techno', vars: ['Acid techno', 'Minimal', 'Rolling sub'] },
