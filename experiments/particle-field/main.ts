@@ -10128,8 +10128,7 @@ function musicPicker(styles = false) {
       roll: () => {
         if (isLive()) {
           const list = G().filter((g) => g.id !== settings.sndGroove && (liveRail.startsWith('g:') ? g.style === liveRail.slice(2) : liveRail === 'saved' ? keptGrooves().includes(g.id) : true));
-          if (list.length) setLive(list[(Math.random() * list.length) | 0]);
-          return !!list.length;
+          return rollLive(list);
         }
         if (musicRail === 'all') return (randomStyle(), true);
         const st = styleById(musicRail);
@@ -18209,8 +18208,7 @@ function renderSoundPage(body: HTMLElement) {
   dice.title = 'New song in the picked genre (any genre with All genres)';
   dice.addEventListener('click', () => {
     if (settings.sndDrumSrc !== 'live') return randomStyle();
-    const list = (groovesNow() ?? []).filter((g) => g.id !== settings.sndGroove);
-    if (list.length) setLive(list[(Math.random() * list.length) | 0]);
+    void grooves().then((all) => rollLive(all.filter((g) => g.id !== settings.sndGroove)));
   });
   // Save: keeps the song the dice rolled, so it's in the genre's list.
   const keep = mk('button', 'sndp-dice sndp-keep', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>');
@@ -18315,7 +18313,7 @@ function renderSoundPage(body: HTMLElement) {
     sMain.querySelector('small')!.textContent = live ? 'Groove' : 'Style';
     sMain.querySelector('span')!.textContent = live ? (g ? `drummer ${g.drummer} · ${g.bpm} BPM · ${g.bars} bars, as played` : '') : 'sets the instruments, beat, bass, chords, tempo and effects';
     acts.hidden = live;
-    dice.title = live ? 'Another groove' : 'New song in the picked genre (any genre with All genres)';
+    dice.title = live ? 'Another groove, with a song around it that suits it' : 'New song in the picked genre (any genre with All genres)';
     paintKeep();
     paintPick();
   });
@@ -18624,6 +18622,19 @@ function setLive(g: Groove) {
   if (settings.sndDrums === 0) next.sndDrums = 0.7;
   Object.assign(settings, next);
   changed(new Set(Object.keys(next) as (keyof Settings)[]));
+}
+// The dice with MIDI drums: a new groove, and a song from a style that suits it around it.
+function rollLive(list: Groove[]) {
+  if (!list.length) return false;
+  const g = list[(Math.random() * list.length) | 0];
+  setLive(g);
+  const fit = dressFor(g.style).map((id) => styleById(id)).filter((st): st is Style => !!st);
+  if (fit.length) {
+    const st = fit[(Math.random() * fit.length) | 0];
+    const vs = styleVars(st);
+    useStyle(st, vs[(Math.random() * vs.length) | 0], true);
+  }
+  return true;
 }
 function setBeat() {
   const next: Partial<Settings> = { sndDrumSrc: 'beat' };
