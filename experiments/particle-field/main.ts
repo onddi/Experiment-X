@@ -5563,7 +5563,10 @@ function buildShades() {
     const b = stops[Math.min(stops.length - 1, Math.floor(u) + 1)];
     const f = u - Math.floor(u);
     const mix = (i: number) => a[i] + (b[i] - a[i]) * f;
-    target.push(hslToRgb(mix(0), mix(1), mix(2)));
+    // Hue the short way round: 355° → 25° goes through red, not through
+    // green and blue (as the palette's swatch shows it).
+    const dh = ((((b[0] - a[0]) % 360) + 540) % 360) - 180;
+    target.push(hslToRgb((a[0] + dh * f + 360) % 360, mix(1), mix(2)));
   }
   // While crossfading, blend from the old palette's colours.
   const u = palMix ? (palMix.fixed ?? Math.min(1, (performance.now() - palMix.start) / palMix.dur)) : 1;
