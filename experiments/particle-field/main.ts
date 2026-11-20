@@ -248,6 +248,11 @@ let pz = new Float32Array(0); // depth: 0 far, 1 near
 // Light on a solid shape, per particle (1 = fully lit); only read while lightOn.
 let shadeLit = new Float32Array(0);
 let lightOn = false;
+// How squarely each point of a 3D solid faces you (1 head-on, 0 edge-on), for
+// the field styles: points crowd up where the surface turns away, and would
+// otherwise pile into a flat ring round the edge.
+let facing = new Float32Array(0);
+let facingOn = false;
 // Turning a solid by hand: the angles you added and how fast they're still going.
 const orbit = { yaw: 0, pitch: 0, vy: 0, vp: 0, drag: false, x: 0, y: 0, t: 0 };
 // Phone tilt, -1..1 each way from how you held it when it started.
@@ -4475,7 +4480,7 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
     out[0] = cx + x1 * R * persp;
     out[1] = cy + y2 * R * persp;
     out[2] = Math.max(0, Math.min(1, (1 - z2) / 2));
-    if (lightOn) {
+    if (lightOn || facingOn) {
       // Shade by the surface's facing: its normal from two nearby points,
       // turned like the shape, against a light from the upper left front.
       const e = 0.004;
@@ -4484,11 +4489,12 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
       const ux = ax - x0, uy = ay - y0, uz = az - z0, vx2 = bx - x0, vy2 = by - y0, vz2 = bz - z0;
       let nx = uy * vz2 - uz * vy2, ny = uz * vx2 - ux * vz2, nz = ux * vy2 - uy * vx2;
       const len = Math.hypot(nx, ny, nz);
-      if (len < 1e-9) out[3] = 1;
+      if (len < 1e-9) out[3] = out[4] = 1;
       else {
         nx /= len; ny /= len; nz /= len;
         const n1x = nx * cyw + nz * syw, n1z = -nx * syw + nz * cyw;
         const n2y = ny * cp - n1z * sp, n2z = ny * sp + n1z * cp;
+        out[4] = Math.abs(n2z);
         // Points facing away are the hidden back (dim them, so the front reads
         // as a surface); open surfaces still light both sides a little.
         const back = n2z > 0;
@@ -4639,7 +4645,7 @@ function animateShape(now: number) {
   if (ps.kind === 'bars' || ps.kind === 'ring') updateSpectrum();
   const R = (Math.min(w, h) / 2) * S.shapeSize;
   const t = shapeTime();
-  const o = [0, 0, 0, 1];
+  const o = [0, 0, 0, 1, 1];
   // Let go of a turned solid and it keeps spinning, slowing over a few seconds.
   if (!orbit.drag && (orbit.vy || orbit.vp)) {
     orbit.yaw += orbit.vy;
@@ -4651,6 +4657,8 @@ function animateShape(now: number) {
   const light = ps.kind === 'solid' && S.solidLight > 0;
   lightOn = light;
   if (light && shadeLit.length < n) shadeLit = new Float32Array(px.length);
+  facingOn = ps.kind === 'solid' && SUBSTANCES.has(S.render) && !MODEL_SOLIDS.includes(S.shapeSolid);
+  if (facingOn && facing.length < n) facing = new Float32Array(px.length);
   const g = paramGlide;
   let e = 1;
   if (g) {
@@ -4670,6 +4678,7 @@ function animateShape(now: number) {
     }
     if (o[2] >= 0) pz[i] = o[2];
     if (light) shadeLit[i] = 1 + (o[3] - 1) * S.solidLight;
+    if (facingOn) facing[i] = o[4];
   }
 }
 let seqBars = 0;
@@ -7376,6 +7385,7 @@ function drawSubstance(style: string, s: number, light: boolean) {
     fieldR.depth = settings.depth;
     fieldR.fog = Math.min(1, settings.depthFog + macro.fog);
     fieldR.pz = pz;
+    fieldR.facing = facingOn ? facing : null;
     fieldR.bass = reacting() ? Math.max(audio.levels.bass, audio.levels.pulse * 0.8) : 0;
     fieldR.begin(style === 'glass' ? 'wash' : (style as 'liquid'), w, h, n, shadeRgb);
     for (let k = 0; k < SHADES; k++) fieldR.add(px, py, buckets[k], k, 1, vx, vy);

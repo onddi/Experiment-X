@@ -124,6 +124,8 @@ export class FieldRender {
   private rdReady = false;
   /** 3D depth: each particle's nearness (0 far, 1 near), how much far ones dim, and fog. */
   pz: Float32Array | null = null;
+  /** On a 3D solid: how squarely each particle faces you; edge-on ones count for less. */
+  facing: Float32Array | null = null;
   depth = 0;
   fog = 0;
   // The nearest particle in each cell this frame (-1: none), and a spare.
@@ -258,6 +260,7 @@ export class FieldRender {
     const { c, gw, gh, dens, cr, cg, cb } = this;
     const col = this.rgb[k] ?? [255, 255, 255];
     const [r, g, b] = col;
+    const fc = this.facing;
     for (const i of list) {
       const x = px[i] / c - 0.5;
       const y = py[i] / c - 0.5;
@@ -267,10 +270,12 @@ export class FieldRender {
       const fx = x - ix;
       const fy = y - iy;
       const o = iy * gw + ix;
-      const w00 = (1 - fx) * (1 - fy) * a;
-      const w10 = fx * (1 - fy) * a;
-      const w01 = (1 - fx) * fy * a;
-      const w11 = fx * fy * a;
+      // Seen edge-on, a surface packs its points tight: thin them back out.
+      const ai = fc ? a * Math.max(0.12, fc[i]) : a;
+      const w00 = (1 - fx) * (1 - fy) * ai;
+      const w10 = fx * (1 - fy) * ai;
+      const w01 = (1 - fx) * fy * ai;
+      const w11 = fx * fy * ai;
       dens[o] += w00;
       dens[o + 1] += w10;
       dens[o + gw] += w01;
