@@ -27,6 +27,7 @@ export const GENRE_FEEL: Record<string, FeelNote[]> = {
   triphop: [['Slow and heavy: snare on 2 and 4 at a crawl.', 1, BACK], ['Everything sits slightly late.', -1, []]],
   phonk: [['A hard kick and 808 underneath.', 0, [0]], ['A cowbell or percussion line plays the hook on top.', -1, []]],
   jersey: [['The bouncing kick runs in quick bursts.', 0, [0, 3, 6, 10, 12]], ['Claps and samples chopped on top.', 1, []]],
+  folktronica: [['Hands, wood and shakers do the drumming, not a drum machine.', -1, []], ['Small stutters and rolls in the shaker are the "tronica".', 2, []]],
   synthwave: [['A big 80s snare on 2 and 4.', 1, BACK], ['A simple, straight kick.', 0, [0, 8]]],
   jazz: [['Swing is everything: notes split long-short.', -1, []], ['The hat closes on 2 and 4.', 2, BACK], ['The kick stays quiet, under the bass.', 0, []]],
   garage: [['2-step: the kick skips beats 2 and 4.', 0, [0, 10]], ['Snare on 2 and 4 with shuffled hats.', 1, BACK]],

@@ -642,6 +642,23 @@ export const GENRES: Genre[] = [
       { name: 'Twilight', from: 'Night', sound: 'Deep space', bpm: 147, bass: 'reese' },
     ],
   },
+  {
+    // Folktronica: hands, wood and shakers instead of a drum machine, with
+    // small glitches and stutters in the hats; plucked strings on top.
+    id: 'folktronica', name: 'Folktronica', bpm: 112, swing: 0.15, kit: 'hand', bass: 'round', fill: 'glitch', beats: [
+      { name: 'Campfire', k: 'X.....x...X.....', s: '....o.......o...', h: 'x.o.x.o.x.o.x.o.', p: '..x....x..x...x.', b: 'b.....b...b.....' },
+      { name: 'Wooden', k: 'X..x....X.......', r: '....X.......X..o', h: 'xoxoxoxoxoxoxoxo', p: 'x..x..x...x..x..', b: 'b..b....b.......' },
+      { name: 'Glitch folk', k: 'X.....x.X.......', s: '....x.......x...', h: 'x.x2x.x.x.x2x.x3', r: '...o......o..o..', b: 'b.....b.b.......', kit: 'glitch' },
+      { name: 'Rounds', k: 'X.......X.......', c: '....x.......x...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x', b: 'b.......f.......' },
+      { name: 'Stomp and clap', k: 'X...X...X...X...', c: '....x.......x...', h: '..o...o...o...o.', p: '...x.......x..x.', b: 'b...b...b...b...' },
+      { name: 'Slow stream', k: 'X.........X.....', s: '........x.......', h: 'x.x.x.x.x.x.x.x.', p: 'o.o.x.o.o.o.x.o.', b: 'b.........b.....' },
+      { name: 'Tape loop', k: 'X......X..X.....', s: '....x.......x..o', h: 'x?x.x?x.x?x.x?x.', r: '......o.......o.', b: 'b......b..b.....', kit: 'tape' },
+    ],
+    versions: [
+      { name: 'Forest glitch', from: 'Glitch folk', sound: 'Flute forest', bpm: 118, kit: 'glitch' },
+      { name: 'Porch at dusk', from: 'Campfire', sound: 'Kalimba campfire', bpm: 104, kit: 'afroperc' },
+    ],
+  },
 ];
 export const genreById = (id: string) => GENRES.find((g) => g.id === id);
 

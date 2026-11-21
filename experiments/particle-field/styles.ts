@@ -50,6 +50,7 @@ export const STYLES: Style[] = [
   { id: 'baile', name: 'Baile funk', beat: 'baile', vars: ['Baile funk'] },
   { id: 'gqom', name: 'Gqom', beat: 'gqom', vars: ['Gqom'] },
   { id: 'psy', name: 'Psytrance', beat: 'psy', vars: ['Psytrance'] },
+  { id: 'folktronica', name: 'Folktronica', beat: 'folktronica', vars: ['Folktronica', 'Flute forest', 'Kalimba campfire'] },
 ];
 
 export const styleById = (id: string) => STYLES.find((s) => s.id === id);
