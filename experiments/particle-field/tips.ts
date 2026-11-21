@@ -59,6 +59,7 @@ export const TIPS: Record<string, string> = {
   sndStrings: 'Invisible vertical strings spread evenly across the screen. When particles move across one it rings a note from the chord: higher if they cross in the top half. A sudden crowd crossing rings it more. Works in every scene.',
   sndStringCount: 'How many invisible strings span the screen, left to right. Each one plays a different note of the chord, low on the left, higher to the right.',
   sndStringOct: 'Moves only the Strings up or down by octaves. Pitch in Music moves every instrument.',
+  sndSeqOct: 'Moves only the Steps up or down by octaves. Pitch in Music moves every instrument.',
   sndDrone: 'A soft chord pad underneath. It swells as the field moves faster, breathes slowly, and goes silent when the field is calm.',
   sndSeq: 'A step sequencer: the screen is split into 16 columns, played left to right like a drum machine, four per beat. When a column’s turn comes, rows where particles crowd play a note (high rows high notes). A soft tick marks the pulse, so shapes and text become repeating patterns.',
   sndAccents: 'One-off sounds for events: a harp strum when the scene changes, a whoosh when a shape forms, a sparkle when a puff of particles is born.',

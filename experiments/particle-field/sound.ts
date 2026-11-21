@@ -297,6 +297,7 @@ export interface SoundParams {
   stringCount: number;
   octave: number; // shifts every note by octaves
   stringOct?: number; // shifts only the Strings
+  seqOct?: number; // shifts only the Steps
   range: number; // how many octaves the notes spread over
   pad: number;
   seq: number;
@@ -1768,7 +1769,7 @@ export class ParticleSound {
     if (this.voices >= MAX_VOICES || this.tokens < 1 || vel < 0.02) return;
     this.tokens--;
     const Vd = VOICES[voice];
-    const so = this.cur === 'strings' ? (P.stringOct ?? 0) : 0;
+    const so = this.cur === 'strings' ? (P.stringOct ?? 0) : this.cur === 'steps' ? (P.seqOct ?? 0) : 0;
     const fl = this.freq(deg) * 2 ** ((Vd.octave ?? 0) + so);
     this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * this.lenK * (this.bpmNow / 60), when);
     if (!this.audible(this.cur)) return;

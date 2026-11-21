@@ -257,6 +257,7 @@ export interface Settings {
   sndStrings: number;
   sndStringCount: number;
   sndStringOct: number;
+  sndSeqOct: number;
   sndOctave: number;
   sndRange: number;
   sndSeq: number;
@@ -956,6 +957,7 @@ export const DEFAULTS: Settings = {
   sndStrings: 0.7,
   sndStringCount: 6,
   sndStringOct: 0,
+  sndSeqOct: 0,
   sndOctave: 0,
   sndRange: 2,
   sndSeq: 0,
