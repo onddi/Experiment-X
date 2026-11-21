@@ -14348,6 +14348,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       ['Pause the sound (M)', NOTE_ICON, () => toggleMute(!sndMuted())],
       ['Project to another screen (P)', ICONS.project, toggleProject],
       ['Recording settings', ICONS.record, () => showTab('record')],
+      ['Start from scratch', BUILD_ICON, startFromScratch],
       ['Reset to defaults and clear locks', ICONS.reset, reset],
     ];
     for (const [t, ic, fn] of items) {
@@ -22760,7 +22761,7 @@ let buildEl: HTMLElement | null = null;
 const BUILD_ICON = svg('<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 16.5l9 5 9-5"/>');
 const ubar = document.createElement('div');
 ubar.className = 'u-bar';
-ubar.innerHTML = `<div class="u-seg" role="tablist" aria-label="Views"><span class="u-thumb"></span><button type="button" role="tab" data-v="stage" aria-label="Stage" title="Stage">${ICONS.eye}<span>Stage</span></button><button type="button" role="tab" data-v="deck" aria-label="Deck" title="Deck">${ICONS.sliders}<span>Deck</span></button><button type="button" role="tab" data-v="studio" aria-label="Studio" title="Studio (H)">${MENU_ICON}<span>Studio</span></button><button type="button" role="tab" data-v="build" aria-label="Build" title="Build: the scene as layers">${BUILD_ICON}<span>Build</span></button></div><div class="u-tray"></div>`;
+ubar.innerHTML = `<div class="u-seg" role="tablist" aria-label="Views"><span class="u-thumb"></span><button type="button" role="tab" data-v="stage" aria-label="Stage" title="Stage">${ICONS.eye}<span>Stage</span></button><button type="button" role="tab" data-v="deck" aria-label="Deck" title="Deck">${ICONS.sliders}<span>Deck</span></button><button type="button" role="tab" data-v="studio" aria-label="Studio" title="Studio (H)">${MENU_ICON}<span>Studio</span></button></div><div class="u-tray"></div>`;
 document.body.append(ubar);
 const uView = (): UView => (buildEl ? 'build' : ovEl ? 'deck' : !panel.classList.contains('collapsed') ? 'studio' : 'stage');
 function uGo(v: UView) {
@@ -22897,8 +22898,11 @@ function uPaint(force = false) {
     } catch {
       // Not ready yet while the page starts.
     }
-    const on = ubar.querySelector<HTMLElement>(`.u-seg button[data-v="${v}"]`)!;
+    const on = ubar.querySelector<HTMLElement>(`.u-seg button[data-v="${v}"]`);
     const thumb = ubar.querySelector<HTMLElement>('.u-thumb')!;
+    // Build has no button of its own (Start from scratch opens it).
+    thumb.style.opacity = on ? '' : '0';
+    if (!on) return;
     // While the Stage button is still growing or shrinking, the buttons after
     // it aren't in their final place yet: aim for where they will be.
     const sb = ubar.querySelector<HTMLElement>('.u-seg button[data-v="stage"]')!;
@@ -25389,7 +25393,23 @@ function closeBuild() {
   removeEventListener('pointercancel', buildRelease);
   document.body.style.removeProperty('--build-shift');
 }
-// A blank start walks the layers one at a time; Done leaves the stack.
+// Start from scratch (the ⋯ menu): every lock off, a blank field, and Build
+// walks the layers one at a time. Build is a one-off: Done closes it, and
+// only another Start from scratch brings it back.
+function startFromScratch() {
+  locks.clear();
+  saveLocks();
+  for (const f of lockSyncs) f();
+  syncTabDots();
+  uGo('build');
+  buildFromBlank();
+}
+function buildFinish() {
+  buildMode = 'stack';
+  buildOpen = null;
+  uGo('stage');
+}
+// A blank start walks the layers one at a time.
 function buildFromBlank() {
   const was = snapshot();
   playPreset('Blank', BLANK_SCENE);
@@ -25402,8 +25422,7 @@ function buildFromBlank() {
   showToast('A blank scene: build it layer by layer', ['Undo', () => {
     Object.assign(settings, was);
     changed(new Set(Object.keys(was) as (keyof Settings)[]));
-    buildMode = 'stack';
-    buildPaint();
+    buildFinish();
   }]);
 }
 function buildSave() {
@@ -25523,11 +25542,7 @@ function buildDrawStep(el: HTMLElement) {
   done.type = 'button';
   done.className = 'bd-save';
   done.textContent = 'Done';
-  done.addEventListener('click', () => {
-    buildMode = 'stack';
-    buildOpen = null;
-    buildPaint();
-  });
+  done.addEventListener('click', buildFinish);
   head.append(buildHideBtn(), done);
   const dots = document.createElement('div');
   dots.className = 'bd-dots';
@@ -25565,11 +25580,8 @@ function buildDrawStep(el: HTMLElement) {
   next.className = 'bd-play';
   next.textContent = buildStep === LAYERS.length - 1 ? 'Done' : `Next: ${LAYERS[buildStep + 1].name}`;
   next.addEventListener('click', () => {
-    if (buildStep < LAYERS.length - 1) buildStep++;
-    else {
-      buildMode = 'stack';
-      buildOpen = null;
-    }
+    if (buildStep >= LAYERS.length - 1) return buildFinish();
+    buildStep++;
     buildPaint();
     buildEl?.querySelector('.bd-body')?.scrollTo(0, 0);
   });
