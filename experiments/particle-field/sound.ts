@@ -1827,6 +1827,8 @@ export class ParticleSound {
     g2.gain.setValueAtTime(V.level, t);
     g2.gain.exponentialRampToValueAtTime(0.001, t + Math.max(0.02, decay * V.fade));
     const nodes: AudioScheduledSourceNode[] = [o1, o2];
+    let fmDepth: GainNode | null = null;
+    let ksSrc: [AudioBuffer, number] | null = null;
     if (V.fm) {
       // FM: a modulator bends the body's pitch; its depth falls fast, so the
       // strike is metallic and the tail clean (electric piano, kalimba, steel).
@@ -1836,6 +1838,7 @@ export class ParticleSound {
       mg.gain.setValueAtTime(f * V.fm[1], t);
       mg.gain.exponentialRampToValueAtTime(f * V.fm[1] * 0.05 + 0.01, t + decay * 0.35);
       m.connect(mg).connect(o1.frequency);
+      fmDepth = mg;
       nodes.push(m);
     }
     if (V.vibrato) {
@@ -1874,6 +1877,7 @@ export class ParticleSound {
       // A modelled string instead of the two oscillators (they run silent, for the voice count).
       const ks = ctx.createBufferSource();
       const [buf, rate] = this.ksBuf(f, V.ks, decay);
+      ksSrc = [buf, rate];
       ks.buffer = buf;
       ks.playbackRate.value = rate;
       if (bend) {
@@ -1886,9 +1890,33 @@ export class ParticleSound {
       o1.connect(g);
       o2.connect(g2).connect(g);
     }
-    out.connect(pn);
     // The leads: Steps and Strings get Mix polish's low cut and duck, and Unison and Wavetable motion.
     const lead = this.cur === 'steps' || this.cur === 'strings';
+    // Wavetable motion: the instrument's own tone moves, bright at the strike
+    // and melting warm (a resonant filter closing), and in a lively field
+    // through a vowel. A busy field holds the brightness longer.
+    const wv = lead ? P.wave ?? 0 : 0;
+    const hold = decay * (0.2 + 0.5 * Math.min(1, this.energy * 1.5)) + 0.01;
+    const vocal = this.energy > 0.45;
+    const motion = (src: AudioNode): AudioNode => {
+      if (wv <= 0) return src;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.Q.value = 1 + wv * 7;
+      lp.frequency.setValueAtTime(Math.min(16000, f * (10 + wv * 14)), t);
+      lp.frequency.exponentialRampToValueAtTime(Math.max(120, f * (1.6 + (1 - wv) * 3)), t + hold);
+      src.connect(lp);
+      if (!vocal) return lp;
+      const pk = ctx.createBiquadFilter();
+      pk.type = 'peaking';
+      pk.Q.value = 4;
+      pk.gain.value = 4 + wv * 8;
+      pk.frequency.setValueAtTime(650, t);
+      pk.frequency.exponentialRampToValueAtTime(1900, t + hold);
+      lp.connect(pk);
+      return pk;
+    };
+    motion(out).connect(pn);
     const pol = lead && this.pol?.on && !wetMore ? this.pol : null;
     const route = (nd: AudioNode) => {
       if (!pol) return this.send(nd, 1 + wetMore);
@@ -1897,24 +1925,6 @@ export class ParticleSound {
     };
     route(pn);
     const extra: AudioNode[] = [];
-    const wv = lead ? P.wave ?? 0 : 0;
-    if (wv > 0) {
-      // Wavetable motion: a bright (or, in a lively field, vocal) wave at the
-      // strike melts into a warm one; a busy field holds the brightness longer.
-      const T = this.tables;
-      const hold = decay * (0.2 + 0.5 * Math.min(1, this.energy * 1.5));
-      const lvl = wv * 0.8;
-      for (const [w, from, to] of [[this.energy > 0.45 ? T.vocal : T.bright, 1, 0.08], [T.warm, 0.08, 0.9]] as const) {
-        const o = ctx.createOscillator();
-        o.setPeriodicWave(w);
-        o.frequency.value = f;
-        const og = ctx.createGain();
-        og.gain.setValueAtTime(lvl * from, t);
-        og.gain.linearRampToValueAtTime(lvl * to, t + hold);
-        o.connect(og).connect(g);
-        nodes.push(o);
-      }
-    }
     const uni = lead ? P.unison ?? 0 : 0;
     if (uni > 0) {
       // Unison: more copies of the note, detuned and spread across the stereo field.
@@ -1923,17 +1933,50 @@ export class ParticleSound {
       gu.gain.setValueAtTime(0, t);
       gu.gain.linearRampToValueAtTime((peak * uni * 1.1) / Math.sqrt(n), t + atk);
       gu.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+      // The copies are the instrument itself: a modelled string plucks more
+      // strings, an FM voice shares its strike, and a filter sweep closes on
+      // them too, so a guitar stays a guitar, only wider.
+      let into: AudioNode = gu;
+      if (V.sweep) {
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.Q.value = 1.2;
+        lp.frequency.setValueAtTime(V.sweep[0], t);
+        lp.frequency.exponentialRampToValueAtTime(V.sweep[1], t + decay * 0.6);
+        lp.connect(gu);
+        into = lp;
+      }
+      if (wv > 0) {
+        const mh = ctx.createGain();
+        motion(mh).connect(into);
+        into = mh;
+      }
       for (let j = 0; j < n; j++) {
         const side = j % 2 ? 1 : -1;
         const pos = ((j >> 1) + 1) / Math.ceil(n / 2);
-        const o = ctx.createOscillator();
-        o.type = V.type === 'sine' ? 'triangle' : V.type;
-        o.frequency.value = f;
-        o.detune.value = side * pos * (6 + uni * 22);
+        const cents = side * pos * (6 + uni * 22);
         const up = ctx.createStereoPanner();
         up.pan.value = Math.max(-1, Math.min(1, pan + side * pos * 0.85 * uni));
-        o.connect(up).connect(gu);
-        nodes.push(o);
+        up.connect(into);
+        if (ksSrc) {
+          const b = ctx.createBufferSource();
+          b.buffer = ksSrc[0];
+          b.playbackRate.value = ksSrc[1] * 2 ** (cents / 1200);
+          b.connect(up);
+          nodes.push(b);
+          continue;
+        }
+        const uo = ctx.createOscillator();
+        uo.type = V.type;
+        uo.frequency.value = f;
+        uo.detune.value = cents;
+        if (bend) {
+          uo.detune.setValueAtTime(cents + bend, t);
+          uo.detune.linearRampToValueAtTime(cents, t + (o?.bend ? 0.16 : 0.08));
+        }
+        fmDepth?.connect(uo.frequency);
+        uo.connect(up);
+        nodes.push(uo);
       }
       route(gu);
       extra.push(gu);
