@@ -3162,6 +3162,12 @@ button.sndp-live-name { cursor: pointer; }
 .row:has(> .fx-meter) { position: relative; }
 .mg-meter.fx-meter { position: absolute; left: 12px; right: 12px; bottom: 5px; max-width: none; margin: 0; pointer-events: none; }
 .mg-meter.fx-meter.hit u { background: var(--accent); }
+/* An option picker card (‹ value ›) in a row of its own: the same one-line
+   layout as the other pickers, name on the left, arrows at the right edge. */
+#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) { grid-template-rows: none; row-gap: 0; padding-left: 12px; }
+#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > * { grid-column: auto; grid-row: auto; }
+#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > span { font-size: 13px; color: var(--label); text-align: left; }
+#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > button { align-self: center; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
