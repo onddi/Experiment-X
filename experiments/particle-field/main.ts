@@ -9821,7 +9821,7 @@ type ControlBody =
   | { kind: 'sub'; label: string }
   | { kind: 'mypals' }
   | { kind: 'heading'; label: string; tab: Tab }
-  | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string }
+  | { kind: 'range'; key: keyof Settings; label: string; min: number; max: number; step: number; format?: (v: number) => string; curve?: number }
   | { kind: 'select'; key: keyof Settings; label: string; options: [string, string][]; font?: boolean }
   | { kind: 'toggle'; key: keyof Settings; label: string }
   | { kind: 'choice'; key: keyof Settings; label: string; options: [string, string][] }
@@ -10963,7 +10963,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'spriteRows', label: 'Sheet rows', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[1]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
   { kind: 'range', key: 'spriteRow', label: 'Animation (row)', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? 'each its own' : `row ${Math.min(v, spriteRowsIdx.length)}`), show: () => isSprite() && !!spriteSheet && spriteRowsIdx.length > 1 },
   { kind: 'note', text: 'A single image, a sprite sheet or an animated GIF. A sheet’s grid is found by the clear gaps between frames (set columns and rows if not); with one animation per row, play one row or let each particle play its own. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
-  { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 6, step: 0.1, format: (v) => `${v.toFixed(1)}px` },
+  // Curved: the left half covers 0.5–6 px as finely as before, the right half goes up to 32.
+  { kind: 'range', key: 'size', label: 'Size', min: 0.5, max: 32, step: 0.1, curve: 2.5, format: (v) => `${v < 10 ? v.toFixed(1) : Math.round(v)}px` },
   { kind: 'toggle', key: 'adaptScreen', label: 'Same look on every screen' },
   { kind: 'range', key: 'adaptCount', label: 'Fit the count', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.adaptScreen },
   { kind: 'range', key: 'adaptSize', label: 'Fit size and reach', min: 0, max: 2, step: 0.05, format: pct, show: () => settings.adaptScreen },
@@ -11909,7 +11910,7 @@ function fitToScreen(p: Partial<Settings>): Partial<Settings> {
   q.count = Math.max(1, Math.min(MAX_COUNT, Math.round(count0 * Math.pow(area, 0.6))));
   // Dots shrink with the screen, but not below a pixel (they'd just blur).
   const size0 = num('size');
-  q.size = Math.max(0.5, Math.min(6, Math.round(size0 * L * 10) / 10));
+  q.size = Math.max(0.5, Math.min(32, Math.round(size0 * L * 10) / 10));
   for (const k of FIT_LENGTHS) q[k] = Math.round(num(k) * L);
   for (const k of FIT_PUSHES) q[k] = num(k) * L;
   if (num('lensDots') > 0) q.lensDots = Math.max(1, Math.round(num('lensDots') * L));
@@ -17497,6 +17498,11 @@ function openSection(id: string) {
   if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
   sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+// Where a value sits along a slider (0..1) and back; a curved slider spends
+// more of its travel on the small values.
+type RangeLike = { min: number; max: number; curve?: number };
+const rangePos = (c: RangeLike, v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min))) ** (1 / (c.curve ?? 1));
+const rangeVal = (c: RangeLike, p: number) => c.min + Math.min(1, Math.max(0, p)) ** (c.curve ?? 1) * (c.max - c.min);
 const RACK_SKIP = new Set(['actions', 'presets', 'mine', 'record', 'play']);
 type RackCtl = Extract<Control, { kind: 'range' | 'select' | 'choice' | 'toggle' | 'text' }>;
 let rackTimer = 0;
@@ -17878,7 +17884,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     el.append(ab);
   }
   const out = el.querySelector('span')!;
-  const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
+  const pos = (v: number) => rangePos(c, v);
   const put = (v: number) => {
     const snapped = Math.round((Math.min(c.max, Math.max(c.min, v)) - c.min) / c.step) * c.step + c.min;
     src.put(c.key, +snapped.toFixed(6));
@@ -17925,14 +17931,14 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     start.turned = true;
     el.classList.add('turning');
     if (start.fill) {
-      start.v = Math.min(c.max, Math.max(c.min, start.v + fillStep(el, start.y, e, start.lx) * (c.max - c.min)));
+      start.v = rangeVal(c, pos(start.v) + fillStep(el, start.y, e, start.lx));
       start.lx = e.clientX;
       put(start.v);
       update();
       return;
     }
     const d = (e.clientX - start.x - (touch ? 0 : e.clientY - start.y)) / 180;
-    put(start.v + d * (c.max - c.min));
+    put(rangeVal(c, pos(start.v) + d));
     update();
   });
   // Hold (in the overview, on a touch screen): just this knob's slider over
@@ -17975,7 +17981,7 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     const dir = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
     if (!dir) return;
     e.preventDefault();
-    put((src.get(c.key) as number) + dir * Math.max(c.step, (c.max - c.min) / 50));
+    put(c.curve ? rangeVal(c, pos(src.get(c.key) as number) + dir / 50) + dir * c.step : (src.get(c.key) as number) + dir * Math.max(c.step, (c.max - c.min) / 50));
     update();
   });
   update();
@@ -20030,13 +20036,14 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
   }
   const out = el.querySelector('output')!;
   const input = el.querySelector('input')!;
-  Object.assign(input, { min: c.min, max: c.max, step: c.step });
+  // A curved slider moves in travel (0..1), not in value.
+  Object.assign(input, c.curve ? { min: 0, max: 1, step: 0.001 } : { min: c.min, max: c.max, step: c.step });
   input.setAttribute('aria-label', c.label);
-  const pos = (v: number) => Math.min(1, Math.max(0, (v - c.min) / (c.max - c.min)));
+  const pos = (v: number) => rangePos(c, v);
   const text = (v: number) => (c.format ? c.format(v) : String(+v.toFixed(3)));
   const sync = () => {
     const v = src.get(c.key) as number;
-    if (document.activeElement !== input) input.value = String(v);
+    if (document.activeElement !== input) input.value = String(c.curve ? pos(v) : v);
     out.textContent = text(v);
     combo.paint(pos(v), text(v), name, pos(home()));
     valEl.textContent = text(v);
@@ -20048,10 +20055,10 @@ function openTuner(c: Extract<Control, { kind: 'range' }>, home: () => number, s
     update();
     sync();
   };
-  input.addEventListener('input', () => put(Number(input.value)));
+  input.addEventListener('input', () => put(c.curve ? rangeVal(c, Number(input.value)) : Number(input.value)));
   // A typed value is kept as typed, not rounded to the slider's steps.
   const typeIt = () => typeValue(c, out, () => src.get(c.key) as number, (v) => src.put(c.key, +v.toFixed(6)), sync);
-  comboDrag(combo.el, el, () => pos(src.get(c.key) as number), (p) => put(c.min + p * (c.max - c.min)), typeIt, true);
+  comboDrag(combo.el, el, () => pos(src.get(c.key) as number), (p) => put(rangeVal(c, p)), typeIt, true);
   el.querySelector('.tuner-home')!.addEventListener('click', () => put(home()));
   el.querySelector('.tuner-close')!.addEventListener('click', closeTuner);
   out.title = 'Tap to type a value';
@@ -21555,9 +21562,11 @@ function rollRemix(): { patch: Record<string, unknown>; used: string[] } {
       const c = card.ctls.get(k)!;
       if (c.kind === 'range') {
         if (Math.random() < 0.6) {
-          const span = (c.max - c.min) * (wild ? 0.3 : 0.15);
+          // Shuffle keeps particles at 6 px or less: big ones on a big count are slow.
+          const hi = c.key === 'size' ? Math.min(c.max, 6) : c.max;
+          const span = (hi - c.min) * (wild ? 0.3 : 0.15);
           const v = Number(patch[k]) + (Math.random() * 2 - 1) * span;
-          patch[k] = Number((Math.round(Math.min(c.max, Math.max(c.min, v)) / c.step) * c.step).toFixed(6));
+          patch[k] = Number((Math.round(Math.min(hi, Math.max(c.min, v)) / c.step) * c.step).toFixed(6));
         }
       } else if (c.kind === 'select' || c.kind === 'choice') {
         // The main choices of a card (style, palette, shape, flow type…) get
