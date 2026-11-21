@@ -292,6 +292,10 @@ export interface Settings {
   sndSeqTick: boolean;
   /** The pulse tick's sound (off turns it off; older saves use sndSeqTick). */
   sndSeqTickSound: string;
+  /** The Pulse's own level; -1 (older saves and scenes) means: as loud as the Steps, when its tick was on. */
+  sndTick: number;
+  sndTickPattern: string;
+  sndTickMove: number;
   sndScanDir: 'across' | 'down' | 'bounce' | 'radar';
   sndScanSound: import('./sound.ts').HitSound;
   sndScanNotes: number;
@@ -988,6 +992,9 @@ export const DEFAULTS: Settings = {
   sndSeqVary: 0,
   sndSeqTick: true,
   sndSeqTickSound: 'soft',
+  sndTick: -1,
+  sndTickPattern: 'eighths',
+  sndTickMove: 0,
   sndScanDir: 'across',
   sndScanSound: 'same',
   sndScanNotes: 4,

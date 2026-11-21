@@ -315,6 +315,9 @@ export interface SoundParams {
   seqStyle?: 'chord' | 'strum' | 'up' | 'down' | 'bounce' | 'random'; // how a step's notes play
   seqVary?: number; // 0 … 1: accents, skips, octave jumps and quick repeats
   seqTick?: string; // the pulse tick's sound ('off': none)
+  tick?: number; // the Pulse's own level (0 = off), apart from the Steps
+  tickPattern?: string; // where it ticks: eighths, offbeat, clave …
+  tickMove?: number; // 0 … 1: how much the field pushes it around
   scan: number;
   scanSecs: number;
   scanDir?: 'across' | 'down' | 'bounce' | 'radar';
@@ -451,6 +454,21 @@ const MAX_VOICES = 32;
 // Token bucket: at most this many melodic notes a second.
 const NOTE_RATE = 22;
 const STEPS = 16;
+// The Pulse's patterns: how loud it ticks on each sixteenth (0 = rest).
+const TICK_AT = (hits: number[]) => (s: number) => (hits.includes(s) ? (s === hits[0] ? 1 : 0.8) : 0);
+const TICK_PATS: Record<string, (s: number, dens: number) => number> = {
+  eighths: (s) => (s % 4 === 0 ? 1 : s % 2 === 0 ? 0.55 : 0),
+  quarters: (s) => (s % 4 === 0 ? 1 : 0),
+  offbeat: (s) => (s % 4 === 2 ? 1 : 0),
+  sixteenths: (s) => (s % 4 === 0 ? 1 : s % 2 === 0 ? 0.6 : 0.35),
+  gallop: (s) => (s % 4 === 0 ? 1 : s % 4 >= 2 ? 0.55 : 0),
+  clave: TICK_AT([0, 3, 6, 10, 12]),
+  tresillo: TICK_AT([0, 3, 6, 8, 11, 14]),
+  bossa: TICK_AT([0, 3, 6, 10, 13]),
+  // Where the particles crowd: the busier the column, the louder.
+  field: (_s, d) => (d > 1.15 ? Math.min(1, 0.35 + (d - 1.15) * 0.8) : 0),
+};
+const tickLevel = (p: string, s: number, dens: number) => (TICK_PATS[p] ?? TICK_PATS.eighths)(s, dens);
 // How loud each drum of a beat sits.
 const ROW_GAIN: Record<DrumRow, number> = { k: 1, s: 0.85, c: 0.85, h: 0.5, o: 0.5, r: 0.7, p: 0.7, t: 0.8, y: 0.6 };
 const ROWS = 8;
@@ -1996,16 +2014,37 @@ export class ParticleSound {
   }
 
   // The Steps' pulse tick, on the eighth notes (k: louder on the beat).
-  private pulseTick(kind: string, k: number, pan: number) {
+  // pm: a pitch nudge (Move), acc: on an accent, tone: which chord tone a tuned tick plays.
+  private pulseTick(kind: string, k: number, pan: number, pm = 1, acc = false, tone = 0) {
+    const inKey = () => this.freq(this.chordTone(Math.max(0, Math.min(5, tone)))) * 4;
     switch (kind) {
-      case 'click': return this.body(0, 1800, 1700, 0.01, 0.03, 0.16 * k, 'sine', 0.05);
-      case 'wood': return this.body(0, 1100, 950, 0.02, 0.07, 0.22 * k, 'triangle', 0.15);
-      case 'rim': return this.body(0, 1750, 1680, 0.01, 0.045, 0.2 * k, 'triangle', 0.12);
-      case 'shaker': return this.hiss(0, 'highpass', 6500, 0.8, 0.012, 0.05, 0.12 * k, pan * 0.6, 0.15);
+      case 'metro': return this.body(0, (acc ? 1650 : 1250) * pm, (acc ? 1650 : 1250) * pm, 0.005, 0.03, 0.15 * k, 'sine', 0.05);
+      case 'clap':
+        this.hiss(0, 'bandpass', 1400 * pm, 1.3, 0.001, 0.025, 0.16 * k, pan * 0.5, 0.2);
+        return this.hiss(0.011, 'bandpass', 1300 * pm, 1.1, 0.001, 0.09, 0.22 * k, pan * 0.5, 0.3);
+      case 'snap':
+        this.body(0, 2600 * pm, 1900 * pm, 0.005, 0.02, 0.1 * k, 'triangle', 0.2);
+        return this.hiss(0, 'bandpass', 3300 * pm, 2, 0.001, 0.03, 0.12 * k, pan * 0.5, 0.2);
+      case 'tamb':
+        this.hiss(0, 'highpass', 7200 * pm, 0.7, 0.002, acc ? 0.14 : 0.08, 0.13 * k, pan * 0.5, 0.15);
+        return this.hiss(0.004, 'bandpass', 9800 * pm, 3, 0.001, 0.06, 0.08 * k, -pan * 0.3, 0.15);
+      case 'blip': {
+        const f = inKey();
+        return this.body(0, f * 1.02, f, 0.008, acc ? 0.09 : 0.06, 0.08 * k, 'sine', 0.3);
+      }
+      case 'glass': {
+        const f = inKey() * 2;
+        return this.body(0, f, f, 0.01, 0.35, 0.045 * k, 'sine', 0.45);
+      }
+      case 'shuffle': return this.hiss(0, 'bandpass', 5200 * pm, 1.6, acc ? 0.002 : 0.012, acc ? 0.05 : 0.08, 0.13 * k, pan * 0.6, 0.15);
+      case 'click': return this.body(0, 1800 * pm, 1700 * pm, 0.01, 0.03, 0.16 * k, 'sine', 0.05);
+      case 'wood': return this.body(0, 1100 * pm, 950 * pm, 0.02, 0.07, 0.22 * k, 'triangle', 0.15);
+      case 'rim': return this.body(0, 1750 * pm, 1680 * pm, 0.01, 0.045, 0.2 * k, 'triangle', 0.12);
+      case 'shaker': return this.hiss(0, 'highpass', 6500 * pm, 0.8, 0.012, 0.05, 0.12 * k, pan * 0.6, 0.15);
       case 'cowbell':
         this.body(0, 560, 555, 0.01, 0.12, 0.07 * k, 'square', 0.1);
         return this.body(0, 845, 840, 0.01, 0.12, 0.05 * k, 'square', 0.1);
-      case 'hat': return this.hiss(0, 'highpass', 8500, 0.8, 0.001, 0.035, 0.14 * k, pan * 0.4, 0.1);
+      case 'hat': return this.hiss(0, 'highpass', 8500 * pm, 0.8, 0.001, 0.035, 0.14 * k, pan * 0.4, 0.1);
       // Soft: a breath of noise, as before (on time now, without the grains' jitter).
       default: {
         const ctx = this.ctx;
@@ -2014,7 +2053,7 @@ export class ParticleSound {
         src.buffer = this.noise;
         const bp = ctx.createBiquadFilter();
         bp.type = 'bandpass';
-        bp.frequency.value = 4600;
+        bp.frequency.value = 4600 * pm;
         bp.Q.value = 4;
         const g = ctx.createGain();
         g.gain.setValueAtTime(0, t);
@@ -3441,7 +3480,7 @@ export class ParticleSound {
     // The sixteenth-note clock: Steps, bass and drums play on it. Swing
     // pushes every second sixteenth late.
     const s16 = Math.floor(this.beat * 4) % STEPS;
-    if (s16 !== this.step && F.n > 0 && (P.seq > 0 || P.bass > 0 || P.drums > 0)) {
+    if (s16 !== this.step && F.n > 0 && (P.seq > 0 || P.bass > 0 || P.drums > 0 || (P.tick ?? 0) > 0)) {
       const s = (this.step = s16);
       // The build's snare roll: quarters, then eighths, sixteenths, and a
       // last flurry of thirty-seconds, rising in loudness.
@@ -3479,9 +3518,27 @@ export class ParticleSound {
 
       // Steps: where particles crowd in this column, that row plays (a chord
       // tone), with a soft tick for the pulse.
+      // Pulse: a tick that keeps time, with its own level and pattern.
+      if ((P.tick ?? 0) > 0 && (P.seqTick ?? 'soft') !== 'off' && this.audible('steps')) {
+        this.cur = 'steps';
+        // How crowded this column is (1 = average) and how high its crowd sits.
+        const avg = F.n / Math.max(1, Math.floor(F.n / 3000)) / STEPS;
+        const dens = tot / Math.max(1, avg);
+        let hiSum = 0;
+        for (let r = 0; r < ROWS; r++) hiSum += this.grid[r] * (1 - (r + 0.5) / ROWS);
+        const hi = tot ? hiSum / tot : 0.5;
+        const mv = P.tickMove ?? 0;
+        let lvl = tickLevel(P.tickPattern ?? 'eighths', s, dens);
+        // Move: ghost ticks on empty steps, louder where the field crowds.
+        if (!lvl && mv > 0 && Math.random() < mv * 0.22 * Math.min(2, dens)) lvl = 0.3;
+        if (lvl > 0 && mv > 0) lvl *= Math.max(0.2, 1 + mv * (0.6 * (Math.min(2, dens) - 1) - 0.35 * Math.random()));
+        if (lvl > 0 && !(onKick && s % 4 === 0)) {
+          const pm = 1 + mv * ((hi - 0.5) * 0.5 + (Math.random() - 0.5) * 0.12);
+          this.pulseTick(P.seqTick ?? 'soft', P.tick! * Math.min(1.3, lvl), (x0 / w) * 1.6 - 0.8, pm, lvl >= 0.95, mv > 0 ? Math.floor(hi * 4) : s % 8 === 0 ? 0 : 2);
+        }
+      }
       if (P.seq > 0) {
         this.cur = 'steps';
-        if (s % 2 === 0 && !onKick && (P.seqTick ?? 'soft') !== 'off' && this.audible('steps')) this.pulseTick(P.seqTick ?? 'soft', P.seq * (s % 4 === 0 ? 1 : 0.55), (x0 / w) * 1.6 - 0.8);
         let played = 0;
         const every = P.seqRate ?? 1;
         if (tot && s % every === 0 && gate()) {
