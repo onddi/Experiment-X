@@ -3203,7 +3203,11 @@ button.sndp-live-name { cursor: pointer; }
   @keyframes un-l { from { opacity: 0; transform: translateX(-18px); } }
   @keyframes un-up { from { opacity: 0; transform: translateY(6px); } }
   .u-nav .un-tab { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: rgb(255 255 255 / 0.82); }
-  .u-nav .un-tab[hidden] { display: none; }
+  .u-nav .un-tab:disabled { background: rgb(255 255 255 / 0.04); cursor: default; }
+  .u-nav .un-tab:disabled:active { transform: none; }
+  /* The bar is the navigator, so a folder needs no header or Back of its own. */
+  .panel.fmode.f-in .fhead { display: none; }
+  .panel.fmode.f-in .fpane { padding-top: 6px; }
   .u-grid { display: grid; position: absolute; left: 0; right: 0; bottom: calc(100% + 10px); grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px; border-radius: 22px; background: #101014; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 -14px 40px rgb(0 0 0 / 0.5); transform-origin: 50% 100%; opacity: 0; transform: translateY(10px) scale(0.96); visibility: hidden; pointer-events: none; transition: opacity 0.16s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.2s; }
   .u-grid.open { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s; }
   .u-grid button { min-width: 0; height: 64px; padding: 0; border: 0; border-radius: 14px; background: rgb(255 255 255 / 0.06); color: rgb(255 255 255 / 0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; font: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.15s ease, background-color 0.2s ease; }

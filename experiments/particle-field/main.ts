@@ -23020,6 +23020,11 @@ function navTabs() {
 }
 let navSig = '';
 function navPaint() {
+  // Phones never stop on the folder list: Studio opens in the folder you were
+  // in, and the grid (a tap on the name) is the way to the others.
+  if (sheetMode() && uView() === 'studio' && !panel.classList.contains('f-in')) {
+    document.querySelector<HTMLElement>(`.fd[data-f="${folderOf(currentTab).id}"] .fd-head`)?.click();
+  }
   const on = navOn();
   ubar.classList.toggle('nav', on);
   if (!on) {
@@ -23043,8 +23048,9 @@ function navPaint() {
   b.textContent = f.label;
   sm.textContent = tab;
   sm.hidden = !tab;
+  // Always there, blank in a folder without tabs, so the bar never shifts.
   unTab.textContent = btns.length > 1 ? `${i + 1}/${btns.length}` : '';
-  unTab.hidden = btns.length < 2;
+  unTab.disabled = btns.length < 2;
   unTab.setAttribute('aria-label', btns.length > 1 ? `Next tab: ${btns[(i + 1) % btns.length].textContent?.trim()}` : 'Next tab');
   const swap = (el: HTMLElement, cls: string) => {
     el.classList.remove('un-l', 'un-r', 'un-up');
@@ -23083,6 +23089,20 @@ function navGridPaint() {
     });
     ugrid.append(b);
   });
+  // Search every setting, from anywhere in the Studio.
+  const find = document.createElement('button');
+  find.type = 'button';
+  find.setAttribute('role', 'menuitem');
+  find.className = 'ug-find';
+  find.style.setProperty('--i', String(FOLDERS.length));
+  find.innerHTML = `${svg('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>')}<span>Search</span>`;
+  find.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navGrid(false);
+    if (!panel.classList.contains('finding')) document.getElementById('sheet-find')?.click();
+    else document.querySelector<HTMLInputElement>('.search input')?.focus();
+  });
+  ugrid.append(find);
 }
 function navGrid(open = !ugrid.classList.contains('open')) {
   if (open === ugrid.classList.contains('open')) return;
