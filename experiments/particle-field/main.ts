@@ -10416,7 +10416,8 @@ function musicStep(d: number) {
 }
 /** The song picker. styles: always the genres and songs, even with MIDI drums (Around the drums). */
 function musicPicker(styles = false) {
-  const cur = () => styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : '');
+  // Your own mixes and the songs you starred share one list: ★ Saved.
+  const cur = () => styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'saved' : '');
   if (!musicRail) musicRail = cur() || STYLES[0].id;
   const allSaved = () => STYLES.flatMap((st) => savedSongs(st.id).map((v) => [st, v] as const));
   const item = (st: Style | null, v: string, sub?: string): RailItem => {
@@ -10443,10 +10444,9 @@ function musicPicker(styles = false) {
   };
   const picker = railPicker({
     rail: () => isLive() ? liveRails() : [
-      ['saved', '★ Saved', allSaved().length],
+      ['saved', '★ Saved', mySoundPresets().length + allSaved().length],
       ['all', 'All genres', STYLES.reduce((n, st) => n + styleVars(st).length, 0)],
       ...STYLES.map((st): [string, string, number] => [st.id, st.name, musicSongs(st.id).length]),
-      ...(mySoundPresets().length ? [['yours', 'Yours', mySoundPresets().length] as [string, string, number]] : []),
     ],
     now: () => (isLive() ? liveRail : musicRail),
     setRail: (id) => {
@@ -10474,8 +10474,7 @@ function musicPicker(styles = false) {
         if (liveRail.startsWith('g:')) return G().filter((g) => g.style === liveRail.slice(2)).map((g) => gItem(g));
         return G().map((g) => gItem(g));
       }
-      if (musicRail === 'saved') return allSaved().map(([st, v]) => item(st, v, st.name));
-      if (musicRail === 'yours') return musicSongs('yours').map((v) => item(null, v));
+      if (musicRail === 'saved') return [...musicSongs('yours').map((v) => item(null, v, 'Your mix')), ...allSaved().map(([st, v]) => item(st, v, st.name))];
       if (musicRail === 'all') return STYLES.flatMap((st) => styleVars(st).map((v) => item(st, v, st.name)));
       const st = styleById(musicRail);
       return st ? musicSongs(st.id).map((v) => item(st, v)) : [];
@@ -18757,7 +18756,8 @@ function renderSoundPage(body: HTMLElement) {
   const picker = musicPicker();
   const acts = mk('div', 'sndp-acts');
   const save = mk('button', '');
-  save.textContent = '+ Save as yours';
+  save.textContent = '+ Save my mix';
+  save.title = 'Keep these sound settings under a name, in ★ Saved';
   save.addEventListener('click', () => {
     const name = prompt('Name this sound', `My sound ${mySoundPresets().length + 1}`)?.trim();
     if (!name) return;
@@ -18766,7 +18766,7 @@ function renderSoundPage(body: HTMLElement) {
     writeJson(SND_PRESETS_KEY, [[name, look], ...mySoundPresets().filter(([n]) => n !== name)]);
     settings.sndStyle = `yours/${name}`;
     changed(new Set<keyof Settings>(['sndStyle']));
-    musicRail = 'yours';
+    musicRail = 'saved';
     picker.draw();
   });
   // Delete: shown while one of yours is playing.
@@ -18801,7 +18801,7 @@ function renderSoundPage(body: HTMLElement) {
       if (settings.sndDrumSrc === 'live') {
         const g = grooveById(settings.sndGroove);
         if (liveRail !== 'all' && liveRail !== 'saved' && g) liveRail = `g:${g.style}`;
-      } else if (musicRail !== 'all') musicRail = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'yours' : musicRail);
+      } else if (musicRail !== 'all') musicRail = styleNow().st?.id ?? (settings.sndStyle.startsWith('yours/') ? 'saved' : musicRail);
       paintPick();
       pick.querySelector<HTMLElement>('.rp-item.on')?.scrollIntoView({ block: 'nearest' });
     }
