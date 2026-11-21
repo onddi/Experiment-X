@@ -3162,12 +3162,22 @@ button.sndp-live-name { cursor: pointer; }
 .row:has(> .fx-meter) { position: relative; }
 .mg-meter.fx-meter { position: absolute; left: 12px; right: 12px; bottom: 5px; max-width: none; margin: 0; pointer-events: none; }
 .mg-meter.fx-meter.hit u { background: var(--accent); }
-/* An option picker card (‹ value ›) in a row of its own: the same one-line
-   layout as the other pickers, name on the left, arrows at the right edge. */
-#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) { grid-template-rows: none; row-gap: 0; padding-left: 12px; }
-#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > * { grid-column: auto; grid-row: auto; }
-#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > span { font-size: 13px; color: var(--label); text-align: left; }
-#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > button { align-self: center; }
+/* Option picker cards (‹ value ›). In a wide row: one line, name on the
+   left, the value between full-height arrows at the right edge. In a narrow
+   cell: the name over the value, arrows down both sides. Either way the
+   arrows are the full height of the card. */
+#panel .row.rk.select { container-type: inline-size; }
+@container (min-width: 260px) {
+  #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) { grid-template-columns: minmax(0, 1fr) 60px minmax(0, 1.3fr) 60px; grid-template-rows: minmax(0, 1fr); align-content: stretch; row-gap: 0; padding: 0 0 0 12px; }
+  #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > * { grid-column: auto; grid-row: auto; }
+  #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > span { font-size: 13px; color: var(--label); text-align: left; }
+}
+@container (max-width: 259px) {
+  #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) { grid-template-columns: 52px minmax(0, 1fr) 52px; grid-template-rows: 1fr 1fr; align-content: stretch; padding: 0; }
+  #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > span { align-self: end; }
+  #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > b { align-self: start; }
+}
+#panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > button { align-self: stretch; width: auto; height: auto; min-height: 48px; border-radius: 0; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
