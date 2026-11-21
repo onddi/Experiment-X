@@ -281,7 +281,7 @@ const MAX_COUNT = new URLSearchParams(location.search).get('renderer') === '2d' 
 const countNow = () => {
   const c = settings.count * densityK;
   // Small counts stay exact (a seed of 7); larger ones move in tens.
-  const v = Math.max(3, Math.min(MAX_COUNT * 1.25, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
+  const v = Math.max(1, Math.min(MAX_COUNT * 1.25, c < 100 ? Math.round(c) : Math.round(c / 10) * 10));
   return Math.min(v, growCap(v));
 };
 // Grow transition: the count is held down, then let out over a bar or two.
