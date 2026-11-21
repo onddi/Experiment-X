@@ -4,7 +4,7 @@ import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, PAL_GROUPS, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
-import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel, hasModel, MODEL_SOLIDS } from './shapes.ts';
+import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel, hasModel, MODEL_SOLIDS, setTextSolid, textNormal } from './shapes.ts';
 import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
@@ -2597,6 +2597,7 @@ function clipLabel(name: string, count: number) {
   const t = name.replace(/_+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim().toLowerCase();
   return t ? t[0].toUpperCase() + t.slice(1) : name;
 }
+const isText3d = () => settings.shape === 'solid' && settings.shapeSolid === 'text3d';
 const modelSolid = () => settings.shape === 'solid' && MODEL_SOLIDS.includes(settings.shapeSolid);
 const shownClips = () => (modelSolid() ? modelClips(settings.shapeSolid) : []);
 // The bundled animated examples (textures stripped; credits in models/README.md):
@@ -4525,6 +4526,86 @@ function shapeDetail() {
   }
   return '';
 }
+// 3D text: the word drawn flat, then raised. Points go on its front and back
+// faces and around its sides, in proportion to their area, each with its normal.
+function buildTextSolid() {
+  const S = settings;
+  const text = S.shapeText.trim() || ' ';
+  const fid = S.shapeFont;
+  fontReady(fid, () => {
+    shapeKey = '';
+    changed(new Set<keyof Settings>(['shapeFont']));
+  });
+  const W = 520;
+  const H = 180;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.fillStyle = '#fff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  let size = H * 0.7;
+  g.font = fontCss(fid, size);
+  size *= Math.min(1, (W * 0.94) / Math.max(1, g.measureText(text).width));
+  g.font = fontCss(fid, size);
+  g.fillText(text, W / 2, H / 2);
+  const a = g.getImageData(0, 0, W, H).data;
+  const al = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : a[(y * W + x) * 4 + 3] / 255);
+  const fill: number[] = [];
+  const edge: number[] = [];
+  let x0 = W, x1 = 0, y0 = H, y1 = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (al(x, y) < 0.5) continue;
+    fill.push(x, y);
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+    if (al(x - 1, y) < 0.5 || al(x + 1, y) < 0.5 || al(x, y - 1) < 0.5 || al(x, y + 1) < 0.5) edge.push(x, y);
+  }
+  if (!fill.length) {
+    setTextSolid(new Float32Array(0), new Float32Array(0));
+    return;
+  }
+  const sc = 1.8 / Math.max(x1 - x0 + 1, (y1 - y0 + 1) * 1.4);
+  const mx = (x0 + x1 + 1) / 2;
+  const my = (y0 + y1 + 1) / 2;
+  // About a fifth as deep as the letters are tall.
+  const dz = Math.max(0.05, (y1 - y0 + 1) * sc * 0.11);
+  const faces = fill.length;
+  const sides = (edge.length / 2) * ((2 * dz) / sc);
+  const N = 6000;
+  const pts = new Float32Array(N * 3);
+  const nrm = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const o = i * 3;
+    if (Math.random() * (faces + sides) < faces) {
+      const k = (Math.random() * (faces / 2)) | 0;
+      const front = Math.random() < 0.5;
+      pts[o] = (fill[k * 2] + Math.random() - mx) * sc;
+      pts[o + 1] = (fill[k * 2 + 1] + Math.random() - my) * sc;
+      pts[o + 2] = front ? -dz : dz;
+      nrm[o + 2] = front ? -1 : 1;
+    } else {
+      const k = (Math.random() * (edge.length / 2)) | 0;
+      const ex = edge[k * 2];
+      const ey = edge[k * 2 + 1];
+      // Outward: down the slope of the letter's coverage.
+      let gx = al(ex - 1, ey) - al(ex + 1, ey) + 0.5 * (al(ex - 1, ey - 1) + al(ex - 1, ey + 1) - al(ex + 1, ey - 1) - al(ex + 1, ey + 1));
+      let gy = al(ex, ey - 1) - al(ex, ey + 1) + 0.5 * (al(ex - 1, ey - 1) + al(ex + 1, ey - 1) - al(ex - 1, ey + 1) - al(ex + 1, ey + 1));
+      const len = Math.hypot(gx, gy) || 1;
+      gx /= len;
+      gy /= len;
+      pts[o] = (ex + 0.5 - mx) * sc;
+      pts[o + 1] = (ey + 0.5 - my) * sc;
+      pts[o + 2] = (Math.random() * 2 - 1) * dz;
+      nrm[o] = gx;
+      nrm[o + 1] = gy;
+    }
+  }
+  setTextSolid(pts, nrm);
+}
 // Rebuild the shape and let the particles glide to it.
 function reshape(ms = 700) {
   const fx = hx.slice(0, n);
@@ -4603,6 +4684,7 @@ function paramPoint(kind: string, u: number, v: number, t: number, R: number, ou
       const [bx, by, bz] = solidPoint(S.shapeSolid, u, Math.min(1, v + e));
       const ux = ax - x0, uy = ay - y0, uz = az - z0, vx2 = bx - x0, vy2 = by - y0, vz2 = bz - z0;
       let nx = uy * vz2 - uz * vy2, ny = uz * vx2 - ux * vz2, nz = ux * vy2 - uy * vx2;
+      if (S.shapeSolid === 'text3d') [nx, ny, nz] = textNormal(u);
       const len = Math.hypot(nx, ny, nz);
       if (len < 1e-9) out[3] = out[4] = 1;
       else {
@@ -4931,6 +5013,7 @@ function buildShape() {
   const R = (Math.min(w, h) / 2) * sz;
   paramShape = null;
   if (S.shape === 'geo' || S.shape === 'solid' || (S.shape === 'live' && (S.shapeLive === 'bars' || S.shapeLive === 'ring'))) {
+    if (S.shape === 'solid' && S.shapeSolid === 'text3d') buildTextSolid();
     buildParamShape();
     return;
   }
@@ -11074,8 +11157,8 @@ const CONTROLS: Control[] = [
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
   { kind: 'note', text: 'How the camera forms you (face, hands or body) is on the Camera tab.', show: isCam },
-  { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' },
-  { kind: 'select', key: 'shapeFont', label: 'Font', options: FONT_OPTS, font: true, show: () => settings.shape === 'text' || settings.shape === 'live' || settings.shape === 'sequence' },
+  { kind: 'text', key: 'shapeText', label: 'Text', placeholder: 'Type a word', show: () => settings.shape === 'text' || isText3d() },
+  { kind: 'select', key: 'shapeFont', label: 'Font', options: FONT_OPTS, font: true, show: () => settings.shape === 'text' || settings.shape === 'live' || settings.shape === 'sequence' || isText3d() },
   { kind: 'note', text: 'Symbols work too: try ★ ♥ ☾ ✿ ☮ or an emoji.', show: () => settings.shape === 'text' },
   { kind: 'select', key: 'shapeIcon', label: 'Icon', options: ICON_SHAPES, show: () => settings.shape === 'icon' },
   { kind: 'select', key: 'shapeGeo', label: 'Shape', options: GEO_SHAPES, show: () => settings.shape === 'geo' },

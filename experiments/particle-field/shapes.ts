@@ -600,7 +600,7 @@ export const GEO_SPINS = (type: string) => type !== 'wave' && type !== 'lissajou
 // --- solids --------------------------------------------------------------------
 
 export const SOLID_SHAPES: [string, string][] = [
-  ['sphere', 'Sphere'], ['torus', 'Ring donut'], ['cube', 'Cube'], ['helix', 'Double helix'],
+  ['text3d', '3D text (your word)'], ['sphere', 'Sphere'], ['torus', 'Ring donut'], ['cube', 'Cube'], ['helix', 'Double helix'],
   ['saturn', 'Ringed planet'], ['atom', 'Atom'], ['knot', 'Trefoil knot'], ['mobius', 'Möbius strip'], ['icosa', 'Icosahedron (wire)'],
   ['cubeframe', 'Cube (wire)'], ['pyramid', 'Pyramid'], ['cone', 'Cone'], ['shell', 'Seashell'], ['ripple', 'Ripple'], ['galaxy', 'Spiral galaxy'],
   ['heart3d', 'Heart'], ['dna', 'Spring'],
@@ -625,6 +625,21 @@ export function setModel(pts: Float32Array, name: string, anim: ModelAnim | null
   m.name = m.pts ? name : '';
   m.rest = m.pts ? m.pts.slice() : null;
   m.anim = m.pts ? anim : null;
+}
+// 3D text: points on the faces and sides of the word, raised from its outline,
+// with each point's surface normal (main.ts builds them from the Text box).
+let textPts: Float32Array | null = null;
+let textNrm: Float32Array | null = null;
+export function setTextSolid(pts: Float32Array, nrm: Float32Array) {
+  textPts = pts.length >= 3 ? pts : null;
+  textNrm = textPts ? nrm : null;
+}
+/** The surface normal at a 3D text point (u as given to solidPoint). */
+export function textNormal(u: number): [number, number, number] {
+  if (!textNrm) return [0, 0, -1];
+  const m = textNrm.length / 3;
+  const k = Math.min(m - 1, Math.floor(u * m)) * 3;
+  return [textNrm[k], textNrm[k + 1], textNrm[k + 2]];
 }
 export const hasModel = (slot: string) => !!slots[slot]?.pts;
 /** A model's animation clips (none for a still model). */
@@ -711,6 +726,12 @@ export function solidPoint(type: string, u: number, v: number): [number, number,
       const m = fp.length / 3;
       const k = Math.min(m - 1, Math.floor(u * m)) * 3;
       return [fp[k], fp[k + 1], fp[k + 2]];
+    }
+    case 'text3d': {
+      if (!textPts) return solidPoint('cube', u, v);
+      const m = textPts.length / 3;
+      const k = Math.min(m - 1, Math.floor(u * m)) * 3;
+      return [textPts[k], textPts[k + 1], textPts[k + 2]];
     }
     case 'model': {
       slots.model.pts ??= rocketPoints();
