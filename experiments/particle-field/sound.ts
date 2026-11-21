@@ -543,7 +543,20 @@ export class ParticleSound {
   private dry: GainNode;
   private wet: GainNode;
   private noise: AudioBuffer;
-  private voices = 0;
+  // Struck and bass voices still sounding, by the time each one ends. Counted from
+  // the clock, not from onended: a source that isn't wired to the output (the
+  // silent oscillators under a modelled string) may never fire onended, and a
+  // count that leaks fills up and refuses every bass and string note.
+  private voiceEnds: number[] = [];
+  private get voices() {
+    const now = this.ctx.currentTime;
+    if (this.voiceEnds.length && this.voiceEnds[0] <= now) this.voiceEnds = this.voiceEnds.filter((e) => e > now);
+    return this.voiceEnds.length;
+  }
+  private addVoice(end: number) {
+    this.voiceEnds.push(end);
+    this.voiceEnds.sort((a, b) => a - b);
+  }
   private tokens = NOTE_RATE;
   private grainDebt = 0;
   private lastThump = 0;
@@ -1760,7 +1773,6 @@ export class ParticleSound {
     this.log(this.cur, vel, Math.log2(fl / 55) / 6, Vd.decay * P.length * this.lenK * (this.bpmNow / 60), when);
     if (!this.audible(this.cur)) return;
     if (this.drumQ.length <= 64) this.drumQ.push({ kind: 'note', k: vel, at: this.ctx.currentTime + when, col: this.stepNow, len: Vd.decay * P.length * this.lenK, pc: ((Math.round(69 + 12 * Math.log2(fl / 440)) % 12) + 12) % 12 });
-    this.voices++;
     const V = VOICES[voice];
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
@@ -1768,6 +1780,7 @@ export class ParticleSound {
     // Low notes ring longer, like real bars and strings.
     const decay = V.decay * (1.3 - Math.min(1, f / 1600) * 0.6) * P.length * this.lenK;
     const end = t + decay + 0.05;
+    this.addVoice(end);
     const o1 = ctx.createOscillator();
     const o2 = ctx.createOscillator();
     o1.type = V.type;
@@ -1911,7 +1924,6 @@ export class ParticleSound {
       nd.stop(end);
     }
     o1.onended = () => {
-      this.voices--;
       pn.disconnect();
       for (const x of extra) x.disconnect();
     };
@@ -2370,7 +2382,6 @@ export class ParticleSound {
     if (!this.audible('bass')) return;
     // The bass note too, for the field's bass reactions (Bass moves the field).
     if (this.drumQ.length <= 64) this.drumQ.push({ kind: 'bass', k: vel, at: this.ctx.currentTime + when, col: this.stepNow, len });
-    this.voices++;
     const B = BASSES[this.p.bassSound] ?? BASSES.synth;
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
@@ -2380,6 +2391,7 @@ export class ParticleSound {
     f *= oct;
     if (B.ring) len = Math.min(len, B.ring);
     const end = t + len + B.release * 3 + 0.1;
+    this.addVoice(end);
     const from = this.bassF;
     this.bassF = f;
     // Pitch: slide in from the last note, or an 808's thump, or straight on.
@@ -2507,7 +2519,6 @@ export class ParticleSound {
       nd.stop(end);
     }
     nodes[0].onended = () => {
-      this.voices--;
       g.disconnect();
       mix.disconnect();
     };
