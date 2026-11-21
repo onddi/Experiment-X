@@ -22879,6 +22879,11 @@ function uPaint(force = false) {
   const v = uView();
   const desk = !sheetMode();
   if (desk) uPlace();
+  try {
+    navPaint();
+  } catch {
+    // Not built yet while the page starts.
+  }
   const sig = `${settings.sndVol > 0}|${sndMuted()}|${studioPref}|${v}|${xf.on}|${ovPickKnobs}|${ovDensity}|${document.body.classList.contains("u-pages")}|${hasShape()}|${desk}|${paused}|${recorder.on}`;
   if (sig === uSig && !force) return;
   uSig = sig;
@@ -22990,6 +22995,143 @@ ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-v]');
   if (b) uGo(b.dataset.v as UView);
 });
+// Phones, inside a Studio folder: the bar becomes the navigator.
+// [Stage] ‹ [folder · tab] › [tab n/N]. ‹ › step folders, a sideways swipe on
+// the name does too, a tap on it pops up every folder as a grid, and n/N steps
+// the folder's tabs. Back on the folder list it's the usual bar again.
+const unav = document.createElement('div');
+unav.className = 'u-nav';
+unav.innerHTML = `<button type="button" class="un-stage" aria-label="Stage" title="Stage">${ICONS.eye}</button><button type="button" class="un-step" data-d="-1" aria-label="Previous folder">${svg('<path d="M15 5l-7 7 7 7"/>')}</button><button type="button" class="un-name" aria-haspopup="true" aria-expanded="false"><b></b><small></small></button><button type="button" class="un-step" data-d="1" aria-label="Next folder">${svg('<path d="M9 5l7 7-7 7"/>')}</button><button type="button" class="un-tab" aria-label="Next tab"></button>`;
+ubar.append(unav);
+const ugrid = document.createElement('div');
+ugrid.className = 'u-grid';
+ugrid.setAttribute('role', 'menu');
+ugrid.setAttribute('aria-label', 'Studio folders');
+ubar.append(ugrid);
+const unName = unav.querySelector<HTMLButtonElement>('.un-name')!;
+const unTab = unav.querySelector<HTMLButtonElement>('.un-tab')!;
+const navOn = () => sheetMode() && uView() === 'studio' && panel.classList.contains('f-in');
+// The folder's own tab bar: Shape's Form / Place / Birth, Sound's Instruments …
+function navTabs() {
+  const bar = [...controls.querySelectorAll<HTMLElement>('.mtabs:not(.sub)')].find((b) => b.offsetParent !== null && !b.closest('.ft-hide, [hidden]'));
+  const btns = bar ? [...bar.querySelectorAll<HTMLButtonElement>(':scope > button')].filter((b) => !b.hidden) : [];
+  const i = btns.findIndex((b) => b.classList.contains('on') || b.getAttribute('aria-selected') === 'true');
+  return { btns, i: Math.max(0, i) };
+}
+let navSig = '';
+function navPaint() {
+  const on = navOn();
+  ubar.classList.toggle('nav', on);
+  if (!on) {
+    navGrid(false);
+    navSig = '';
+    return;
+  }
+  const f = folderOf(currentTab);
+  const { btns, i } = navTabs();
+  const tab = btns[i]?.textContent?.trim() ?? '';
+  const sig = `${f.id}|${tab}|${btns.length}`;
+  if (sig === navSig) return;
+  const [pf, pt] = navSig.split('|');
+  navSig = sig;
+  const b = unName.querySelector('b')!;
+  const sm = unName.querySelector('small')!;
+  // The name slides in from the side you stepped towards.
+  const fi = FOLDERS.indexOf(f);
+  const was = FOLDERS.findIndex((x) => x.id === pf);
+  const dir = was < 0 ? '' : fi === was ? '' : (fi - was + FOLDERS.length) % FOLDERS.length <= FOLDERS.length / 2 ? 'r' : 'l';
+  b.textContent = f.label;
+  sm.textContent = tab;
+  sm.hidden = !tab;
+  unTab.textContent = btns.length > 1 ? `${i + 1}/${btns.length}` : '';
+  unTab.hidden = btns.length < 2;
+  unTab.setAttribute('aria-label', btns.length > 1 ? `Next tab: ${btns[(i + 1) % btns.length].textContent?.trim()}` : 'Next tab');
+  const swap = (el: HTMLElement, cls: string) => {
+    el.classList.remove('un-l', 'un-r', 'un-up');
+    void el.offsetWidth;
+    if (cls) el.classList.add(cls);
+  };
+  if (dir) swap(unName, `un-${dir}`);
+  else if (pf === f.id && pt !== tab) swap(sm, 'un-up');
+  unName.setAttribute('aria-label', `${f.label}${tab ? `, ${tab}` : ''}: all folders`);
+  if (ugrid.classList.contains('open')) navGridPaint();
+}
+function navGo(id: string) {
+  document.querySelector<HTMLElement>(`.fd[data-f="${id}"] .fd-head`)?.click();
+  uPaint(true);
+  navPaint();
+}
+function navStep(d: number) {
+  const i = FOLDERS.indexOf(folderOf(currentTab));
+  navGo(FOLDERS[(i + d + FOLDERS.length) % FOLDERS.length].id);
+}
+function navGridPaint() {
+  const cur = folderOf(currentTab).id;
+  ugrid.innerHTML = '';
+  FOLDERS.forEach((f, k) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.style.setProperty('--i', String(k));
+    b.className = f.id === cur ? 'on' : '';
+    b.innerHTML = `${svg(f.icon)}<span></span>`;
+    b.querySelector('span')!.textContent = f.label;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navGrid(false);
+      if (f.id !== cur) navGo(f.id);
+    });
+    ugrid.append(b);
+  });
+}
+function navGrid(open = !ugrid.classList.contains('open')) {
+  if (open === ugrid.classList.contains('open')) return;
+  if (open) navGridPaint();
+  ugrid.classList.toggle('open', open);
+  unName.setAttribute('aria-expanded', String(open));
+}
+unav.querySelector('.un-stage')!.addEventListener('click', () => {
+  navGrid(false);
+  uGo('stage');
+});
+unav.querySelectorAll<HTMLButtonElement>('.un-step').forEach((b) => b.addEventListener('click', () => navStep(Number(b.dataset.d))));
+unTab.addEventListener('click', () => {
+  const { btns, i } = navTabs();
+  if (btns.length < 2) return;
+  btns[(i + 1) % btns.length].click();
+  requestAnimationFrame(navPaint);
+});
+{
+  // A sideways swipe on the name steps folders; a tap opens the grid.
+  let sx = 0;
+  let sy = 0;
+  let swiped = false;
+  unName.addEventListener('pointerdown', (e) => {
+    sx = e.clientX;
+    sy = e.clientY;
+    swiped = false;
+  });
+  unName.addEventListener('pointerup', (e) => {
+    const dx = e.clientX - sx;
+    if (Math.abs(dx) > 36 && Math.abs(dx) > Math.abs(e.clientY - sy) * 1.5) {
+      swiped = true;
+      navGrid(false);
+      navStep(dx < 0 ? 1 : -1);
+    }
+  });
+  unName.addEventListener('click', () => {
+    if (swiped) return;
+    navGrid();
+  });
+  unName.style.touchAction = 'pan-y';
+}
+// Anything else closes the grid.
+document.addEventListener('pointerdown', (e) => {
+  if (ugrid.classList.contains('open') && !(e.target as HTMLElement).closest('.u-grid, .un-name')) navGrid(false);
+}, true);
+// Folder and tab changes made in the Studio itself (the list, a tab, a search).
+document.addEventListener('click', (e) => (e.target as HTMLElement).closest?.('#panel') && requestAnimationFrame(navPaint));
+addEventListener('resize', () => navPaint());
 // Scene sheet: on the Stage, the bar's first button is the scene's name.
 // Tap it for this sheet (step ‹ ›, families, the family's scenes, search);
 // picking plays at once and the sheet stays open to try a few. A sideways
@@ -24139,12 +24281,16 @@ document.getElementById('sheet-find')!.addEventListener('click', () => {
 {
   const KEY = 'pf-panel-view';
   const TILE_ICON = '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/>';
-  let view = 'tiles';
-  try { if (localStorage.getItem(KEY) === 'list') view = 'list'; } catch {}
+  // Sliders first: List is the default, and phones (which have no switch
+  // for it) always use it. Desktop keeps Tiles only if you picked them.
+  let view = 'list';
+  try { if (localStorage.getItem(KEY) === 'tiles') view = 'tiles'; } catch {}
+  if (sheetMode()) view = 'list';
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'icon view-btn';
   const show = () => {
+    if (sheetMode()) view = 'list';
     panel.dataset.view = view;
     // The icon shows what a tap switches to.
     b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${view === 'list' ? TILE_ICON : DENSITY_ICON.strips}</svg>`;

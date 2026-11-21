@@ -3178,6 +3178,46 @@ button.sndp-live-name { cursor: pointer; }
   #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > b { align-self: start; }
 }
 #panel .rk.select .rack-row:not(:has(.rack-switch)):not(.rack-text) > button { align-self: stretch; width: auto; height: auto; min-height: 48px; border-radius: 0; }
+.u-nav, .u-grid { display: none; }
+/* Phones, inside a Studio folder: the bottom bar becomes the navigator
+   (Stage, ‹ folder ›, tab n/N) and crossfades with the usual bar. */
+@media (max-width: 720px) {
+  .u-bar > .u-seg, .u-bar > .u-tray { transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .u-bar.nav > .u-seg, .u-bar.nav > .u-tray { opacity: 0; transform: translateY(6px) scale(0.98); pointer-events: none; }
+  .u-nav { display: flex; position: absolute; inset: 6px; align-items: center; gap: 4px; opacity: 0; transform: translateY(-6px) scale(0.98); visibility: hidden; pointer-events: none; transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.22s; }
+  .u-bar.nav .u-nav { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity 0.24s ease 0.04s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) 0.04s, visibility 0s; }
+  .u-nav button { flex: none; height: 100%; padding: 0; border: 0; background: none; color: rgb(255 255 255 / 0.75); display: grid; place-items: center; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.15s ease, background-color 0.2s ease, color 0.2s ease; }
+  .u-nav button:active { transform: scale(0.94); }
+  .u-nav svg { width: 18px; height: 18px; }
+  .u-nav .un-stage, .u-nav .un-tab { width: 44px; border-radius: 22px; background: rgb(255 255 255 / 0.07); }
+  .u-nav .un-step { width: 38px; border-radius: 19px; }
+  .u-nav .un-name { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; overflow: hidden; border-radius: 22px; background: rgb(255 255 255 / 0.92); color: #111; touch-action: pan-y; }
+  .u-nav .un-name:active { transform: scale(0.98); }
+  .un-name b { max-width: 100%; padding: 0 10px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; line-height: 1.15; }
+  .un-name small { max-width: 100%; padding: 0 10px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.15; color: rgb(0 0 0 / 0.55); }
+  .un-name small[hidden] { display: none; }
+  .un-name.un-r > * { animation: un-r 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .un-name.un-l > * { animation: un-l 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .un-name small.un-up { animation: un-up 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  @keyframes un-r { from { opacity: 0; transform: translateX(18px); } }
+  @keyframes un-l { from { opacity: 0; transform: translateX(-18px); } }
+  @keyframes un-up { from { opacity: 0; transform: translateY(6px); } }
+  .u-nav .un-tab { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: rgb(255 255 255 / 0.82); }
+  .u-nav .un-tab[hidden] { display: none; }
+  .u-grid { display: grid; position: absolute; left: 0; right: 0; bottom: calc(100% + 10px); grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px; border-radius: 22px; background: #101014; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 -14px 40px rgb(0 0 0 / 0.5); transform-origin: 50% 100%; opacity: 0; transform: translateY(10px) scale(0.96); visibility: hidden; pointer-events: none; transition: opacity 0.16s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.2s; }
+  .u-grid.open { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s; }
+  .u-grid button { min-width: 0; height: 64px; padding: 0; border: 0; border-radius: 14px; background: rgb(255 255 255 / 0.06); color: rgb(255 255 255 / 0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; font: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.15s ease, background-color 0.2s ease; }
+  .u-grid button:active { transform: scale(0.95); }
+  .u-grid button span { max-width: 100%; padding: 0 4px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .u-grid button svg { width: 20px; height: 20px; }
+  .u-grid button.on { background: var(--accent); color: var(--on-accent); }
+  .u-grid.open button { animation: ug-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i) * 12ms); }
+  @keyframes ug-in { from { opacity: 0; transform: translateY(8px) scale(0.94); } }
+}
+@media (max-width: 720px) and (prefers-reduced-motion: reduce) {
+  .u-bar > .u-seg, .u-bar > .u-tray, .u-nav, .u-bar.nav .u-nav, .u-grid, .u-grid.open { transition: none; }
+  .un-name > *, .un-name small, .u-grid.open button { animation: none !important; }
+}
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
