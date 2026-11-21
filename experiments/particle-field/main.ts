@@ -11137,7 +11137,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'gfxSurfAmt', label: 'Surface amount', min: 0, max: 1, step: 0.05, format: pct, show: () => settings.gfxKick > 0 && settings.gfxSurfBy !== 'off' },
   { kind: 'note', text: 'Needs music (Music › Listening), or the Sound playing the reactions (Sound › Reactions). With the Sound, Voice follows the pad.', show: () => audio.source === 'off' && !drumsDrive() },
 
-  { kind: 'section', about: 'Near and far layers with parallax, and how a 3D solid is lit and turned.', id: 'depth', label: 'Depth & light', tab: 'look', lock: ['depth', 'depthParallax', 'shapeTilt', 'shapeFacing', 'solidLight', 'shapeDrag'],
+  { kind: 'section', about: 'Near and far layers with parallax and fog.', id: 'depth', label: 'Depth & light', tab: 'look', lock: ['depth', 'depthParallax'],
     power: { on: () => settings.depth > 0, off: { depth: 0 }, start: { depth: 0.7, depthParallax: 0.5 } },
     summary: () => (settings.depth > 0 ? `${pct(settings.depth)}${settings.depthParallax > 0 ? ', parallax' : ''}` : 'off') },
   { kind: 'range', key: 'depth', label: '3D depth', min: 0, max: 2, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)) },
@@ -11146,13 +11146,8 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'depthSoft', label: 'Soft far away', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'toggle', key: 'tiltLook', label: 'Tilt the phone to look around', show: () => tiltSupported },
   { kind: 'note', text: 'Far particles are smaller, dimmer and slower; near ones react more to the pointer. Past 100% it exaggerates: tiny faint far layers, big bright near ones. Parallax shifts the layers as the pointer moves (or slowly by itself).', show: () => settings.depth > 0 },
-  { kind: 'sub', label: '3D solid', show: () => settings.shape === 'solid' },
-  { kind: 'range', key: 'shapeTilt', label: 'Tilt', min: -60, max: 60, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
-  { kind: 'toggle', key: 'shapeDrag', label: 'Drag to turn it', show: () => settings.shape === 'solid' },
-  { kind: 'range', key: 'solidLight', label: 'Light and shade', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)), show: () => settings.shape === 'solid' },
-  { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
 
-  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shapeX', 'shapeY', 'shapeAngle', 'shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'modelClip', 'modelSpeed', 'modelBeat', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeSize', 'shapeCycle', 'entrance', 'entranceTime'],
+  { kind: 'section', about: 'Particles form a word, an image or a pattern.', id: 'shape', label: 'Shape', tab: 'shape', lock: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'patSeed', 'shapeSolid', 'modelClip', 'modelSpeed', 'modelBeat', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'shapeSpin', 'imageMode', 'shapeTilt', 'shapeFacing', 'solidLight', 'shapeDrag'],
     power: { on: hasShape, off: { shape: 'none' }, start: { shape: 'text' } },
     summary: () => (settings.shape === 'none' ? 'off' : settings.shape === 'text' ? `“${settings.shapeText}”` : settings.shape === 'icon' ? label(ICON_SHAPES, settings.shapeIcon) : settings.shape === 'geo' ? label(GEO_SHAPES, settings.shapeGeo) : settings.shape === 'solid' ? label(SOLID_SHAPES, settings.shapeSolid) : settings.shape === 'pattern' ? label(PATTERNS, settings.shapePattern) : settings.shape === 'live' ? label(LIVE_SHAPES, settings.shapeLive) : label(SHAPES, settings.shape)) },
   { kind: 'select', key: 'shape', label: 'Particles form', options: SHAPES },
@@ -11177,7 +11172,11 @@ const CONTROLS: Control[] = [
   ...Object.entries(EXAMPLE_MODELS).map(([id, m]): Control => ({ kind: 'note', text: m[3], show: () => settings.shape === 'solid' && settings.shapeSolid === id })),
   { kind: 'select', key: 'shapeLive', label: 'Show', options: LIVE_SHAPES, show: () => settings.shape === 'live' },
   { kind: 'range', key: 'shapeSpin', label: 'Turning', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'still' : pct(v)), show: () => settings.shape === 'geo' || settings.shape === 'solid' || (settings.shape === 'live' && settings.shapeLive === 'ring') },
-  { kind: 'note', text: '3D shapes look best with depth on; it turns on with them. Tilt, light and shade and facing are in Depth & light (Look tab).', show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'shapeTilt', label: 'Tilt', min: -60, max: 60, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
+  { kind: 'toggle', key: 'shapeDrag', label: 'Drag to turn it', show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'solidLight', label: 'Light and shade', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'flat' : pct(v)), show: () => settings.shape === 'solid' },
+  { kind: 'range', key: 'shapeFacing', label: 'Facing', min: -180, max: 180, step: 1, format: (v) => `${v}°`, show: () => settings.shape === 'solid' },
+  { kind: 'note', text: '3D shapes look best with depth on; it turns on with them (Look › Depth).', show: () => settings.shape === 'solid' },
   { kind: 'sub', label: 'Spectrum', show: isSpectrum },
   { kind: 'choice', key: 'specLayout', label: 'Layout', options: SPEC_LAYOUTS, show: () => isSpectrum() && settings.shapeLive === 'bars' },
   { kind: 'range', key: 'specBands', label: 'Bands', min: 16, max: 96, step: 4, format: (v) => `${v}`, show: isSpectrum },
@@ -11198,6 +11197,10 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
+
+  { kind: 'section', about: 'Where the shape sits, how tightly the particles hold it, and how it forms.', id: 'place', label: 'Place', tab: 'shape', lock: ['shapeSize', 'homeStrength', 'shapeX', 'shapeY', 'shapeAngle', 'entrance', 'entranceTime', 'shapeCycle'],
+    summary: () => (hasShape() ? `${pct(settings.shapeSize)}${settings.shapeX || settings.shapeY || settings.shapeAngle ? ', moved' : ''}` : 'no shape') },
+  { kind: 'note', text: 'Pick a shape on the Form tab first.', show: () => !hasShape() },
   { kind: 'range', key: 'shapeSize', label: 'Shape size', min: 0.2, max: 1, step: 0.05, format: pct, show: hasShape },
   { kind: 'range', key: 'homeStrength', label: 'Snap to shape', min: 0.1, max: 3, step: 0.1, format: (v) => `${v.toFixed(1)}×`, show: hasShape },
   { kind: 'range', key: 'shapeX', label: 'Position ←→', min: -0.5, max: 0.5, step: 0.01, format: signedPct, show: hasShape },
@@ -16362,6 +16365,22 @@ addEventListener('wheel', tipHide, { passive: true });
 // switches go with the tab whose page they belong to.
 type FTab = { id: string; label: string; secs: string[]; power?: Tab };
 const FOLDER_TABS: Record<string, FTab[]> = {
+  scenes: [
+    { id: 'library', label: 'Library', secs: ['presets', 'transitions'] },
+    { id: 'mine', label: 'Mine', secs: ['mine'] },
+    { id: 'layers', label: 'Layers', secs: ['toplayer', 'botlayer'] },
+  ],
+  shape: [
+    { id: 'form', label: 'Form', secs: ['shape'] },
+    { id: 'place', label: 'Place', secs: ['place'] },
+    { id: 'birth', label: 'Birth', secs: ['life', 'spawning'] },
+  ],
+  look: [
+    { id: 'style', label: 'Style', secs: ['look'] },
+    { id: 'colour', label: 'Colour', secs: ['colour'] },
+    { id: 'depth', label: 'Depth', secs: ['depth'] },
+    { id: 'lens', label: 'Lens', secs: ['lens'] },
+  ],
   motion: [
     { id: 'particles', label: 'Particles', secs: ['particles'] },
     { id: 'forces', label: 'Flow & forces', secs: ['flow', 'forces', 'swarm'] },
@@ -16376,6 +16395,17 @@ const FOLDER_TABS: Record<string, FTab[]> = {
 };
 const FTAB_KEY = 'particle-field:folder-tabs';
 const ftabNow: Record<string, string> = readJson<Record<string, string>>(FTAB_KEY, {});
+const ftabPaint: Record<string, () => void> = {};
+// Going to a card (from the Deck, the folder list or a search) opens its tab.
+function revealFolderTab(secId: string) {
+  for (const [fid, tabs] of Object.entries(FOLDER_TABS)) {
+    const t = tabs.find((x) => x.secs.includes(secId));
+    if (!t || ftabNow[fid] === t.id) continue;
+    ftabNow[fid] = t.id;
+    writeJson(FTAB_KEY, ftabNow);
+    ftabPaint[fid]?.();
+  }
+}
 function buildFolderTabs() {
   for (const [fid, tabs] of Object.entries(FOLDER_TABS)) {
     const secOf = (id: string) => controls.querySelector<HTMLElement>(`:scope > .group[data-sec="${id}"]`);
@@ -16418,6 +16448,7 @@ function buildFolderTabs() {
       });
     };
     refreshers.push(paint);
+    ftabPaint[fid] = paint;
     paint();
   }
   // Touch & gestures: its own tabs for one finger, two fingers, and taps.
@@ -17460,6 +17491,7 @@ function openSection(id: string) {
   if (panel.classList.contains('collapsed')) toggle.click();
   showTab(pageOf(c));
   folderEnter?.();
+  revealFolderTab(id);
   const sec = document.querySelector<HTMLElement>(`[data-sec="${id}"]`);
   if (!sec) return;
   if (sec.classList.contains('closed')) sec.querySelector<HTMLElement>('[aria-controls]')?.click();
@@ -24705,6 +24737,7 @@ function buildFolders() {
     if (!folderOf(currentTab).tabs.includes(t)) showTab(t);
     else if (currentTab !== t) showTab(t);
     if (sheetMode()) setInside(true);
+    revealFolderTab(it.ctl.id);
     const sec = secOf(it);
     if (!sec) return;
     // While the jump scrolls, the list keeps the card you picked.
@@ -24814,7 +24847,7 @@ type LayerId = 'particles' | 'form' | 'motion' | 'colour' | 'depth' | 'reacts' |
 // device's, not the scene's, so it has none.
 const LAYER_OF: Record<string, LayerId | null> = {
   look: 'particles',
-  shape: 'form', life: 'form', camshape: 'form', spawning: 'form',
+  shape: 'form', place: 'form', life: 'form', camshape: 'form', spawning: 'form',
   particles: 'motion', flow: 'motion', forces: 'motion', swarm: 'motion', obstacles: 'motion', collide: 'motion',
   colour: 'colour',
   depth: 'depth',
