@@ -14970,6 +14970,7 @@ function renderVibeMix() {
     let from: { f: MgFlav; v: number }[] = [];
     let st: { y: number; lx: number; v: number; moved: boolean } | null = null;
     track.addEventListener('pointerdown', (e) => {
+      fillGlideStop(track);
       from = mixFlavs(g).map((f) => ({ f, v: f.get() }));
       st = { y: e.clientY, lx: e.clientX, v: mixLevel(g), moved: false };
       try { track.setPointerCapture(e.pointerId); } catch { /* fine */ }
@@ -14984,8 +14985,15 @@ function renderVibeMix() {
       setMix(g, st.v, from);
       draw();
     });
-    const end = () => {
+    const end = (e: PointerEvent) => {
       if (st?.moved) refresh();
+      else if (st && e.type === 'pointerup') {
+        const f0 = from;
+        fillGlide(track, mixLevel(g), fillTapPos(track, e), (v) => {
+          setMix(g, v, f0);
+          draw();
+        }, refresh);
+      }
       st = null;
       track.classList.remove('turning', 'fine');
     };
@@ -17824,8 +17832,8 @@ function typeValue(c: Extract<Control, { kind: 'range' }>, out: HTMLElement, get
   input.addEventListener('blur', () => close(true));
 }
 // Fill rows (settings strips, the big slider, Sound levels): slide anywhere
-// along the row and the value moves on from where it is (a touch never makes
-// it jump), one row width for the whole range. Move the finger 40 px or more
+// along the row and the value moves on from where it is (a drag never makes
+// it jump; a tap glides to the spot), one row width for the whole range. Move the finger 40 px or more
 // up or down off the row and it moves at 15%, for fine changes.
 const FINE_OFF = 40;
 const FINE_RATE = 0.15;
@@ -17833,6 +17841,31 @@ function fillStep(el: HTMLElement, y0: number, e: PointerEvent, lastX: number) {
   const fine = Math.abs(e.clientY - y0) > FINE_OFF;
   el.classList.toggle('fine', fine);
   return ((e.clientX - lastX) / Math.max(80, el.getBoundingClientRect().width)) * (fine ? FINE_RATE : 1);
+}
+// A tap on a fill row glides the value to the spot you tapped. The glide is
+// short (0.18 s, easing out) so you see it move without waiting for it.
+function fillTapPos(el: HTMLElement, e: { clientX: number }) {
+  const r = el.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
+}
+const fillGlides = new WeakMap<HTMLElement, number>();
+function fillGlideStop(el: HTMLElement) {
+  cancelAnimationFrame(fillGlides.get(el) ?? 0);
+  fillGlides.delete(el);
+}
+function fillGlide(el: HTMLElement, from: number, to: number, apply: (p: number) => void, done?: () => void) {
+  fillGlideStop(el);
+  const t0 = performance.now();
+  const step = (now: number) => {
+    const k = Math.min(1, (now - t0) / 180);
+    apply(from + (to - from) * (1 - (1 - k) ** 3));
+    if (k < 1) fillGlides.set(el, requestAnimationFrame(step));
+    else {
+      fillGlides.delete(el);
+      done?.();
+    }
+  };
+  fillGlides.set(el, requestAnimationFrame(step));
 }
 const isFillRow = (el: HTMLElement) => !!el.closest(".overview[data-density='strips'], #panel[data-view='list'], .std-fill");
 // The app's one slider and one picker, for use outside the cards too: the
@@ -17912,9 +17945,11 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   let start: { x: number; y: number; v: number; t: number; turned: boolean; fill: boolean; lx: number } | null = null;
   let onValue = false;
   let lastTap = 0;
+  let homedAt = 0;
   el.addEventListener('pointerdown', (e) => {
     if ((e.target as HTMLElement).closest('.rk-anim, .kn-type')) return;
     onValue = e.target === out;
+    fillGlideStop(el);
     const v = animKnob(c.key, src.get(c.key) as number);
     start = { x: e.clientX, y: e.clientY, v, t: performance.now(), turned: false, fill: isFillRow(el), lx: e.clientX };
     el.setPointerCapture(e.pointerId);
@@ -17958,15 +17993,27 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
       typeValue(c, out, () => src.get(c.key) as number, (v) => src.put(c.key, +v.toFixed(6)), update);
       return;
     }
-    const tap = !!start && e.type === 'pointerup' && e.pointerType === 'touch' && !start.turned && performance.now() - start.t < 500;
-    if (tap && start!.fill) {
-      // dblclick isn't reliable on touch, so count the taps here.
+    const quick = !!start && e.type === 'pointerup' && !start.turned && performance.now() - start.t < 500;
+    const tap = quick && e.pointerType === 'touch';
+    if (quick && start!.fill) {
+      // A tap glides to where you tapped; a second tap straight after goes
+      // back to the scene's value (dblclick isn't reliable on touch).
       const now = performance.now();
       if (now - lastTap < 350) {
+        fillGlideStop(el);
         src.put(c.key, home());
         update();
         lastTap = 0;
-      } else lastTap = now;
+        homedAt = now;
+      } else {
+        lastTap = now;
+        const bar = el.querySelector<HTMLElement>('.rack-bar');
+        const to = fillTapPos(bar && bar.offsetWidth ? bar : el, e);
+        fillGlide(el, pos(src.get(c.key) as number), to, (p) => {
+          put(rangeVal(c, p));
+          update();
+        });
+      }
     } else if (tap) openTuner(c, home, src, update, el);
     start = null;
     el.classList.remove('turning', 'fine');
@@ -17974,6 +18021,8 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
   el.addEventListener('dblclick', () => {
+    if (performance.now() - homedAt < 400) return; // the second tap already did it
+    fillGlideStop(el);
     src.put(c.key, home());
     update();
   });
@@ -18668,16 +18717,17 @@ function renderSoundPage(body: HTMLElement) {
     if (settings.sndDrumSrc !== 'live') return randomStyle();
     void grooves().then((all) => rollLive(all.filter((g) => g.id !== settings.sndGroove)));
   });
-  // Save: keeps the song the dice rolled, so it's in the genre's list.
+  // Save: keeps the song playing (a dice roll or a preset) in ★ Saved; a
+  // rolled one also joins its genre's list.
   const keep = mk('button', 'sndp-dice sndp-keep', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-4-5 4z"/></svg>');
   keep.hidden = true;
   keep.addEventListener('click', () => {
     if (settings.sndDrumSrc === 'live') return settings.sndGroove && keepGroove(settings.sndGroove, !keptGrooves().includes(settings.sndGroove));
     const n = styleNow();
-    if (!n.st || !isRoll(n.v)) return;
+    if (!n.st || !n.v) return;
     const was = savedSongs(n.st.id).includes(n.v);
     keepSong(n.st.id, n.v, !was);
-    showToast(was ? 'Removed from saved songs' : `Saved ${songName(Number(n.v.slice(1)) || 0)}`);
+    showToast(was ? 'Removed from saved songs' : `Saved ${songLabel(n.v)}`);
     paintKeep();
     paintPick();
   });
@@ -18692,9 +18742,9 @@ function renderSoundPage(body: HTMLElement) {
       return;
     }
     const n = styleNow();
-    const roll = !!n.st && isRoll(n.v);
-    keep.hidden = !roll;
-    const on = roll && savedSongs(n.st!.id).includes(n.v);
+    const has = !!n.st && !!n.v;
+    keep.hidden = !has;
+    const on = has && savedSongs(n.st!.id).includes(n.v);
     keep.classList.toggle('on', on);
     keep.setAttribute('aria-pressed', String(on));
     keep.setAttribute('aria-label', on ? 'Saved song' : 'Save song');
@@ -19001,9 +19051,10 @@ function levelBar(key: keyof Settings, label: string): HTMLElement {
   lv.setAttribute('aria-valuemin', '0');
   lv.setAttribute('aria-valuemax', '100');
   const put = (v: number) => set(key, (Math.round(Math.max(0, Math.min(1, v)) * 100) / 100) as never);
-  // A fill row (fillStep): it moves on from where it is, never jumps.
+  // A fill row (fillStep): a drag moves on from where it is; a tap glides there.
   let st: { y: number; lx: number; v: number; moved: boolean } | null = null;
   lv.addEventListener('pointerdown', (e) => {
+    fillGlideStop(lv);
     lv.setPointerCapture(e.pointerId);
     st = { y: e.clientY, lx: e.clientX, v: Number(settings[key]), moved: false };
   });
@@ -19016,7 +19067,8 @@ function levelBar(key: keyof Settings, label: string): HTMLElement {
     st.lx = e.clientX;
     put(st.v);
   });
-  const end = () => {
+  const end = (e: PointerEvent) => {
+    if (st && !st.moved && e.type === 'pointerup') fillGlide(lv, Number(settings[key]), fillTapPos(lv, e), put);
     st = null;
     lv.classList.remove('turning', 'fine');
   };
@@ -19954,13 +20006,14 @@ function comboTrack() {
   };
   return { el, paint };
 }
-// The big slider's bar is a fill row (fillStep: no jumps, fine control off
-// the row); a tap on its value types one in. The Stage bar still jumps on a tap.
+// The big slider's bar is a fill row (fillStep: a drag moves on from where it
+// is, fine control off the row, a tap glides there); a tap on its value types one in. The Stage bar still jumps on a tap.
 function comboDrag(track: HTMLElement, host: HTMLElement, get: () => number, set: (p: number) => void, tapHandle?: () => void, fill = false) {
   let st: { x: number; y: number; lx: number; p: number; t: number; moved: boolean; onHandle: boolean } | null = null;
   track.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
     e.preventDefault();
+    fillGlideStop(track);
     track.setPointerCapture(e.pointerId);
     st = { x: e.clientX, y: e.clientY, lx: e.clientX, p: get(), t: performance.now(), moved: false, onHandle: !!(e.target as HTMLElement).closest(fill ? '.cmb-val' : '.cmb-h') };
   });
@@ -19986,7 +20039,7 @@ function comboDrag(track: HTMLElement, host: HTMLElement, get: () => number, set
     track.classList.remove('fine');
     if (s.moved || e.type !== 'pointerup' || performance.now() - s.t > 500) return;
     if (s.onHandle && tapHandle) return tapHandle();
-    if (fill) return;
+    if (fill) return fillGlide(track, get(), fillTapPos(track, e), set);
     const r = track.getBoundingClientRect();
     set((e.clientX - r.left) / r.width);
   };
