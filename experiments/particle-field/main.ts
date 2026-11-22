@@ -18622,6 +18622,41 @@ function styleVars(st: Style): string[] {
   // Each beat, then the genre's other takes on it (see Version).
   return g ? g.beats.flatMap((b) => [b.name, ...(g.versions ?? []).filter((x) => x.from === b.name).map((x) => x.name)]) : st.vars;
 }
+// Each genre's signature on top of its songs: a Pulse that suits it and one or
+// two touches of character. Kept light, so a song is easy to build on.
+type Flavor = Partial<Pick<Settings, 'sndTick' | 'sndTickPattern' | 'sndSeqTickSound' | 'sndSeqStyle' | 'sndSeqRate' | 'sndSeqVary' | 'sndPadPump' | 'sndPadBreath' | 'sndBassGlide' | 'sndBassGhost' | 'sndShimmer' | 'sndSub' | 'sndKickPunch' | 'sndHumanAmt'>>;
+const GENRE_FLAVOR: Record<string, Flavor> = {
+  ambient: { sndTick: 0, sndShimmer: 0.35, sndPadBreath: 0.6 },
+  world: { sndTick: 0.25, sndTickPattern: 'eighths', sndSeqTickSound: 'shaker', sndHumanAmt: 0.3 },
+  band: { sndTick: 0, sndSeqStyle: 'strum', sndHumanAmt: 0.4 },
+  synth: { sndTick: 0.2, sndTickPattern: 'sixteenths', sndSeqTickSound: 'hat', sndSeqStyle: 'up' },
+  lofi: { sndTick: 0.2, sndTickPattern: 'eighths', sndSeqTickSound: 'shuffle', sndHumanAmt: 0.5 },
+  house: { sndTick: 0.3, sndTickPattern: 'offbeat', sndSeqTickSound: 'hat', sndPadPump: 0.5 },
+  techno: { sndTick: 0.25, sndTickPattern: 'sixteenths', sndSeqTickSound: 'rim', sndKickPunch: 0.4 },
+  dub: { sndTick: 0.2, sndTickPattern: 'offbeat', sndSeqTickSound: 'rim', sndSeqRate: '2' },
+  dubstep: { sndTick: 0, sndSub: 0.5, sndBassGlide: 0.3 },
+  rap: { sndTick: 0, sndHumanAmt: 0.4 },
+  trap: { sndTick: 0.3, sndTickPattern: 'sixteenths', sndSeqTickSound: 'hat', sndBassGlide: 0.5, sndSub: 0.4 },
+  drill: { sndTick: 0.25, sndTickPattern: 'gallop', sndSeqTickSound: 'hat', sndBassGlide: 0.6, sndSub: 0.4 },
+  dnb: { sndTick: 0.25, sndTickPattern: 'sixteenths', sndSeqTickSound: 'shaker', sndSub: 0.3 },
+  dancehall: { sndTick: 0.3, sndTickPattern: 'tresillo', sndSeqTickSound: 'rim' },
+  afro: { sndTick: 0.3, sndTickPattern: 'clave', sndSeqTickSound: 'wood', sndHumanAmt: 0.3 },
+  breaks: { sndTick: 0.2, sndTickPattern: 'sixteenths', sndSeqTickSound: 'tamb', sndBassGhost: 0.4 },
+  idm: { sndTick: 0.2, sndTickPattern: 'field', sndSeqTickSound: 'glass', sndSeqStyle: 'random', sndSeqVary: 0.5 },
+  trance: { sndTick: 0.2, sndTickPattern: 'offbeat', sndSeqTickSound: 'hat', sndPadPump: 0.6, sndSeqStyle: 'up' },
+  triphop: { sndTick: 0, sndHumanAmt: 0.4, sndPadBreath: 0.5 },
+  phonk: { sndTick: 0.3, sndTickPattern: 'sixteenths', sndSeqTickSound: 'cowbell', sndBassGlide: 0.4 },
+  jersey: { sndTick: 0.3, sndTickPattern: 'tresillo', sndSeqTickSound: 'clap' },
+  synthwave: { sndTick: 0.2, sndTickPattern: 'eighths', sndSeqTickSound: 'hat', sndPadPump: 0.3, sndSeqStyle: 'up' },
+  jazz: { sndTick: 0.25, sndTickPattern: 'quarters', sndSeqTickSound: 'shuffle', sndHumanAmt: 0.5 },
+  garage: { sndTick: 0.25, sndTickPattern: 'sixteenths', sndSeqTickSound: 'shaker', sndBassGhost: 0.3 },
+  disco: { sndTick: 0.3, sndTickPattern: 'offbeat', sndSeqTickSound: 'tamb', sndPadPump: 0.2 },
+  hyperpop: { sndTick: 0.2, sndTickPattern: 'sixteenths', sndSeqTickSound: 'blip', sndSeqStyle: 'bounce' },
+  baile: { sndTick: 0.3, sndTickPattern: 'tresillo', sndSeqTickSound: 'tamb' },
+  gqom: { sndTick: 0.2, sndTickPattern: 'tresillo', sndSeqTickSound: 'wood', sndSub: 0.4 },
+  psy: { sndTick: 0.25, sndTickPattern: 'offbeat', sndSeqTickSound: 'hat', sndPadPump: 0.4 },
+  folktronica: { sndTick: 0.25, sndTickPattern: 'eighths', sndSeqTickSound: 'shaker', sndSeqStyle: 'up', sndHumanAmt: 0.3 },
+};
 // A rolled song ('~' and its seed): the genre's recipe, from one of its written beats.
 const isRoll = (v: string) => v.startsWith('~');
 function styleLook(st: Style | null, v: string): Partial<Settings> {
@@ -18654,6 +18689,7 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
       look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.45);
     }
   }
+  if (st) Object.assign(look, GENRE_FLAVOR[st.id]);
   look.sndStyle = `${st?.id ?? 'yours'}/${v}`;
   return look;
 }
