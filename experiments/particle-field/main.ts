@@ -17971,7 +17971,13 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   let homedAt = 0;
   el.addEventListener('pointerdown', (e) => {
     if ((e.target as HTMLElement).closest('.rk-anim, .kn-type')) return;
-    onValue = e.target === out;
+    // The value, with room for a finger: anywhere from just left of the
+    // number to the row's end, the full row height (a near miss used to
+    // glide the fill to the far end, e.g. Particles to ~100k).
+    const ob = out.getBoundingClientRect();
+    onValue = e.target === out || (isFillRow(el) && ob.width > 0 && e.clientX >= ob.left - 16 && e.clientX <= ob.right + 16);
+    // No focus move on the touch's mouse events: it would blur the input that opens.
+    if (onValue) e.preventDefault();
     fillGlideStop(el);
     const v = animKnob(c.key, src.get(c.key) as number);
     start = { x: e.clientX, y: e.clientY, v, t: performance.now(), turned: false, fill: isFillRow(el), lx: e.clientX };
