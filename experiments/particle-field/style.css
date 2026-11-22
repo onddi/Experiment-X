@@ -3230,6 +3230,12 @@ button.sndp-live-name { cursor: pointer; }
 .sndp-vol .sndp-mute svg { width: 19px; height: 19px; }
 .sndp-vol .sndp-mute.on { background: rgb(255 255 255 / 0.9); color: #111; }
 .sndp-vol .sndp-mute:disabled { opacity: 0.35; cursor: default; }
+/* Phones: the scene pill keeps one width, so the Stage bar never shifts. */
+@media (max-width: 720px) {
+  .u-bar.stage .u-seg button.named { width: 92px !important; min-width: 92px; flex: none; justify-content: center; }
+  .u-bar.stage .u-seg button.named span { flex: 0 1 auto; }
+}
+@media (max-width: 370px) { .u-bar.stage .u-seg button.named { width: 78px !important; min-width: 78px; } }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

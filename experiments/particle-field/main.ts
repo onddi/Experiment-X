@@ -14412,10 +14412,10 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
     sb.hidden = !(settings.sndVol > 0);
     sb.querySelector('span')!.textContent = sndMuted() ? 'Unmute the sound (M)' : 'Mute the sound (M)';
   }
-  // Play and pause: phones only (wider screens have it on the bar).
+  // Play and pause: phones off the Stage (the bar has it elsewhere).
   const ppb = dockMoreEl.querySelector<HTMLElement>('.dm-pause');
   if (ppb) {
-    ppb.hidden = !sheetMode();
+    ppb.hidden = !sheetMode() || uView() === 'stage';
     ppb.innerHTML = `${paused ? ICONS.play : ICONS.pause}<span>${paused ? 'Play' : 'Pause'}</span>`;
   }
   // Previous scene: hidden until there is one.
@@ -22924,7 +22924,7 @@ function toggleMute(on = !sndMuted()) {
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · double tap for settings · hold to mute' : 'Close the sound studio (M) · double tap for settings · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
-  stage: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uMore()],
+  stage: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -25179,12 +25179,12 @@ function buildFolders() {
   // The Pages dock's page buttons open that folder.
   for (const [, b] of dockTabs) b.addEventListener('click', () => folderEnter?.());
 }
-// --- Build: the scene as eight layers ------------------------------------------
+// --- Build: the scene as nine layers ------------------------------------------
 // The engine read as a build order: Particles → Form → Motion → Colour →
-// Depth & light → Reacts to → Finish → Perform. Every Studio card has one home
+// Depth & light → Reacts to → Sound → Finish → Perform. Every Studio card has one home
 // layer (LAYER_OF). Build is a route through the same settings, so nothing is
 // lost or duplicated: picks set the common cases, Fine-tune opens the cards.
-type LayerId = 'particles' | 'form' | 'motion' | 'colour' | 'depth' | 'reacts' | 'finish' | 'perform';
+type LayerId = 'particles' | 'form' | 'motion' | 'colour' | 'depth' | 'reacts' | 'sound' | 'finish' | 'perform';
 // Each card's home layer. Room setup (quality, screen fit, recording) is the
 // device's, not the scene's, so it has none.
 const LAYER_OF: Record<string, LayerId | null> = {
@@ -25194,7 +25194,7 @@ const LAYER_OF: Record<string, LayerId | null> = {
   colour: 'colour',
   depth: 'depth',
   audio: 'reacts', vibe: 'reacts', mgmusic: 'reacts', drums: 'reacts', drops: 'reacts', bands: 'reacts', mcolour: 'reacts', camera: 'reacts', viewfx: 'reacts', mmotion: 'reacts', mwords: 'reacts', rapflow: 'reacts', gfxmusic: 'reacts',
-  pointer: 'reacts', cam: 'reacts', mgcam: 'reacts', facefx: 'reacts', hands: 'reacts', caminputs: 'reacts', sound: 'reacts', links: 'reacts',
+  pointer: 'reacts', cam: 'reacts', mgcam: 'reacts', facefx: 'reacts', hands: 'reacts', caminputs: 'reacts', sound: 'sound', links: 'reacts',
   lens: 'finish', gfxlooks: 'finish', gfxlight: 'finish', gfxfeed: 'finish', gfxecho: 'finish', gfxlens: 'finish', gfxdisplace: 'finish', gfxglitch: 'finish', gfxsurface: 'finish', gfxgrade: 'finish', mirror: 'finish',
   presets: 'perform', mine: 'perform', timeline: 'perform', xfader: 'perform', transitions: 'perform', macros: 'perform', play: 'perform', anim: 'perform', vj: 'perform',
   quality: null, view: null, record: null, device: null, actions: null,
@@ -25325,9 +25325,9 @@ const LAYERS: BLayer[] = [
   },
   {
     id: 'reacts', name: 'Reacts to', color: '#ff9b5c', q: 'What moves it?', about: 'Music, your touch, your hands on camera, or the field’s own sound.',
-    used: () => audio.source !== 'off' || settings.pointerMode !== 'none' || settings.camHands !== 'off' || settings.sndVol > 0 || parseLinks(settings.links).length > 0,
+    used: () => audio.source !== 'off' || settings.pointerMode !== 'none' || settings.camHands !== 'off' || parseLinks(settings.links).length > 0,
     sum: () => {
-      const parts = [audio.source !== 'off' ? 'Music' : '', settings.pointerMode !== 'none' ? `touch: ${label(BUILD_TOUCH, settings.pointerMode).toLowerCase()}` : '', settings.camHands !== 'off' ? 'hands' : '', settings.sndVol > 0 ? 'its own sound' : ''].filter(Boolean);
+      const parts = [audio.source !== 'off' ? 'Music' : '', settings.pointerMode !== 'none' ? `touch: ${label(BUILD_TOUCH, settings.pointerMode).toLowerCase()}` : '', settings.camHands !== 'off' ? 'hands' : ''].filter(Boolean);
       const n = parseLinks(settings.links).length;
       if (n) parts.push(`${n} connection${n > 1 ? 's' : ''}`);
       return parts.join(' · ') || 'Nothing';
@@ -25344,10 +25344,20 @@ const LAYERS: BLayer[] = [
       ] },
       { label: 'Your touch', tune: 'pointer', picks: BUILD_TOUCH.map(([k, n]) => bPick(n, { pointerMode: k as Settings['pointerMode'] })) },
       { label: 'Your hands (camera)', tune: 'hands', picks: [bPick('Off', { camHands: 'off' }), bPick('Push away', { camHands: 'repel' }), bPick('Pull in', { camHands: 'attract' }), bPick('Swirl', { camHands: 'vortex' })] },
-      { label: 'Its own sound', tune: 'sound', picks: [{ name: 'Silent', on: () => settings.sndVol === 0, patch: { sndVol: 0 } }, { name: 'Plays', on: () => settings.sndVol > 0, go: () => settings.sndVol === 0 && bApply({ sndVol: 0.6 }) }] },
       { label: 'Wiring', tune: 'links', picks: [] },
     ],
-    extras: () => ['audioIntensity', 'force', 'sndVol'],
+    extras: () => ['audioIntensity', 'force'],
+  },
+  {
+    id: 'sound', name: 'Sound', color: '#9fe870', q: 'Does it make music?', about: 'Pick a genre to start from. Shape it further in Studio › Sound.',
+    used: () => settings.sndVol > 0,
+    sum: () => (settings.sndVol > 0 ? (styleById(settings.sndStyle.split('/')[0])?.name ?? 'Plays') : 'Silent'),
+    groups: () => [{ picks: [
+      { name: 'Silent', on: () => settings.sndVol === 0, go: () => bApply({ sndVol: 0 }) },
+      ...STYLES.map((st): BPick => ({ name: st.name, on: () => settings.sndVol > 0 && settings.sndStyle.startsWith(`${st.id}/`), go: () => useStyle(st, styleVars(st)[0], true) })),
+    ] }],
+    extras: () => ['sndVol'],
+    off: () => ({ sndVol: 0 }),
   },
   {
     id: 'finish', name: 'Finish', color: '#ff8fc8', q: 'Any finish over the picture?', about: 'A lens or an FX look over the whole picture: bloom, tunnel, VHS, halftone.',
@@ -25522,7 +25532,7 @@ function buildFinish() {
 function buildFromBlank() {
   const was = snapshot();
   playPreset('Blank', BLANK_SCENE);
-  bApply({ ...fxLookOf({}), ...LENS_OFF, ...moodOf({}), playOn: false });
+  bApply({ ...fxLookOf({}), ...LENS_OFF, ...moodOf({}), playOn: false, sndVol: 0 });
   buildHidden.clear();
   buildMode = 'steps';
   buildStep = 0;
