@@ -3194,6 +3194,10 @@ button.sndp-live-name { cursor: pointer; }
   .u-nav .un-name { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; overflow: hidden; border-radius: 22px; background: rgb(255 255 255 / 0.92); color: #111; touch-action: pan-y; }
   .u-nav .un-name:active { transform: scale(0.98); }
   .un-name b { max-width: 100%; padding: 0 10px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; line-height: 1.15; }
+  .un-name b { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .un-name b span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .un-name .un-ic { display: inline-grid; flex: none; }
+  .u-nav .un-name .un-ic svg { width: 15px; height: 15px; }
   .un-name small { max-width: 100%; padding: 0 10px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.15; color: rgb(0 0 0 / 0.55); }
   .un-name small[hidden] { display: none; }
   .un-name.un-r > * { animation: un-r 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }

@@ -16352,7 +16352,8 @@ document.addEventListener('pointerdown', (e) => {
   const t = (e.target as HTMLElement).closest?.<HTMLElement>('[data-tip]');
   // A knob's own tap opens its slider (with the text); a fill row has no tap, so holding its name shows it.
   const rk = t?.closest<HTMLElement>('.rack-knob');
-  if (!t || t.closest('.overview, .solo-sheet') || (rk && !isFillRow(rk))) return;
+  // A slider's hold sets its value, so it has no hold tip (the mouse still hovers for it).
+  if (!t || t.closest('.overview, .solo-sheet') || rk) return;
   tipHeld = false;
   const [x, y] = [e.clientX, e.clientY];
   tipTimer = window.setTimeout(() => {
@@ -17954,7 +17955,10 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   // Strips and the list view draw it as a fill row: the whole row is the
   // slider (see fillStep), sideways only, and a tap no longer opens the big
   // slider (hold still for it); a double tap goes back to the scene's value.
-  let start: { x: number; y: number; v: number; t: number; turned: boolean; fill: boolean; lx: number } | null = null;
+  let start: { x: number; y: number; v: number; t: number; turned: boolean; fill: boolean; lx: number; held?: boolean } | null = null;
+  // A fill row held still for a moment sets the value under the finger, then
+  // a drag carries on from there (a quick swipe up or down still scrolls).
+  let holdT = 0;
   let onValue = false;
   let lastTap = 0;
   let homedAt = 0;
@@ -17965,6 +17969,22 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     const v = animKnob(c.key, src.get(c.key) as number);
     start = { x: e.clientX, y: e.clientY, v, t: performance.now(), turned: false, fill: isFillRow(el), lx: e.clientX };
     el.setPointerCapture(e.pointerId);
+    clearTimeout(holdT);
+    if (start.fill && !onValue && !el.closest('.overview')) {
+      const s0 = start;
+      holdT = window.setTimeout(() => {
+        if (start !== s0 || s0.turned) return;
+        const bar = el.querySelector<HTMLElement>('.rack-bar');
+        const to = fillTapPos(bar && bar.offsetWidth ? bar : el, { clientX: s0.lx });
+        s0.held = true;
+        s0.v = rangeVal(c, to);
+        el.classList.add('turning');
+        fillGlide(el, pos(src.get(c.key) as number), to, (p) => {
+          put(rangeVal(c, p));
+          update();
+        });
+      }, 160);
+    }
     if (e.pointerType !== 'touch') el.classList.add('turning');
   });
   el.addEventListener('pointermove', (e) => {
@@ -17976,8 +17996,10 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
     // Mouse: a small dead zone, so holding still (for the solo view) doesn't nudge it.
     if (!touch && !start.turned && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
     start.turned = true;
+    clearTimeout(holdT);
     el.classList.add('turning');
     if (start.fill) {
+      fillGlideStop(el);
       start.v = rangeVal(c, pos(start.v) + fillStep(el, start.y, e, start.lx));
       start.lx = e.clientX;
       put(start.v);
@@ -18005,7 +18027,8 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
       typeValue(c, out, () => src.get(c.key) as number, (v) => src.put(c.key, +v.toFixed(6)), update);
       return;
     }
-    const quick = !!start && e.type === 'pointerup' && !start.turned && performance.now() - start.t < 500;
+    clearTimeout(holdT);
+    const quick = !!start && e.type === 'pointerup' && !start.turned && !start.held && performance.now() - start.t < 500;
     const tap = quick && e.pointerType === 'touch';
     if (quick && start!.fill) {
       // A tap glides to where you tapped; a second tap straight after goes
@@ -19077,23 +19100,36 @@ function levelBar(key: keyof Settings, label: string): HTMLElement {
   lv.setAttribute('aria-valuemax', '100');
   const put = (v: number) => set(key, (Math.round(Math.max(0, Math.min(1, v)) * 100) / 100) as never);
   // A fill row (fillStep): a drag moves on from where it is; a tap glides there.
-  let st: { y: number; lx: number; v: number; moved: boolean } | null = null;
+  let st: { y: number; lx: number; v: number; moved: boolean; held?: boolean } | null = null;
+  let holdT = 0;
   lv.addEventListener('pointerdown', (e) => {
     fillGlideStop(lv);
     lv.setPointerCapture(e.pointerId);
-    st = { y: e.clientY, lx: e.clientX, v: Number(settings[key]), moved: false };
+    const s0: NonNullable<typeof st> = { y: e.clientY, lx: e.clientX, v: Number(settings[key]), moved: false };
+    st = s0;
+    clearTimeout(holdT);
+    // Held still a moment: the level goes where the finger is.
+    holdT = window.setTimeout(() => {
+      if (st !== s0 || s0.moved) return;
+      s0.held = true;
+      s0.v = fillTapPos(lv, { clientX: s0.lx });
+      fillGlide(lv, Number(settings[key]), s0.v, put);
+    }, 160);
   });
   lv.addEventListener('pointermove', (e) => {
     if (!st || !lv.hasPointerCapture(e.pointerId)) return;
     if (!st.moved && Math.abs(e.clientX - st.lx) < 4) return;
     st.moved = true;
+    clearTimeout(holdT);
+    fillGlideStop(lv);
     lv.classList.add('turning');
     st.v = Math.max(0, Math.min(1, st.v + fillStep(lv, st.y, e, st.lx)));
     st.lx = e.clientX;
     put(st.v);
   });
   const end = (e: PointerEvent) => {
-    if (st && !st.moved && e.type === 'pointerup') fillGlide(lv, Number(settings[key]), fillTapPos(lv, e), put);
+    clearTimeout(holdT);
+    if (st && !st.moved && !st.held && e.type === 'pointerup') fillGlide(lv, Number(settings[key]), fillTapPos(lv, e), put);
     st = null;
     lv.classList.remove('turning', 'fine');
   };
@@ -19676,6 +19712,22 @@ const FX_LOOKS: [string, Partial<Settings>][] = [
   ['Mirror world', { gfxLens: 'quad', gfxBloom: 0.5, gfxGrade: 'scene', gfxGradeAmt: 0.4, gfxVignette: 0.3 }],
   ['Pixel sort', { gfxLens: 'sort', gfxBloom: 0.4, gfxGlitch: 0.3, gfxGlitchOn: 'kick', gfxGrain: 0.2 }],
   ['Heat haze', { gfxDisplace: 0.6, gfxHaze: 0.5, gfxGrade: 'sunset', gfxGradeAmt: 0.6, gfxTint: 'warm', gfxBloom: 0.5 }],
+  ['Hyperspace', { gfxBlur: 'zoom', gfxBlurAmt: 0.7, gfxBloom: 0.8, gfxSpread: 0.6, gfxTint: 'ice', gfxSplit: 0.25, gfxVignette: 0.5 }],
+  ['Vortex', { gfxLens: 'twirl', gfxBend: 0.7, gfxFeedback: 'spiral', gfxLength: 0.88, gfxBloom: 0.6, gfxSpread: 0.5 }],
+  ['Speed lines', { gfxBlur: 'motion', gfxBlurAmt: 0.6, gfxBlurAngle: 0, gfxSplit: 0.3, gfxContrast: 0.2, gfxGrain: 0.2 }],
+  ['Sunburst', { gfxBlur: 'spin', gfxBlurAmt: 0.45, gfxRays: 0.7, gfxBloom: 0.7, gfxTint: 'gold', gfxGrade: 'sunset', gfxGradeAmt: 0.3 }],
+  ['Stained glass', { gfxSurface: 'mosaic', gfxCell: 12, gfxBloom: 0.5, gfxSat: 0.4, gfxContrast: 0.2, gfxVignette: 0.35 }],
+  ['Polaroid', { gfxGrade: 'sunset', gfxGradeAmt: 0.45, gfxExposure: 0.1, gfxContrast: -0.25, gfxSat: -0.2, gfxGrain: 0.35, gfxVignette: 0.6 }],
+  ['Bleach bypass', { gfxGrade: 'mono', gfxGradeAmt: 0.45, gfxContrast: 0.5, gfxSat: -0.5, gfxGrain: 0.3, gfxVignette: 0.4 }],
+  ['Cyberpunk', { gfxBloom: 0.9, gfxSpread: 0.6, gfxTint: 'violet', gfxSplit: 0.5, gfxGlitch: 0.3, gfxGlitchOn: 'random', gfxContrast: 0.25, gfxGrain: 0.25, gfxVignette: 0.5 }],
+  ['Strobe club', { gfxBloom: 1.2, gfxBloomKick: true, gfxSplit: 0.4, gfxContrast: 0.3, gfxInvertDrop: true, gfxVignette: 0.5 }],
+  ['Shockwave', { gfxLens: 'shock', gfxShock: 1, gfxBloom: 0.7, gfxSplit: 0.3 }],
+  ['Glass rain', { gfxLens: 'glass', gfxCount: 3, gfxDisplace: 0.4, gfxGrade: 'ocean', gfxGradeAmt: 0.35, gfxBloom: 0.4, gfxVignette: 0.4 }],
+  ['Funhouse', { gfxLens: 'bulge', gfxBend: 0.8, gfxHueCycle: 0.3, gfxBloom: 0.4, gfxSat: 0.3 }],
+  ['Smoke', { gfxFeedback: 'smear', gfxFlow: 1.2, gfxLength: 0.94, gfxHaze: 0.4, gfxGrade: 'mono', gfxGradeAmt: 0.5, gfxBloom: 0.3 }],
+  ['Infinite mirror', { gfxFeedback: 'mirror', gfxLength: 0.9, gfxZoom: 0.5, gfxBloom: 0.5, gfxVignette: 0.4 }],
+  ['Rorschach', { gfxLens: 'mirrorx', gfxGrade: 'mono', gfxGradeAmt: 1, gfxContrast: 0.6, gfxPoster: 3 }],
+  ['Lo-fi tape', { gfxSurface: 'vhs', gfxPoster: 6, gfxSat: -0.3, gfxBlur: 'motion', gfxBlurAmt: 0.15, gfxGrain: 0.5, gfxVignette: 0.5 }],
 ];
 const FX_LOOKS_KEY = 'particle-field:fx-looks';
 const myFxLooks = () => readJson<[string, Partial<Settings>][]>(FX_LOOKS_KEY, []);
@@ -23029,7 +23081,7 @@ ubar.querySelector('.u-seg')!.addEventListener('click', (e) => {
 // the folder's tabs. Back on the folder list it's the usual bar again.
 const unav = document.createElement('div');
 unav.className = 'u-nav';
-unav.innerHTML = `<button type="button" class="un-stage" aria-label="Stage" title="Stage">${ICONS.eye}</button><button type="button" class="un-step" data-d="-1" aria-label="Previous folder">${svg('<path d="M15 5l-7 7 7 7"/>')}</button><button type="button" class="un-name" aria-haspopup="true" aria-expanded="false"><b></b><small></small></button><button type="button" class="un-step" data-d="1" aria-label="Next folder">${svg('<path d="M9 5l7 7-7 7"/>')}</button><button type="button" class="un-tab" aria-label="Next tab"></button>`;
+unav.innerHTML = `<button type="button" class="un-stage" aria-label="Stage" title="Stage">${ICONS.eye}</button><button type="button" class="un-step" data-d="-1" aria-label="Previous folder">${svg('<path d="M15 5l-7 7 7 7"/>')}</button><button type="button" class="un-name" aria-haspopup="true" aria-expanded="false"><b><i class="un-ic" aria-hidden="true"></i><span></span></b><small></small></button><button type="button" class="un-step" data-d="1" aria-label="Next folder">${svg('<path d="M9 5l7 7-7 7"/>')}</button><button type="button" class="un-tab" aria-label="Next tab"></button>`;
 ubar.append(unav);
 const ugrid = document.createElement('div');
 ugrid.className = 'u-grid';
@@ -23073,7 +23125,8 @@ function navPaint() {
   const fi = FOLDERS.indexOf(f);
   const was = FOLDERS.findIndex((x) => x.id === pf);
   const dir = was < 0 ? '' : fi === was ? '' : (fi - was + FOLDERS.length) % FOLDERS.length <= FOLDERS.length / 2 ? 'r' : 'l';
-  b.textContent = f.label;
+  b.querySelector('span')!.textContent = f.label;
+  b.querySelector('.un-ic')!.innerHTML = svg(f.icon);
   sm.textContent = tab;
   sm.hidden = !tab;
   // Always there, blank in a folder without tabs, so the bar never shifts.
