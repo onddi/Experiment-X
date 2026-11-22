@@ -22416,7 +22416,7 @@ function showToast(text: string, action?: [string, () => void]) {
   }
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el!.classList.remove('show'), Math.max(action ? 5000 : 1600, text.length * 45));
+  toastTimer = window.setTimeout(() => el!.classList.remove('show'), action ? Math.max(10000, text.length * 90) : Math.max(1600, text.length * 45));
 }
 
 // Reset is a clean slate: default settings and no locked cards, so the
