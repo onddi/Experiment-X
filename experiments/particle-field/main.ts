@@ -2489,6 +2489,79 @@ function mediaStop() {
   shapeMedia = null;
   mediaBmp?.close();
   mediaBmp = null;
+  mediaPlate = null;
+}
+// The background behind a video or GIF: each pixel's median over frames
+// spread through it. What differs from it is what moves (a dancer on a
+// busy background), which brightness alone can't find.
+let mediaPlate: { src: string; w: number; h: number; d: Uint8ClampedArray } | null = null;
+const PLATE_PX = 240;
+let plateCanvas: HTMLCanvasElement | null = null;
+async function buildPlate(m: NonNullable<typeof shapeMedia>) {
+  const grab: CanvasImageSource[] = [];
+  let sw = 0;
+  let sh = 0;
+  const c = document.createElement('canvas');
+  const frames: Uint8ClampedArray[] = [];
+  const take = (img: CanvasImageSource) => {
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(img, 0, 0, c.width, c.height);
+    frames.push(g.getImageData(0, 0, c.width, c.height).data);
+  };
+  const size = (w: number, h: number) => {
+    const k = Math.min(1, PLATE_PX / Math.max(w, h, 1));
+    c.width = Math.max(2, Math.round(w * k));
+    c.height = Math.max(2, Math.round(h * k));
+  };
+  if (m.frames) {
+    sw = m.frames[0].width;
+    sh = m.frames[0].height;
+    size(sw, sh);
+    const step = Math.max(1, Math.floor(m.frames.length / 15));
+    for (let k = 0; k < m.frames.length; k += step) grab.push(m.frames[k]);
+    grab.forEach(take);
+  } else if (m.video) {
+    // A second element, so seeking doesn't stall the one playing.
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    v.src = m.src;
+    await new Promise<void>((ok, no) => {
+      v.addEventListener('loadeddata', () => ok(), { once: true });
+      v.addEventListener('error', () => no(), { once: true });
+    });
+    const dur = v.duration;
+    if (!isFinite(dur) || dur <= 0) return;
+    size(v.videoWidth, v.videoHeight);
+    const K = Math.min(15, Math.max(5, Math.round(dur * 3)));
+    for (let k = 0; k < K; k++) {
+      if (shapeMedia !== m) return;
+      await new Promise<void>((ok) => {
+        v.addEventListener('seeked', () => ok(), { once: true });
+        v.currentTime = ((k + 0.5) / K) * dur;
+      });
+      take(v);
+    }
+    v.removeAttribute('src');
+    v.load();
+  }
+  if (frames.length < 3 || shapeMedia !== m) return;
+  const n = c.width * c.height * 4;
+  const d = new Uint8ClampedArray(n);
+  const col = new Uint8Array(frames.length);
+  for (let q = 0; q < n; q++) {
+    if ((q & 3) === 3) {
+      d[q] = 255;
+      continue;
+    }
+    for (let f = 0; f < frames.length; f++) col[f] = frames[f][q];
+    col.sort();
+    d[q] = col[col.length >> 1];
+  }
+  mediaPlate = { src: m.src, w: c.width, h: c.height, d };
+  shapeKey = '';
+  buildShape();
 }
 // The picture as it is now (drawn into a canvas small enough to sample).
 function mediaFrame(): HTMLCanvasElement | null {
@@ -2675,6 +2748,7 @@ imageInput.addEventListener('change', async () => {
       shapeKey = '';
       buildShape();
       imageColoursOn(true);
+      void buildPlate(shapeMedia).catch(() => {});
     }, { once: true });
     void v.play().catch(() => {});
     return;
@@ -2687,6 +2761,7 @@ imageInput.addEventListener('change', async () => {
       shapeKey = '';
       buildShape();
       imageColoursOn(true);
+      void buildPlate(shapeMedia).catch(() => {});
       return;
     }
   }
@@ -4342,7 +4417,82 @@ function sampleImage(): [number, number][] {
     return pts;
   }
   let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode;
-  if (mode === 'auto') {
+  // A video or GIF with its background worked out: the parts that differ from it.
+  const plate = !camOn && shapeMedia && mediaPlate?.src === shapeMedia.src ? mediaPlate : null;
+  if (plate && (mode === 'auto' || mode === 'subject')) {
+    // Compared at the plate's own size, drawn the same way, so sharp
+    // background edges match exactly.
+    const pw = plate.w;
+    const ph = plate.h;
+    const PN = pw * ph;
+    const pc = (plateCanvas ??= document.createElement('canvas'));
+    if (pc.width !== pw || pc.height !== ph) {
+      pc.width = pw;
+      pc.height = ph;
+    }
+    const pg = pc.getContext('2d', { willReadFrequently: true })!;
+    pg.drawImage(src as CanvasImageSource, 0, 0, pw, ph);
+    const fd = pg.getImageData(0, 0, pw, ph).data;
+    const mask = new Uint8Array(PN);
+    let cover = 0;
+    // The closest of the plate's 3×3 neighbours: frames resampled another
+    // way shift sharp background edges by a pixel, which isn't motion.
+    const pd = plate.d;
+    for (let y = 0; y < ph; y++)
+      for (let x = 0; x < pw; x++) {
+        const k = y * pw + x;
+        const q = k * 4;
+        let best = 1e9;
+        for (let dy = -1; dy <= 1 && best > 75; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= ph) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx;
+            if (xx < 0 || xx >= pw) continue;
+            const p = (yy * pw + xx) * 4;
+            const e = Math.abs(fd[q] - pd[p]) + Math.abs(fd[q + 1] - pd[p + 1]) + Math.abs(fd[q + 2] - pd[p + 2]);
+            if (e < best) best = e;
+          }
+        }
+        if (best > 75) {
+          mask[k] = 1;
+          cover++;
+        }
+      }
+    if (cover > PN * 0.003 && cover < PN * 0.6) {
+      // Fill small gaps the outline encloses: parts that hardly moved (a
+      // torso swaying in place) can match the background but sit inside the figure.
+      const lab = new Int32Array(PN);
+      const st: number[] = [];
+      for (let k0 = 0; k0 < PN; k0++) {
+        if (mask[k0] || lab[k0]) continue;
+        const comp: number[] = [];
+        let edge = false;
+        lab[k0] = 1;
+        st.push(k0);
+        while (st.length) {
+          const k = st.pop()!;
+          comp.push(k);
+          const x = k % pw;
+          if (x === 0 || x === pw - 1 || k < pw || k >= PN - pw) edge = true;
+          for (const m of [x > 0 ? k - 1 : -1, x < pw - 1 ? k + 1 : -1, k >= pw ? k - pw : -1, k < PN - pw ? k + pw : -1])
+            if (m >= 0 && !mask[m] && !lab[m]) {
+              lab[m] = 1;
+              st.push(m);
+            }
+        }
+        if (!edge && comp.length < cover * 0.5) for (const k of comp) mask[k] = 1;
+      }
+      for (let y = 0; y < ih; y++) {
+        const row = Math.min(ph - 1, ((y * ph) / ih) | 0) * pw;
+        for (let x = 0; x < iw; x++) wt[y * iw + x] = mask[row + Math.min(pw - 1, ((x * pw) / iw) | 0)];
+      }
+      mode = 'moving' as typeof mode;
+    }
+  }
+  if (mode === 'moving' as typeof mode) {
+    // Weights set above.
+  } else if (mode === 'auto') {
     // A logo on a plain background covers part of the frame; a photo
     // "differs" almost everywhere, so fall back to brightness.
     const cover = subject();
@@ -23001,7 +23151,7 @@ function shuffleTap() {
   shufTimer = window.setTimeout(() => {
     shufTimer = 0;
     undoable(() => shuffle());
-  }, 280);
+  }, 320);
 }
 // A random genre and one of its songs (never the one playing); with the scene, a new scene too.
 function shuffleSound(scene = true) {
@@ -23055,9 +23205,9 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double tap: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
-  studio: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
+  studio: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], uPause(), uMore()],
   build: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
 };
 let uSig = '';
@@ -23121,7 +23271,7 @@ function uPaint(force = false) {
     if (cls?.includes('more')) dockMoreBtn = b;
     // ♫: hold half a second to mute. Shuffle on the Stage: hold for a new song.
     let held = false;
-    const onHold = cls?.split(' ').includes('snd') && !cls.includes('muted') ? () => toggleMute(true) : v === 'stage' && cls === 'primary' ? shuffleSound : null;
+    const onHold = cls?.split(' ').includes('snd') && !cls.includes('muted') ? () => toggleMute(true) : (v === 'stage' || (v === 'studio' && desk)) && cls === 'primary' ? shuffleSound : null;
     if (onHold) {
       let t = 0;
       b.addEventListener('pointerdown', () => {
