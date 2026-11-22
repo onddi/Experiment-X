@@ -22973,27 +22973,18 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
 };
 let sndTapAt = -1e9;
 // Stage Shuffle: tap for a new scene, double tap for a new sound, hold for both.
-// A double tap takes back the first tap's scene, so only the sound changes.
-let shufTap: { at: number; h: SceneSnap | null } = { at: -1e9, h: null };
+// A tap waits a moment for a second one, so a double tap never touches the scene.
+let shufTimer = 0;
 function shuffleTap() {
-  if (performance.now() - shufTap.at < 350) {
-    const h = shufTap.h;
-    shufTap = { at: -1e9, h: null };
-    if (h) restoreScene(h);
+  if (shufTimer) {
+    clearTimeout(shufTimer);
+    shufTimer = 0;
     return shuffleSound(false);
   }
-  const h = rememberScene();
-  histMute = true;
-  try {
-    shuffle();
-  } finally {
-    histMute = false;
-  }
-  shufTap = { at: performance.now(), h };
-  const now = currentMine?.name ?? (lastSceneName || 'Shuffled');
-  setTimeout(() => {
-    if (shufTap.h === h && h) showToast(now, ['Undo', () => restoreScene(h)]);
-  }, 60);
+  shufTimer = window.setTimeout(() => {
+    shufTimer = 0;
+    undoable(() => shuffle());
+  }, 280);
 }
 // A random genre and one of its songs (never the one playing); with the scene, a new scene too.
 function shuffleSound(scene = true) {
