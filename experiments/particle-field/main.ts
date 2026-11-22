@@ -243,6 +243,13 @@ function placed(x: number, y: number): [number, number] {
   const dy = y - place.cy;
   return [place.cx + place.ox + dx * place.c - dy * place.s, place.cy + place.oy + dx * place.s + dy * place.c];
 }
+// And back: a screen point in the shape's own space.
+function unplaced(x: number, y: number): [number, number] {
+  const ex = x - place.cx - place.ox;
+  const ey = y - place.cy - place.oy;
+  const det = place.c * place.c + place.s * place.s || 1;
+  return [place.cx + (ex * place.c + ey * place.s) / det, place.cy + (-ex * place.s + ey * place.c) / det];
+}
 let hy = new Float32Array(0);
 let pz = new Float32Array(0); // depth: 0 far, 1 near
 // Light on a solid shape, per particle (1 = fully lit); only read while lightOn.
@@ -5364,28 +5371,94 @@ function playEntrance() {
 function keepOnPicture(pts: [number, number][]): boolean {
   const M = imgWt!;
   const free: number[] = [];
+  // Coverage in cells of 4×4 samples: how many particles stay in each.
+  const CS = 4;
+  const cw = Math.ceil(M.iw / CS);
+  const ch = Math.ceil(M.ih / CS);
+  const kept = new Float32Array(cw * ch);
   for (let i = 0; i < n; i++) {
     const x = Math.floor(hx[i] / M.step) - M.ix;
     const y = Math.floor(hy[i] / M.step) - M.iy;
-    const v = x >= 0 && y >= 0 && x < M.iw && y < M.ih ? M.wt[y * M.iw + x] : 0;
+    const inside = x >= 0 && y >= 0 && x < M.iw && y < M.ih;
+    const v = inside ? M.wt[y * M.iw + x] : 0;
     if (!(Math.random() < Math.min(1, v * 1.5))) free.push(i);
+    else kept[((y / CS) | 0) * cw + ((x / CS) | 0)]++;
   }
   if (free.length > n * 0.9) return false;
   const m = free.length;
   if (!m) return true;
+  // What each cell should hold (its share of the picture) less what stays:
+  // the freed particles go where the picture is new (a limb's new place)
+  // before they thicken what's already covered.
+  const want = new Float32Array(cw * ch);
+  let wsum = 0;
+  for (let y = 0; y < M.ih; y++)
+    for (let x = 0; x < M.iw; x++) {
+      const v = M.wt[y * M.iw + x];
+      if (v > 0) {
+        want[((y / CS) | 0) * cw + ((x / CS) | 0)] += v;
+        wsum += v;
+      }
+    }
+  const cellOf = (x: number, y: number) => {
+    const gx = Math.floor(x / M.step) - M.ix;
+    const gy = Math.floor(y / M.step) - M.iy;
+    return gx >= 0 && gy >= 0 && gx < M.iw && gy < M.ih ? ((gy / CS) | 0) * cw + ((gx / CS) | 0) : -1;
+  };
+  const inCell = new Float32Array(cw * ch);
+  const pc = new Int32Array(pts.length);
+  for (let t = 0; t < pts.length; t++) {
+    pc[t] = cellOf(pts[t][0], pts[t][1]);
+    if (pc[t] >= 0) inCell[pc[t]]++;
+  }
+  const per = wsum > 0 ? n / wsum : 0;
+  const wt = new Float64Array(pts.length);
+  let total = 0;
+  for (let t = 0; t < pts.length; t++) {
+    const c = pc[t];
+    // A little for everywhere, so the shape still evens out once filled.
+    const gap = c >= 0 ? Math.max(0, want[c] * per - kept[c]) / inCell[c] : 0;
+    wt[t] = gap + 0.02;
+    total += wt[t];
+  }
+  const cum = new Float64Array(pts.length);
+  let acc = 0;
+  for (let t = 0; t < pts.length; t++) cum[t] = acc += wt[t];
   const fx = new Float32Array(m), fy = new Float32Array(m), tx = new Float32Array(m), ty = new Float32Array(m);
   for (let j = 0; j < m; j++) {
-    fx[j] = hx[free[j]];
-    fy[j] = hy[free[j]];
-    const [x, y] = pts[(Math.random() * pts.length) | 0];
-    tx[j] = x;
-    ty[j] = y;
+    // Paired from where each particle is now, not its old spot: one that's
+    // still on its way shouldn't be sent back to start from there.
+    const i = free[j];
+    [fx[j], fy[j]] = place.on ? unplaced(px[i], py[i]) : [px[i], py[i]];
+    const r = Math.random() * total;
+    let lo = 0;
+    let hi = pts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < r) lo = mid + 1;
+      else hi = mid;
+    }
+    tx[j] = pts[lo][0];
+    ty[j] = pts[lo][1];
   }
   const owner = matchCurve(tx, ty, fx, fy);
+  // Jump: one with far to go vanishes and comes back on its spot.
+  const jump = settings.imageMove === 'jump' ? (Math.min(w, h) * 0.06) ** 2 : Infinity;
   for (let t = 0; t < m; t++) {
-    hx[free[owner[t]]] = tx[t];
-    hy[free[owner[t]]] = ty[t];
+    const i = free[owner[t]];
+    hx[i] = tx[t];
+    hy[i] = ty[t];
   }
+  // Every particle still far from its spot (newly sent or still on its way).
+  if (jump < Infinity)
+    for (let i = 0; i < n; i++) {
+      const [ex, ey] = place.on ? placed(hx[i], hy[i]) : [hx[i], hy[i]];
+      if ((ex - px[i]) ** 2 + (ey - py[i]) ** 2 > jump) {
+        px[i] = ox[i] = ex;
+        py[i] = oy[i] = ey;
+        vx[i] = vy[i] = 0;
+      }
+    }
   return true;
 }
 
@@ -11353,6 +11426,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
   { kind: 'mediapick', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
+  { kind: 'choice', key: 'imageMove', label: 'Particles', options: [['travel', 'Travel'], ['jump', 'Jump']], show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
 
