@@ -3226,6 +3226,10 @@ button.sndp-live-name { cursor: pointer; }
   .u-bar > .u-seg, .u-bar > .u-tray, .u-nav, .u-bar.nav .u-nav, .u-grid, .u-grid.open { transition: none; }
   .un-name > *, .un-name small, .u-grid.open button { animation: none !important; }
 }
+.sndp-vol .sndp-mute { width: 36px; height: 36px; border-radius: 10px; margin-left: -4px; }
+.sndp-vol .sndp-mute svg { width: 19px; height: 19px; }
+.sndp-vol .sndp-mute.on { background: rgb(255 255 255 / 0.9); color: #111; }
+.sndp-vol .sndp-mute:disabled { opacity: 0.35; cursor: default; }
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }

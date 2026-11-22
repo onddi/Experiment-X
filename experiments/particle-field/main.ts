@@ -14357,7 +14357,7 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
       ['Scatter (S)', ICONS.scatter, scatter],
       ['Previous scene', svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'), previousScene],
       ['Build and drop (B)', ICONS.gather, buildDropNow],
-      ['Pause the sound (M)', NOTE_ICON, () => toggleMute(!sndMuted())],
+      ['Mute the sound (M)', NOTE_ICON, () => toggleMute(!sndMuted())],
       ['Project to another screen (P)', ICONS.project, toggleProject],
       ['Recording settings', ICONS.record, () => showTab('record')],
       ['Start from scratch', BUILD_ICON, startFromScratch],
@@ -14409,8 +14409,8 @@ function toggleDockMore(open = !dockMoreEl?.classList.contains('open')) {
   // Sound: pause it, or play it again; hidden while it was never on.
   const sb = dockMoreEl.querySelector<HTMLElement>('.dm-snd');
   if (sb) {
-    sb.hidden = !(settings.sndVol > 0 || sndMuted());
-    sb.querySelector('span')!.textContent = settings.sndVol > 0 ? 'Pause the sound (M)' : 'Play the sound (M)';
+    sb.hidden = !(settings.sndVol > 0);
+    sb.querySelector('span')!.textContent = sndMuted() ? 'Unmute the sound (M)' : 'Mute the sound (M)';
   }
   // Play and pause: phones only (wider screens have it on the bar).
   const ppb = dockMoreEl.querySelector<HTMLElement>('.dm-pause');
@@ -19075,8 +19075,22 @@ function renderSoundPage(body: HTMLElement) {
   take('sndVol')?.remove();
   const vol = mk('div', 'sndp-vol', '<b>Volume</b>');
   const volV = mk('span', 'sndp-v');
-  vol.append(levelBar('sndVol', 'Volume'), volV);
-  refreshers.push(() => (volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off'));
+  const muteB = mk('button', 'sndp-dice sndp-mute');
+  muteB.type = 'button';
+  muteB.addEventListener('click', () => {
+    sndMutedAt = 0;
+    toggleMute();
+  });
+  vol.append(levelBar('sndVol', 'Volume'), volV, muteB);
+  refreshers.push(() => {
+    volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off';
+    const m = sndMuted();
+    muteB.innerHTML = m ? SPEAKER_OFF_ICON : SPEAKER_ICON;
+    muteB.title = m ? 'Unmute' : 'Mute (keeps the volume)';
+    muteB.setAttribute('aria-pressed', String(m));
+    muteB.classList.toggle('on', m);
+    muteB.disabled = settings.sndVol === 0;
+  });
   const studioBtn = [...body.querySelectorAll<HTMLElement>(':scope > .buttons')].find((b) => b.textContent?.includes('sound studio'));
   const [liveTabs, liveBody] = liveCard();
   page.append(liveTabs, style, pick, liveBody, tabBar, ...panels.map(([, p]) => p));
@@ -21039,7 +21053,7 @@ function sndParams(): SoundParams {
   // Live drums: the groove (the grooves load the first time Live is on).
   const liveG = S.sndDrumSrc === 'live' ? grooveById(S.sndGroove) : null;
   if (S.sndDrumSrc === 'live' && !groovesNow()) void grooves();
-  return { vol: S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, stringOct: S.sndStringOct, seqOct: S.sndSeqOct, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, accScene: S.sndAccScene, accShape: S.sndAccShape, accBirth: S.sndAccBirth, accBurst: S.sndAccBurst, accVoice: S.sndAccVoice, hits: S.sndHits, hitSound: S.sndHitSound, seqSound: S.sndSeqSound, seqRate: Number(S.sndSeqRate), seqNotes: S.sndSeqNotes, seqSens: S.sndSeqSens, seqStyle: S.sndSeqStyle, seqVary: S.sndSeqVary, seqTick: S.sndSeqTickSound === 'off' ? 'soft' : S.sndSeqTickSound, tick: tickLevelNow(), tickPattern: S.sndTickPattern, tickMove: S.sndTickMove, grainSound: S.sndGrainSound, grainFrom: S.sndGrainFrom, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, scanDir: S.sndScanDir, scanSound: S.sndScanSound, scanNotes: S.sndScanNotes, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
+  return { vol: sndMute ? 0 : S.sndVol, scale: S.sndScale, root: sndRoot(), timbre: S.sndTimbre, prog: S.sndProg, tempo: S.sndTempo, strings: S.sndStrings, stringCount: S.sndStringCount, stringOct: S.sndStringOct, seqOct: S.sndSeqOct, octave: S.sndOctave, range: S.sndRange, pad: S.sndDrone, seq: S.sndSeq, accents: S.sndAccents, accScene: S.sndAccScene, accShape: S.sndAccShape, accBirth: S.sndAccBirth, accBurst: S.sndAccBurst, accVoice: S.sndAccVoice, hits: S.sndHits, hitSound: S.sndHitSound, seqSound: S.sndSeqSound, seqRate: Number(S.sndSeqRate), seqNotes: S.sndSeqNotes, seqSens: S.sndSeqSens, seqStyle: S.sndSeqStyle, seqVary: S.sndSeqVary, seqTick: S.sndSeqTickSound === 'off' ? 'soft' : S.sndSeqTickSound, tick: tickLevelNow(), tickPattern: S.sndTickPattern, tickMove: S.sndTickMove, grainSound: S.sndGrainSound, grainFrom: S.sndGrainFrom, grainRate: S.sndGrainRate, grainLen: S.sndGrainLen, grain: S.sndGrain, scan: S.sndScan, scanSecs: S.sndScanSecs, scanDir: S.sndScanDir, scanSound: S.sndScanSound, scanNotes: S.sndScanNotes, touch: S.sndTouch, touchSound: S.sndTouchSound, touchMode: S.sndTouchMode, touchGlide: S.sndTouchGlide, touchVib: S.sndTouchVib, touchAxis: S.sndTouchAxis, touchOctave: S.sndTouchOct, reverb: S.sndReverb, music: S.sndMusic,
     progList: sndProgList(S.sndProgText), chordMove: S.sndChordMove, chordBars: S.sndChordBars,
     length: S.sndLength, dyn: S.sndDyn, bend: S.sndBend, swing: liveG ? liveG.swing : S.sndSwing, arp: S.sndArp,
     echo: S.sndEcho, sweep: S.sndSweep, field: S.sndField, chorus: S.sndChorus, depth: S.sndDepth, bass: S.sndBass, bassSound: S.sndBassSound, bassTone: S.sndBassTone, bassMove: S.sndBassMove, bassPattern: S.sndBassPattern, bassWalk: S.sndBassWalk, bassOct: S.sndBassOct === 'sub' ? -1 : S.sndBassOct === 'mid' ? 1 : 0, bassGlide: S.sndBassGlide, bassLen: S.sndBassLen, bassGhost: S.sndBassGhost, drums: S.sndDrums, kit: S.sndKit, genre: S.sndGenre, beat: S.sndBeat, vary: S.sndVary, fills: S.sndFills, follow: S.sndFollow, beatChange: S.sndBeatChange, padSound: S.sndPadSound, padPump: S.sndPadPump, padTone: S.sndPadTone, padWidth: S.sndPadWidth, padBreath: S.sndPadBreath, padGlide: S.sndPadGlide, padHold: S.sndPadHold, padOct: S.sndPadOct === 'low' ? -1 : S.sndPadOct === 'high' ? 1 : 0, attack: S.sndAttack, bright: S.sndBright, drive: S.sndDrive, lofi: S.sndLofi, ping: S.sndPing, phaser: S.sndPhaser, trem: S.sndTrem, tremMode: S.sndTremMode, shimmer: S.sndShimmer, glue: S.sndGlue, lowEnd: S.sndLowEnd, kickPunch: S.sndKickPunch, sub: S.sndSub, tape: S.sndTape, groove: liveG, grooveTight: S.sndGrooveTight, grooveDyn: S.sndGrooveDyn, grid: S.sndGrid, polish: S.sndPolishAmt, verb: S.sndVerb, unison: S.sndUnisonAmt, wave: S.sndWaveAmt, human: S.sndHumanAmt };
@@ -22870,42 +22884,44 @@ function uCrossfade() {
   uPaint(true);
 }
 // The sound studio's ♪, while Particle sound is on.
+const SPEAKER_ICON = svg('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>');
+const SPEAKER_OFF_ICON = svg('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9.5l5 5M22 9.5l-5 5"/>');
 const NOTE_ICON = svg('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>');
 // Mute: the sound goes silent but the dock keeps its ♫ (struck through);
 // a tap brings it back at the level it had. Hold ♫ to mute from the dock.
 const NOTE_MUTED_ICON = svg('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/><path d="M3 3l18 18"/>');
-const MUTE_KEY = 'particle-field:snd-muted-vol';
-let sndMuteVol = 0;
+const MUTE_KEY = 'particle-field:snd-mute';
+// Mute only silences the output: Particle sound stays on and keeps its volume.
+let sndMute = false;
 let sndMutedAt = 0;
 try {
-  sndMuteVol = Number(localStorage.getItem(MUTE_KEY)) || 0;
+  localStorage.removeItem('particle-field:snd-muted-vol');
+  sndMute = localStorage.getItem(MUTE_KEY) === '1';
 } catch {
   // No storage: mute lasts this visit only.
 }
-const sndMuted = () => settings.sndVol === 0 && sndMuteVol > 0;
+const sndMuted = () => sndMute && settings.sndVol > 0;
 function toggleMute(on = !sndMuted()) {
   if (on) {
-    if (settings.sndVol === 0) return;
-    sndMuteVol = settings.sndVol;
-    settings.sndVol = 0;
+    if (settings.sndVol === 0 || sndMute) return;
+    sndMute = true;
     sndMutedAt = performance.now();
     showToast('Muted · tap ♫ to bring it back');
   } else {
     // The release of the hold that muted it isn't a tap.
-    if (!sndMuted() || performance.now() - sndMutedAt < 800) return;
-    settings.sndVol = sndMuteVol;
-    sndMuteVol = 0;
+    if (!sndMute || performance.now() - sndMutedAt < 800) return;
+    sndMute = false;
   }
   try {
-    if (sndMuteVol) localStorage.setItem(MUTE_KEY, String(sndMuteVol));
+    if (sndMute) localStorage.setItem(MUTE_KEY, '1');
     else localStorage.removeItem(MUTE_KEY);
   } catch {
     // Fine without.
   }
-  changed(new Set(['sndVol']));
+  refresh();
   uPaint(true);
 }
-const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · hold to mute' : 'Close the sound studio (M) · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
+const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · double tap for settings · hold to mute' : 'Close the sound studio (M) · double tap for settings · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
   stage: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uMore()],
@@ -22919,6 +22935,14 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   studio: () => [...['shape', 'look', 'sound'].map(uFolder), uMore()],
   build: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uMore()],
 };
+let sndTapAt = -1e9;
+function openSoundSettings() {
+  uGo('studio');
+  const head = document.querySelector<HTMLElement>('.fd[data-f="sound"] .fd-head');
+  if (head && !(panel.classList.contains('f-in') && folderOf(currentTab).id === 'sound')) head.click();
+  else if (!head) showTab('sound');
+  uPaint(true);
+}
 function uFolder(id: string): [string, string, () => void, string?] {
   const f = FOLDERS.find((x) => x.id === id)!;
   const here = panel.classList.contains('f-in') && folderOf(currentTab).id === id;
@@ -23029,6 +23053,14 @@ function uPaint(force = false) {
         held = false;
         return;
       }
+      // ♫: a double tap undoes the first tap and opens the Sound settings.
+      if (cls?.split(' ').includes('snd') && !cls.includes('muted') && e.timeStamp - sndTapAt < 350) {
+        sndTapAt = -1e9;
+        fn();
+        openSoundSettings();
+        return;
+      }
+      if (cls?.split(' ').includes('snd')) sndTapAt = e.timeStamp;
       fn();
     });
     tray.append(b);
