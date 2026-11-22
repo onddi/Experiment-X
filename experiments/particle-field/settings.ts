@@ -504,6 +504,8 @@ export interface Settings {
   spriteRows: number;
   // Which row of a sheet plays: 0 = each particle plays its own row.
   spriteRow: number;
+  // Solid background removal for sheets without transparency: colour tolerance, 0 = keep.
+  spriteKey: number;
   spriteFps: number;
   spriteTint: boolean;
   spriteTurn: 'none' | 'heading' | 'spin';
@@ -1188,6 +1190,7 @@ export const DEFAULTS: Settings = {
   spriteCols: 0,
   spriteRows: 0,
   spriteRow: 0,
+  spriteKey: 0.15,
   spriteFps: 10,
   spriteTint: true,
   spriteTurn: 'heading',

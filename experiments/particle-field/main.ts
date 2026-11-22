@@ -5,7 +5,7 @@ import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, PAL_GROUPS, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel, hasModel, MODEL_SOLIDS, setTextSolid, textNormal } from './shapes.ts';
-import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
+import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, keyBackground, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
@@ -5877,6 +5877,8 @@ let spriteAnim: HTMLCanvasElement[] | null = null;
 let spriteRaw: HTMLCanvasElement[] = [];
 let spriteGrey: HTMLCanvasElement[] = [];
 let spriteRawKey = '';
+// Whether the sheet has a solid background (null = not checked yet): shows the Background slider.
+let spriteSolid: boolean | null = null;
 // The sheet's grid as used (auto resolved), and its frames grouped by row
 // (one animation per row is the usual layout); empty cells are left out.
 let spriteGrid: [number, number] = [1, 1];
@@ -5898,6 +5900,7 @@ spriteInput.addEventListener('change', async () => {
 function spriteUse(img: HTMLImageElement | null, frames: HTMLCanvasElement[] | null = null) {
   spriteSheet = img;
   spriteAnim = frames;
+  spriteSolid = null;
   spriteRawKey = '';
   spriteFramesNow();
   if (settings.render !== 'sprite' && settings.render !== 'mixed') {
@@ -5908,13 +5911,16 @@ function spriteUse(img: HTMLImageElement | null, frames: HTMLCanvasElement[] | n
 }
 function spriteFramesNow() {
   const S = settings;
-  const key = `${spriteSheet?.src ?? (spriteAnim ? `anim${spriteAnim.length}` : 'fly')}|${S.spriteCols}|${S.spriteRows}`;
+  const key = `${spriteSheet?.src ?? (spriteAnim ? `anim${spriteAnim.length}` : 'fly')}|${S.spriteCols}|${S.spriteRows}|${S.spriteKey}`;
   if (key !== spriteRawKey) {
     spriteRawKey = key;
     if (spriteSheet) {
-      const auto = !S.spriteCols || !S.spriteRows ? detectGrid(spriteSheet) : [1, 1];
+      // A solid background is keyed out first, so the gaps show and the frames come clear.
+      if (spriteSolid === null) spriteSolid = !!keyBackground(spriteSheet, 0.15);
+      const sheet = keyBackground(spriteSheet, S.spriteKey) ?? spriteSheet;
+      const auto = !S.spriteCols || !S.spriteRows ? detectGrid(sheet) : [1, 1];
       spriteGrid = [S.spriteCols || auto[0], S.spriteRows || auto[1]];
-      const all = sliceSheet(spriteSheet, spriteGrid[0], spriteGrid[1]);
+      const all = sliceSheet(sheet, spriteGrid[0], spriteGrid[1]);
       spriteRaw = [];
       spriteRowsIdx = [];
       for (let r = 0; r < spriteGrid[1]; r++) {
@@ -10948,7 +10954,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Hold 1–8 and scroll, swipe or move the mouse to turn knob A–H. Tap the key alone to open its slider.', show: () => settings.numberKeys === 'knobs' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
-    lock: ['render', 'mixStyles', 'count', 'fieldSoft', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
+    lock: ['render', 'mixStyles', 'count', 'fieldSoft', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey'],
     summary: () => `${label(RENDERS, settings.render)}, ${settings.count.toLocaleString()}` },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
@@ -10961,6 +10967,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'spriteFps', label: 'Frames per second', min: 0, max: 30, step: 1, format: (v) => (v === 0 ? 'by age' : `${v}`), show: () => isSprite() && spriteFramesNow().length > 1 },
   { kind: 'range', key: 'spriteCols', label: 'Sheet columns', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[0]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
   { kind: 'range', key: 'spriteRows', label: 'Sheet rows', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[1]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'range', key: 'spriteKey', label: 'Sheet background', min: 0, max: 0.5, step: 0.01, format: (v) => (v === 0 ? 'keep' : `clear ${Math.round(v * 200)}%`), show: () => isSprite() && !!spriteSheet && !!spriteSolid },
   { kind: 'range', key: 'spriteRow', label: 'Animation (row)', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? 'each its own' : `row ${Math.min(v, spriteRowsIdx.length)}`), show: () => isSprite() && !!spriteSheet && spriteRowsIdx.length > 1 },
   { kind: 'note', text: 'A single image, a sprite sheet or an animated GIF. A sheet’s grid is found by the clear gaps between frames (set columns and rows if not); with one animation per row, play one row or let each particle play its own. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
   // Curved: the left half covers 0.5–6 px as finely as before, the right half goes up to 32.
@@ -14299,7 +14306,7 @@ const afterShow: (() => void)[] = [];
 // Fine-tune. Cards with 4 or fewer settings show everything.
 const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['morph', 'beatSnap'],
-  look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
+  look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey'],
   colour: ['palette', 'colorBy', 'customColors', 'palSat', 'palLight', 'palBg'],
   shape: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
@@ -21642,7 +21649,7 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look', 'fx'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set([...SND_KEYS, 'modelClip', 'modelSpeed', 'modelBeat', 'spriteCols', 'spriteRows', 'spriteRow', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxBloomKick', 'gfxInvertDrop', 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt', 'tiltLook', 'shapeDrag']);
+const REMIX_SKIP = new Set([...SND_KEYS, 'modelClip', 'modelSpeed', 'modelBeat', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxBloomKick', 'gfxInvertDrop', 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt', 'tiltLook', 'shapeDrag']);
 // How often a switchable card is on in a remix.
 const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85, gfxlight: 0.35, gfxfeed: 0.15, gfxlens: 0.2, gfxsurface: 0.12, gfxgrade: 0.25, gfxecho: 0.1, gfxdisplace: 0.12, gfxglitch: 0.08 };
 const REMIX_KEY = 'particle-field:remix';

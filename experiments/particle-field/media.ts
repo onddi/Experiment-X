@@ -488,6 +488,87 @@ export async function decodeFrames(f: File): Promise<{ frames: HTMLCanvasElement
   }
 }
 
+/**
+ * A sheet on a solid background (a JPG, a PNG without alpha): the colour
+ * that fills most of the border is made clear, flooding in from the edges so
+ * the same colour inside a sprite stays. Edges within the tolerance soften.
+ * Returns null when the image already has transparency or no one border
+ * colour (a photo); tol is 0..1.
+ */
+export function keyBackground(img: CanvasImageSource & { width: number; height: number }, tol: number): HTMLCanvasElement | null {
+  const W = img.width;
+  const H = img.height;
+  if (tol <= 0 || W < 4 || H < 4 || W * H > 4096 * 4096) return null;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(img, 0, 0);
+  const im = g.getImageData(0, 0, W, H);
+  const d = im.data;
+  // Already transparent somewhere on the border: leave it.
+  const border: number[] = [];
+  for (let x = 0; x < W; x++) border.push(x, (H - 1) * W + x);
+  for (let y = 1; y < H - 1; y++) border.push(y * W, y * W + W - 1);
+  let clearB = 0;
+  const votes = new Map<number, number>();
+  for (const q of border) {
+    const o = q * 4;
+    if (d[o + 3] < 200) clearB++;
+    const k = ((d[o] >> 3) << 10) | ((d[o + 1] >> 3) << 5) | (d[o + 2] >> 3);
+    votes.set(k, (votes.get(k) ?? 0) + 1);
+  }
+  if (clearB > border.length * 0.1) return null;
+  let best = 0;
+  let bestN = 0;
+  for (const [k, n] of votes) if (n > bestN) [best, bestN] = [k, n];
+  // The background colour: the mean of the border pixels in the winning bin.
+  let r = 0;
+  let gg = 0;
+  let b = 0;
+  let n = 0;
+  for (const q of border) {
+    const o = q * 4;
+    if ((((d[o] >> 3) << 10) | ((d[o + 1] >> 3) << 5) | (d[o + 2] >> 3)) !== best) continue;
+    r += d[o];
+    gg += d[o + 1];
+    b += d[o + 2];
+    n++;
+  }
+  r /= n;
+  gg /= n;
+  b /= n;
+  const dist = (o: number) => Math.hypot(d[o] - r, d[o + 1] - gg, d[o + 2] - b) / 441.7;
+  const hard = tol * 0.6;
+  // Most of the border should be (close to) that one colour.
+  let near = 0;
+  for (const q of border) if (dist(q * 4) <= tol) near++;
+  if (near < border.length * 0.6) return null;
+  const seen = new Uint8Array(W * H);
+  const stack: number[] = [];
+  for (const q of border) if (dist(q * 4) <= tol) {
+    seen[q] = 1;
+    stack.push(q);
+  }
+  while (stack.length) {
+    const q = stack.pop()!;
+    const o = q * 4;
+    const e = dist(o);
+    // Fully clear near the colour, a soft ramp out to the tolerance.
+    d[o + 3] = e <= hard ? 0 : Math.round(d[o + 3] * Math.min(1, (e - hard) / (tol - hard)));
+    const x = q % W;
+    const y = (q - x) / W;
+    const next = [x > 0 ? q - 1 : -1, x < W - 1 ? q + 1 : -1, y > 0 ? q - W : -1, y < H - 1 ? q + W : -1];
+    for (const m of next) {
+      if (m < 0 || seen[m]) continue;
+      seen[m] = 1;
+      if (dist(m * 4) <= tol) stack.push(m);
+    }
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+
 /** A sprite sheet cut into square frames (cols × rows; 0 = guess from the shape). */
 /**
  * Find a sheet's grid. With transparency: the most columns (and rows) whose
