@@ -22960,7 +22960,7 @@ function toggleMute(on = !sndMuted()) {
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · double tap for settings · hold to mute' : 'Close the sound studio (M) · double tap for settings · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
-  stage: () => [['Shuffle (hold to shuffle the sound too)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  stage: () => [['Shuffle (double tap: sound, hold: both)', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -22972,8 +22972,31 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   build: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uMore()],
 };
 let sndTapAt = -1e9;
-// Hold Shuffle: a new scene and a random genre and song (never the one playing).
-function shuffleSound() {
+// Stage Shuffle: tap for a new scene, double tap for a new sound, hold for both.
+// A double tap takes back the first tap's scene, so only the sound changes.
+let shufTap: { at: number; h: SceneSnap | null } = { at: -1e9, h: null };
+function shuffleTap() {
+  if (performance.now() - shufTap.at < 350) {
+    const h = shufTap.h;
+    shufTap = { at: -1e9, h: null };
+    if (h) restoreScene(h);
+    return shuffleSound(false);
+  }
+  const h = rememberScene();
+  histMute = true;
+  try {
+    shuffle();
+  } finally {
+    histMute = false;
+  }
+  shufTap = { at: performance.now(), h };
+  const now = currentMine?.name ?? (lastSceneName || 'Shuffled');
+  setTimeout(() => {
+    if (shufTap.h === h && h) showToast(now, ['Undo', () => restoreScene(h)]);
+  }, 60);
+}
+// A random genre and one of its songs (never the one playing); with the scene, a new scene too.
+function shuffleSound(scene = true) {
   const cur = settings.sndStyle;
   const all = STYLES.flatMap((st) => styleVars(st).map((x) => [st, x] as const)).filter(([st, x]) => `${st.id}/${x}` !== cur);
   const pick = all[(Math.random() * all.length) | 0];
@@ -22981,12 +23004,13 @@ function shuffleSound() {
   const h = rememberScene();
   histMute = true;
   try {
-    shuffle();
+    if (scene) shuffle();
     useStyle(pick[0], pick[1], true);
   } finally {
     histMute = false;
   }
-  const name = `${currentMine?.name ?? (lastSceneName || 'Shuffled')} · ${pick[0].name}: ${isRoll(pick[1]) ? 'new song' : pick[1]}`;
+  const song = `${pick[0].name}: ${isRoll(pick[1]) ? 'new song' : pick[1]}`;
+  const name = scene ? `${currentMine?.name ?? (lastSceneName || 'Shuffled')} · ${song}` : `Sound · ${song}`;
   setTimeout(() => (h ? showToast(name, ['Undo', () => restoreScene(h)]) : showToast(name)), 60);
   refresh();
   uPaint(true);
@@ -23023,7 +23047,7 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double tap: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
   studio: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
   build: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
