@@ -22960,7 +22960,7 @@ function toggleMute(on = !sndMuted()) {
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · double tap for settings · hold to mute' : 'Close the sound studio (M) · double tap for settings · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
-  stage: () => [['Shuffle (hold for a new sound)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  stage: () => [['Shuffle (hold to shuffle the sound too)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -22972,7 +22972,7 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   build: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uMore()],
 };
 let sndTapAt = -1e9;
-// A random genre and one of its songs (never the one playing).
+// Hold Shuffle: a new scene and a random genre and song (never the one playing).
 function shuffleSound() {
   const cur = settings.sndStyle;
   const all = STYLES.flatMap((st) => styleVars(st).map((x) => [st, x] as const)).filter(([st, x]) => `${st.id}/${x}` !== cur);
@@ -22981,11 +22981,12 @@ function shuffleSound() {
   const h = rememberScene();
   histMute = true;
   try {
+    shuffle();
     useStyle(pick[0], pick[1], true);
   } finally {
     histMute = false;
   }
-  const name = `Sound: ${pick[0].name} · ${isRoll(pick[1]) ? 'new song' : pick[1]}`;
+  const name = `${currentMine?.name ?? (lastSceneName || 'Shuffled')} · ${pick[0].name}: ${isRoll(pick[1]) ? 'new song' : pick[1]}`;
   setTimeout(() => (h ? showToast(name, ['Undo', () => restoreScene(h)]) : showToast(name)), 60);
   refresh();
   uPaint(true);
