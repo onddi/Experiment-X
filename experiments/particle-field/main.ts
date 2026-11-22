@@ -18108,6 +18108,9 @@ function animPut(k: string, a: Anim | null) {
   else delete m[k];
   set('anim', formatAnim(m) as never);
 }
+const ANIM_SHADES = new Set(['palSat', 'palLight']);
+let shadesStale = false;
+let shadesAt = 0;
 function animTick(rawMs: number) {
   animBeat += (rawMs / 1000) * (animBpm() / 60);
   if (reacting() && audio.levels.bar) {
@@ -18162,8 +18165,16 @@ function animTick(rawMs: number) {
     if (ANIM_WRAP.has(k)) v = c.min + ((((v - c.min) % span) + span) % span);
     else v = Math.min(c.max, Math.max(c.min, v));
     if (c.step >= 1) v = Math.round(v);
+    if (ANIM_SHADES.has(k) && v !== S[k]) shadesStale = true;
     S[k] = v;
     animWrote[k] = v;
+  }
+  // Colour settings live in the palette's shades and sprites: rebuild them
+  // while one moves, at most ~25 times a second.
+  if (shadesStale && rawMs >= 0 && performance.now() - shadesAt > 40) {
+    shadesStale = false;
+    shadesAt = performance.now();
+    buildShades();
   }
 }
 function animRecord(k: string, bars: number) {
