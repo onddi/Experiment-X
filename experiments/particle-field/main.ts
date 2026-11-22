@@ -21801,11 +21801,13 @@ function remixRules(p: Record<string, unknown>) {
   }
   if (n('lensGlitch') > 0.5) p.lensGlitch = 0.5;
 }
-// A moment after a remix plays: is anything visible? Nearly blank or washed
-// out, roll again (twice at most in a row).
+// Right after a remix plays: is anything visible? Looked at every 0.3 s for
+// about a second. Washed out rolls again at once; nearly blank rolls again
+// once it's still blank at 0.6 s (a scene that fills in has shown by then).
+// Twice at most in a row.
 let remixRetries = 0;
 let remixCheckTimer = 0;
-function remixCheck() {
+function remixCheck(tick = 1) {
   clearTimeout(remixCheckTimer);
   remixCheckTimer = window.setTimeout(() => {
     const W = 48, H = 27;
@@ -21824,11 +21826,13 @@ function remixCheck() {
     for (let i = 0; i < d.length; i += 4) lum.push(d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11);
     const bg = [...lum].sort((a, b) => a - b)[lum.length >> 1];
     const lit = lum.filter((v) => Math.abs(v - bg) > 24).length / lum.length;
-    if ((lit < 0.004 || lit > 0.92) && remixRetries < 2) {
+    const washed = lit > 0.92, blank = lit < 0.004;
+    if ((washed || (blank && tick >= 2)) && remixRetries < 2) {
       remixRetries++;
       shuffle(true);
-    } else remixRetries = 0;
-  }, 1400);
+    } else if (blank && tick < 4) remixCheck(tick + 1);
+    else remixRetries = 0;
+  }, 300);
 }
 const SCENE_INPUT_KEYS = ['maskFx', 'gaze', 'obstacles', 'camMode', 'camMirror', 'camCentre', 'camRate', 'camMix', 'camSnap', 'camDepth', 'camPreview', 'camHands', 'camHandReach', 'camHandForce', 'gestOn', 'voice', 'poseOn', 'poseSweep', 'twoDist', 'twoAngle', 'links'] as const;
 function shuffle(again?: unknown) {
