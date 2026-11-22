@@ -5,7 +5,7 @@ import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
 import { GLYPH_SETS, PALETTES, PAL_GROUPS, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel, hasModel, MODEL_SOLIDS, setTextSolid, textNormal } from './shapes.ts';
-import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
+import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, keyBackground, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
 import { Camera, FACE_GROUPS, type Task } from './camera.ts';
 import { Recorder, canRecord, RECORD_LENGTHS, RECORD_SIZES } from './record.ts';
@@ -191,6 +191,13 @@ function placed(x: number, y: number): [number, number] {
   const dx = x - place.cx;
   const dy = y - place.cy;
   return [place.cx + place.ox + dx * place.c - dy * place.s, place.cy + place.oy + dx * place.s + dy * place.c];
+}
+// And back: a screen point in the shape's own space.
+function unplaced(x: number, y: number): [number, number] {
+  const ex = x - place.cx - place.ox;
+  const ey = y - place.cy - place.oy;
+  const det = place.c * place.c + place.s * place.s || 1;
+  return [place.cx + (ex * place.c + ey * place.s) / det, place.cy + (-ex * place.s + ey * place.c) / det];
 }
 let hy = new Float32Array(0);
 let pz = new Float32Array(0); // depth: 0 far, 1 near
@@ -2438,6 +2445,79 @@ function mediaStop() {
   shapeMedia = null;
   mediaBmp?.close();
   mediaBmp = null;
+  mediaPlate = null;
+}
+// The background behind a video or GIF: each pixel's median over frames
+// spread through it. What differs from it is what moves (a dancer on a
+// busy background), which brightness alone can't find.
+let mediaPlate: { src: string; w: number; h: number; d: Uint8ClampedArray } | null = null;
+const PLATE_PX = 240;
+let plateCanvas: HTMLCanvasElement | null = null;
+async function buildPlate(m: NonNullable<typeof shapeMedia>) {
+  const grab: CanvasImageSource[] = [];
+  let sw = 0;
+  let sh = 0;
+  const c = document.createElement('canvas');
+  const frames: Uint8ClampedArray[] = [];
+  const take = (img: CanvasImageSource) => {
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(img, 0, 0, c.width, c.height);
+    frames.push(g.getImageData(0, 0, c.width, c.height).data);
+  };
+  const size = (w: number, h: number) => {
+    const k = Math.min(1, PLATE_PX / Math.max(w, h, 1));
+    c.width = Math.max(2, Math.round(w * k));
+    c.height = Math.max(2, Math.round(h * k));
+  };
+  if (m.frames) {
+    sw = m.frames[0].width;
+    sh = m.frames[0].height;
+    size(sw, sh);
+    const step = Math.max(1, Math.floor(m.frames.length / 15));
+    for (let k = 0; k < m.frames.length; k += step) grab.push(m.frames[k]);
+    grab.forEach(take);
+  } else if (m.video) {
+    // A second element, so seeking doesn't stall the one playing.
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    v.src = m.src;
+    await new Promise<void>((ok, no) => {
+      v.addEventListener('loadeddata', () => ok(), { once: true });
+      v.addEventListener('error', () => no(), { once: true });
+    });
+    const dur = v.duration;
+    if (!isFinite(dur) || dur <= 0) return;
+    size(v.videoWidth, v.videoHeight);
+    const K = Math.min(15, Math.max(5, Math.round(dur * 3)));
+    for (let k = 0; k < K; k++) {
+      if (shapeMedia !== m) return;
+      await new Promise<void>((ok) => {
+        v.addEventListener('seeked', () => ok(), { once: true });
+        v.currentTime = ((k + 0.5) / K) * dur;
+      });
+      take(v);
+    }
+    v.removeAttribute('src');
+    v.load();
+  }
+  if (frames.length < 3 || shapeMedia !== m) return;
+  const n = c.width * c.height * 4;
+  const d = new Uint8ClampedArray(n);
+  const col = new Uint8Array(frames.length);
+  for (let q = 0; q < n; q++) {
+    if ((q & 3) === 3) {
+      d[q] = 255;
+      continue;
+    }
+    for (let f = 0; f < frames.length; f++) col[f] = frames[f][q];
+    col.sort();
+    d[q] = col[col.length >> 1];
+  }
+  mediaPlate = { src: m.src, w: c.width, h: c.height, d };
+  shapeKey = '';
+  buildShape();
 }
 // The picture as it is now (drawn into a canvas small enough to sample).
 function mediaFrame(): HTMLCanvasElement | null {
@@ -2624,6 +2704,7 @@ imageInput.addEventListener('change', async () => {
       shapeKey = '';
       buildShape();
       imageColoursOn(true);
+      void buildPlate(shapeMedia).catch(() => {});
     }, { once: true });
     void v.play().catch(() => {});
     return;
@@ -2636,6 +2717,7 @@ imageInput.addEventListener('change', async () => {
       shapeKey = '';
       buildShape();
       imageColoursOn(true);
+      void buildPlate(shapeMedia).catch(() => {});
       return;
     }
   }
@@ -4291,7 +4373,82 @@ function sampleImage(): [number, number][] {
     return pts;
   }
   let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode;
-  if (mode === 'auto') {
+  // A video or GIF with its background worked out: the parts that differ from it.
+  const plate = !camOn && shapeMedia && mediaPlate?.src === shapeMedia.src ? mediaPlate : null;
+  if (plate && (mode === 'auto' || mode === 'subject')) {
+    // Compared at the plate's own size, drawn the same way, so sharp
+    // background edges match exactly.
+    const pw = plate.w;
+    const ph = plate.h;
+    const PN = pw * ph;
+    const pc = (plateCanvas ??= document.createElement('canvas'));
+    if (pc.width !== pw || pc.height !== ph) {
+      pc.width = pw;
+      pc.height = ph;
+    }
+    const pg = pc.getContext('2d', { willReadFrequently: true })!;
+    pg.drawImage(src as CanvasImageSource, 0, 0, pw, ph);
+    const fd = pg.getImageData(0, 0, pw, ph).data;
+    const mask = new Uint8Array(PN);
+    let cover = 0;
+    // The closest of the plate's 3×3 neighbours: frames resampled another
+    // way shift sharp background edges by a pixel, which isn't motion.
+    const pd = plate.d;
+    for (let y = 0; y < ph; y++)
+      for (let x = 0; x < pw; x++) {
+        const k = y * pw + x;
+        const q = k * 4;
+        let best = 1e9;
+        for (let dy = -1; dy <= 1 && best > 75; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= ph) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx;
+            if (xx < 0 || xx >= pw) continue;
+            const p = (yy * pw + xx) * 4;
+            const e = Math.abs(fd[q] - pd[p]) + Math.abs(fd[q + 1] - pd[p + 1]) + Math.abs(fd[q + 2] - pd[p + 2]);
+            if (e < best) best = e;
+          }
+        }
+        if (best > 75) {
+          mask[k] = 1;
+          cover++;
+        }
+      }
+    if (cover > PN * 0.003 && cover < PN * 0.6) {
+      // Fill small gaps the outline encloses: parts that hardly moved (a
+      // torso swaying in place) can match the background but sit inside the figure.
+      const lab = new Int32Array(PN);
+      const st: number[] = [];
+      for (let k0 = 0; k0 < PN; k0++) {
+        if (mask[k0] || lab[k0]) continue;
+        const comp: number[] = [];
+        let edge = false;
+        lab[k0] = 1;
+        st.push(k0);
+        while (st.length) {
+          const k = st.pop()!;
+          comp.push(k);
+          const x = k % pw;
+          if (x === 0 || x === pw - 1 || k < pw || k >= PN - pw) edge = true;
+          for (const m of [x > 0 ? k - 1 : -1, x < pw - 1 ? k + 1 : -1, k >= pw ? k - pw : -1, k < PN - pw ? k + pw : -1])
+            if (m >= 0 && !mask[m] && !lab[m]) {
+              lab[m] = 1;
+              st.push(m);
+            }
+        }
+        if (!edge && comp.length < cover * 0.5) for (const k of comp) mask[k] = 1;
+      }
+      for (let y = 0; y < ih; y++) {
+        const row = Math.min(ph - 1, ((y * ph) / ih) | 0) * pw;
+        for (let x = 0; x < iw; x++) wt[y * iw + x] = mask[row + Math.min(pw - 1, ((x * pw) / iw) | 0)];
+      }
+      mode = 'moving' as typeof mode;
+    }
+  }
+  if (mode === 'moving' as typeof mode) {
+    // Weights set above.
+  } else if (mode === 'auto') {
     // A logo on a plain background covers part of the frame; a photo
     // "differs" almost everywhere, so fall back to brightness.
     const cover = subject();
@@ -5163,28 +5320,94 @@ function playEntrance() {
 function keepOnPicture(pts: [number, number][]): boolean {
   const M = imgWt!;
   const free: number[] = [];
+  // Coverage in cells of 4×4 samples: how many particles stay in each.
+  const CS = 4;
+  const cw = Math.ceil(M.iw / CS);
+  const ch = Math.ceil(M.ih / CS);
+  const kept = new Float32Array(cw * ch);
   for (let i = 0; i < n; i++) {
     const x = Math.floor(hx[i] / M.step) - M.ix;
     const y = Math.floor(hy[i] / M.step) - M.iy;
-    const v = x >= 0 && y >= 0 && x < M.iw && y < M.ih ? M.wt[y * M.iw + x] : 0;
+    const inside = x >= 0 && y >= 0 && x < M.iw && y < M.ih;
+    const v = inside ? M.wt[y * M.iw + x] : 0;
     if (!(Math.random() < Math.min(1, v * 1.5))) free.push(i);
+    else kept[((y / CS) | 0) * cw + ((x / CS) | 0)]++;
   }
   if (free.length > n * 0.9) return false;
   const m = free.length;
   if (!m) return true;
+  // What each cell should hold (its share of the picture) less what stays:
+  // the freed particles go where the picture is new (a limb's new place)
+  // before they thicken what's already covered.
+  const want = new Float32Array(cw * ch);
+  let wsum = 0;
+  for (let y = 0; y < M.ih; y++)
+    for (let x = 0; x < M.iw; x++) {
+      const v = M.wt[y * M.iw + x];
+      if (v > 0) {
+        want[((y / CS) | 0) * cw + ((x / CS) | 0)] += v;
+        wsum += v;
+      }
+    }
+  const cellOf = (x: number, y: number) => {
+    const gx = Math.floor(x / M.step) - M.ix;
+    const gy = Math.floor(y / M.step) - M.iy;
+    return gx >= 0 && gy >= 0 && gx < M.iw && gy < M.ih ? ((gy / CS) | 0) * cw + ((gx / CS) | 0) : -1;
+  };
+  const inCell = new Float32Array(cw * ch);
+  const pc = new Int32Array(pts.length);
+  for (let t = 0; t < pts.length; t++) {
+    pc[t] = cellOf(pts[t][0], pts[t][1]);
+    if (pc[t] >= 0) inCell[pc[t]]++;
+  }
+  const per = wsum > 0 ? n / wsum : 0;
+  const wt = new Float64Array(pts.length);
+  let total = 0;
+  for (let t = 0; t < pts.length; t++) {
+    const c = pc[t];
+    // A little for everywhere, so the shape still evens out once filled.
+    const gap = c >= 0 ? Math.max(0, want[c] * per - kept[c]) / inCell[c] : 0;
+    wt[t] = gap + 0.02;
+    total += wt[t];
+  }
+  const cum = new Float64Array(pts.length);
+  let acc = 0;
+  for (let t = 0; t < pts.length; t++) cum[t] = acc += wt[t];
   const fx = new Float32Array(m), fy = new Float32Array(m), tx = new Float32Array(m), ty = new Float32Array(m);
   for (let j = 0; j < m; j++) {
-    fx[j] = hx[free[j]];
-    fy[j] = hy[free[j]];
-    const [x, y] = pts[(Math.random() * pts.length) | 0];
-    tx[j] = x;
-    ty[j] = y;
+    // Paired from where each particle is now, not its old spot: one that's
+    // still on its way shouldn't be sent back to start from there.
+    const i = free[j];
+    [fx[j], fy[j]] = place.on ? unplaced(px[i], py[i]) : [px[i], py[i]];
+    const r = Math.random() * total;
+    let lo = 0;
+    let hi = pts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < r) lo = mid + 1;
+      else hi = mid;
+    }
+    tx[j] = pts[lo][0];
+    ty[j] = pts[lo][1];
   }
   const owner = matchCurve(tx, ty, fx, fy);
+  // Jump: one with far to go vanishes and comes back on its spot.
+  const jump = settings.imageMove === 'jump' ? (Math.min(w, h) * 0.06) ** 2 : Infinity;
   for (let t = 0; t < m; t++) {
-    hx[free[owner[t]]] = tx[t];
-    hy[free[owner[t]]] = ty[t];
+    const i = free[owner[t]];
+    hx[i] = tx[t];
+    hy[i] = ty[t];
   }
+  // Every particle still far from its spot (newly sent or still on its way).
+  if (jump < Infinity)
+    for (let i = 0; i < n; i++) {
+      const [ex, ey] = place.on ? placed(hx[i], hy[i]) : [hx[i], hy[i]];
+      if ((ex - px[i]) ** 2 + (ey - py[i]) ** 2 > jump) {
+        px[i] = ox[i] = ex;
+        py[i] = oy[i] = ey;
+        vx[i] = vy[i] = 0;
+      }
+    }
   return true;
 }
 
@@ -5818,6 +6041,8 @@ let spriteAnim: HTMLCanvasElement[] | null = null;
 let spriteRaw: HTMLCanvasElement[] = [];
 let spriteGrey: HTMLCanvasElement[] = [];
 let spriteRawKey = '';
+// Whether the sheet has a solid background (null = not checked yet): shows the Background slider.
+let spriteSolid: boolean | null = null;
 // The sheet's grid as used (auto resolved), and its frames grouped by row
 // (one animation per row is the usual layout); empty cells are left out.
 let spriteGrid: [number, number] = [1, 1];
@@ -5839,6 +6064,7 @@ spriteInput.addEventListener('change', async () => {
 function spriteUse(img: HTMLImageElement | null, frames: HTMLCanvasElement[] | null = null) {
   spriteSheet = img;
   spriteAnim = frames;
+  spriteSolid = null;
   spriteRawKey = '';
   spriteFramesNow();
   if (settings.render !== 'sprite' && settings.render !== 'mixed') {
@@ -5849,13 +6075,16 @@ function spriteUse(img: HTMLImageElement | null, frames: HTMLCanvasElement[] | n
 }
 function spriteFramesNow() {
   const S = settings;
-  const key = `${spriteSheet?.src ?? (spriteAnim ? `anim${spriteAnim.length}` : 'fly')}|${S.spriteCols}|${S.spriteRows}`;
+  const key = `${spriteSheet?.src ?? (spriteAnim ? `anim${spriteAnim.length}` : 'fly')}|${S.spriteCols}|${S.spriteRows}|${S.spriteKey}`;
   if (key !== spriteRawKey) {
     spriteRawKey = key;
     if (spriteSheet) {
-      const auto = !S.spriteCols || !S.spriteRows ? detectGrid(spriteSheet) : [1, 1];
+      // A solid background is keyed out first, so the gaps show and the frames come clear.
+      if (spriteSolid === null) spriteSolid = !!keyBackground(spriteSheet, 0.15);
+      const sheet = keyBackground(spriteSheet, S.spriteKey) ?? spriteSheet;
+      const auto = !S.spriteCols || !S.spriteRows ? detectGrid(sheet) : [1, 1];
       spriteGrid = [S.spriteCols || auto[0], S.spriteRows || auto[1]];
-      const all = sliceSheet(spriteSheet, spriteGrid[0], spriteGrid[1]);
+      const all = sliceSheet(sheet, spriteGrid[0], spriteGrid[1]);
       spriteRaw = [];
       spriteRowsIdx = [];
       for (let r = 0; r < spriteGrid[1]; r++) {
@@ -10820,7 +11049,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Hold 1–8 and scroll, swipe or move the mouse to turn knob A–H. Tap the key alone to open its slider.', show: () => settings.numberKeys === 'knobs' },
 
   { kind: 'section', id: 'look', label: 'Style', tab: 'look',
-    lock: ['render', 'mixStyles', 'count', 'fieldSoft', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
+    lock: ['render', 'mixStyles', 'count', 'fieldSoft', 'size', 'sizeVar', 'trail', 'glow', 'linkDist', 'ribbonLen', 'glyphSet', 'glyphText', 'glyphPick', 'glyphChange', 'glyphRate', 'glyphFont', 'glyphScale', 'glyphRotate', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey'],
     summary: () => `${label(RENDERS, settings.render)}, ${settings.count.toLocaleString()}` },
   { kind: 'select', key: 'render', label: 'Style', options: RENDERS },
   { kind: 'multi', key: 'mixStyles', label: 'Mix of', options: MIXABLE, show: () => settings.render === 'mixed' },
@@ -10833,6 +11062,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'spriteFps', label: 'Frames per second', min: 0, max: 30, step: 1, format: (v) => (v === 0 ? 'by age' : `${v}`), show: () => isSprite() && spriteFramesNow().length > 1 },
   { kind: 'range', key: 'spriteCols', label: 'Sheet columns', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[0]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
   { kind: 'range', key: 'spriteRows', label: 'Sheet rows', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? `auto (${spriteGrid[1]})` : `${v}`), show: () => isSprite() && !!spriteSheet },
+  { kind: 'range', key: 'spriteKey', label: 'Sheet background', min: 0, max: 0.5, step: 0.01, format: (v) => (v === 0 ? 'keep' : `clear ${Math.round(v * 200)}%`), show: () => isSprite() && !!spriteSheet && !!spriteSolid },
   { kind: 'range', key: 'spriteRow', label: 'Animation (row)', min: 0, max: 32, step: 1, format: (v) => (v === 0 ? 'each its own' : `row ${Math.min(v, spriteRowsIdx.length)}`), show: () => isSprite() && !!spriteSheet && spriteRowsIdx.length > 1 },
   { kind: 'note', text: 'A single image, a sprite sheet or an animated GIF. A sheet’s grid is found by the clear gaps between frames (set columns and rows if not); with one animation per row, play one row or let each particle play its own. Frames play in a loop; at 0 they follow each particle’s life. Used for this session only.', show: isSprite },
   // Curved: the left half covers 0.5–6 px as finely as before, the right half goes up to 32.
@@ -11068,6 +11298,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
   { kind: 'mediapick', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
+  { kind: 'choice', key: 'imageMove', label: 'Particles', options: [['travel', 'Travel'], ['jump', 'Jump']], show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
 
@@ -14170,7 +14401,7 @@ const afterShow: (() => void)[] = [];
 // Fine-tune. Cards with 4 or fewer settings show everything.
 const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['morph', 'beatSnap'],
-  look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow'],
+  look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey'],
   colour: ['palette', 'colorBy', 'customColors', 'palSat', 'palLight', 'palBg'],
   shape: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
@@ -17835,7 +18066,13 @@ function rackKnob(c: Extract<Control, { kind: 'range' }>, home: () => number, sr
   let homedAt = 0;
   el.addEventListener('pointerdown', (e) => {
     if ((e.target as HTMLElement).closest('.rk-anim, .kn-type')) return;
-    onValue = e.target === out;
+    // The value, with room for a finger: anywhere from just left of the
+    // number to the row's end, the full row height (a near miss used to
+    // glide the fill to the far end, e.g. Particles to ~100k).
+    const ob = out.getBoundingClientRect();
+    onValue = e.target === out || (isFillRow(el) && ob.width > 0 && e.clientX >= ob.left - 16 && e.clientX <= ob.right + 16);
+    // No focus move on the touch's mouse events: it would blur the input that opens.
+    if (onValue) e.preventDefault();
     fillGlideStop(el);
     const v = animKnob(c.key, src.get(c.key) as number);
     start = { x: e.clientX, y: e.clientY, v, t: performance.now(), turned: false, fill: isFillRow(el), lx: e.clientX };
@@ -21357,7 +21594,7 @@ function pick<T>(xs: readonly T[]): T {
 type RemixCard = { id: string; keys: string[]; ctls: Map<string, Control>; power?: Power; lockKeys: string[]; donors: string[] };
 const REMIX_TABS: string[] = ['shape', 'motion', 'look', 'fx'];
 // Input modes and display helpers, not part of a look.
-const REMIX_SKIP = new Set([...SND_KEYS, 'modelClip', 'modelSpeed', 'modelBeat', 'spriteCols', 'spriteRows', 'spriteRow', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxBloomKick', 'gfxInvertDrop', 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt', 'tiltLook', 'shapeDrag']);
+const REMIX_SKIP = new Set([...SND_KEYS, 'modelClip', 'modelSpeed', 'modelBeat', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey', 'imageRate', 'placeWell', 'showWells', 'obsPlace', 'obsShow', 'camRate', 'imageMode', 'drawOutline', 'audioKaleidoDrop', 'lensMusic', 'audioKaleido', 'gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxBloomKick', 'gfxInvertDrop', 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt', 'tiltLook', 'shapeDrag']);
 // How often a switchable card is on in a remix.
 const REMIX_ON: Record<string, number> = { shape: 0.6, life: 0.35, flow: 0.65, forces: 0.3, swarm: 0.3, obstacles: 0.15, lens: 0.3, depth: 0.35, pointer: 0.85, gfxlight: 0.35, gfxfeed: 0.15, gfxlens: 0.2, gfxsurface: 0.12, gfxgrade: 0.25, gfxecho: 0.1, gfxdisplace: 0.12, gfxglitch: 0.08 };
 const REMIX_KEY = 'particle-field:remix';
@@ -22703,7 +22940,7 @@ function shuffleTap() {
   shufTimer = window.setTimeout(() => {
     shufTimer = 0;
     undoable(() => shuffle());
-  }, 280);
+  }, 320);
 }
 // A random genre and one of its songs (never the one playing); with the scene, a new scene too.
 function shuffleSound(scene = true) {
@@ -22757,9 +22994,9 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double tap: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
-  studio: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
+  studio: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], uPause(), uMore()],
   build: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
 };
 let uSig = '';
@@ -22823,7 +23060,7 @@ function uPaint(force = false) {
     if (cls?.includes('more')) dockMoreBtn = b;
     // ♫: hold half a second to mute. Shuffle on the Stage: hold for a new song.
     let held = false;
-    const onHold = cls?.split(' ').includes('snd') && !cls.includes('muted') ? () => toggleMute(true) : v === 'stage' && cls === 'primary' ? shuffleSound : null;
+    const onHold = cls?.split(' ').includes('snd') && !cls.includes('muted') ? () => toggleMute(true) : (v === 'stage' || (v === 'studio' && desk)) && cls === 'primary' ? shuffleSound : null;
     if (onHold) {
       let t = 0;
       b.addEventListener('pointerdown', () => {
@@ -25770,3 +26007,18 @@ document.addEventListener('pointerover', (e) => {
     if (el.dataset.autoTitle) { el.removeAttribute('title'); delete el.dataset.autoTitle; }
   }
 }, { passive: true });
+
+// Warm up while nothing's happening after load: the index Shuffle picks its
+// donor scenes from (built on the first shuffle otherwise) and the sound
+// studio's code (fetched on the first ♫ tap otherwise).
+setTimeout(() => {
+  const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 500));
+  idle(() => {
+    try {
+      remixCards();
+    } catch {
+      // Built on the first shuffle instead.
+    }
+    idle(() => void import('./soundview.ts').catch(() => {}));
+  });
+}, 1500);

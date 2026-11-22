@@ -126,6 +126,8 @@ export interface Settings {
   shapeSpin: number;
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
   imageRate: number;
+  // A video shape's particles: travel to their new spots, or jump when far.
+  imageMove: 'travel' | 'jump';
   modelClip: number;
   modelSpeed: number;
   modelBeat: boolean;
@@ -504,6 +506,8 @@ export interface Settings {
   spriteRows: number;
   // Which row of a sheet plays: 0 = each particle plays its own row.
   spriteRow: number;
+  // Solid background removal for sheets without transparency: colour tolerance, 0 = keep.
+  spriteKey: number;
   spriteFps: number;
   spriteTint: boolean;
   spriteTurn: 'none' | 'heading' | 'spin';
@@ -839,7 +843,8 @@ export const DEFAULTS: Settings = {
   drawOutline: false,
   shapeSpin: 0.3,
   imageMode: 'auto',
-  imageRate: 10,
+  imageRate: 24,
+  imageMove: 'travel',
   modelClip: 1,
   modelSpeed: 1,
   modelBeat: false,
@@ -1188,6 +1193,7 @@ export const DEFAULTS: Settings = {
   spriteCols: 0,
   spriteRows: 0,
   spriteRow: 0,
+  spriteKey: 0.15,
   spriteFps: 10,
   spriteTint: true,
   spriteTurn: 'heading',
