@@ -26055,3 +26055,18 @@ document.addEventListener('pointerover', (e) => {
     if (el.dataset.autoTitle) { el.removeAttribute('title'); delete el.dataset.autoTitle; }
   }
 }, { passive: true });
+
+// Warm up while nothing's happening after load: the index Shuffle picks its
+// donor scenes from (built on the first shuffle otherwise) and the sound
+// studio's code (fetched on the first ♫ tap otherwise).
+setTimeout(() => {
+  const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 500));
+  idle(() => {
+    try {
+      remixCards();
+    } catch {
+      // Built on the first shuffle instead.
+    }
+    idle(() => void import('./soundview.ts').catch(() => {}));
+  });
+}, 1500);
