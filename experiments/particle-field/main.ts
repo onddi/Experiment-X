@@ -21302,7 +21302,7 @@ function soundTick(dt: number) {
     if (sndSlow > 3) {
       sndSlow = 0;
       toggleMute(true);
-      showToast('Sound paused: the app was struggling. ⋯ → Play the sound brings it back');
+      showToast('Sound muted: the app was struggling. Tap ♫ to bring it back');
     }
   } else sndSlow = 0;
   if ((studio?.mode ?? 'off') !== (sndOn && snd ? studioPref : 'off')) syncStudio();
@@ -22924,7 +22924,7 @@ function toggleMute(on = !sndMuted()) {
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · double tap for settings · hold to mute' : 'Close the sound studio (M) · double tap for settings · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
-  stage: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  stage: () => [['Shuffle (hold for a new sound)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -22936,6 +22936,24 @@ const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   build: () => [['Shuffle', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uMore()],
 };
 let sndTapAt = -1e9;
+// A random genre and one of its songs (never the one playing).
+function shuffleSound() {
+  const cur = settings.sndStyle;
+  const all = STYLES.flatMap((st) => styleVars(st).map((x) => [st, x] as const)).filter(([st, x]) => `${st.id}/${x}` !== cur);
+  const pick = all[(Math.random() * all.length) | 0];
+  if (!pick) return;
+  const h = rememberScene();
+  histMute = true;
+  try {
+    useStyle(pick[0], pick[1], true);
+  } finally {
+    histMute = false;
+  }
+  const name = `Sound: ${pick[0].name} · ${isRoll(pick[1]) ? 'new song' : pick[1]}`;
+  setTimeout(() => (h ? showToast(name, ['Undo', () => restoreScene(h)]) : showToast(name)), 60);
+  refresh();
+  uPaint(true);
+}
 function openSoundSettings() {
   uGo('studio');
   const head = document.querySelector<HTMLElement>('.fd[data-f="sound"] .fd-head');
@@ -23032,16 +23050,17 @@ function uPaint(force = false) {
     b.innerHTML = ic + (named ? `<span>${label.replace(/ \(.*\)$/, '')}</span>` : '');
     if (cls) b.classList.add(...cls.split(' '));
     if (cls?.includes('more')) dockMoreBtn = b;
-    // ♫: hold half a second to mute.
+    // ♫: hold half a second to mute. Shuffle on the Stage: hold for a new song.
     let held = false;
-    if (cls?.split(' ').includes('snd') && !cls.includes('muted')) {
+    const onHold = cls?.split(' ').includes('snd') && !cls.includes('muted') ? () => toggleMute(true) : v === 'stage' && cls === 'primary' ? shuffleSound : null;
+    if (onHold) {
       let t = 0;
       b.addEventListener('pointerdown', () => {
         held = false;
         clearTimeout(t);
         t = window.setTimeout(() => {
           held = true;
-          toggleMute(true);
+          onHold();
         }, 500);
       });
       for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => clearTimeout(t));
