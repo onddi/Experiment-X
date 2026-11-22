@@ -3,7 +3,7 @@ import { fillPattern, FILL_PATTERNS, PATTERN_FORM, PATTERN_VARY, patternArms, is
 import './style.css';
 import { AudioInput, tabAudioSupported, type SpectrumFrame } from './audio.ts';
 import { xframe } from './xframe.ts';
-import { GLYPH_SETS, PALETTES, PAL_GROUPS, hexToRgb, rgbToHsl, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
+import { GLYPH_SETS, PALETTES, PAL_GROUPS, DEFAULTS, upgradeShape, type Emitter, type Render, type GlyphFont, type Settings, type PaletteDef } from './settings.ts';
 import { ICON_SHAPES, GEO_SHAPES, SOLID_SHAPES, LIVE_SHAPES, drawIcon, isIcon, geoPoint, GEO_SPINS, solidPoint, setModel, modelClips, poseModel, hasModel, MODEL_SOLIDS, setTextSolid, textNormal } from './shapes.ts';
 import { modelFromFile, gltfModel, decodeFrames, sliceSheet, detectGrid, butterflySheet } from './media.ts';
 import { VIBE_FAMILIES, CARDS_OFF, vibe, quiet, VIBES, PRESETS, FAMILIES, FAMILY_OF, ADDED, type VibeFamily, type VibeLead, type VibeDef, type Family } from './scenes.ts';
@@ -25,43 +25,14 @@ import { parseAnim, formatAnim, animOffset, animPhase, thin, WAVES, EASES, CYCLE
 import { FieldRender, FIELD_STYLES, STEER_STYLES, SandLayer } from './fieldstyles.ts';
 import { RECIPES, rollSong, songName, newSeed } from './recipes.ts';
 import { LinkRunner, linkNeeds, parseLinks, migrateLegacy, formatLinks, SOURCES, ACTIONS, LINK_EXAMPLES, sourceDef, actionDef, type Link, type Signal } from './links.ts';
+import { OB_LOOKS, OB_COLOURS, OB_PIECE_KINDS, GRAIN_SOUNDS, GRAIN_FROM, TICK_SOUNDS, TICK_PATTERNS, STEP_SOUNDS, SCAN_DIRS, STEP_RATES, CHIME_SOUNDS, PAD_SOUNDS, BASS_SOUNDS, pct, GFX_LENSES, GFX_BLURS, GFX_SURFACES, FLOW_TYPES, label, POINTER_MODES, CLICK_MODES, RENDERS, PAL_BGS, SPEC_LAYOUTS, COLOR_BY, BEAT_ACTIONS, TOP_BLENDS } from './options.ts';
+import { FX_LOOKS } from './fxlooks.ts';
+import { SOUND_PRESETS, GENRE_FLAVOR } from './soundpresets.ts';
+import { STORAGE_KEY, settings } from './state.ts';
+import { pal, hslToRgb, type Rgb } from './palette.ts';
 
 // --- settings ----------------------------------------------------------------
 
-// The current palette, including a custom one built from colour pickers,
-// with the Saturation, Brightness and Background dials applied.
-function basePal(): PaletteDef {
-  if (settings.palette !== 'custom') return PALETTES[settings.palette];
-  return {
-    label: 'Custom',
-    bg: hexToRgb(settings.customBg),
-    stops: settings.customColors.split(',').filter(Boolean).map((hex) => rgbToHsl(hexToRgb(hex))),
-  };
-}
-let palCache: { key: string; def: PaletteDef } | null = null;
-function pal(): PaletteDef {
-  const S = settings;
-  if (S.palSat === 1 && S.palLight === 0 && S.palBg === 'own') return basePal();
-  const key = `${S.palette}|${S.palette === 'custom' ? S.customColors + S.customBg : ''}|${S.palSat}|${S.palLight}|${S.palBg}`;
-  if (palCache?.key === key) return palCache.def;
-  const b = basePal();
-  const light = S.palBg === 'light';
-  const stops = b.stops.map(([h, sat, l]): [number, number, number] => {
-    let L = Math.max(4, Math.min(97, l + S.palLight * 35));
-    // On a light background the colours run dark to mid, so they still show.
-    if (light) L = Math.max(10, Math.min(62, 12 + (100 - L) * 0.55));
-    return [h, Math.min(100, sat * S.palSat), L];
-  });
-  const mid = b.stops[Math.floor(b.stops.length / 2)] ?? [0, 0, 50];
-  const rgbOf = (h: number, sat: number, l: number) => hslToRgb(h, sat, l).map(Math.round) as [number, number, number];
-  const bg = S.palBg === 'black' ? [0, 0, 0] as const : S.palBg === 'tinted' ? rgbOf(mid[0], 45, 9) : light ? rgbOf(mid[0], 30, 93) : b.bg;
-  const def: PaletteDef = { ...b, bg, stops };
-  palCache = { key, def };
-  return def;
-}
-
-const STORAGE_KEY = 'particle-field:settings';
-const settings: Settings = { ...DEFAULTS, ...upgradeShape(load()) };
 // Scenes you left, for Undo and Previous scene (see rememberScene).
 type SceneSnap = { snap: Settings; base: Settings | null; name: string; mine: MyPreset | null };
 const sceneHist: SceneSnap[] = [];
@@ -99,28 +70,6 @@ try {
   }
 } catch {}
 
-// Sound quality was a switch plus an amount; now the amount alone (0 = off),
-// and the Mix polish reverb became Reverb type, for any mix.
-function qualityOneSlider(o: Record<string, unknown>) {
-  if (!o || typeof o !== 'object') return o;
-  for (const [sw, amt] of [['sndPolish', 'sndPolishAmt'], ['sndUnison', 'sndUnisonAmt'], ['sndWave', 'sndWaveAmt'], ['sndHuman', 'sndHumanAmt']]) {
-    if (typeof o[sw] !== 'boolean') continue;
-    if (!o[sw]) o[amt] = 0;
-    delete o[sw];
-  }
-  if (typeof o.sndPolishVerb === 'string') {
-    if (Number(o.sndPolishAmt) > 0 && !o.sndVerb) o.sndVerb = o.sndPolishVerb;
-    delete o.sndPolishVerb;
-  }
-  return o;
-}
-function load(): Partial<Settings> {
-  try {
-    return migrateLegacy(qualityOneSlider(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')));
-  } catch {
-    return {};
-  }
-}
 
 // Crossfader: two scenes and a fader between them (state; the engine is with
 // the timeline further down).
@@ -5728,14 +5677,6 @@ let shades: string[] = [];
 
 let shadeRgb: Rgb[] = [];
 
-function hslToRgb(h: number, s: number, l: number): Rgb {
-  s /= 100;
-  l /= 100;
-  const k = (n2: number) => (n2 + h / 30) % 12;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n2: number) => l - a * Math.max(-1, Math.min(k(n2) - 3, Math.min(9 - k(n2), 1)));
-  return [f(0) * 255, f(8) * 255, f(4) * 255];
-}
 
 function buildShades() {
   spriteCache.clear();
@@ -9835,74 +9776,8 @@ type ControlBody =
   | { kind: 'swatch' }
   | { kind: 'audio' };
 
-// How the top layer mixes into the base (CSS mix-blend-mode on its frame).
-const TOP_BLENDS: [Settings['topBlend'], string][] = [
-  ['normal', 'Normal'],
-  ['screen', 'Screen (light adds)'],
-  ['plus-lighter', 'Add (brighter)'],
-  ['lighten', 'Lighten'],
-  ['color-dodge', 'Dodge (hot glow)'],
-  ['overlay', 'Overlay (more contrast)'],
-  ['soft-light', 'Soft light'],
-  ['hard-light', 'Hard light'],
-  ['multiply', 'Multiply (only where both are)'],
-  ['darken', 'Darken'],
-  ['color-burn', 'Burn'],
-  ['difference', 'Difference'],
-  ['exclusion', 'Exclusion (softer difference)'],
-  ['hue', 'Hue (tints the base)'],
-  ['color', 'Colour (recolours the base)'],
-  ['saturation', 'Saturation'],
-  ['luminosity', 'Brightness only'],
-];
 const OB_FONT_OPTS = FONT_OPTS;
-const OB_LOOKS: [string, string][] = [['faint', 'Faint'], ['solid', 'Solid'], ['outline', 'Outline'], ['glow', 'Glow'], ['neon', 'Neon'], ['glass', 'Glass'], ['shadow', 'Lifted (shadow)'], ['stripes', 'Stripes'], ['dots', 'Dots']];
-const OB_COLOURS: [string, string][] = [['white', 'White'], ['scene', 'Scene colour'], ['palette', 'Scene palette (gradient)'], ['dark', 'Dark (a cut-out)'], ['gold', 'Gold'], ['amber', 'Amber'], ['red', 'Red'], ['pink', 'Pink'], ['violet', 'Violet'], ['blue', 'Blue'], ['ice', 'Ice'], ['mint', 'Mint']];
-const OB_PIECE_KINDS: [string, string][] = [['text', 'A word'], ['icon', 'A shape'], ['wall', 'A wall'], ['ring', 'A ring'], ['circle', 'A circle']];
-const GRAIN_SOUNDS: [string, string][] = [['dust', 'Dust'], ['notes', 'Glitter notes'], ['rain', 'Rain'], ['bubbles', 'Bubbles'], ['vinyl', 'Vinyl crackle'], ['wood', 'Wood knocks'], ['sand', 'Sand'], ['crickets', 'Crickets'], ['sparks', 'Sparks'], ['glass', 'Glass'], ['keys', 'Typewriter keys']];
-const GRAIN_FROM: [string, string][] = [['any', 'Anywhere'], ['fast', 'Fast movers'], ['bounce', 'Bounces']];
-const TICK_SOUNDS: [string, string][] = [['off', 'Off'], ['soft', 'Soft'], ['click', 'Click'], ['metro', 'Metronome'], ['wood', 'Wood block'], ['rim', 'Rim'], ['snap', 'Finger snap'], ['clap', 'Clap'], ['shaker', 'Shaker'], ['shuffle', 'Brushed shaker'], ['tamb', 'Tambourine'], ['cowbell', 'Cowbell'], ['hat', 'Hi-hat'], ['blip', 'Blip (in key)'], ['glass', 'Glass (in key)']];
-const TICK_PATTERNS: [string, string][] = [['eighths', 'Eighths'], ['quarters', 'On the beat'], ['offbeat', 'Off the beat'], ['sixteenths', 'Sixteenths'], ['gallop', 'Gallop'], ['clave', 'Clave'], ['tresillo', 'Tresillo'], ['bossa', 'Bossa'], ['field', 'Where particles crowd']];
-const STEP_SOUNDS: [string, string][] = [['same', 'Main'], ['marimba', 'Marimba'], ['bell', 'Bell'], ['glass', 'Glass'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['koto', 'Koto'], ['kalimba', 'Kalimba'], ['steel', 'Steel drum'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth'], ['guitar', 'Acoustic guitar'], ['nylon', 'Nylon guitar'], ['sitar', 'Sitar'], ['mandolin', 'Mandolin'], ['banjo', 'Banjo'], ['pizz', 'Pizzicato strings'], ['violin', 'Violin'], ['cello', 'Cello'], ['piano', 'Piano'], ['clav', 'Clavinet'], ['xylo', 'Xylophone'], ['chip', 'Chip (8-bit)'], ['acid', 'Acid pluck'], ['organ', 'Organ stab'], ['bubble', 'Bubbles'], ['celesta', 'Celesta'], ['crystal', 'Crystal'], ['wood', 'Wood block'], ['drop', 'Water drops'], ['bird', 'Birdsong'], ['frog', 'Frogs'], ['talkdrum', 'Talking drum'], ['bowl', 'Singing bowl']];
-const SCAN_DIRS: [string, string][] = [['across', 'Left to right'], ['down', 'Top to bottom'], ['bounce', 'Back and forth'], ['radar', 'Radar']];
-const STEP_RATES: [string, string][] = [['1', '1/16'], ['2', '1/8'], ['4', '1/4']];
-const CHIME_SOUNDS: [string, string][] = [['same', 'Like the strings'], ['wind', 'Wind chimes'], ['celesta', 'Celesta'], ['tubular', 'Tubular bells'], ['crystal', 'Crystal'], ['tri', 'Triangle'], ['gong', 'Gong'], ['drop', 'Water drops'], ['wood', 'Wood block'], ['bell', 'Bell'], ['glass', 'Glass'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['kalimba', 'Kalimba'], ['marimba', 'Marimba'], ['steel', 'Steel drum']];
-const PAD_SOUNDS: [string, string][] = [['soft', 'Soft'], ['warm', 'Warm analog'], ['strings', 'Strings'], ['bowed', 'Bowed'], ['tape', 'Tape (wobbly)'], ['glass', 'Glass'], ['shimmer', 'Shimmer'], ['air', 'Air'], ['choir', 'Choir'], ['organ', 'Organ'], ['dark', 'Dark drone'], ['brass', 'Brass'], ['reed', 'Reed (accordion)'], ['hollow', 'Hollow (resonant)'], ['ooh', 'Ooh (low voices)'], ['cello', 'Cello section'], ['ice', 'Ice (high, sparkling)'], ['pwm', 'Wide synth'], ['velvet', 'Velvet (soft and dark)'], ['analog', 'Analog (bright, wide)'], ['vox', 'Aah (high voices)'], ['drone', 'Tanpura drone'], ['mist', 'Mist (soft, breathy)'], ['supersaw', 'Supersaw'], ['harmonium', 'Harmonium'], ['cosmic', 'Cosmic (resonant, high)'], ['gated', 'Gated (chopped in time)'], ['reverse', 'Reverse swell'], ['sweep', 'Resonant sweep'], ['bells', 'FM bells'], ['whisper', 'Whisper choir'], ['throat', 'Throat drone'], ['frozen', 'Frozen (glittering)'], ['ocean', 'Ocean waves'], ['wind', 'Wind'], ['rain', 'Rain'], ['whale', 'Whale song'], ['crickets', 'Crickets at night'], ['storm', 'Distant storm']];
-const BASS_SOUNDS: [string, string][] = [
-  ['synth', 'Synth (two saws)'], ['moog', 'Analog (fat)'], ['pulse', 'Pulse (hollow)'], ['sub', 'Sub (deep)'], ['808', '808 (long, slides)'],
-  ['round', 'Round (warm)'], ['house', 'Organ (house)'], ['fm', 'FM (80s punch)'], ['slap', 'Slap (funk)'],
-  ['upright', 'Upright (woody)'], ['fingered', 'Fingered (vintage)'], ['picked', 'Picked (electric)'],
-  ['acid', 'Acid (squelchy)'], ['reese', 'Reese (DnB)'], ['wobble', 'Wobble (dubstep)'], ['fuzz', 'Fuzz (distorted)'],
-  ['dist808', '808 (distorted)'], ['growl', 'Growl (neuro FM)'], ['rubber', 'Rubber (bouncy)'], ['deep', 'Deep (dark, filtered)'], ['fretless', 'Fretless (singing)'], ['brass', 'Brass (tuba)'], ['psy', 'Psy (tight, clicky)'], ['chip', 'Chip (8-bit)'],
-];
-const pct = (v: number) => `${Math.round(v * 100)}%`;
-const GFX_LENSES: [string, string][] = [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort'], ['twirl', 'Whirlpool'], ['pinch', 'Pinch'], ['bulge', 'Bulge'], ['tilt', 'Tilt-shift'], ['mirrorx', 'Mirror ←→'], ['mirrory', 'Mirror ↑↓'], ['quad', 'Mirror four ways']];
-const GFX_BLURS: [string, string][] = [['off', 'Off'], ['zoom', 'Zoom'], ['spin', 'Spin'], ['motion', 'Motion']];
-const GFX_SURFACES: [string, string][] = [['off', 'Off'], ['led', 'LED wall'], ['halftone', 'Halftone'], ['ascii', 'ASCII'], ['crt', 'CRT'], ['thermal', 'Thermal'], ['mosaic', 'Mosaic'], ['stitch', 'Cross-stitch'], ['lego', 'Toy bricks'], ['vhs', 'VHS'], ['oil', 'Oil paint'], ['neon', 'Neon outline']];
-const FLOW_TYPES: [string, string][] = [
-  ['waves', 'Currents (streams)'], ['curl', 'Smoke (stays spread)'], ['vortex', 'Vortex (orbits the centre)'], ['wind', 'Wind (gusts one way)'],
-  ['cells', 'Cells (spinning eddies)'], ['rise', 'Rise (like heat)'], ['tide', 'Tide (breathes in and out)'], ['spiral', 'Spiral arms (galaxy)'],
-];
-const label = (options: [string, string][], v: unknown) => options.find(([k]) => k === v)?.[1] ?? '';
 
-const POINTER_MODES: [string, string][] = [['repel', 'Repel'], ['attract', 'Attract'], ['vortex', 'Vortex'], ['none', 'Off']];
-const CLICK_MODES: [string, string][] = [['implodeHold', 'Implode & burst (hold)'], ['thumb', 'Thumb in the stream (hold)'], ['gather', 'Gather (hold)'], ['emit', 'Fountain (hold)'], ['ripple', 'Ripple'], ['implode', 'Implode'], ['shockwave', 'Shockwave'], ['none', 'Nothing']];
-const RENDERS: [string, string][] = [
-  ['dots', 'Pixels'], ['circles', 'Circles'], ['glow', 'Glow orbs'], ['bokeh', 'Bokeh'], ['rings', 'Rings'],
-  ['sparkles', 'Sparkles'], ['arrows', 'Arrows'], ['streaks', 'Streaks'], ['comets', 'Comets'], ['ribbons', 'Ribbons'], ['glyphs', 'Glyphs'],
-  ['links', 'Constellation'],
-  ['squares', 'Confetti squares'], ['shards', 'Shards'], ['stars', 'Stars'], ['petals', 'Petals'], ['crosses', 'Crosses'],
-  ['neon', 'Neon'], ['flare', 'Lens flare'], ['embers', 'Embers'],
-  ['hair', 'Hair'], ['threads', 'Threads'], ['ink', 'Ink'], ['lightning', 'Lightning'],
-  ['halftone', 'Halftone'], ['bigpixels', 'Big pixels'], ['bubbles', 'Bubbles'], ['marbles', 'Marbles'],
-  ['liquid', 'Liquid'], ['cells', 'Cells'], ['contours', 'Contours'], ['smoke', 'Smoke'], ['glass', 'Glass drops'], ['sand', 'Sand'],
-  ['lava', 'Lava'], ['terrain', 'Terrain'], ['caustics', 'Caustics'], ['aurora', 'Aurora'], ['marbling', 'Marbling'], ['rain', 'Rain on water'], ['slime', 'Slime mould'], ['rivals', 'Rival slimes'], ['mycelium', 'Mycelium'], ['ants', 'Ant trails'], ['termites', 'Termites'], ['colonise', 'Space colonisation'], ['lenia', 'Lenia'],
-  ['turing', 'Coral (reaction-diffusion)'], ['ferro', 'Ferrofluid'], ['frost', 'Frost'], ['flames', 'Flames'], ['stained', 'Stained glass'],
-  ['lowpoly', 'Low-poly'], ['fieldlines', 'Field lines'], ['sketch', 'Pencil sketch'], ['fireflies', 'Fireflies'], ['brush', 'Brush strokes'],
-  ['sprite', 'Your sprite (image or sheet)'],
-  ['mixed', 'Mixed'],
-];
-const PAL_BGS: [string, string][] = [['own', 'Its own'], ['black', 'Black'], ['tinted', 'Tinted'], ['light', 'Light']];
 // Palettes in vibe order (Warm, Cool, Neon …), each vibe in its listed order.
 // Grouped (warm, cool …), A–Z inside each group.
 const palKeys = () => (Object.keys(PALETTES) as (keyof typeof PALETTES)[]).sort((a, b) => PAL_GROUPS.indexOf((PALETTES[a] as PaletteDef).group ?? 'Warm') - PAL_GROUPS.indexOf((PALETTES[b] as PaletteDef).group ?? 'Warm') || PALETTES[a].label.localeCompare(PALETTES[b].label));
@@ -9951,10 +9826,7 @@ function dropPalette(m: MyPal) {
 }
 const myPalSwatch = (m: MyPal) => `linear-gradient(90deg, ${m.colors.split(',').join(', ')})`;
 const isSpectrum = () => settings.shape === 'live' && (settings.shapeLive === 'bars' || settings.shapeLive === 'ring');
-const SPEC_LAYOUTS: [string, string][] = [['centre', 'Centre out'], ['floor', 'Floor'], ['mirror', 'Mirrored'], ['line', 'Line']];
-const COLOR_BY: [string, string][] = [['palette', 'Random'], ['face', 'Face features (camera)'], ['camera', 'Picture colours (camera or image)'], ['image', 'Image colours (with an image)'], ['speed', 'Speed'], ['direction', 'Heading'], ['pointer', 'Pointer heat'], ['cycle', 'Colour waves'], ['horizontal', 'Left → right'], ['vertical', 'Bottom → top'], ['radial', 'Centre glow'], ['age', 'Age (with a lifespan)'], ['depth', 'Depth (with 3D depth)'], ['audio', 'Music energy'], ['band', 'Frequency group (with groups on)'], ['spectrum', 'Spectrum band (music spectrum)']];
 
-const BEAT_ACTIONS: [string, string][] = [['ripple', 'Ripple'], ['twist', 'Twist'], ['shockwave', 'Shockwave'], ['star', 'Star burst'], ['sweep', 'Sweep line'], ['implode', 'Implode'], ['mix', 'Mix (cycle)'], ['random', 'Mix (random)']];
 const VIBE_FAMILY_KEY = 'particle-field:vibe-family';
 // What a vibe moves with is now a line on each vibe, not a filter.
 const vibeLead: VibeLead | 'any' = 'any';
@@ -12024,7 +11896,6 @@ function sceneTarget(p: Partial<Settings>, keepAudio: boolean, prev: Partial<Set
 // palette crossfades; everything else (style, modes) switches at once. The
 // particles keep their positions, so they move into the new behaviour.
 
-type Rgb = [number, number, number];
 let morphState: { from: Record<string, number>; to: Record<string, number>; start: number; dur: number } | null = null;
 // `fixed`: held at that mix (the crossfader) instead of running over time.
 let palMix: { from: Rgb[]; fromBg: Rgb; start: number; dur: number; tick: number; fixed?: number } | null = null;
@@ -18622,41 +18493,6 @@ function styleVars(st: Style): string[] {
   // Each beat, then the genre's other takes on it (see Version).
   return g ? g.beats.flatMap((b) => [b.name, ...(g.versions ?? []).filter((x) => x.from === b.name).map((x) => x.name)]) : st.vars;
 }
-// Each genre's signature on top of its songs: a Pulse that suits it and one or
-// two touches of character. Kept light, so a song is easy to build on.
-type Flavor = Partial<Pick<Settings, 'sndTick' | 'sndTickPattern' | 'sndSeqTickSound' | 'sndSeqStyle' | 'sndSeqRate' | 'sndSeqVary' | 'sndPadPump' | 'sndPadBreath' | 'sndBassGlide' | 'sndBassGhost' | 'sndShimmer' | 'sndSub' | 'sndKickPunch' | 'sndHumanAmt'>>;
-const GENRE_FLAVOR: Record<string, Flavor> = {
-  ambient: { sndTick: 0, sndShimmer: 0.35, sndPadBreath: 0.6 },
-  world: { sndTick: 0.25, sndTickPattern: 'eighths', sndSeqTickSound: 'shaker', sndHumanAmt: 0.3 },
-  band: { sndTick: 0, sndSeqStyle: 'strum', sndHumanAmt: 0.4 },
-  synth: { sndTick: 0.2, sndTickPattern: 'sixteenths', sndSeqTickSound: 'hat', sndSeqStyle: 'up' },
-  lofi: { sndTick: 0.2, sndTickPattern: 'eighths', sndSeqTickSound: 'shuffle', sndHumanAmt: 0.5 },
-  house: { sndTick: 0.3, sndTickPattern: 'offbeat', sndSeqTickSound: 'hat', sndPadPump: 0.5 },
-  techno: { sndTick: 0.25, sndTickPattern: 'sixteenths', sndSeqTickSound: 'rim', sndKickPunch: 0.4 },
-  dub: { sndTick: 0.2, sndTickPattern: 'offbeat', sndSeqTickSound: 'rim', sndSeqRate: '2' },
-  dubstep: { sndTick: 0, sndSub: 0.5, sndBassGlide: 0.3 },
-  rap: { sndTick: 0, sndHumanAmt: 0.4 },
-  trap: { sndTick: 0.3, sndTickPattern: 'sixteenths', sndSeqTickSound: 'hat', sndBassGlide: 0.5, sndSub: 0.4 },
-  drill: { sndTick: 0.25, sndTickPattern: 'gallop', sndSeqTickSound: 'hat', sndBassGlide: 0.6, sndSub: 0.4 },
-  dnb: { sndTick: 0.25, sndTickPattern: 'sixteenths', sndSeqTickSound: 'shaker', sndSub: 0.3 },
-  dancehall: { sndTick: 0.3, sndTickPattern: 'tresillo', sndSeqTickSound: 'rim' },
-  afro: { sndTick: 0.3, sndTickPattern: 'clave', sndSeqTickSound: 'wood', sndHumanAmt: 0.3 },
-  breaks: { sndTick: 0.2, sndTickPattern: 'sixteenths', sndSeqTickSound: 'tamb', sndBassGhost: 0.4 },
-  idm: { sndTick: 0.2, sndTickPattern: 'field', sndSeqTickSound: 'glass', sndSeqStyle: 'random', sndSeqVary: 0.5 },
-  trance: { sndTick: 0.2, sndTickPattern: 'offbeat', sndSeqTickSound: 'hat', sndPadPump: 0.6, sndSeqStyle: 'up' },
-  triphop: { sndTick: 0, sndHumanAmt: 0.4, sndPadBreath: 0.5 },
-  phonk: { sndTick: 0.3, sndTickPattern: 'sixteenths', sndSeqTickSound: 'cowbell', sndBassGlide: 0.4 },
-  jersey: { sndTick: 0.3, sndTickPattern: 'tresillo', sndSeqTickSound: 'clap' },
-  synthwave: { sndTick: 0.2, sndTickPattern: 'eighths', sndSeqTickSound: 'hat', sndPadPump: 0.3, sndSeqStyle: 'up' },
-  jazz: { sndTick: 0.25, sndTickPattern: 'quarters', sndSeqTickSound: 'shuffle', sndHumanAmt: 0.5 },
-  garage: { sndTick: 0.25, sndTickPattern: 'sixteenths', sndSeqTickSound: 'shaker', sndBassGhost: 0.3 },
-  disco: { sndTick: 0.3, sndTickPattern: 'offbeat', sndSeqTickSound: 'tamb', sndPadPump: 0.2 },
-  hyperpop: { sndTick: 0.2, sndTickPattern: 'sixteenths', sndSeqTickSound: 'blip', sndSeqStyle: 'bounce' },
-  baile: { sndTick: 0.3, sndTickPattern: 'tresillo', sndSeqTickSound: 'tamb' },
-  gqom: { sndTick: 0.2, sndTickPattern: 'tresillo', sndSeqTickSound: 'wood', sndSub: 0.4 },
-  psy: { sndTick: 0.25, sndTickPattern: 'offbeat', sndSeqTickSound: 'hat', sndPadPump: 0.4 },
-  folktronica: { sndTick: 0.25, sndTickPattern: 'eighths', sndSeqTickSound: 'shaker', sndSeqStyle: 'up', sndHumanAmt: 0.3 },
-};
 // A rolled song ('~' and its seed): the genre's recipe, from one of its written beats.
 const isRoll = (v: string) => v.startsWith('~');
 function styleLook(st: Style | null, v: string): Partial<Settings> {
@@ -19557,83 +19393,6 @@ function patternFold(): HTMLElement {
 const SND_LIVE_KEYS: string[] = ['sndDrumSrc', 'sndGroove', 'sndGrooveTight', 'sndGrooveDyn'];
 const SND_LOOK_KEYS = SND_KEYS.filter((k) => k !== 'sndVol' && k !== 'sndMusic' && k !== 'sndShow' && !SND_LIVE_KEYS.includes(k));
 const SND_OFF: Partial<Settings> = { sndStrings: 0, sndDrone: 0, sndSeq: 0, sndHits: 0, sndGrain: 0, sndScan: 0, sndTouch: 0.6, sndAccents: 0.6 };
-// A beat grid from four 16-step rows (kick, snare, hat, bass): '+' forces a hit, '.' leaves it to the field.
-const beat = (...rows: string[]) => rows.join('');
-// A fully written groove: every step not marked '+' is silenced, so the field can't add hits.
-const groove = (...rows: string[]) => rows.join('').replace(/\./g, '-');
-const SOUND_PRESETS: [string, Partial<Settings>][] = [
-  ['Lounge', { sndBassSound: 'round', sndBass: 0.45, sndSwing: 0.35, sndChorus: 0.35, sndEcho: 0.15, sndTimbre: 'lounge', sndScale: 'dorian', sndProg: 'pop', sndTempo: 92, sndStrings: 0.6, sndStringCount: 6, sndDrone: 0.4, sndSeq: 0.3, sndReverb: 0.5 }],
-  ['Music box night', { sndTimbre: 'musicbox', sndScale: 'pentatonic', sndProg: 'calm', sndTempo: 70, sndStrings: 0.6, sndStringCount: 7, sndDrone: 0.3, sndReverb: 0.7 }],
-  ['Gamelan', { sndKit: 'hand', sndDrums: 0.35, sndTimbre: 'world', sndScale: 'japanese', sndProg: 'still', sndTempo: 108, sndStrings: 0.4, sndSeq: 0.6, sndReverb: 0.45 }],
-  ['Rain on glass', { sndEcho: 0.3, sndChorus: 0.4, sndBend: 0.4, sndTimbre: 'glass', sndScale: 'whole', sndProg: 'drift', sndTempo: 60, sndStrings: 0.35, sndGrain: 0.5, sndDrone: 0.3, sndReverb: 0.85 }],
-  ['Arcade', { sndKit: 'punchy', sndDrive: 0.3, sndBright: 0.3, sndDrums: 0.6, sndBass: 0.5, sndSweep: 0.5, sndLength: 0.6, sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 128, sndSeq: 0.8, sndHits: 0.6, sndStrings: 0.3, sndReverb: 0.2 }],
-  ['Deep space', { sndPadSound: 'choir', sndAttack: 0.6, sndEcho: 0.45, sndSweep: 0.4, sndLength: 1.8, sndChordBars: 4, sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 60, sndOctave: -1, sndRange: 3, sndDrone: 0.8, sndStrings: 0.3, sndReverb: 1 }],
-  ['Harp garden', { sndArp: 0.5, sndDyn: 0.5, sndTimbre: 'harp', sndScale: 'major', sndProg: 'drift', sndTempo: 80, sndStrings: 0.9, sndStringCount: 9, sndRange: 3, sndDrone: 0.2, sndReverb: 0.55 }],
-  ['Blues bar', { sndKit: 'brush', sndPadSound: 'organ', sndBassSound: 'upright', sndSwing: 0.6, sndBass: 0.5, sndDrums: 0.3, sndDyn: 0.6, sndTimbre: 'epiano', sndScale: 'blues', sndProg: 'calm', sndTempo: 84, sndStrings: 0.5, sndSeq: 0.4, sndDrone: 0.25, sndReverb: 0.35 }],
-  ['Steel band', { sndBassSound: 'picked', sndDrums: 0.45, sndBass: 0.4, sndSwing: 0.2, sndTimbre: 'steel', sndScale: 'major', sndProg: 'pop', sndTempo: 116, sndSeq: 0.6, sndStrings: 0.4, sndReverb: 0.3 }],
-  ['Night drive', { sndKit: '808', sndPadSound: 'strings', sndBassSound: 'acid', sndTimbre: 'synth', sndScale: 'minor', sndProg: 'drift', sndChordMove: 'energy', sndTempo: 104, sndStrings: 0.4, sndArp: 0.6, sndBass: 0.6, sndDrums: 0.5, sndEcho: 0.35, sndSweep: 0.7, sndChorus: 0.4, sndDrone: 0.3, sndReverb: 0.4 }],
-  ['Dub echoes', { sndKit: '808', sndLofi: 0.25, sndBassSound: 'sub', sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'calm', sndTempo: 76, sndSeq: 0.4, sndStrings: 0.3, sndBass: 0.7, sndDrums: 0.35, sndSwing: 0.25, sndEcho: 0.7, sndSweep: 0.3, sndReverb: 0.5 }],
-  ['Wind chimes', { sndTimbre: 'glass', sndScale: 'pentatonic', sndProg: 'still', sndTempo: 70, sndStrings: 0.6, sndStringCount: 10, sndDyn: 0.8, sndBend: 0.5, sndLength: 2, sndChorus: 0.5, sndReverb: 0.8 }],
-  ['Lo-fi study', { sndTimbre: 'epiano', sndScale: 'dorian', sndProg: 'drift', sndTempo: 78, sndStrings: 0.5, sndDrone: 0.3, sndPadSound: 'strings', sndBass: 0.5, sndBassSound: 'round', sndBassTone: -0.4, sndDrums: 0.45, sndKit: 'brush', sndSwing: 0.45, sndLofi: 0.55, sndBright: -0.35, sndChorus: 0.3, sndReverb: 0.35 }],
-  ['Cathedral', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndChordBars: 4, sndTempo: 60, sndDrone: 0.7, sndPadSound: 'choir', sndStrings: 0.35, sndAttack: 0.8, sndLength: 2.2, sndReverb: 1 }],
-  ['Fuzz garage', { sndTimbre: 'synth', sndScale: 'blues', sndProg: 'pop', sndTempo: 122, sndStrings: 0.4, sndSeq: 0.5, sndBass: 0.6, sndBassSound: 'picked', sndDrums: 0.6, sndKit: 'punchy', sndDrive: 0.7, sndBright: 0.2, sndReverb: 0.25 }],
-  ['Scanner', { sndTimbre: 'marimba', sndScale: 'pentatonic', sndProg: 'drift', sndTempo: 96, sndScan: 0.7, sndScanSecs: 3, sndStrings: 0.2, sndReverb: 0.4 }],
-  ['Trap haze', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndTempo: 70, sndStrings: 0.35, sndDrone: 0.35, sndPadSound: 'strings', sndBass: 0.7, sndBassSound: 'sub', sndDrums: 0.55, sndKit: '808', sndDrive: 0.2, sndEcho: 0.25, sndReverb: 0.4,
-    sndGrid: beat('+.....+...+.....', '........+.......', '+.+.+.+.+.++++.+', '+.....+...+.....') }],
-  ['Dub techno', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'still', sndChordBars: 4, sndTempo: 124, sndStrings: 0.45, sndLength: 0.5, sndDrone: 0.3, sndPadSound: 'soft', sndBass: 0.75, sndBassSound: 'sub', sndDrums: 0.6, sndKit: '808', sndEcho: 0.6, sndChorus: 0.3, sndSweep: 0.4, sndReverb: 0.5,
-    sndGrid: beat('+...+...+...+...', '----------------', '..+...+...+...+.', '..+...+...+...+.') }],
-  ['Minimal', { sndTimbre: 'pluck', sndScale: 'minor', sndProg: 'still', sndChordBars: 8, sndTempo: 126, sndStrings: 0.35, sndLength: 0.35, sndDyn: 0.4, sndBass: 0.9, sndBassSound: 'sub', sndDrums: 0.75, sndKit: 'punchy', sndEcho: 0.45, sndChorus: 0.2, sndReverb: 0.35,
-    sndGrid: groove('+...+...+...+...', '.......+.......+', '..+...+...+.+.+.', '..+...+..+...+..') }],
-  ['Dub chords', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'custom', sndProgText: '1 1 6 6', sndChordBars: 4, sndTempo: 118, sndStrings: 0.55, sndLength: 0.3, sndArp: 0.2, sndPadSound: 'soft', sndDrone: 0.2, sndBass: 0.7, sndBassSound: 'sub', sndDrums: 0.5, sndKit: '808', sndEcho: 0.8, sndSweep: 0.5, sndChorus: 0.4, sndReverb: 0.55,
-    sndGrid: groove('+...+...+...+...', '........+.......', '..+...+...+...+.', '+..+..+...+..+..') }],
-  ['Broken dub', { sndTimbre: 'bell', sndScale: 'dorian', sndProg: 'still', sndChordBars: 4, sndTempo: 120, sndStrings: 0.35, sndLength: 0.4, sndDrone: 0.3, sndPadSound: 'shimmer', sndBass: 0.85, sndBassSound: 'round', sndBassTone: -0.3, sndDrums: 0.65, sndKit: '808', sndSwing: 0.2, sndEcho: 0.55, sndReverb: 0.45,
-    sndGrid: groove('+.....+...+.....', '....+.......+..+', '+.++.+.++.++.+.+', '+.....+...+..+..') }],
-  ['Half-time dub', { sndTimbre: 'glass', sndScale: 'minor', sndProg: 'mystic', sndChordBars: 4, sndTempo: 70, sndStrings: 0.35, sndLength: 0.5, sndDrone: 0.45, sndPadSound: 'strings', sndAttack: 0.4, sndBass: 0.9, sndBassSound: 'sub', sndDrums: 0.65, sndKit: '808', sndSweep: 0.7, sndEcho: 0.5, sndReverb: 0.5,
-    sndGrid: groove('+.........+.....', '........+.......', '+.+.+.+.+.+.+.+.', '+..+......+.+...') }],
-  ['Steppers', { sndTimbre: 'pluck', sndScale: 'minor', sndProg: 'custom', sndProgText: '1 7', sndChordBars: 2, sndTempo: 74, sndStrings: 0.45, sndLength: 0.3, sndPadSound: 'organ', sndDrone: 0.3, sndBass: 0.95, sndBassSound: 'round', sndBassTone: -0.4, sndDrums: 0.7, sndKit: 'soft', sndEcho: 0.6, sndSweep: 0.3, sndReverb: 0.45,
-    sndGrid: groove('+...+...+...+...', '........+.......', '..+...+...+...+.', '+.+.+..++.+.+...') }],
-  ['Fog machine', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'still', sndChordBars: 8, sndTempo: 112, sndStrings: 0.3, sndLength: 0.6, sndAttack: 0.3, sndDrone: 0.6, sndPadSound: 'shimmer', sndBass: 0.6, sndBassSound: 'sub', sndDrums: 0.4, sndKit: 'soft', sndLofi: 0.2, sndBright: -0.3, sndEcho: 0.7, sndChorus: 0.4, sndSweep: 0.4, sndReverb: 0.8,
-    sndGrid: groove('+...+...+...+...', '................', '..+...+...+...+.', '..+...+...+...+.') }],
-  ['Rolling sub', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'still', sndChordBars: 8, sndTempo: 128, sndStrings: 0.25, sndLength: 0.3, sndBass: 0.75, sndBassSound: 'sub', sndBassTone: 0.2, sndDrums: 0.6, sndKit: 'punchy', sndDrive: 0.2, sndEcho: 0.35, sndSweep: 0.6, sndReverb: 0.3,
-    sndGrid: groove('+...+...+...+...', '....+.......+...', '+.+++.+++.+++.++', '.+++.+++.+++.+++') }],
-  ['Acid techno', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'still', sndChordBars: 4, sndTempo: 132, sndStrings: 0.25, sndLength: 0.4, sndBass: 0.75, sndBassSound: 'acid', sndBassTone: 0.4, sndDrums: 0.65, sndKit: 'punchy', sndDrive: 0.45, sndSweep: 0.8, sndEcho: 0.2, sndReverb: 0.25,
-    sndGrid: beat('+...+...+...+...', '....+.......+...', '..+...+...+...+.', '+.++.++.+.++.+++') }],
-  ['House', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'custom', sndProgText: '6 4 1 5', sndTempo: 122, sndStrings: 0.45, sndLength: 0.6, sndPadSound: 'organ', sndDrone: 0.25, sndBass: 0.7, sndBassSound: 'round', sndDrums: 0.6, sndKit: 'punchy', sndSwing: 0.15, sndChorus: 0.2, sndSweep: 0.3, sndReverb: 0.3,
-    sndGrid: beat('+...+...+...+...', '....+.......+...', '..+...+...+...+.', '+..+..+...+..+..') }],
-  ['Drum and bass', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'mystic', sndChordBars: 4, sndTempo: 160, sndStrings: 0.3, sndDrone: 0.45, sndPadSound: 'strings', sndAttack: 0.5, sndBass: 0.8, sndBassSound: 'sub', sndDrums: 0.65, sndKit: 'punchy', sndDrive: 0.15, sndEcho: 0.25, sndReverb: 0.45,
-    sndGrid: beat('+.........+.....', '....+.......+...', '+.+.+.+.+.+.+.+.', '+.........+..+..') }],
-  ['Reggae one drop', { sndTimbre: 'pluck', sndScale: 'major', sndProg: 'custom', sndProgText: '1 4 5 4', sndTempo: 76, sndStrings: 0.5, sndLength: 0.4, sndPadSound: 'organ', sndDrone: 0.3, sndBass: 0.8, sndBassSound: 'round', sndBassTone: -0.3, sndDrums: 0.5, sndKit: 'soft', sndSwing: 0.35, sndEcho: 0.3, sndReverb: 0.4,
-    sndGrid: beat('--------+-------', '--------+-------', '..+...+...+...+.', '+..+.+....+.+...') }],
-  ['Dancehall', { sndTimbre: 'steel', sndScale: 'minor', sndProg: 'custom', sndProgText: '1 6 4 5', sndTempo: 96, sndStrings: 0.4, sndLength: 0.5, sndBass: 0.8, sndBassSound: 'sub', sndDrums: 0.6, sndKit: '808', sndDrive: 0.15, sndEcho: 0.2, sndReverb: 0.3,
-    sndGrid: beat('+.......+.......', '...+..+....+..+.', '+.+.+.+.+.+.+.+.', '+..+..+.+..+..+.') }],
-  ['Boom bap', { sndTimbre: 'epiano', sndScale: 'dorian', sndProg: 'custom', sndProgText: '1 4', sndTempo: 88, sndStrings: 0.45, sndDrone: 0.2, sndPadSound: 'strings', sndBass: 0.75, sndBassSound: 'round', sndBassTone: -0.2, sndDrums: 0.65, sndKit: 'punchy', sndSwing: 0.45, sndLofi: 0.15, sndBright: -0.2, sndReverb: 0.25,
-    sndGrid: beat('+......+.+......', '....+.......+...', '+.+.+.+.+.+.+.+.', '+......+.+......') }],
-  ['Synthwave', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'custom', sndProgText: '6 4 1 5', sndTempo: 100, sndStrings: 0.5, sndArp: 0.8, sndDrone: 0.4, sndPadSound: 'strings', sndBass: 0.55, sndBassSound: 'synth', sndDrums: 0.5, sndKit: '808', sndChorus: 0.6, sndEcho: 0.3, sndSweep: 0.5, sndReverb: 0.45,
-    sndGrid: beat('+.......+.......', '....+.......+...', '+.+.+.+.+.+.+.+.', '+.+.+.+.+.+.+.+.') }],
-  ['Chiptune', { sndTimbre: 'synth', sndScale: 'major', sndProg: 'pop', sndTempo: 140, sndStrings: 0.8, sndArp: 1, sndLength: 0.5, sndSeq: 0.7, sndBass: 0.5, sndBassSound: 'acid', sndDrums: 0.5, sndKit: 'punchy', sndLofi: 0.6, sndBright: 0.4, sndReverb: 0.1 }],
-  ['Bossa nova', { sndTimbre: 'pluck', sndScale: 'major', sndProg: 'custom', sndProgText: '2 5 1 6', sndTempo: 104, sndStrings: 0.6, sndDyn: 0.5, sndPadSound: 'soft', sndDrone: 0.2, sndBass: 0.45, sndBassSound: 'upright', sndDrums: 0.35, sndKit: 'brush', sndSwing: 0.25, sndChorus: 0.2, sndReverb: 0.35,
-    sndGrid: beat('+..+....+..+....', '...+..+...+..+..', '+.+.+.+.+.+.+.+.', '+..+....+..+....') }],
-  ['Vibes café', { sndTimbre: 'vibes', sndScale: 'dorian', sndProg: 'custom', sndProgText: '2 5 1 4', sndTempo: 96, sndStrings: 0.55, sndDyn: 0.5, sndDrone: 0.2, sndPadSound: 'organ', sndBass: 0.45, sndBassSound: 'upright', sndDrums: 0.3, sndKit: 'brush', sndSwing: 0.5, sndChorus: 0.25, sndReverb: 0.4 }],
-  ['Gospel organ', { sndTimbre: 'epiano', sndScale: 'major', sndProg: 'custom', sndProgText: '1 4 1 5 6 4 1 5', sndTempo: 76, sndStrings: 0.5, sndDyn: 0.5, sndDrone: 0.5, sndPadSound: 'organ', sndBass: 0.5, sndBassSound: 'round', sndDrums: 0.35, sndKit: 'soft', sndSwing: 0.4, sndReverb: 0.5 }],
-  ['Kalimba campfire', { sndTimbre: 'kalimba', sndScale: 'pentatonic', sndProg: 'calm', sndTempo: 88, sndStrings: 0.65, sndStringCount: 8, sndDyn: 0.4, sndBass: 0.35, sndBassSound: 'round', sndDrums: 0.35, sndKit: 'hand', sndSwing: 0.3, sndReverb: 0.3 }],
-  ['Koto temple', { sndTimbre: 'koto', sndScale: 'japanese', sndProg: 'still', sndTempo: 66, sndStrings: 1, sndStringCount: 7, sndBend: 0.35, sndDyn: 0.5, sndDrone: 0.4, sndPadSound: 'choir', sndDrums: 0.2, sndKit: 'hand', sndReverb: 0.7 }],
-  ['Flute forest', { sndTimbre: 'flute', sndScale: 'dorian', sndProg: 'drift', sndTempo: 72, sndStrings: 0.9, sndAttack: 0.4, sndBend: 0.3, sndDrone: 0.3, sndPadSound: 'strings', sndGrain: 0.3, sndDrums: 0.2, sndKit: 'hand', sndEcho: 0.2, sndReverb: 0.6 }],
-  ['Northern lights', { sndTimbre: 'glass', sndScale: 'pentatonic', sndProg: 'still', sndChordBars: 8, sndTempo: 56, sndStrings: 0.35, sndLength: 2.5, sndAttack: 1, sndDrone: 0.9, sndPadSound: 'shimmer', sndEcho: 0.4, sndChorus: 0.4, sndSweep: 0.3, sndReverb: 0.9 }],
-  ['Marimba party', { sndTimbre: 'marimba', sndScale: 'major', sndProg: 'pop', sndChordMove: 'burst', sndTempo: 118, sndStrings: 0.5, sndSeq: 0.5, sndHits: 0.7, sndBass: 0.5, sndBassSound: 'round', sndDrums: 0.5, sndKit: 'punchy', sndSwing: 0.15, sndReverb: 0.25 }],
-  ['Trance', { sndTimbre: 'retro', sndScale: 'minor', sndProg: 'custom', sndProgText: '6 4 1 5', sndChordBars: 2, sndTempo: 138, sndStrings: 0.45, sndLength: 0.5, sndArp: 0.75, sndDrone: 0.6, sndPadSound: 'pwm', sndAttack: 0.4, sndBass: 0.7, sndBassSound: 'synth', sndDrums: 0.6, sndChorus: 0.4, sndEcho: 0.35, sndPing: true, sndSweep: 0.5, sndReverb: 0.6 }],
-  ['Folktronica', { sndTimbre: 'nylon', sndScale: 'dorian', sndProg: 'drift', sndChordBars: 2, sndTempo: 112, sndSwing: 0.15, sndStrings: 0.55, sndSeq: 0.45, sndArp: 0.3, sndDrone: 0.3, sndPadSound: 'warm', sndBass: 0.55, sndBassSound: 'round', sndDrums: 0.55, sndKit: 'hand', sndLofi: 0.2, sndBright: -0.1, sndEcho: 0.3, sndReverb: 0.4 }],
-  ['Trip-hop', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'mystic', sndChordBars: 2, sndTempo: 84, sndStrings: 0.4, sndLength: 1.2, sndDrone: 0.5, sndPadSound: 'dark', sndBass: 0.75, sndBassSound: 'round', sndBassTone: -0.3, sndDrums: 0.65, sndLofi: 0.35, sndDrive: 0.2, sndBright: -0.3, sndEcho: 0.3, sndReverb: 0.5 }],
-  ['Phonk', { sndTimbre: 'bell', sndScale: 'minor', sndProg: 'still', sndTempo: 130, sndOctave: 1, sndStrings: 0.4, sndLength: 0.4, sndSeq: 0.35, sndDrone: 0.2, sndPadSound: 'dark', sndBass: 0.8, sndBassSound: '808', sndDrums: 0.7, sndDrive: 0.45, sndLofi: 0.4, sndBright: -0.15, sndReverb: 0.3 }],
-  ['Jersey club', { sndTimbre: 'vibes', sndScale: 'minor', sndProg: 'pop', sndTempo: 140, sndStrings: 0.45, sndLength: 0.5, sndArp: 0.4, sndDrone: 0.3, sndPadSound: 'soft', sndBass: 0.7, sndBassSound: '808', sndDrums: 0.7, sndChorus: 0.25, sndEcho: 0.2, sndReverb: 0.3 }],
-  ['Jazz club', { sndTimbre: 'vibes', sndScale: 'dorian', sndProg: 'custom', sndProgText: '2 5 1 6', sndChordBars: 1, sndTempo: 120, sndStrings: 0.5, sndDyn: 0.6, sndDrone: 0.25, sndPadSound: 'organ', sndBass: 0.6, sndBassSound: 'upright', sndDrums: 0.4, sndSwing: 0.6, sndChorus: 0.15, sndReverb: 0.35 }],
-  ['UK garage', { sndTimbre: 'epiano', sndScale: 'minor', sndProg: 'custom', sndProgText: '1 6 4 5', sndTempo: 132, sndStrings: 0.45, sndLength: 0.5, sndDrone: 0.35, sndPadSound: 'velvet', sndBass: 0.75, sndBassSound: 'synth', sndDrums: 0.65, sndSwing: 0.3, sndChorus: 0.3, sndEcho: 0.2, sndReverb: 0.3 }],
-  ['Disco', { sndTimbre: 'epiano', sndScale: 'major', sndProg: 'custom', sndProgText: '2 5 1 4', sndTempo: 118, sndStrings: 0.5, sndLength: 0.5, sndDrone: 0.5, sndPadSound: 'strings', sndBass: 0.75, sndBassSound: 'fingered', sndDrums: 0.65, sndChorus: 0.35, sndPhaser: 0.3, sndReverb: 0.4 }],
-  ['Hyperpop', { sndTimbre: 'fairy', sndScale: 'major', sndProg: 'pop', sndTempo: 160, sndOctave: 1, sndStrings: 0.5, sndLength: 0.4, sndArp: 0.6, sndDrone: 0.4, sndPadSound: 'ice', sndBass: 0.75, sndBassSound: '808', sndDrums: 0.65, sndDrive: 0.35, sndChorus: 0.4, sndBright: 0.35, sndBend: 0.4, sndReverb: 0.35 }],
-  ['Baile funk', { sndTimbre: 'marimba', sndScale: 'minor', sndProg: 'still', sndTempo: 130, sndStrings: 0.4, sndLength: 0.4, sndSeq: 0.3, sndBass: 0.8, sndBassSound: '808', sndDrums: 0.75, sndDrive: 0.35, sndEcho: 0.2, sndReverb: 0.25 }],
-  ['Psytrance', { sndTimbre: 'synth', sndScale: 'minor', sndProg: 'still', sndChordBars: 8, sndTempo: 145, sndStrings: 0.3, sndLength: 0.35, sndArp: 0.8, sndPadSound: 'dark', sndDrone: 0.3, sndBass: 0.8, sndBassSound: 'pulse', sndDrums: 0.65, sndKit: 'techno', sndDrive: 0.2, sndSweep: 0.85, sndEcho: 0.45, sndPing: true, sndReverb: 0.45 }],
-  ['Suomisaundi', { sndTimbre: 'retro', sndScale: 'dorian', sndProg: 'custom', sndProgText: '1 2 1 7', sndChordBars: 4, sndTempo: 148, sndStrings: 0.2, sndLength: 0.3, sndArp: 0.6, sndPadSound: 'hollow', sndBass: 0.8, sndBassSound: 'acid', sndBassTone: 0.5, sndDrums: 0.65, sndKit: 'glitch', sndSwing: 0.06, sndDrive: 0.35, sndSweep: 0.9, sndChorus: 0.3, sndEcho: 0.5, sndPing: true, sndReverb: 0.35 }],
-  ['Gqom', { sndTimbre: 'kalimba', sndScale: 'minor', sndProg: 'still', sndTempo: 126, sndStrings: 0.3, sndLength: 0.8, sndDrone: 0.55, sndPadSound: 'ooh', sndBass: 0.8, sndBassSound: 'sub', sndDrums: 0.7, sndEcho: 0.45, sndReverb: 0.6, sndBright: -0.2 }],
-];
 const SND_PRESETS_KEY = 'particle-field:sound-presets';
 const mySoundPresets = () => readJson<[string, Partial<Settings>][]>(SND_PRESETS_KEY, []);
 const soundOf = (look: Partial<Settings>) => ({ ...Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, DEFAULTS[k]])), ...SND_OFF, ...look }) as Partial<Settings>;
@@ -19735,50 +19494,6 @@ function renderSoundPresets(): HTMLElement {
 // --- FX looks: the whole FX folder at once --------------------------------------
 // (How much the music moves the FX is yours, so looks leave it as it is.)
 const GFX_KEYS = (Object.keys(DEFAULTS) as (keyof Settings)[]).filter((k) => k.startsWith('gfx') && !['gfxKick', 'gfxLightBy', 'gfxFeedBy', 'gfxLensBy', 'gfxSurfBy', 'gfxLightAmt', 'gfxFeedAmt', 'gfxLensAmt', 'gfxSurfAmt'].includes(k));
-const FX_LOOKS: [string, Partial<Settings>][] = [
-  ['Dreamy', { gfxBloom: 1.2, gfxSpread: 0.9, gfxFlare: 0.3, gfxTint: 'pink', gfxGrade: 'sunset', gfxGradeAmt: 0.35, gfxVignette: 0.4 }],
-  ['VHS night', { gfxSurface: 'vhs', gfxBloom: 0.5, gfxGrade: 'ocean', gfxGradeAmt: 0.35, gfxGrain: 0.4, gfxVignette: 0.5 }],
-  ['Film noir', { gfxGrade: 'mono', gfxGradeAmt: 1, gfxGrain: 0.7, gfxVignette: 0.8, gfxFlare: 0.25 }],
-  ['Thermal cam', { gfxSurface: 'thermal', gfxGrain: 0.3, gfxVignette: 0.4 }],
-  ['Arcade', { gfxSurface: 'crt', gfxCell: 8, gfxBloom: 0.6, gfxSplit: 0.4 }],
-  ['Glitch storm', { gfxGlitch: 0.8, gfxGlitchOn: 'snare', gfxSplit: 0.6, gfxEcho: 3, gfxEchoDelay: 4 }],
-  ['Oil painting', { gfxSurface: 'oil', gfxCell: 10, gfxVignette: 0.3, gfxGrain: 0.15 }],
-  ['Miniature', { gfxLens: 'tilt', gfxShock: 1.2, gfxBloom: 0.3 }],
-  ['Neon sign', { gfxSurface: 'neon', gfxBloom: 1, gfxSpread: 0.7, gfxTint: 'pink' }],
-  ['Underwater', { gfxDisplace: 0.5, gfxHaze: 0.6, gfxGrade: 'ocean', gfxGradeAmt: 0.6, gfxBloom: 0.4, gfxVignette: 0.5 }],
-  ['Warp tunnel', { gfxFeedback: 'tunnel', gfxZoom: 0.7, gfxSpin: 0.4, gfxLength: 0.93, gfxBloom: 0.7, gfxSpread: 0.6, gfxVignette: 0.5 }],
-  ['Liquid dream', { gfxFeedback: 'melt', gfxLength: 0.92, gfxLens: 'liquid', gfxBend: 0.5, gfxBloom: 0.6, gfxGrade: 'sunset', gfxGradeAmt: 0.3 }],
-  ['Kaleidoscope', { gfxLens: 'kaleido', gfxSlices: 8, gfxBloom: 0.7, gfxSpread: 0.7, gfxHueCycle: 0.2, gfxVignette: 0.4 }],
-  ['Acid trip', { gfxGrade: 'acid', gfxGradeAmt: 0.9, gfxHueCycle: 0.6, gfxFeedback: 'spiral', gfxLength: 0.9, gfxBloom: 0.6, gfxDisplace: 0.3 }],
-  ['Newspaper', { gfxSurface: 'halftone', gfxCell: 7, gfxGrade: 'mono', gfxGradeAmt: 1, gfxGrain: 0.35 }],
-  ['Terminal', { gfxSurface: 'ascii', gfxCell: 9, gfxTint: 'green', gfxBloom: 0.5, gfxVignette: 0.6, gfxGrain: 0.2 }],
-  ['Stadium screen', { gfxSurface: 'led', gfxCell: 7, gfxBloom: 0.9, gfxSpread: 0.6, gfxFlare: 0.2 }],
-  ['Cross-stitch', { gfxSurface: 'stitch', gfxCell: 10, gfxGrade: 'sunset', gfxGradeAmt: 0.25, gfxVignette: 0.3 }],
-  ['Toy bricks', { gfxSurface: 'lego', gfxCell: 14, gfxBloom: 0.2, gfxVignette: 0.25 }],
-  ['Pop poster', { gfxPoster: 4, gfxGrade: 'acid', gfxGradeAmt: 0.5, gfxSplit: 0.3, gfxGrain: 0.15 }],
-  ['Ghost trails', { gfxEcho: 4, gfxEchoDelay: 6, gfxEchoSpread: 0.8, gfxHaze: 0.4, gfxGrade: 'ocean', gfxGradeAmt: 0.4, gfxBloom: 0.4 }],
-  ['God rays', { gfxRays: 0.9, gfxBloom: 0.8, gfxSpread: 0.8, gfxFlare: 0.4, gfxTint: 'warm', gfxHaze: 0.3, gfxVignette: 0.5 }],
-  ['Fisheye club', { gfxLens: 'fisheye', gfxBend: 0.7, gfxBloom: 0.8, gfxSplit: 0.5, gfxInvertDrop: true, gfxVignette: 0.6 }],
-  ['Mirror world', { gfxLens: 'quad', gfxBloom: 0.5, gfxGrade: 'scene', gfxGradeAmt: 0.4, gfxVignette: 0.3 }],
-  ['Pixel sort', { gfxLens: 'sort', gfxBloom: 0.4, gfxGlitch: 0.3, gfxGlitchOn: 'kick', gfxGrain: 0.2 }],
-  ['Heat haze', { gfxDisplace: 0.6, gfxHaze: 0.5, gfxGrade: 'sunset', gfxGradeAmt: 0.6, gfxTint: 'warm', gfxBloom: 0.5 }],
-  ['Hyperspace', { gfxBlur: 'zoom', gfxBlurAmt: 0.7, gfxBloom: 0.8, gfxSpread: 0.6, gfxTint: 'ice', gfxSplit: 0.25, gfxVignette: 0.5 }],
-  ['Vortex', { gfxLens: 'twirl', gfxBend: 0.7, gfxFeedback: 'spiral', gfxLength: 0.88, gfxBloom: 0.6, gfxSpread: 0.5 }],
-  ['Speed lines', { gfxBlur: 'motion', gfxBlurAmt: 0.6, gfxBlurAngle: 0, gfxSplit: 0.3, gfxContrast: 0.2, gfxGrain: 0.2 }],
-  ['Sunburst', { gfxBlur: 'spin', gfxBlurAmt: 0.45, gfxRays: 0.7, gfxBloom: 0.7, gfxTint: 'gold', gfxGrade: 'sunset', gfxGradeAmt: 0.3 }],
-  ['Stained glass', { gfxSurface: 'mosaic', gfxCell: 12, gfxBloom: 0.5, gfxSat: 0.4, gfxContrast: 0.2, gfxVignette: 0.35 }],
-  ['Polaroid', { gfxGrade: 'sunset', gfxGradeAmt: 0.45, gfxExposure: 0.1, gfxContrast: -0.25, gfxSat: -0.2, gfxGrain: 0.35, gfxVignette: 0.6 }],
-  ['Bleach bypass', { gfxGrade: 'mono', gfxGradeAmt: 0.45, gfxContrast: 0.5, gfxSat: -0.5, gfxGrain: 0.3, gfxVignette: 0.4 }],
-  ['Cyberpunk', { gfxBloom: 0.9, gfxSpread: 0.6, gfxTint: 'violet', gfxSplit: 0.5, gfxGlitch: 0.3, gfxGlitchOn: 'random', gfxContrast: 0.25, gfxGrain: 0.25, gfxVignette: 0.5 }],
-  ['Strobe club', { gfxBloom: 1.2, gfxBloomKick: true, gfxSplit: 0.4, gfxContrast: 0.3, gfxInvertDrop: true, gfxVignette: 0.5 }],
-  ['Shockwave', { gfxLens: 'shock', gfxShock: 1, gfxBloom: 0.7, gfxSplit: 0.3 }],
-  ['Glass rain', { gfxLens: 'glass', gfxCount: 3, gfxDisplace: 0.4, gfxGrade: 'ocean', gfxGradeAmt: 0.35, gfxBloom: 0.4, gfxVignette: 0.4 }],
-  ['Funhouse', { gfxLens: 'bulge', gfxBend: 0.8, gfxHueCycle: 0.3, gfxBloom: 0.4, gfxSat: 0.3 }],
-  ['Smoke', { gfxFeedback: 'smear', gfxFlow: 1.2, gfxLength: 0.94, gfxHaze: 0.4, gfxGrade: 'mono', gfxGradeAmt: 0.5, gfxBloom: 0.3 }],
-  ['Infinite mirror', { gfxFeedback: 'mirror', gfxLength: 0.9, gfxZoom: 0.5, gfxBloom: 0.5, gfxVignette: 0.4 }],
-  ['Rorschach', { gfxLens: 'mirrorx', gfxGrade: 'mono', gfxGradeAmt: 1, gfxContrast: 0.6, gfxPoster: 3 }],
-  ['Lo-fi tape', { gfxSurface: 'vhs', gfxPoster: 6, gfxSat: -0.3, gfxBlur: 'motion', gfxBlurAmt: 0.15, gfxGrain: 0.5, gfxVignette: 0.5 }],
-];
 const FX_LOOKS_KEY = 'particle-field:fx-looks';
 const myFxLooks = () => readJson<[string, Partial<Settings>][]>(FX_LOOKS_KEY, []);
 const fxLookOf = (look: Partial<Settings>) => ({ ...Object.fromEntries(GFX_KEYS.map((k) => [k, DEFAULTS[k]])), ...look }) as Partial<Settings>;
