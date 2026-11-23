@@ -5545,8 +5545,9 @@ function keepOnPicture(): boolean {
   }
   // Jump: every particle still far from its spot (newly sent or on its way)
   // vanishes and comes back on it.
-  if (settings.imageMove === 'jump') {
-    const jump = (Math.min(w, h) * 0.06) ** 2;
+  if (settings.imageJump > 0) {
+    // 0 travels everything; 1 jumps anything farther than 2% of the screen.
+    const jump = (Math.min(w, h) * (0.02 + 0.5 * (1 - settings.imageJump) ** 2)) ** 2;
     for (let i = 0; i < n; i++) {
       const [ex, ey] = place.on ? placed(hx[i], hy[i]) : [hx[i], hy[i]];
       if ((ex - px[i]) ** 2 + (ey - py[i]) ** 2 > jump) {
@@ -11534,7 +11535,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
   { kind: 'mediapick', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
-  { kind: 'choice', key: 'imageMove', label: 'Particles', options: [['travel', 'Travel'], ['jump', 'Jump']], show: () => settings.shape === 'image' && !!shapeMedia },
+  { kind: 'range', key: 'imageJump', label: 'Travel ↔ Jump', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'travel' : v === 1 ? 'jump' : `jump past ${Math.round((0.02 + 0.5 * (1 - v) ** 2) * 100)}%`), show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
 
