@@ -13,7 +13,7 @@ import { Projector } from './projector.ts';
 import { GLSprites, type Blend } from './webgl.ts';
 import { GLFx, affine, hueMatrix, type Target } from './glfx.ts';
 import { TIPS as ABOUT, LENSES } from './tips.ts';
-import { GpuFx } from './gpufx.ts';
+import { GpuFx, type GpuFxParams, type GpuFxFrame } from './gpufx.ts';
 import { FONT_OPTS, addFontCss, fontCss, fontReady, fontStyle } from './fonts.ts';
 import type { ParticleSound, SoundParams, Layer, BeatMove, PicMove } from './sound.ts';
 import { STYLES, styleById, type Style } from './styles.ts';
@@ -6537,7 +6537,8 @@ function glOnlyWanted() {
 function glWhy() {
   if (!glr) return 'no WebGL';
   if (RENDERER !== 'only') return 'chosen';
-  if (gfxOn()) return 'FX';
+  // FX run on the WebGL picture itself (gpuFxGL); without it they need the 2D canvas.
+  if (gfxOn() && !gpuFxGL?.ok) return 'FX';
   // Glass drops look through the picture, so it has to be on the 2D canvas.
   if (settings.render === 'glass') return 'Glass drops';
   return '';
@@ -6592,7 +6593,8 @@ function glBlend(): Blend {
 function picture(): HTMLCanvasElement {
   if (!gpuFx.canvas.hidden) return gpuFx.canvas;
   if (glOnly && glr) {
-    glShow();
+    if (glFxOn()) gpuFxGL!.present();
+    else glShow();
     return glr.canvas;
   }
   if (!lensCanvas.hidden) return lensCanvas;
@@ -8021,6 +8023,11 @@ canvas.after(lensCanvas);
 const lensCtx = lensCanvas.getContext('2d')!;
 // FX folder: GPU looks over the finished frame, on their own canvas.
 const gpuFx = new GpuFx();
+// The same FX in the WebGL renderer's own context: in only mode they shade
+// its picture texture directly, so a frame with FX never goes through the
+// 2D canvas (the GPU → CPU → GPU copy that made FX frames stall).
+const gpuFxGL = glr ? new GpuFx(glr.gl) : null;
+const glFxOn = () => glOnly && !!gpuFxGL?.ok && gfxOn();
 lensCanvas.after(gpuFx.canvas);
 const gfxOn = () => gpuFx.ok && (settings.gfxBloom > 0 || settings.gfxSplit > 0 || settings.gfxFeedback !== 'off' || settings.gfxLens !== 'off' || settings.gfxSurface !== 'off' || settings.gfxRays > 0 || settings.gfxFlare > 0 || settings.gfxGrade !== 'off' || settings.gfxGrain > 0 || settings.gfxVignette > 0 || settings.gfxPoster > 1 || settings.gfxHueCycle > 0 || settings.gfxInvertDrop || settings.gfxDisplace > 0 || settings.gfxHaze > 0 || settings.gfxBlur !== 'off' || settings.gfxExposure !== 0 || settings.gfxContrast !== 0 || settings.gfxSat !== 0 || settings.gfxEcho > 0 || settings.gfxGlitch > 0);
 // What the field shows right now: the GPU looks, the lens pass or the plain canvas.
@@ -8113,26 +8120,38 @@ function fxMoved(src: HTMLCanvasElement, tf: string) {
   g.setTransform(1, 0, 0, 1, 0, 0);
   return fxMove;
 }
+let gpuFxGLWas = false;
 function gpuFrame(now: number) {
   const on = gfxOn();
+  // Only mode: the FX shade the WebGL picture in place (no canvas of their own).
+  const inGL = on && glFxOn();
+  const sep = on && !inGL;
   const under = lensCanvas.hidden ? canvas : lensCanvas;
-  if (gpuFx.canvas.hidden === on) {
-    gpuFx.canvas.hidden = !on;
-    if (!on) {
+  if (gpuFx.canvas.hidden === sep) {
+    gpuFx.canvas.hidden = !sep;
+    if (!sep) {
       canvas.style.opacity = lensCanvas.hidden ? '' : '0';
       lensCanvas.style.opacity = '';
       gpuFx.reset();
     }
   }
+  if (inGL !== gpuFxGLWas) {
+    gpuFxGLWas = inGL;
+    gpuFxGL?.reset();
+    if (!inGL && !glOnly) gpuFxGL?.drop();
+  }
   if (!on) return fxDrivers(reacting());
-  if (under.style.opacity !== '0') under.style.opacity = '0';
-  if (under === lensCanvas && canvas.style.opacity !== '0') canvas.style.opacity = '0';
-  const g = gpuFx.canvas;
-  if (g.style.filter !== canvas.style.filter) g.style.filter = canvas.style.filter;
-  // Moved, turned or zoomed (Position, the music camera): the effects stay on the whole
-  // screen and the picture moves under them, so no edge of the effect shows.
-  if (g.style.transform) g.style.transform = '';
-  const src = canvas.style.transform ? fxMoved(under, canvas.style.transform) : under;
+  let src: HTMLCanvasElement = under;
+  if (sep) {
+    if (under.style.opacity !== '0') under.style.opacity = '0';
+    if (under === lensCanvas && canvas.style.opacity !== '0') canvas.style.opacity = '0';
+    const g = gpuFx.canvas;
+    if (g.style.filter !== canvas.style.filter) g.style.filter = canvas.style.filter;
+    // Moved, turned or zoomed (Position, the music camera): the effects stay on the whole
+    // screen and the picture moves under them, so no edge of the effect shows.
+    if (g.style.transform) g.style.transform = '';
+    src = canvas.style.transform ? fxMoved(under, canvas.style.transform) : under;
+  }
   const S = settings;
   const t = now / 1000;
   const L = audio.levels;
@@ -8175,7 +8194,7 @@ function gpuFrame(now: number) {
     } else if (i === 0 && S.gfxFollow === 'finger') ptrs.push(px, py);
     else ptrs.push(0.5 + Math.sin(t * (0.5 + i * 0.07) + ph) * 0.3, 0.5 + Math.sin(t * (0.37 + i * 0.05) + ph * 1.3) * 0.25);
   }
-  gpuFx.render(src, {
+  const fxP: GpuFxParams = {
     bloom: S.gfxBloom * macro.bloom * (S.gfxBloomKick ? (music ? Math.min(1, gfxDrive[S.gfxLightBy === 'off' ? 'kick' : S.gfxLightBy] * 1.4 * S.gfxLightAmt) : 0.5 + 0.5 * Math.sin(t * 4)) : 1),
     spread: S.gfxSpread, split: S.gfxSplit, rays: S.gfxRays, flare: S.gfxFlare, tint: GFX_TINTS[S.gfxTint] ?? GFX_TINTS.white,
     feedback: S.gfxFeedback, zoom: S.gfxZoom, spin: S.gfxSpin, flow: S.gfxFlow, length: S.gfxLength,
@@ -8187,7 +8206,36 @@ function gpuFrame(now: number) {
     exposure: S.gfxExposure, contrast: S.gfxContrast, saturation: S.gfxSat,
     displace: S.gfxDisplace, haze: S.gfxHaze, echo: S.gfxEcho, echoDelay: S.gfxEchoDelay, echoSpread: S.gfxEchoSpread,
     glitch: S.gfxGlitch * gfxGlitchEnv, glitchBlock: S.gfxGlitchBlock, glitchSeed: gfxGlitchSeed,
-  }, { t, kick: by(S.gfxLightBy, S.gfxLightAmt), kickF: by(S.gfxFeedBy, S.gfxFeedAmt), kickL: by(S.gfxLensBy, S.gfxLensAmt), kickS: by(S.gfxSurfBy, S.gfxSurfAmt), ptr: [px, py], ptrs, wave: gfxWave });
+  };
+  const fxF: GpuFxFrame = { t, kick: by(S.gfxLightBy, S.gfxLightAmt), kickF: by(S.gfxFeedBy, S.gfxFeedAmt), kickL: by(S.gfxLensBy, S.gfxLensAmt), kickS: by(S.gfxSurfBy, S.gfxSurfAmt), ptr: [px, py], ptrs, wave: gfxWave };
+  if (!inGL) return gpuFx.render(src, fxP, fxF);
+  const pic = glFxSource();
+  gpuFxGL!.renderTex(pic.tex, pic.w, pic.h, fxP, fxF);
+}
+// What the FX read in only mode: the picture as shown (lenses applied), and
+// when the view is moved, turned or zoomed, moved first onto the background
+// so the effects stay on the whole screen (as fxMoved does in 2D).
+function glFxSource(): Target {
+  const pic = glPic();
+  const base = glShown && glShown.w === pic.w && glShown.h === pic.h ? glShown : pic;
+  const tf = canvas.style.transform;
+  if (!tf || !glfx) return base;
+  let m: DOMMatrix;
+  const kx = pic.w / Math.max(1, w);
+  const ky = pic.h / Math.max(1, h);
+  try {
+    m = new DOMMatrix().scale(kx, ky).translate(w / 2, h / 2).multiply(new DOMMatrix(tf)).translate(-w / 2, -h / 2).scale(1 / kx, 1 / ky);
+  } catch {
+    return base;
+  }
+  const t = glfx.target('fxmove', pic.w, pic.h);
+  if (seeThrough) glfx.clear(t);
+  else {
+    const [r, g, b] = bgNow();
+    glfx.fill(t, r, g, b, 1, 'copy');
+  }
+  glfx.draw(base, t, [m.a, m.b, m.c, m.d, m.e, m.f], { blend: 'copy' });
+  return t;
 }
 canvas.addEventListener('pointerdown', (e) => {
   if (!gfxOn() || settings.gfxLens !== 'shock') return;
@@ -9815,10 +9863,14 @@ function frame(now: number) {
         }
         if (settings.mirrorWorld) glFeedback('mirrorWorld', { half_: Math.floor(canvas.width / 2), hue: hueMatrix(150) });
         glShown = lensFrameGL(now, glPic());
-        glShow();
+        // With FX the picture is shown through them (gpuFrame), and the
+        // move/turn is applied under them there, not to the canvas.
+        const fxGL = glFxOn();
+        if (!fxGL) glShow();
         const st = glr.canvas.style;
         if (st.filter !== canvas.style.filter) st.filter = canvas.style.filter;
-        if (st.transform !== canvas.style.transform) st.transform = canvas.style.transform;
+        const tf = fxGL ? '' : canvas.style.transform;
+        if (st.transform !== tf) st.transform = tf;
       } else {
         if (kaleidoNow >= 2) kaleidoscope(seg);
         if (settings.mirrorWorld) mirrorHalf();
