@@ -2810,7 +2810,8 @@ imageInput.addEventListener('change', async () => {
 // plays ('camera', Picture colours).
 function imageColoursOn(moving = false) {
   const prev = settings.colorBy;
-  const want = moving ? 'camera' : 'image';
+  // Image colours for videos too: true hues (Picture colours rank by brightness).
+  const want = 'image';
   if (prev === want) return buildShades();
   set('colorBy', want);
   showToast(`Particles take the ${moving ? 'video\u2019s' : 'image\u2019s'} colours`, ['Undo', () => set('colorBy', prev)]);
@@ -4185,6 +4186,15 @@ function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, 
     if (settings.colorBy === 'image') buildShades();
     return;
   }
+  // A moving picture keeps its shades for half a second and only re-matches
+  // the pixels to them (the median cut is the costly part).
+  const now = performance.now();
+  if (liveShape && imgShades && imgNear && now - imgFitAt < 500) {
+    mapShades(d, px0, rank, imgShades, imgNear);
+    imgCol = { rank, iw, ih, ix, iy, step };
+    return;
+  }
+  imgFitAt = now;
   // Median cut: keep splitting the box with the widest colour spread at its
   // median, until there are as many boxes as shades.
   // On a sample of at most 20k pixels, so a big screen stays quick.
@@ -4231,9 +4241,18 @@ function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, 
   // Darkest to brightest, so effects that read the shade as a level still work.
   pal.sort((p, q) => p[0] * 0.299 + p[1] * 0.587 + p[2] * 0.114 - (q[0] * 0.299 + q[1] * 0.587 + q[2] * 0.114));
   while (pal.length < SHADES) pal.push(pal[pal.length - 1]);
-  // Nearest shade per colour, worked out once per 5-bit colour (most
-  // pixels share a few thousand of them) instead of per pixel.
-  const near = new Int16Array(32768).fill(-1);
+  imgNear = new Int16Array(32768).fill(-1);
+  mapShades(d, px0, rank, pal, imgNear);
+  imgShades = pal;
+  imgCol = { rank, iw, ih, ix, iy, step };
+  if (settings.colorBy === 'image') buildShades();
+}
+let imgFitAt = 0;
+// Nearest shade per 5-bit colour for the current shades (-1: not worked out yet).
+let imgNear: Int16Array | null = null;
+// Each pixel's shade, looked up once per 5-bit colour (most pixels share a
+// few thousand of them) instead of tried against every shade per pixel.
+function mapShades(d: Uint8ClampedArray, px0: number[], rank: Float32Array, pal: Rgb[], near: Int16Array) {
   for (const k of px0) {
     const r = d[k * 4], g = d[k * 4 + 1], bl = d[k * 4 + 2];
     const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (bl >> 3);
@@ -4250,9 +4269,6 @@ function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, 
     }
     rank[k] = best / SHADES + 0.5 / SHADES;
   }
-  imgShades = pal;
-  imgCol = { rank, iw, ih, ix, iy, step };
-  if (settings.colorBy === 'image') buildShades();
 }
 function imgShade(i: number) {
   const c = imgCol;
