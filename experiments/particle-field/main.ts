@@ -2568,7 +2568,9 @@ async function buildPlate(m: NonNullable<typeof shapeMedia>) {
   }
   mediaPlate = { src: m.src, w: c.width, h: c.height, d };
   shapeKey = '';
+  liveShape = true;
   buildShape();
+  liveShape = false;
 }
 // The picture as it is now (drawn into a canvas small enough to sample).
 function mediaFrame(): HTMLCanvasElement | null {
@@ -4229,13 +4231,22 @@ function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, 
   // Darkest to brightest, so effects that read the shade as a level still work.
   pal.sort((p, q) => p[0] * 0.299 + p[1] * 0.587 + p[2] * 0.114 - (q[0] * 0.299 + q[1] * 0.587 + q[2] * 0.114));
   while (pal.length < SHADES) pal.push(pal[pal.length - 1]);
+  // Nearest shade per colour, worked out once per 5-bit colour (most
+  // pixels share a few thousand of them) instead of per pixel.
+  const near = new Int16Array(32768).fill(-1);
   for (const k of px0) {
     const r = d[k * 4], g = d[k * 4 + 1], bl = d[k * 4 + 2];
-    let best = 0, bd = 1e9;
-    for (let s = 0; s < SHADES; s++) {
-      const p = pal[s];
-      const dd = (p[0] - r) ** 2 * 0.3 + (p[1] - g) ** 2 * 0.59 + (p[2] - bl) ** 2 * 0.11;
-      if (dd < bd) (bd = dd), (best = s);
+    const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (bl >> 3);
+    let best = near[key];
+    if (best < 0) {
+      let bd = 1e9;
+      best = 0;
+      for (let s = 0; s < SHADES; s++) {
+        const p = pal[s];
+        const dd = (p[0] - r) ** 2 * 0.3 + (p[1] - g) ** 2 * 0.59 + (p[2] - bl) ** 2 * 0.11;
+        if (dd < bd) (bd = dd), (best = s);
+      }
+      near[key] = best;
     }
     rank[k] = best / SHADES + 0.5 / SHADES;
   }
@@ -4388,7 +4399,10 @@ function sampleImage(): [number, number][] {
     lum[k] = (0.299 * d[k * 4] + 0.587 * d[k * 4 + 1] + 0.114 * d[k * 4 + 2]) / 255;
     alpha[k] = d[k * 4 + 3] / 255;
   }
-  if (!camOn) imageColours(d, iw, ih, ix, iy, step);
+  // Image colours (a 64-colour median cut and every pixel matched to it) are
+  // read only by Colour by: Image; a moving picture re-shapes many times a
+  // second, so it skips them unless they're in use.
+  if (!camOn && (!liveShape || settings.colorBy === 'image')) imageColours(d, iw, ih, ix, iy, step);
   const wt = new Float32Array(N);
   const subject = () => {
     // Pixels that differ from the corner colour (the background).
@@ -4416,12 +4430,7 @@ function sampleImage(): [number, number][] {
         wt[y * iw + x] = m.data[my * m.w + mx] > 0.5 ? 1 : 0;
       }
     imgWt = { wt, ix, iy, iw, ih, step };
-    const pts: [number, number][] = [];
-    for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
-      const k = (Math.random() * N) | 0;
-      if (wt[k] > 0) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
-    }
-    return pts;
+    return liveShape ? [] : ptsFromWt(imgWt, n);
   }
   let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode;
   // A video or GIF with its background worked out: the parts that differ from it.
@@ -4534,10 +4543,23 @@ function sampleImage(): [number, number][] {
     else for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 2.5) ** 0.8;
   }
   imgWt = { wt, ix, iy, iw, ih, step };
+  // A live picture's update places the particles itself (keepOnPicture).
+  return liveShape ? [] : ptsFromWt(imgWt, n);
+}
+// Spots on a picture's weights: drawn from the pixels that have any weight
+// (not the whole frame, which for a small figure meant most draws missed),
+// each kept by its weight.
+function ptsFromWt(M: NonNullable<typeof imgWt>, count: number): [number, number][] {
+  const { wt, ix, iy, iw, step } = M;
+  const N = wt.length;
+  const cand = new Int32Array(N);
+  let c = 0;
+  for (let k = 0; k < N; k++) if (wt[k] > 0) cand[c++] = k;
   const pts: [number, number][] = [];
-  for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
-    const k = (Math.random() * N) | 0;
-    if (Math.random() < wt[k]) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
+  if (!c) return pts;
+  for (let tries = 0; pts.length < count && tries < count * 30; tries++) {
+    const k = cand[(Math.random() * c) | 0];
+    if (wt[k] >= 1 || Math.random() < wt[k]) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
   }
   return pts;
 }
@@ -5251,8 +5273,11 @@ function buildShape() {
     return false;
   });
   if (S.shape === 'image' || S.shape === 'camera') {
-    pts.push(...sampleImage());
-    if (liveShape && imgWt && pts.length && keepOnPicture(pts)) return;
+    const sp = sampleImage();
+    if (liveShape && imgWt) {
+      if (keepOnPicture()) return;
+      for (const q of ptsFromWt(imgWt, n)) pts.push(q);
+    } else for (const q of sp) pts.push(q);
   }
   if (!pts.length) {
     for (let i = 0; i < n; i++) {
@@ -5277,7 +5302,8 @@ function buildShape() {
   }
   // A live picture (camera or video) re-shapes several times a second: the
   // quick match keeps up where the careful one would eat the frame.
-  const owner = liveShape ? matchCurve(tx, ty) : matchNearest(tx, ty);
+  // The careful match takes seconds at very high counts: past 40k the quick one.
+  const owner = liveShape || n > 40000 ? matchCurve(tx, ty) : matchNearest(tx, ty);
   shapeInfo = { targets: pts.length, ms: performance.now() - tShape };
   for (let t = 0; t < n; t++) {
     hx[owner[t]] = tx[t];
@@ -5368,7 +5394,7 @@ function playEntrance() {
 // still part stays put and only what moved re-forms. (Giving every particle a
 // fresh random spot ten times a second kept them all travelling: the shape
 // never filled in and swirled.) Returns false to rebuild from scratch.
-function keepOnPicture(pts: [number, number][]): boolean {
+function keepOnPicture(): boolean {
   const M = imgWt!;
   const free: number[] = [];
   // Coverage in cells of 4×4 samples: how many particles stay in each.
@@ -5389,57 +5415,66 @@ function keepOnPicture(pts: [number, number][]): boolean {
   if (!m) return true;
   // What each cell should hold (its share of the picture) less what stays:
   // the freed particles go where the picture is new (a limb's new place)
-  // before they thicken what's already covered.
+  // before they thicken what's already covered. Spots are drawn per cell,
+  // then a pixel in it, so an update costs about the freed count, not the
+  // whole picture's.
   const want = new Float32Array(cw * ch);
   let wsum = 0;
-  for (let y = 0; y < M.ih; y++)
+  for (let y = 0; y < M.ih; y++) {
+    const row = ((y / CS) | 0) * cw;
     for (let x = 0; x < M.iw; x++) {
       const v = M.wt[y * M.iw + x];
       if (v > 0) {
-        want[((y / CS) | 0) * cw + ((x / CS) | 0)] += v;
+        want[row + ((x / CS) | 0)] += v;
         wsum += v;
       }
     }
-  const cellOf = (x: number, y: number) => {
-    const gx = Math.floor(x / M.step) - M.ix;
-    const gy = Math.floor(y / M.step) - M.iy;
-    return gx >= 0 && gy >= 0 && gx < M.iw && gy < M.ih ? ((gy / CS) | 0) * cw + ((gx / CS) | 0) : -1;
-  };
-  const inCell = new Float32Array(cw * ch);
-  const pc = new Int32Array(pts.length);
-  for (let t = 0; t < pts.length; t++) {
-    pc[t] = cellOf(pts[t][0], pts[t][1]);
-    if (pc[t] >= 0) inCell[pc[t]]++;
   }
-  const per = wsum > 0 ? n / wsum : 0;
-  const wt = new Float64Array(pts.length);
-  let total = 0;
-  for (let t = 0; t < pts.length; t++) {
-    const c = pc[t];
-    // A little for everywhere, so the shape still evens out once filled.
-    const gap = c >= 0 ? Math.max(0, want[c] * per - kept[c]) / inCell[c] : 0;
-    wt[t] = gap + 0.02;
-    total += wt[t];
-  }
-  const cum = new Float64Array(pts.length);
+  if (!wsum) return false;
+  const per = n / wsum;
+  const C = cw * ch;
+  const cum = new Float64Array(C);
   let acc = 0;
-  for (let t = 0; t < pts.length; t++) cum[t] = acc += wt[t];
+  for (let c = 0; c < C; c++) {
+    const d = want[c] * per;
+    // A little for everywhere on the picture, so it still evens out once filled.
+    cum[c] = acc += d > 0 ? Math.max(0, d - kept[c]) + d * 0.02 : 0;
+  }
   const fx = new Float32Array(m), fy = new Float32Array(m), tx = new Float32Array(m), ty = new Float32Array(m);
   for (let j = 0; j < m; j++) {
     // Paired from where each particle is now, not its old spot: one that's
     // still on its way shouldn't be sent back to start from there.
     const i = free[j];
-    [fx[j], fy[j]] = place.on ? unplaced(px[i], py[i]) : [px[i], py[i]];
-    const r = Math.random() * total;
+    if (place.on) [fx[j], fy[j]] = unplaced(px[i], py[i]);
+    else {
+      fx[j] = px[i];
+      fy[j] = py[i];
+    }
+    const r = Math.random() * acc;
     let lo = 0;
-    let hi = pts.length - 1;
+    let hi = C - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
       if (cum[mid] < r) lo = mid + 1;
       else hi = mid;
     }
-    tx[j] = pts[lo][0];
-    ty[j] = pts[lo][1];
+    const cx0 = (lo % cw) * CS;
+    const cy0 = ((lo / cw) | 0) * CS;
+    let gx = cx0 + CS / 2;
+    let gy = cy0 + CS / 2;
+    for (let t = 0; t < 12; t++) {
+      const x = cx0 + ((Math.random() * CS) | 0);
+      const y = cy0 + ((Math.random() * CS) | 0);
+      if (x >= M.iw || y >= M.ih) continue;
+      const v = M.wt[y * M.iw + x];
+      if (v > 0 && (v >= 1 || Math.random() < v)) {
+        gx = x;
+        gy = y;
+        break;
+      }
+    }
+    tx[j] = (M.ix + gx + Math.random()) * M.step;
+    ty[j] = (M.iy + gy + Math.random()) * M.step;
   }
   const owner = matchCurve(tx, ty, fx, fy);
   // Jump: one with far to go vanishes and comes back on its spot.
@@ -5485,22 +5520,33 @@ function hilbert(x: number, y: number) {
   }
   return d;
 }
+// Both lists are put in curve order with a counting sort (keys cut to 2^18
+// places, 2×2 cells of the 1024 grid), not a comparison sort: a live picture
+// matches tens of thousands of particles many times a second.
+const CURVE_K = 1 << 18;
+const curveCnt = new Int32Array(CURVE_K + 1);
+function curveOrder(xs: ArrayLike<number>, ys: ArrayLike<number>, m: number, kx: number, ky: number): Int32Array {
+  const cl = (v: number) => (v < 0 ? 0 : v > 1023 ? 1023 : v | 0);
+  const key = new Int32Array(m);
+  const cnt = curveCnt.fill(0);
+  for (let i = 0; i < m; i++) {
+    const k = hilbert(cl(xs[i] * kx), cl(ys[i] * ky)) >> 2;
+    key[i] = k;
+    cnt[k + 1]++;
+  }
+  for (let k = 0; k < CURVE_K; k++) cnt[k + 1] += cnt[k];
+  const out = new Int32Array(m);
+  for (let i = 0; i < m; i++) out[cnt[key[i]]++] = i;
+  return out;
+}
 function matchCurve(tx: Float32Array, ty: Float32Array, fx: ArrayLike<number> = px, fy: ArrayLike<number> = py): Int32Array {
   const m = tx.length;
   const kx = 1023 / Math.max(1, w);
   const ky = 1023 / Math.max(1, h);
-  const B = 262144; // more than the most particles: key = place × B + index
-  const cl = (v: number) => (v < 0 ? 0 : v > 1023 ? 1023 : v | 0);
-  const a = new Float64Array(m);
-  const b = new Float64Array(m);
-  for (let i = 0; i < m; i++) {
-    a[i] = hilbert(cl(fx[i] * kx), cl(fy[i] * ky)) * B + i;
-    b[i] = hilbert(cl(tx[i] * kx), cl(ty[i] * ky)) * B + i;
-  }
-  a.sort();
-  b.sort();
+  const a = curveOrder(fx, fy, m, kx, ky);
+  const b = curveOrder(tx, ty, m, kx, ky);
   const owner = new Int32Array(m);
-  for (let r = 0; r < m; r++) owner[b[r] % B] = a[r] % B;
+  for (let r = 0; r < m; r++) owner[b[r]] = a[r];
   return owner;
 }
 
