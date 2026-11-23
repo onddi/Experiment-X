@@ -5418,23 +5418,22 @@ function keepOnPicture(): boolean {
   const cw = Math.ceil(M.iw / CS);
   const ch = Math.ceil(M.ih / CS);
   const kept = new Float32Array(cw * ch);
+  const wAt = (x: number, y: number) => (x >= 0 && y >= 0 && x < M.iw && y < M.ih ? M.wt[y * M.iw + x] : 0);
   for (let i = 0; i < n; i++) {
     const x = Math.floor(hx[i] / M.step) - M.ix;
     const y = Math.floor(hy[i] / M.step) - M.iy;
-    const inside = x >= 0 && y >= 0 && x < M.iw && y < M.ih;
-    const v = inside ? M.wt[y * M.iw + x] : 0;
+    // A little slack at the edge: an outline that flickers by a pixel
+    // shouldn't send its particles off and back every update.
+    const v = Math.max(wAt(x, y), wAt(x - 2, y), wAt(x + 2, y), wAt(x, y - 2), wAt(x, y + 2));
     if (!(Math.random() < Math.min(1, v * 1.5))) free.push(i);
-    else kept[((y / CS) | 0) * cw + ((x / CS) | 0)]++;
+    else kept[Math.min(ch - 1, Math.max(0, (y / CS) | 0)) * cw + Math.min(cw - 1, Math.max(0, (x / CS) | 0))]++;
   }
   if (free.length > n * 0.9) return false;
   const m = free.length;
   if (!m) return true;
-  // What each cell should hold (its share of the picture) less what stays:
-  // the freed particles go where the picture is new (a limb's new place)
-  // before they thicken what's already covered. Spots are drawn per cell,
-  // then a pixel in it, so an update costs about the freed count, not the
-  // whole picture's.
-  const want = new Float32Array(cw * ch);
+  // What each cell should hold (its share of the picture) less what stays.
+  const C = cw * ch;
+  const want = new Float32Array(C);
   let wsum = 0;
   for (let y = 0; y < M.ih; y++) {
     const row = ((y / CS) | 0) * cw;
@@ -5448,41 +5447,34 @@ function keepOnPicture(): boolean {
   }
   if (!wsum) return false;
   const per = n / wsum;
-  const C = cw * ch;
+  // The gaps, in cells and in blocks of 8×8 cells (to find the nearest fast).
+  const gap = new Float32Array(C);
+  const BS = 8;
+  const bw = Math.ceil(cw / BS);
+  const bh = Math.ceil(ch / BS);
+  const bgap = new Float32Array(bw * bh);
   const cum = new Float64Array(C);
   let acc = 0;
   for (let c = 0; c < C; c++) {
     const d = want[c] * per;
-    // A little for everywhere on the picture, so it still evens out once filled.
-    cum[c] = acc += d > 0 ? Math.max(0, d - kept[c]) + d * 0.02 : 0;
+    gap[c] = Math.max(0, d - kept[c]);
+    if (gap[c] > 0) bgap[((((c / cw) | 0) / BS) | 0) * bw + (((c % cw) / BS) | 0)] += gap[c];
+    cum[c] = acc += d;
   }
-  const fx = new Float32Array(m), fy = new Float32Array(m), tx = new Float32Array(m), ty = new Float32Array(m);
-  for (let j = 0; j < m; j++) {
-    // Paired from where each particle is now, not its old spot: one that's
-    // still on its way shouldn't be sent back to start from there.
-    const i = free[j];
-    if (place.on) [fx[j], fy[j]] = unplaced(px[i], py[i]);
-    else {
-      fx[j] = px[i];
-      fy[j] = py[i];
-    }
-    const r = Math.random() * acc;
-    let lo = 0;
-    let hi = C - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (cum[mid] < r) lo = mid + 1;
-      else hi = mid;
-    }
-    const cx0 = (lo % cw) * CS;
-    const cy0 = ((lo / cw) | 0) * CS;
+  // Each freed particle takes the nearest gap to where it is now (not its old
+  // spot), so it moves a short way to where the picture is new: a raised arm
+  // pulls the particles from where the arm was, not from across the figure.
+  // Pairing by rank along a curve sent many across the shape, which read as
+  // chaos. With no gap left, a spot anywhere on the picture by its share.
+  const pickIn = (c: number, j: number) => {
+    const cx0 = (c % cw) * CS;
+    const cy0 = ((c / cw) | 0) * CS;
     let gx = cx0 + CS / 2;
     let gy = cy0 + CS / 2;
     for (let t = 0; t < 12; t++) {
       const x = cx0 + ((Math.random() * CS) | 0);
       const y = cy0 + ((Math.random() * CS) | 0);
-      if (x >= M.iw || y >= M.ih) continue;
-      const v = M.wt[y * M.iw + x];
+      const v = wAt(x, y);
       if (v > 0 && (v >= 1 || Math.random() < v)) {
         gx = x;
         gy = y;
@@ -5491,17 +5483,70 @@ function keepOnPicture(): boolean {
     }
     tx[j] = (M.ix + gx + Math.random()) * M.step;
     ty[j] = (M.iy + gy + Math.random()) * M.step;
+  };
+  const tx = new Float32Array(m), ty = new Float32Array(m);
+  const RB = Math.max(bw, bh);
+  for (let j = 0; j < m; j++) {
+    const i = free[j];
+    let qx = px[i];
+    let qy = py[i];
+    if (place.on) [qx, qy] = unplaced(qx, qy);
+    const ccx = Math.min(cw - 1, Math.max(0, ((qx / M.step - M.ix) / CS) | 0));
+    const ccy = Math.min(ch - 1, Math.max(0, ((qy / M.step - M.iy) / CS) | 0));
+    const bx0 = (ccx / BS) | 0;
+    const by0 = (ccy / BS) | 0;
+    // Nearest block with a gap (rings outward), then the nearest gap cell in it.
+    let blk = -1;
+    for (let r = 0; r <= RB && blk < 0; r++) {
+      let bd = Infinity;
+      for (let by = by0 - r; by <= by0 + r; by++) {
+        if (by < 0 || by >= bh) continue;
+        const edge = by === by0 - r || by === by0 + r;
+        for (let bx = bx0 - r; bx <= bx0 + r; bx += edge ? 1 : 2 * r || 1) {
+          if (bx < 0 || bx >= bw) continue;
+          const b = by * bw + bx;
+          if (bgap[b] < 0.5) continue;
+          const dd = (bx - bx0) ** 2 + (by - by0) ** 2;
+          if (dd < bd) (bd = dd), (blk = b);
+        }
+      }
+    }
+    let cell = -1;
+    if (blk >= 0) {
+      const bx = blk % bw;
+      const by = (blk / bw) | 0;
+      let bd = Infinity;
+      for (let cy = by * BS; cy < Math.min(ch, by * BS + BS); cy++)
+        for (let cx = bx * BS; cx < Math.min(cw, bx * BS + BS); cx++) {
+          const c = cy * cw + cx;
+          if (gap[c] < 0.5) continue;
+          const dd = (cx - ccx) ** 2 + (cy - ccy) ** 2;
+          if (dd < bd) (bd = dd), (cell = c);
+        }
+      if (cell >= 0) {
+        gap[cell]--;
+        bgap[blk]--;
+      } else bgap[blk] = 0;
+    }
+    if (cell < 0) {
+      const r = Math.random() * acc;
+      let lo = 0;
+      let hi = C - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cum[mid] < r) lo = mid + 1;
+        else hi = mid;
+      }
+      cell = lo;
+    }
+    pickIn(cell, j);
+    hx[i] = tx[j];
+    hy[i] = ty[j];
   }
-  const owner = matchCurve(tx, ty, fx, fy);
-  // Jump: one with far to go vanishes and comes back on its spot.
-  const jump = settings.imageMove === 'jump' ? (Math.min(w, h) * 0.06) ** 2 : Infinity;
-  for (let t = 0; t < m; t++) {
-    const i = free[owner[t]];
-    hx[i] = tx[t];
-    hy[i] = ty[t];
-  }
-  // Every particle still far from its spot (newly sent or still on its way).
-  if (jump < Infinity)
+  // Jump: every particle still far from its spot (newly sent or on its way)
+  // vanishes and comes back on it.
+  if (settings.imageMove === 'jump') {
+    const jump = (Math.min(w, h) * 0.06) ** 2;
     for (let i = 0; i < n; i++) {
       const [ex, ey] = place.on ? placed(hx[i], hy[i]) : [hx[i], hy[i]];
       if ((ex - px[i]) ** 2 + (ey - py[i]) ** 2 > jump) {
@@ -5510,6 +5555,7 @@ function keepOnPicture(): boolean {
         vx[i] = vy[i] = 0;
       }
     }
+  }
   return true;
 }
 
