@@ -16,7 +16,7 @@ import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { GpuFx } from './gpufx.ts';
 import { FONT_OPTS, addFontCss, fontCss, fontReady, fontStyle } from './fonts.ts';
 import type { ParticleSound, SoundParams, Layer, BeatMove, PicMove } from './sound.ts';
-import { STYLES, FAMILIES as STYLE_FAMILIES, styleById, styleGroups, groupOf, type Style } from './styles.ts';
+import { STYLES, FAMILIES as STYLE_FAMILIES, styleById, styleGroups, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre, type DrumKit } from './drums.ts';
 import { GENRE_FEEL } from './beatlearn.ts';
 import { GROOVE_CREDIT, closestGroove, dressFor, grooveById, grooveStyles, grooves, groovesNow, type Groove } from './grooves.ts';
@@ -10505,7 +10505,8 @@ function setMusicTab(t: MusicTab) {
 // list of names on the right, ★ to keep favourites (the Saved family).
 type RailItem = { name: string; id?: string; sub?: string; on: boolean; fav?: boolean; dot?: string; fp?: number[] };
 function railPicker(o: {
-  rail: () => [string, string, number][];
+  // [id, label, count, class]: class 'fam' (a family, 'open' when shown) or 'sub' (one of its sub-genres).
+  rail: () => [string, string, number, string?][];
   now: () => string;
   setRail: (id: string) => void;
   items: () => RailItem[];
@@ -10516,8 +10517,6 @@ function railPicker(o: {
   // Optional Random button: plays a random one from the list shown, skipping these names.
   // With roll, the button makes a new one instead (when roll says it did).
   random?: { skip: string[]; roll?: () => boolean };
-  // Optional row of tabs over the list (a family's sub-genres).
-  tabs?: () => { label: string; on: boolean; go: () => void }[];
 }) {
   const el = document.createElement('div');
   el.className = 'rail-picker';
@@ -10527,17 +10526,17 @@ function railPicker(o: {
   const draw = () => {
     const rail = o.rail();
     const items = o.items();
-    const tabs = o.tabs?.() ?? [];
-    const next = o.now() + tabs.map((t) => t.label + +t.on).join() + (o.sort?.show() ? o.sort.now() : '') + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}${it.sub ?? ''}`).join('|');
+    const next = o.now() + (o.sort?.show() ? o.sort.now() : '') + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}${it.sub ?? ''}`).join('|');
     if (next === sig) return;
     sig = next;
     railEl.innerHTML = '';
-    for (const [id, label, n] of rail) {
+    for (const [id, label, n, cls] of rail) {
       const b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('role', 'tab');
       b.classList.toggle('on', id === o.now());
       b.setAttribute('aria-selected', String(id === o.now()));
+      if (cls) b.classList.add(...cls.split(' '));
       b.innerHTML = '<span></span><i></i>';
       b.querySelector('span')!.textContent = label;
       b.querySelector('i')!.textContent = String(n);
@@ -10548,28 +10547,13 @@ function railPicker(o: {
       });
       railEl.append(b);
     }
+    // Keep the picked entry in view (a family's sub-genres can push it down).
+    const onB = railEl.querySelector<HTMLElement>('.on');
+    if (onB) requestAnimationFrame(() => {
+      const top = onB.offsetTop - railEl.offsetTop;
+      if (top < railEl.scrollTop || top + onB.offsetHeight > railEl.scrollTop + railEl.clientHeight) railEl.scrollTop = top - railEl.clientHeight / 3;
+    });
     listEl.innerHTML = '';
-    if (tabs.length) {
-      const row = document.createElement('div');
-      row.className = 'rp-sort rp-tabs';
-      for (const t of tabs) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = t.label;
-        b.classList.toggle('on', t.on);
-        b.setAttribute('aria-pressed', String(t.on));
-        b.addEventListener('click', () => {
-          t.go();
-          draw();
-          listEl.scrollTop = 0;
-        });
-        row.append(b);
-      }
-      listEl.append(row);
-      // Keep the picked sub-genre in view.
-      const on = row.querySelector<HTMLElement>('.on');
-      if (on) requestAnimationFrame(() => (row.scrollLeft = on.offsetLeft - row.offsetLeft - 24));
-    }
     const pool = o.random ? items.filter((it) => !o.random!.skip.includes(it.name)) : [];
     const canRoll = !!o.random?.roll;
     if (o.sort?.show() || pool.length > 1 || canRoll) {
@@ -10820,18 +10804,26 @@ function musicPicker(styles = false) {
     rail: () => isLive() ? liveRails() : [
       ['saved', '★ Saved', mySoundPresets().length + allSaved().length],
       ['all', 'All genres', STYLES.reduce((n, st) => n + styleVars(st).length, 0)],
-      // A family shows once, on the sub-genre last picked in it (or the one playing).
-      ...styleGroups().map((g): [string, string, number] => [g.styles.length > 1 ? famRail(g.styles) : g.id, g.name, g.styles.reduce((n, st) => n + musicSongs(st.id).length, 0)]),
+      // A family shows once; picked, its sub-genres open under it.
+      ...styleGroups().flatMap((g): [string, string, number, string?][] => {
+        const n = (st: Style) => musicSongs(st.id).length;
+        if (g.styles.length < 2) return [[g.id, g.name, n(g.styles[0])]];
+        const open = g.styles.some((st) => st.id === musicRail);
+        return [[g.id, g.name, g.styles.reduce((k, st) => k + n(st), 0), open ? 'fam open' : 'fam'], ...(open ? g.styles.map((st): [string, string, number, string] => [st.id, st.name === g.name ? 'Classic' : st.name, n(st), 'sub']) : [])];
+      }),
     ],
-    tabs: () => {
-      const st = isLive() ? null : styleById(musicRail);
-      if (!st?.family) return [];
-      return groupOf(st).styles.map((x) => ({ label: x.name, on: x.id === musicRail, go: () => (musicRail = famLast[st.family!] = x.id) }));
-    },
     now: () => (isLive() ? liveRail : musicRail),
     setRail: (id) => {
       if (isLive()) liveRail = id;
-      else musicRail = id;
+      else if (id.startsWith('fam:')) {
+        // A family opens on the sub-genre last picked in it (or the one playing).
+        const members = STYLES.filter((st) => `fam:${st.family}` === id);
+        if (!members.some((st) => st.id === musicRail)) musicRail = famRail(members);
+      } else {
+        musicRail = id;
+        const f = styleById(id)?.family;
+        if (f) famLast[f] = id;
+      }
     },
     random: {
       skip: [],

@@ -95,5 +95,3 @@ export function styleGroups(): { id: string; name: string; styles: Style[] }[] {
   }
   return out;
 }
-/** The style's group: its family's styles, or just itself. */
-export const groupOf = (st: Style) => styleGroups().find((g) => g.styles.includes(st))!;
