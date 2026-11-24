@@ -5,7 +5,10 @@
 // web player), or a local audio file. Each frame we read the spectrum and
 // boil it down to a few 0..1 signals the simulation can use.
 
-export type AudioSource = 'off' | 'mic' | 'tab' | 'file' | 'feed';
+export type AudioSource = 'off' | 'mic' | 'tab' | 'file' | 'feed' | 'video';
+// A video's element can be wired into Web Audio only once, so its context and
+// node are kept with it and reused each time its sound is turned on again.
+const videoWire = new WeakMap<HTMLMediaElement, { ctx: AudioContext; node: MediaElementAudioSourceNode }>();
 
 /** One frame of the X-Frame `audio.spectrum` topic: what an AnalyserNode gives. */
 export type SpectrumFrame = {
@@ -222,7 +225,7 @@ export class AudioInput {
   private feedLatency = 0;
   private node: AudioNode | null = null;
   private stream: MediaStream | null = null;
-  private element: HTMLAudioElement | null = null;
+  private element: HTMLMediaElement | null = null;
   private freq = new Uint8Array(0);
   // 'feed' source: spectrum frames from another experiment via X-Frame.
   private feedFrame: SpectrumFrame | null = null;
@@ -314,10 +317,11 @@ export class AudioInput {
     this.onChange('Listening to the player in X-Frame');
   }
 
-  async start(source: Exclude<AudioSource, 'off' | 'feed'>, file?: File) {
+  async start(source: Exclude<AudioSource, 'off' | 'feed'>, file?: File, video?: HTMLMediaElement) {
     this.stop();
     try {
-      this.ctx = new AudioContext();
+      const wired = video ? videoWire.get(video) : undefined;
+      this.ctx = wired?.ctx ?? new AudioContext();
       await this.ctx.resume();
       this.analyser = this.ctx.createAnalyser();
       // 4096 points gives ~11 Hz bins, fine enough to separate sub from kick.
@@ -353,7 +357,18 @@ export class AudioInput {
         for (const t of this.stream.getVideoTracks()) t.stop();
       }
 
-      if (this.stream) {
+      if (video) {
+        // The shape's own video: its sound plays here, in time with the picture.
+        const node = wired?.node ?? this.ctx.createMediaElementSource(video);
+        if (!wired) videoWire.set(video, { ctx: this.ctx, node });
+        this.element = video;
+        this.node = node;
+        node.connect(this.analyser);
+        node.connect(this.fast);
+        this.analyser.connect(this.ctx.destination);
+        video.muted = false;
+        await video.play();
+      } else if (this.stream) {
         const track = this.stream.getAudioTracks()[0];
         track.addEventListener('ended', () => this.stop());
         this.node = this.ctx.createMediaStreamSource(new MediaStream([track]));
@@ -372,7 +387,7 @@ export class AudioInput {
 
       this.source = source;
       this.onChange(
-        source === 'mic' ? `Listening to ${this.stream?.getAudioTracks()[0]?.label || 'the microphone'}` : source === 'tab' ? 'Listening to the shared audio' : `Playing ${file?.name ?? 'file'}`,
+        source === 'mic' ? `Listening to ${this.stream?.getAudioTracks()[0]?.label || 'the microphone'}` : source === 'tab' ? 'Listening to the shared audio' : video ? 'Playing the video’s sound' : `Playing ${file?.name ?? 'file'}`,
       );
     } catch (err) {
       this.stop();
@@ -392,12 +407,16 @@ export class AudioInput {
   stop() {
     const wasOn = this.source !== 'off';
     this.stream?.getTracks().forEach((t) => t.stop());
-    if (this.element) {
+    // The shape's video keeps playing, and keeps its Web Audio wiring for next time.
+    const video = !!this.element && !!this.ctx && videoWire.get(this.element)?.ctx === this.ctx;
+    if (this.element && video) this.element.muted = true; // the picture plays on
+    else if (this.element) {
       this.element.pause();
       URL.revokeObjectURL(this.element.src);
     }
     this.node?.disconnect();
-    void this.ctx?.close();
+    this.analyser?.disconnect();
+    if (!video) void this.ctx?.close();
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.feedFrame = null;

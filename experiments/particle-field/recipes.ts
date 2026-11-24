@@ -70,6 +70,37 @@ export const RECIPES: Record<string, Recipe> = {
   gqom: { bpm: [120, 128], swing: [0, 0.05], kits: ['techno', 'hard', 'minimal'], bass: ['sub', 'reese', 'pulse'], lead: ['bell', 'marimba', 'glass', 'pluck'], pad: ['dark', 'hollow', 'choir', 'air'], scales: ['minor', 'japanese', 'whole'], chords: ['still', '1 6', '1 2', 'mystic'], chordBars: [4, 8], fx: { sndReverb: [0.35, 0.65], sndEcho: [0.2, 0.5] }, kickAdd: [3, 6, 10, 13], hats: ['keep', 'sparse', 'offbeat'], bassAdd: [3, 10, 13] },
 };
 
+// Sub-genres (styles.ts families): their family's recipe, with what sets them apart.
+const like = (id: string, o: Partial<Recipe>): Recipe => ({ ...RECIPES[id], ...o });
+Object.assign(RECIPES, {
+  crunk: like('trap', { bpm: [72, 80], hats: ['keep', '8ths'] }),
+  screwed: like('trap', { bpm: [60, 68], fx: { sndReverb: [0.4, 0.7], sndLofi: [0.2, 0.5], sndEcho: [0.1, 0.3] } }),
+  hyphy: like('trap', { bpm: [96, 104], swing: [0, 0.12], kits: ['punchy', '808'] }),
+  grime: like('trap', { bpm: [138, 142], kits: ['glitch', 'hard', 'trap'], bass: ['sub', '808', 'fuzz', 'reese'], lead: ['chip', 'synth', 'pluck', 'bell'] }),
+  detroit: like('trap', { bpm: [96, 104], hats: ['keep', '16ths'] }),
+  cloud: like('trap', { bpm: [66, 74], pad: ['shimmer', 'air', 'ice', 'choir', 'frozen'], fx: { sndReverb: [0.5, 0.8], sndEcho: [0.2, 0.5], sndChorus: [0.2, 0.5] } }),
+  beattape: like('rap', { bpm: [84, 92], kits: ['vinyl', 'lofi', 'bap', 'tape'], fx: { sndLofi: [0.2, 0.5], sndBright: [-0.4, -0.1] } }),
+  memphis: like('phonk', { bpm: [68, 76], kits: ['808', 'tape'] }),
+  industrial: like('techno', { bpm: [130, 140], kits: ['hard', 'techno'], bass: ['fuzz', 'reese', 'dist808'], fx: { sndDrive: [0.3, 0.7], sndReverb: [0.2, 0.45], sndEcho: [0.1, 0.4] } }),
+  hardtechno: like('techno', { bpm: [145, 155], kits: ['hard', 'techno'], fx: { sndDrive: [0.3, 0.6], sndReverb: [0.2, 0.4] } }),
+  hypnotic: like('techno', { bpm: [124, 130], kits: ['minimal', 'techno'], bass: ['sub', 'deep', 'moog'], chordBars: [8] }),
+  ebm: like('techno', { bpm: [116, 124], kits: ['punchy', 'linn', 'hard'], bass: ['synth', 'pulse', 'moog', 'fuzz'], bassPat: ['beat', 'pump'] }),
+  darkpsy: like('psy', { bpm: [146, 152], kits: ['glitch', 'techno'], pad: ['dark', 'hollow', 'drone', 'cosmic'] }),
+  hitech: like('psy', { bpm: [175, 190], kits: ['glitch'] }),
+  psydub: like('psy', { bpm: [84, 96], swing: [0, 0.15], kits: ['dub', 'lofi'], bass: ['sub', 'deep', 'round'], bassPat: ['beat', 'hold'] }),
+  neuro: like('dnb', { bpm: [172, 176], kits: ['punchy', 'hard'], bass: ['growl', 'reese', 'wobble'], pad: ['dark', 'hollow', 'pwm'] }),
+  darkstep: like('dnb', { bpm: [172, 180], kits: ['hard', 'jungle'], pad: ['dark', 'choir', 'drone'] }),
+  halftime: like('dnb', { bpm: [168, 174], bass: ['sub', 'reese', 'growl'] }),
+  liquid: like('dnb', { kits: ['jungle', 'lofi'], bass: ['sub', 'round', 'deep'], pad: ['strings', 'air', 'shimmer', 'warm', 'velvet'], scales: ['minor', 'dorian', 'major'], chords: [...MINOR_POP, ...SOUL] }),
+  deepdub: like('dubstep', { kits: ['dub', 'punchy'], bass: ['sub', 'deep'] }),
+  gabber: like('techno', { bpm: [170, 190], kits: ['hard'], bass: ['dist808', 'fuzz'], fx: { sndDrive: [0.5, 0.9], sndReverb: [0.1, 0.3] } }),
+  breakcore: like('dnb', { bpm: [170, 200], kits: ['jungle', 'glitch', 'hard'], fx: { sndDrive: [0.2, 0.6] } }),
+  darksynth: like('synthwave', { bpm: [100, 118], kits: ['punchy', 'hard', 'linn'], bass: ['fuzz', 'synth', 'pulse'], scales: ['minor'], chords: DARK }),
+  darkwave: like('synthwave', { bpm: [112, 128], kits: ['linn', '808'], bass: ['picked', 'synth', 'pulse'], scales: ['minor', 'dorian'], chords: DARK }),
+  witch: like('trap', { bpm: [64, 76], pad: ['dark', 'choir', 'drone', 'whisper'], scales: ['minor', 'japanese'] }),
+  darkambient: like('ambient', { bpm: [50, 66], pad: ['dark', 'drone', 'mist', 'throat', 'storm', 'whisper'], scales: ['minor', 'whole', 'japanese'], chords: ['still', 'mystic', '1 6'] }),
+});
+
 // A small seeded random: the same seed, the same song.
 export function seeded(seed: number) {
   let a = seed >>> 0;

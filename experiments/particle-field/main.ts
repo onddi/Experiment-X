@@ -16,7 +16,7 @@ import { TIPS as ABOUT, LENSES } from './tips.ts';
 import { GpuFx } from './gpufx.ts';
 import { FONT_OPTS, addFontCss, fontCss, fontReady, fontStyle } from './fonts.ts';
 import type { ParticleSound, SoundParams, Layer, BeatMove, PicMove } from './sound.ts';
-import { STYLES, styleById, type Style } from './styles.ts';
+import { STYLES, FAMILIES as STYLE_FAMILIES, styleById, styleGroups, groupOf, type Style } from './styles.ts';
 import { GENRES as DRUM_GENRES, KIT_OPTIONS, genreById as drumGenre, type DrumKit } from './drums.ts';
 import { GENRE_FEEL } from './beatlearn.ts';
 import { GROOVE_CREDIT, closestGroove, dressFor, grooveById, grooveStyles, grooves, groovesNow, type Groove } from './grooves.ts';
@@ -232,7 +232,7 @@ let dpr = 1;
 
 // Most particles the Count slider offers: more with the WebGL renderer
 // (shuffles stay capped lower). The Density macro may go a little past it.
-const MAX_COUNT = new URLSearchParams(location.search).get('renderer') === '2d' ? 8000 : 100000;
+const MAX_COUNT = new URLSearchParams(location.search).get('renderer') === '2d' ? 8000 : 150000;
 // The particle count with the Density macro applied.
 const countNow = () => {
   const c = settings.count * densityK;
@@ -2441,6 +2441,7 @@ let mediaBmp: ImageBitmap | null = null;
 let mediaBusy = false;
 let mediaNoBmp = false;
 function mediaStop() {
+  if (audio.source === 'video') audio.stop();
   shapeMedia?.video?.pause();
   shapeMedia = null;
   mediaBmp?.close();
@@ -10387,6 +10388,8 @@ function railPicker(o: {
   // Optional Random button: plays a random one from the list shown, skipping these names.
   // With roll, the button makes a new one instead (when roll says it did).
   random?: { skip: string[]; roll?: () => boolean };
+  // Optional row of tabs over the list (a family's sub-genres).
+  tabs?: () => { label: string; on: boolean; go: () => void }[];
 }) {
   const el = document.createElement('div');
   el.className = 'rail-picker';
@@ -10396,7 +10399,8 @@ function railPicker(o: {
   const draw = () => {
     const rail = o.rail();
     const items = o.items();
-    const next = o.now() + (o.sort?.show() ? o.sort.now() : '') + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}${it.sub ?? ''}`).join('|');
+    const tabs = o.tabs?.() ?? [];
+    const next = o.now() + tabs.map((t) => t.label + +t.on).join() + (o.sort?.show() ? o.sort.now() : '') + rail.map((r) => r.join()).join('|') + items.map((it) => `${it.name}${+it.on}${+!!it.fav}${it.sub ?? ''}`).join('|');
     if (next === sig) return;
     sig = next;
     railEl.innerHTML = '';
@@ -10417,6 +10421,27 @@ function railPicker(o: {
       railEl.append(b);
     }
     listEl.innerHTML = '';
+    if (tabs.length) {
+      const row = document.createElement('div');
+      row.className = 'rp-sort rp-tabs';
+      for (const t of tabs) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = t.label;
+        b.classList.toggle('on', t.on);
+        b.setAttribute('aria-pressed', String(t.on));
+        b.addEventListener('click', () => {
+          t.go();
+          draw();
+          listEl.scrollTop = 0;
+        });
+        row.append(b);
+      }
+      listEl.append(row);
+      // Keep the picked sub-genre in view.
+      const on = row.querySelector<HTMLElement>('.on');
+      if (on) requestAnimationFrame(() => (row.scrollLeft = on.offsetLeft - row.offsetLeft - 24));
+    }
     const pool = o.random ? items.filter((it) => !o.random!.skip.includes(it.name)) : [];
     const canRoll = !!o.random?.roll;
     if (o.sort?.show() || pool.length > 1 || canRoll) {
@@ -10608,6 +10633,12 @@ function vibePicker() {
 // Music: genres down the side, each genre's songs on the right. ★ keeps a
 // song (rolled ones too) in Saved; the dice rolls a new song in the genre.
 let musicRail = '';
+// The sub-genre last picked in each family, so the family opens on it.
+const famLast: Record<string, string> = {};
+function famRail(members: Style[]): string {
+  const playing = settings.sndStyle.split('/')[0];
+  return (members.find((x) => x.id === musicRail) ?? members.find((x) => x.id === famLast[x.family ?? '']) ?? members.find((x) => x.id === playing) ?? members[0]).id;
+}
 // The rail the picker shows with Live drums (grooves by style).
 let liveRail = 'all';
 function musicSongs(id: string): string[] {
@@ -10661,8 +10692,14 @@ function musicPicker(styles = false) {
     rail: () => isLive() ? liveRails() : [
       ['saved', '★ Saved', mySoundPresets().length + allSaved().length],
       ['all', 'All genres', STYLES.reduce((n, st) => n + styleVars(st).length, 0)],
-      ...STYLES.map((st): [string, string, number] => [st.id, st.name, musicSongs(st.id).length]),
+      // A family shows once, on the sub-genre last picked in it (or the one playing).
+      ...styleGroups().map((g): [string, string, number] => [g.styles.length > 1 ? famRail(g.styles) : g.id, g.name, g.styles.reduce((n, st) => n + musicSongs(st.id).length, 0)]),
     ],
+    tabs: () => {
+      const st = isLive() ? null : styleById(musicRail);
+      if (!st?.family) return [];
+      return groupOf(st).styles.map((x) => ({ label: x.name, on: x.id === musicRail, go: () => (musicRail = famLast[st.family!] = x.id) }));
+    },
     now: () => (isLive() ? liveRail : musicRail),
     setRail: (id) => {
       if (isLive()) liveRail = id;
@@ -10676,7 +10713,11 @@ function musicPicker(styles = false) {
           return rollLive(list);
         }
         // All genres: one of the listed presets. A genre: a brand-new song in it.
-        if (musicRail === 'all') return false;
+        if (musicRail === 'all') {
+          const pick = randomSong();
+          if (pick) useStyle(pick[0], pick[1]);
+          return !!pick;
+        }
         const st = styleById(musicRail);
         if (!st || !RECIPES[st.id]) return false;
         useStyle(st, `~${newSeed()}`);
@@ -10877,7 +10918,7 @@ function listenSummary() {
   const auto = settings.audioGenre === 'general';
   const feel = auto ? (audio.autoFeel === 'general' ? 'Auto' : `Auto: ${feelName(audio.autoFeel)}`) : feelName(settings.audioGenre);
   const bpm = audio.levels.bpm ? ` · ${Math.round(audio.levels.bpm)} BPM` : '';
-  const SHORT = { off: '', mic: 'Mic', tab: 'Tab', file: 'File', feed: 'X-Frame' } as const;
+  const SHORT = { off: '', mic: 'Mic', tab: 'Tab', file: 'File', feed: 'X-Frame', video: 'Video' } as const;
   return `${SHORT[audio.source]} · ${feel}${bpm}`;
 }
 const ft = () => true;
@@ -18777,8 +18818,26 @@ function renderDrumLib() {
     const g = drumGenre(settings.sndGenre);
     const addG = rows(box, 'Beat');
     addG('From the field', !g, () => pickGenre(''));
-    for (const G of DRUM_GENRES) addG(G.name, g === G, () => pickGenre(G.id));
+    // A family's genres show once; the one picked opens a row of its sub-genres.
+    const famOf = (id: string) => STYLES.find((st) => st.beat === id)?.family ?? '';
+    const fam = g ? famOf(g.id) : '';
+    const shown = new Set<string>();
+    for (const G of DRUM_GENRES) {
+      const f = famOf(G.id);
+      if (!f) addG(G.name, g === G, () => pickGenre(G.id));
+      else if (!shown.has(f)) {
+        shown.add(f);
+        addG(STYLE_FAMILIES[f] ?? G.name, fam === f, () => pickGenre(G.id));
+      }
+    }
     if (!g) return;
+    if (fam) {
+      const addS = rows(box, STYLE_FAMILIES[fam] ?? '');
+      for (const st of STYLES.filter((x) => x.family === fam && x.beat)) {
+        const G = drumGenre(st.beat);
+        if (G) addS(st.name, g === G, () => pickGenre(G.id));
+      }
+    }
     const addB = rows(box, `${g.name} beats`);
     addB('Random', false, () => {
       const n = g.beats.length;
@@ -18877,7 +18936,8 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
       look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.45);
     }
   }
-  if (st) Object.assign(look, GENRE_FLAVOR[st.id]);
+  // A sub-genre without its own flavour takes its family's.
+  if (st) Object.assign(look, GENRE_FLAVOR[st.id] ?? GENRE_FLAVOR[st.family ?? '']);
   look.sndStyle = `${st?.id ?? 'yours'}/${v}`;
   return look;
 }
@@ -18912,20 +18972,35 @@ function keepSong(id: string, v: string, keep: boolean) {
   all[id] = keep ? [v, ...list] : list;
   writeJson(SND_SONGS_KEY, all);
 }
+// A random preset song, never the one playing: an entry in the genre list
+// first (a family counts once), then one of its sub-genres, then a song. So a
+// genre with many beats or sub-genres comes up no more often than any other.
+const oneOf = <T,>(a: readonly T[]): T | undefined => a[(Math.random() * a.length) | 0];
+function randomSong(): readonly [Style, string] | undefined {
+  const cur = settings.sndStyle;
+  const groups = styleGroups()
+    .map((g) => g.styles.map((st) => styleVars(st).filter((v) => `${st.id}/${v}` !== cur).map((v) => [st, v] as const)).filter((m) => m.length))
+    .filter((g) => g.length);
+  const g = oneOf(groups);
+  const m = g && oneOf(g);
+  return m && oneOf(m);
+}
+// A style to roll a new song in: an entry in the genre list, then one of its sub-genres.
+function randomRollStyle(): Style {
+  const groups = styleGroups().map((g) => g.styles.filter((st) => RECIPES[st.id])).filter((g) => g.length);
+  return oneOf(oneOf(groups)!)!;
+}
 // The dice: a new song in the genre picked in the list, or the one playing
 // (any genre with All genres, or when none is picked).
 function randomStyle() {
   // All genres: one of the presets, any genre (never the one playing).
   if (musicRail === 'all') {
-    const cur = settings.sndStyle;
-    const all = STYLES.flatMap((st) => styleVars(st).map((v) => [st, v] as const)).filter(([st, v]) => `${st.id}/${v}` !== cur);
-    const pick = all[(Math.random() * all.length) | 0];
+    const pick = randomSong();
     if (pick) return useStyle(pick[0], pick[1]);
   }
   // A genre picked in the list (or the one playing): a brand-new song in it.
   const now = musicRail === 'all' ? null : styleById(musicRail) ?? styleNow().st;
-  const rolls = STYLES.filter((x) => RECIPES[x.id]);
-  const st = now && RECIPES[now.id] ? now : rolls[(Math.random() * rolls.length) | 0];
+  const st = now && RECIPES[now.id] ? now : randomRollStyle();
   useStyle(st, `~${newSeed()}`);
 }
 // What the Style row says: the picked style, marked when you've changed it since.
@@ -18940,7 +19015,8 @@ function styleNow(): { st: Style | null; v: string; name: string; edited: boolea
   const S = settings as unknown as Record<string, unknown>;
   const live = settings.sndDrumSrc === 'live';
   const edited = SND_LOOK_KEYS.some((k) => S[k] !== L[k] && !(live && (k === 'sndTempo' || k === 'sndKit' || k === 'sndSwing')));
-  return { st, v, name: st ? `${st.name} · ${isRoll(v) ? songName(Number(v.slice(1)) || 0) : v}` : v, edited };
+  const song = isRoll(v) ? songName(Number(v.slice(1)) || 0) : v;
+  return { st, v, name: st ? (song === st.name ? song : `${st.name} · ${song}`) : v, edited };
 }
 function renderSoundPage(body: HTMLElement) {
   const take = (k: string) => body.querySelector<HTMLElement>(`:scope > [data-key="${k}"]`);
@@ -20977,6 +21053,7 @@ function renderAudio() {
       <button type="button" data-src="mic">Mic</button>
       <button type="button" data-src="tab">Share tab</button>
       <button type="button" data-src="file">File</button>
+      <button type="button" data-src="video" hidden>Video</button>
       <button type="button" data-src="feed" hidden>From X-Frame</button>
       <button type="button" data-src="off">Stop</button>
     </div>
@@ -21007,6 +21084,7 @@ function renderAudio() {
     mic: 'Turn the music up a bit. Headphones won’t reach the mic. An audio interface or a loopback device (e.g. BlackHole, Loopback) can be picked as the Input for a clean feed; browsers use its first two channels.',
     tab: 'Keep the shared tab playing. Stop sharing from the browser bar or press Stop.',
     file: 'The file loops until you press Stop.',
+    video: 'The shape’s video, with its own sound. Stop mutes it; the picture plays on.',
     feed: 'Follows the audio player shown alongside in X-Frame. Play and pause there.',
   };
 
@@ -21073,6 +21151,9 @@ function renderAudio() {
         feedDeclined = true;
       } else if (src === 'feed') startFeed();
       else if (src === 'file') fileInput.click();
+      else if (src === 'video') {
+        if (shapeMedia?.video) void audio.start('video', undefined, shapeMedia.video);
+      }
       else {
         status.textContent = src === 'mic' ? 'Asking for the microphone…' : 'Pick a tab to share…';
         void audio.start(src as 'mic' | 'tab');
@@ -21085,7 +21166,10 @@ function renderAudio() {
     fileInput.value = '';
   });
 
+  const videoBtn = wrap.querySelector<HTMLButtonElement>('[data-src=video]')!;
   meterLoop(wrap, () => {
+    // Video: offered while the shape is a video (its sound, in time with it).
+    videoBtn.hidden = !shapeMedia?.video;
     const L = audio.levels;
     [L.sub, L.bass, L.mid, L.treble].forEach((v, k) => (bars[k].style.transform = `scaleX(${v.toFixed(3)})`));
     wrap.classList.toggle('beat', L.beat);
@@ -23059,9 +23143,7 @@ function shuffleTap() {
 }
 // A random genre and one of its songs (never the one playing); with the scene, a new scene too.
 function shuffleSound(scene = true) {
-  const cur = settings.sndStyle;
-  const all = STYLES.flatMap((st) => styleVars(st).map((x) => [st, x] as const)).filter(([st, x]) => `${st.id}/${x}` !== cur);
-  const pick = all[(Math.random() * all.length) | 0];
+  const pick = randomSong();
   if (!pick) return;
   const h = rememberScene();
   histMute = true;
@@ -25496,7 +25578,7 @@ const LAYERS: BLayer[] = [
     sum: () => (settings.sndVol > 0 ? (styleById(settings.sndStyle.split('/')[0])?.name ?? 'Plays') : 'Silent'),
     groups: () => [{ picks: [
       { name: 'Silent', on: () => settings.sndVol === 0, go: () => bApply({ sndVol: 0 }) },
-      ...STYLES.map((st): BPick => ({ name: st.name, on: () => settings.sndVol > 0 && settings.sndStyle.startsWith(`${st.id}/`), go: () => useStyle(st, styleVars(st)[0], true) })),
+      ...styleGroups().map((g): BPick => ({ name: g.name, on: () => settings.sndVol > 0 && g.styles.some((st) => settings.sndStyle.startsWith(`${st.id}/`)), go: () => useStyle(g.styles[0], styleVars(g.styles[0])[0], true) })),
     ] }],
     extras: () => ['sndVol'],
     off: () => ({ sndVol: 0 }),
