@@ -283,7 +283,7 @@ let dpr = 1;
 
 // Most particles the Count slider offers: more with the WebGL renderer
 // (shuffles stay capped lower). The Density macro may go a little past it.
-const MAX_COUNT = new URLSearchParams(location.search).get('renderer') === '2d' ? 8000 : 100000;
+const MAX_COUNT = new URLSearchParams(location.search).get('renderer') === '2d' ? 8000 : 150000;
 // The particle count with the Density macro applied.
 const countNow = () => {
   const c = settings.count * densityK;
