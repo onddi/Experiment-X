@@ -339,14 +339,6 @@ export const GENRES: Genre[] = [
       { name: 'Head nod', kit: 'bap', k: 'X..x......X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b......b.....' },
       { name: 'G-funk', kit: '808', k: 'X.....x.X.......', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..u..b.f..b.u..' },
       { name: 'Half-time bap', kit: 'vinyl', k: 'X......x..x.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'b......b..b.....' },
-      { name: 'Crunk', kit: '808', bpm: 76, k: 'X.....X...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.....b...B.....' },
-      { name: 'Chopped & screwed', kit: '808', bpm: 64, k: 'X.......X.X.....', s: '....X.......X...', h: 'x...x...x...x...', b: 'B.......~.b.....' },
-      { name: 'Hyphy', kit: 'punchy', bpm: 100, k: 'X..X..X...X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b...b.b...' },
-      { name: 'Grime', kit: 'glitch', bpm: 140, k: 'X.........X.....', s: '........X.......', h: '..x...x...x...x.', b: 'B.....~...b.....' },
-      { name: 'Detroit', kit: '808', bpm: 100, k: 'X..X..X.X..X..X.', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..b..b.b..b..b.' },
-      { name: 'Cloud rap', kit: 'trap', bpm: 70, k: 'X.........X.....', c: '........X.......', h: 'x...x...x...x.x.', b: 'B.........~.....' },
-      { name: 'Beat tape', kit: 'vinyl', bpm: 88, k: 'X.....x.X..x....', s: '....X..o....X.o.', h: 'x.ox.ox.x.ox.ox.', b: 'b.....b.b..f....' },
-      { name: 'Memphis rap', kit: '808', bpm: 72, k: 'X..X......X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x...x..x..', b: 'B..b......~.b...' },
     ],
     versions: [
       { name: 'Lo-fi bap', from: 'Boom bap', sound: 'Lo-fi study', bpm: 86, swing: 0.5, kit: 'lofi' },
@@ -665,6 +657,209 @@ export const GENRES: Genre[] = [
     versions: [
       { name: 'Forest glitch', from: 'Glitch folk', sound: 'Flute forest', bpm: 118, kit: 'glitch' },
       { name: 'Porch at dusk', from: 'Campfire', sound: 'Kalimba campfire', bpm: 104, kit: 'afroperc' },
+    ],
+  },
+  {
+    id: 'crunk', name: 'Crunk', bpm: 76, swing: 0, kit: '808', bass: '808', fill: 'hats', beats: [
+      { name: 'Crunk', k: 'X.....X...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.....b...B.....' },
+      { name: 'Stomp', k: 'X..X..X.X.......', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', o: '..............X.', b: 'B..b..b.B.......' },
+      { name: 'Get low', k: 'X.......X..X....', c: '....X.......X...', h: 'xxx.xxx.xxx.xxx.', b: 'B.......B..b....' },
+      { name: 'Snap', k: 'X.........X.....', c: '....X.......X...', h: '....x.......x...', r: '..x.......x.....', b: 'B.........b.....' },
+      { name: 'Club', k: 'X...X...X...X...', c: '....X.......X...', h: 'x2x.x2x.x2x.x2x.', b: 'B...b...B...b...' },
+    ],
+  },
+  {
+    id: 'screwed', name: 'Chopped & screwed', bpm: 64, swing: 0.1, kit: '808', bass: '808', fill: 'drop', beats: [
+      { name: 'Screwed', k: 'X.......X.X.....', s: '....X.......X...', h: 'x...x...x...x...', b: 'B.......~.b.....' },
+      { name: 'Syrup', k: 'X.....X...X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.....~...b.....' },
+      { name: 'Slowed', k: 'X.........X.....', s: '....X.......X...', h: 'x.......x.......', r: '......o.......o.', b: 'B.........~.....' },
+      { name: 'Candy paint', k: 'X..x......X.....', c: '....X.......X...', h: 'x.xxx.x.x.xxx.x.', b: 'B..b......b.....' },
+    ],
+  },
+  {
+    id: 'hyphy', name: 'Hyphy', bpm: 100, swing: 0.1, kit: 'punchy', bass: '808', fill: 'hats', beats: [
+      { name: 'Hyphy', k: 'X..X..X...X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b...b.b...' },
+      { name: 'Thizz', k: 'X.X...X...X.X...', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'B.b...b...b.b...' },
+      { name: 'Bay slap', k: 'X..X.X....X..X..', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: '..x.....x.......', b: 'B..b.b....b..b..' },
+      { name: 'Ghost ride', k: 'X.....X.X.......', c: '....X..x....X...', h: 'x.x.x.x.x.x.x.x.', o: '......X.......X.', b: 'B.....b.b.......' },
+    ],
+  },
+  {
+    id: 'grime', name: 'Grime', bpm: 140, swing: 0, kit: 'glitch', bass: 'sub', fill: 'glitch', beats: [
+      { name: 'Grime', k: 'X.........X.....', s: '........X.......', h: '..x...x...x...x.', b: 'B.....~...b.....' },
+      { name: 'Eskibeat', k: 'X.....X...X.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', p: '...x......x..x..', b: 'B.....b...b.....' },
+      { name: 'Sino', k: 'X..X......X.....', c: '........X.......', h: '..x...x...x...x.', r: '.x......x.x.....', b: 'B..b......b.....' },
+      { name: 'Riddim', k: 'X.........X..X..', s: '........X.......', h: 'x.xxx.xxx.xxx.xx', b: 'B.........b..b..' },
+      { name: 'Gunshot', k: 'X.....X.X.......', s: '........X.......', t: '............2...', h: 'x...x...x...x...', b: 'B.....b.b.......' },
+    ],
+  },
+  {
+    id: 'detroit', name: 'Detroit', bpm: 100, swing: 0.05, kit: '808', bass: '808', fill: 'hats', beats: [
+      { name: 'Detroit', k: 'X..X..X.X..X..X.', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..b..b.b..b..b.' },
+      { name: 'Bounce', k: 'X.XX..X.X.XX..X.', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.bb..b.b.bb..b.' },
+      { name: 'Flint', k: 'X..X..X...X..X..', c: '....X.......X...', h: 'xxx.xxx.xxx.xxx.', o: '..............x.', b: 'B..b..b...b..b..' },
+      { name: 'Scam', k: 'X.X..X.XX.X..X..', c: '....X.......X...', h: 'x.x.x.x.x2x.x.x.', b: 'b.b..b.bb.b..b..' },
+    ],
+  },
+  {
+    id: 'cloud', name: 'Cloud rap', bpm: 70, swing: 0.05, kit: 'trap', bass: '808', fill: 'drop', beats: [
+      { name: 'Cloud rap', k: 'X.........X.....', c: '........X.......', h: 'x...x...x...x.x.', b: 'B.........~.....' },
+      { name: 'Haze', k: 'X.......X.......', c: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'B.......~.......' },
+      { name: 'Drift', k: 'X.....X...X.....', c: '........X.......', h: 'x...x.x.x...x.x.', r: '...o.......o....', b: 'B.....b...~.....' },
+      { name: 'Vapor', k: 'X.........X..x..', c: '........X.......', h: 'x?x?x?x?x?x?x?x?', b: 'B.........b..b..' },
+    ],
+  },
+  {
+    id: 'beattape', name: 'Beat tape', bpm: 88, swing: 0.5, kit: 'vinyl', bass: 'fingered', fill: 'toms', beats: [
+      { name: 'Beat tape', k: 'X.....x.X..x....', s: '....X..o....X.o.', h: 'x.ox.ox.x.ox.ox.', b: 'b.....b.b..f....' },
+      { name: 'Dilla', k: 'X.....xx..X.....', s: '....X.......X.o.', h: 'x.xxx.xxx.xxx.x.', b: 'b.....bb..b.....' },
+      { name: 'Sample chop', k: 'X..x...xX.......', s: '....X......oX...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b...bb.......' },
+      { name: 'Loop dig', k: 'X.......X.x.....', s: '....X.......X...', r: '..o.....o...o...', h: 'x.ox.ox.x.ox.ox.', b: 'b.......b.b.....' },
+      { name: 'Instrumental', kit: 'jazzclub', k: 'X......xX.......', s: '....X.......X...', h: 'xoxxxoxxxoxxxoxx', b: 'b..t..f.b..t..f.' },
+    ],
+  },
+  {
+    id: 'memphis', name: 'Memphis rap', bpm: 72, swing: 0, kit: '808', bass: '808', fill: 'hats', beats: [
+      { name: 'Memphis rap', k: 'X..X......X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x...x..x..', b: 'B..b......~.b...' },
+      { name: 'Tape hiss', kit: 'tape', k: 'X.....X...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x...x..x..', b: 'B.....b...b.....' },
+      { name: 'Cowbell', k: 'X..X..X...X.....', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', p: 'x.xx.x.xx.xx.x.x', b: 'B..b..b...b.....' },
+      { name: 'Dark side', k: 'X.........X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', o: '......X.........', p: '..x.......x.....', b: 'B.........~.b...' },
+    ],
+  },
+  {
+    id: 'industrial', name: 'Industrial techno', bpm: 135, swing: 0, kit: 'hard', bass: 'fuzz', fill: 'roll', beats: [
+      { name: 'Factory', k: 'X...X...X...X...', s: '....X.......X...', h: 'XoxoXoxoXoxoXoxo', p: '...x.....x....x.', b: 'b..b..b...b..b..' },
+      { name: 'Metal', k: 'X..xX...X..xX...', c: '....X.......X...', h: '..x...x...x...x.', p: 'x.x...x.x.x...x.', b: '..b...b...b...b.' },
+      { name: 'Rust', k: 'X...X...X...X.x.', h: 'x.xxx.xxx.xxx.xx', t: '.......o.......o', p: '.....x.......x..', b: 'b..bb..bb..bb..b' },
+      { name: 'Grinder', k: 'XxxxX...XxxxX...', s: '....X.......X...', h: '..X...X...X...X.', b: 'b...b...b...b...' },
+    ],
+  },
+  {
+    id: 'hardtechno', name: 'Hard techno', bpm: 150, swing: 0, kit: 'hard', bass: 'reese', fill: 'roll', beats: [
+      { name: 'Hard drive', k: 'X...X...X...X...', c: '....X.......X...', h: '..X...X...X...X.', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Schranz', k: 'X...X...X...X...', h: 'xxXxxxXxxxXxxxXx', p: '..x...x...x...x.', b: '..bb..bb..bb..bb' },
+      { name: 'Rumble kick', k: 'X...X...X...X...', h: '..X...X...X...X.', t: '.o.o.o.o.o.o.o.o', b: '.obb.obb.obb.obb' },
+      { name: 'Tool', k: 'X...X...X...X..x', c: '....X..x....X...', h: 'x.X.x.X.x.X.x.X.', b: '..b...b...b..fb.' },
+    ],
+  },
+  {
+    id: 'hypnotic', name: 'Hypnotic techno', bpm: 128, swing: 0, kit: 'minimal', bass: 'sub', fill: 'roll', beats: [
+      { name: 'Loop', k: 'X...X...X...X...', h: '..x...x...x...x.', r: '...x..x....x..x.', b: 'b..b..b..b..b.b.' },
+      { name: 'Deep', k: 'X...X...X...X...', h: '..x.?.x...x.?.x.', p: '.....?.......?..', b: '..b...b...b...b.' },
+      { name: 'Tunnel', k: 'X...X...X...X...', h: 'oxoxoxoxoxoxoxox', p: 'x..', b: '.b.b.b.b.b.b.b.b' },
+      { name: 'Fog', k: 'X...X...X...X...', r: '...?......x.....', h: '..x...x...x...x.', b: '..b...b...b...b.' },
+    ],
+  },
+  {
+    id: 'ebm', name: 'EBM', bpm: 120, swing: 0, kit: 'punchy', bass: 'synth', fill: 'toms', beats: [
+      { name: 'March', k: 'X...X...X...X...', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'bbbbbbbbbbbbbbbb' },
+      { name: 'Body', k: 'X..XX...X..XX...', s: '....X.......X...', h: '..x...x...x...x.', b: 'b.bbb.bbb.bbb.bb' },
+      { name: 'Drill sergeant', k: 'X...X...X...X...', c: '....X.......X...', p: 'x.x.x.x.x.x.x.x.', b: 'b.b.b.b.u.b.b.b.' },
+      { name: 'Cold war', k: 'X.....X.X.......', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'bbbbbbbbffffbbbb' },
+    ],
+  },
+  {
+    id: 'darkpsy', name: 'Dark psy', bpm: 148, swing: 0, kit: 'glitch', bass: 'psy', fill: 'glitch', beats: [
+      { name: 'Forest night', k: 'X...X...X...X...', h: '..x...x...x...x.', t: '...o......o.....', p: '..?..?...?..?...', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Twisted', k: 'X...X...X...X...', h: 'xoxxxoxxxoxxxoxx', p: '.x...?.x...?..x.', b: '.bbb.bbb.bub.bbb' },
+      { name: 'Swamp', k: 'X...X...X...X...', r: '..o...o..o...o..', h: '..x...x...x...x.', b: '.b~b.bbb.b~b.bbb' },
+      { name: 'Creature', k: 'X...X...X...X...', h: '..x.?.x...x.?.xx', p: '.......?.......?', b: '.bbb.bbb.bbb.bfb' },
+    ],
+  },
+  {
+    id: 'hitech', name: 'Hi-tech', bpm: 180, swing: 0, kit: 'glitch', bass: 'psy', fill: 'glitch', beats: [
+      { name: 'Hi-tech', k: 'X...X...X...X...', h: 'xxxxxxxxxxxxxxxx', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Glitch run', k: 'X...X...X...X...', h: 'x2x.x2x.x2x.x2x.', p: '...x..x....x..x.', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Fractal', k: 'X...X...X...X...', h: '..x...x...x...x.', p: 'x.xx.x.xx.xx.x.x', b: '.bub.bfb.bub.bfb' },
+      { name: 'Overdrive', k: 'X...X...X...X...', c: '....x.......x...', h: '3.x.3.x.3.x.3.x.', b: '.bbb.bbb.bbb.bbb' },
+    ],
+  },
+  {
+    id: 'psydub', name: 'Psy-dub', bpm: 90, swing: 0.1, kit: 'dub', bass: 'sub', fill: 'drop', beats: [
+      { name: 'Psy-dub', k: 'X.......X.......', s: '........X.......', h: '..x...x...x...x.', r: '......o.......o.', b: 'b.....b...b.....' },
+      { name: 'Mushroom', k: 'X.....x...X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: '..?.......?.....', b: 'b.....b...b..u..' },
+      { name: 'Space echo', k: 'X.........X.....', s: '........X.......', h: '..x...x...x...x.', b: 'b.........b.....' },
+      { name: 'Slow pulse', k: 'X...X...X...X...', s: '........X.......', h: '..x...x...x...x.', b: '.b.b.b.b.b.b.b.b' },
+    ],
+  },
+  {
+    id: 'neuro', name: 'Neurofunk', bpm: 174, swing: 0, kit: 'punchy', bass: 'growl', fill: 'roll', beats: [
+      { name: 'Neuro', k: 'X.........X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.........b.....' },
+      { name: 'Techstep', k: 'X.........XX....', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..b......bb..b.' },
+      { name: 'Robot', k: 'X......X..X.....', s: '....X.......X...', h: '..x...x...x...x.', p: '.x....x...x...x.', b: 'b......b..b.....' },
+      { name: 'Gnarly', k: 'X.X.......X..X..', s: '....X..o....X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.......b..b..' },
+    ],
+  },
+  {
+    id: 'darkstep', name: 'Darkstep', bpm: 176, swing: 0, kit: 'hard', bass: 'reese', fill: 'roll', beats: [
+      { name: 'Darkstep', k: 'X.........X.....', s: '....X.......X..x', h: 'x.xxx.xxx.xxx.xx', b: 'B.........B.....' },
+      { name: 'Amen dark', k: 'X.X.......XX....', s: '....X..o.o..X..o', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.......bb....' },
+      { name: 'Horror', k: 'X......X..X.....', s: '....X.......X.X.', t: '..............2.', h: 'x.x.x.x.x.x.x.x.', b: 'B......b..b.....' },
+      { name: 'Clatter', k: 'X..X......X.....', s: '....X..x.x..X..x', h: 'xxxxxxxxxxxxxxxx', b: 'b..b......b.....' },
+    ],
+  },
+  {
+    id: 'halftime', name: 'Halftime', bpm: 170, swing: 0, kit: 'punchy', bass: 'sub', fill: 'drop', beats: [
+      { name: 'Halftime', k: 'X.........X.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'B.........b.....' },
+      { name: 'Heavy', k: 'X.....X.........', s: '........X.......', h: '..x...x...x...x.', b: 'B.....b.........' },
+      { name: 'Crawl', k: 'X..X......X..X..', s: '........X.......', h: 'x.xxx.xxx.xxx.xx', b: 'B..b......b..b..' },
+      { name: 'Space', k: 'X...............', s: '........X.......', h: 'x...x...x...x...', r: '..............o.', b: 'B.......~.......' },
+    ],
+  },
+  {
+    id: 'liquid', name: 'Liquid', bpm: 174, swing: 0, kit: 'jungle', bass: 'sub', fill: 'roll', beats: [
+      { name: 'Liquid', k: 'X.........X.....', s: '....X.......X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.........b.....' },
+      { name: 'Soulful', k: 'X.......X.X.....', s: '....X..o....X...', h: 'x.x.x.x.x.x.x.x.', r: '..o.......o.....', b: 'b.......b.b.....' },
+      { name: 'Rolling', k: 'X.........X..x..', s: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', b: 'b.........b..f..' },
+      { name: 'Rain', k: 'X.....x...X.....', s: '....X.......X...', h: 'o.x.o.x.o.x.o.x.', b: 'b.....b...b.....' },
+    ],
+  },
+  {
+    id: 'deepdub', name: 'Deep dubstep', bpm: 140, swing: 0, kit: 'dub', bass: 'sub', fill: 'drop', beats: [
+      { name: 'Deep', k: 'X.........X.....', s: '........X.......', h: '..x...x...x...x.', b: 'B.........b.....' },
+      { name: 'Dread', k: 'X..........x....', s: '........X.......', r: '....o.......o...', h: 'x...x...x...x...', b: 'B..........~....' },
+      { name: 'Skank', k: 'X.....X.........', s: '........X.......', h: '..x.?.x...x.?.x.', b: 'B.....b.........' },
+      { name: 'Sub low', k: 'X...............', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'B.......b.......' },
+    ],
+  },
+  {
+    id: 'gabber', name: 'Gabber', bpm: 175, swing: 0, kit: 'hard', bass: 'dist808', fill: 'roll', beats: [
+      { name: 'Gabber', k: 'X...X...X...X...', h: '..x...x...x...x.', b: '..b...b...b...b.' },
+      { name: 'Hoover', k: 'X...X...X...X...', c: '....X.......X...', h: '..X...X...X...X.', b: '.bbb.bbb.bbb.bbb' },
+      { name: 'Terror', k: 'X.X.X.X.X.X.X.X.', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.b.b.b.b.b.b.' },
+      { name: 'Rave', k: 'X...X...X...X...', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', o: '..X...X...X...X.', b: '..b...b...b...b.' },
+    ],
+  },
+  {
+    id: 'breakcore', name: 'Breakcore', bpm: 180, swing: 0, kit: 'jungle', bass: 'fuzz', fill: 'glitch', beats: [
+      { name: 'Breakcore', k: 'X.X.......XX..X.', s: '....X..o.o..X.2.', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.......bb....' },
+      { name: 'Amen smash', k: 'X.X...X...XX....', s: '....X..xX...X.xx', h: 'xxxxxxxxxxxxxxxx', b: 'b.b...b...bb....' },
+      { name: 'Chopped', k: 'X..X..X...X.X...', s: '...X..X.X.....X.', t: '..........4.....', h: 'x.x.x.x.x.x.x.x.', b: 'b..b..b...b.b...' },
+      { name: 'Glitch storm', k: 'X.X.X...X..X.X..', s: '....X..3....X..4', h: 'x2x.x2x.x3x.x2x.', b: 'b.b.b...b..b.b..' },
+    ],
+  },
+  {
+    id: 'darksynth', name: 'Darksynth', bpm: 110, swing: 0, kit: 'punchy', bass: 'fuzz', fill: 'toms', beats: [
+      { name: 'Darksynth', k: 'X...X...X...X...', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'bbbbbbbbbbbbbbbb' },
+      { name: 'Chase', k: 'X.X...X.X.X...X.', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b.b.b.b.b.b.b.b.' },
+      { name: 'Midnight', k: 'X.......X.X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.bb.bb.b.bb.bb.' },
+      { name: 'Doom', k: 'X.....X.X.......', s: '....X.......X...', t: '............2.2.', h: '..x...x...x...x.', b: 'b.....b.b.......' },
+    ],
+  },
+  {
+    id: 'darkwave', name: 'Darkwave', bpm: 120, swing: 0, kit: 'linn', bass: 'picked', fill: 'toms', beats: [
+      { name: 'Coldwave', k: 'X.......X.......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.b.b.b.b.b.b.b.' },
+      { name: 'Post-punk', k: 'X.X.....X.X.....', s: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'bbbbbbbbbbbbbbbb' },
+      { name: 'Gothic', k: 'X...X...X...X...', s: '....X.......X...', h: '..x...x...x...x.', b: 'b..b..b.b..b..b.' },
+      { name: 'Minimal wave', k: 'X.....X.X.......', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', r: '..o.......o.....', b: 'b.....b.b.......' },
+    ],
+  },
+  {
+    id: 'witch', name: 'Witch house', bpm: 70, swing: 0, kit: 'trap', bass: 'sub', fill: 'drop', beats: [
+      { name: 'Witch house', k: 'X.........X.....', c: '........X.......', h: 'x...x...x...x...', b: 'B.........~.....' },
+      { name: 'Occult', k: 'X.....X...X.....', c: '........X.......', h: 'x.x.x.x.x.x.x.x.', p: '..x.......x.....', b: 'B.....b...b.....' },
+      { name: 'Drag', k: 'X.......X..x....', s: '........X.......', h: 'x...x...x2..x...', b: 'B.......b..b....' },
+      { name: 'Crypt', k: 'X...............', c: '........X.......', r: '..o...o...o...o.', b: 'B.......~.......' },
     ],
   },
 ];
