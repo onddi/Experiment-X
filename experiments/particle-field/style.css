@@ -3244,6 +3244,11 @@ button.sndp-live-name { cursor: pointer; }
   body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 }
+/* A family's sub-genres over the song list: one row that scrolls sideways. */
+.rp-tabs { position: static; overflow-x: auto; scrollbar-width: none; }
+.rp-tabs button { flex: none; }
+.rp-tabs + .rp-sort { top: 0; }
+
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .snd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
