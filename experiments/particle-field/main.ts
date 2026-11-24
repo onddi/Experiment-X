@@ -2758,6 +2758,8 @@ imageInput.addEventListener('change', async () => {
       buildShape();
       imageColoursOn(true);
       void buildPlate(shapeMedia).catch(() => {});
+      // The video-only controls (updates per second, Travel ↔ Jump) show now.
+      refresh();
     }, { once: true });
     void v.play().catch(() => {});
     return;
@@ -2771,6 +2773,8 @@ imageInput.addEventListener('change', async () => {
       buildShape();
       imageColoursOn(true);
       void buildPlate(shapeMedia).catch(() => {});
+      // The video-only controls (updates per second, Travel ↔ Jump) show now.
+      refresh();
       return;
     }
   }
@@ -14641,7 +14645,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['morph', 'beatSnap'],
   look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey'],
   colour: ['palette', 'colorBy', 'customColors', 'palSat', 'palLight', 'palBg'],
-  shape: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
+  shape: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'imageRate', 'imageJump', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['speed', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
