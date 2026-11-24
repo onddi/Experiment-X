@@ -2492,6 +2492,7 @@ let mediaBmp: ImageBitmap | null = null;
 let mediaBusy = false;
 let mediaNoBmp = false;
 function mediaStop() {
+  if (audio.source === 'video') audio.stop();
   shapeMedia?.video?.pause();
   shapeMedia = null;
   mediaBmp?.close();
@@ -11005,7 +11006,7 @@ function listenSummary() {
   const auto = settings.audioGenre === 'general';
   const feel = auto ? (audio.autoFeel === 'general' ? 'Auto' : `Auto: ${feelName(audio.autoFeel)}`) : feelName(settings.audioGenre);
   const bpm = audio.levels.bpm ? ` · ${Math.round(audio.levels.bpm)} BPM` : '';
-  const SHORT = { off: '', mic: 'Mic', tab: 'Tab', file: 'File', feed: 'X-Frame' } as const;
+  const SHORT = { off: '', mic: 'Mic', tab: 'Tab', file: 'File', feed: 'X-Frame', video: 'Video' } as const;
   return `${SHORT[audio.source]} · ${feel}${bpm}`;
 }
 const ft = () => true;
@@ -21262,6 +21263,7 @@ function renderAudio() {
       <button type="button" data-src="mic">Mic</button>
       <button type="button" data-src="tab">Share tab</button>
       <button type="button" data-src="file">File</button>
+      <button type="button" data-src="video" hidden>Video</button>
       <button type="button" data-src="feed" hidden>From X-Frame</button>
       <button type="button" data-src="off">Stop</button>
     </div>
@@ -21292,6 +21294,7 @@ function renderAudio() {
     mic: 'Turn the music up a bit. Headphones won’t reach the mic. An audio interface or a loopback device (e.g. BlackHole, Loopback) can be picked as the Input for a clean feed; browsers use its first two channels.',
     tab: 'Keep the shared tab playing. Stop sharing from the browser bar or press Stop.',
     file: 'The file loops until you press Stop.',
+    video: 'The shape’s video, with its own sound. Stop mutes it; the picture plays on.',
     feed: 'Follows the audio player shown alongside in X-Frame. Play and pause there.',
   };
 
@@ -21358,6 +21361,9 @@ function renderAudio() {
         feedDeclined = true;
       } else if (src === 'feed') startFeed();
       else if (src === 'file') fileInput.click();
+      else if (src === 'video') {
+        if (shapeMedia?.video) void audio.start('video', undefined, shapeMedia.video);
+      }
       else {
         status.textContent = src === 'mic' ? 'Asking for the microphone…' : 'Pick a tab to share…';
         void audio.start(src as 'mic' | 'tab');
@@ -21370,7 +21376,10 @@ function renderAudio() {
     fileInput.value = '';
   });
 
+  const videoBtn = wrap.querySelector<HTMLButtonElement>('[data-src=video]')!;
   meterLoop(wrap, () => {
+    // Video: offered while the shape is a video (its sound, in time with it).
+    videoBtn.hidden = !shapeMedia?.video;
     const L = audio.levels;
     [L.sub, L.bass, L.mid, L.treble].forEach((v, k) => (bars[k].style.transform = `scaleX(${v.toFixed(3)})`));
     wrap.classList.toggle('beat', L.beat);
