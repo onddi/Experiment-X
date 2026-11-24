@@ -2517,7 +2517,9 @@ async function buildPlate(m: NonNullable<typeof shapeMedia>) {
   }
   mediaPlate = { src: m.src, w: c.width, h: c.height, d };
   shapeKey = '';
+  liveShape = true;
   buildShape();
+  liveShape = false;
 }
 // The picture as it is now (drawn into a canvas small enough to sample).
 function mediaFrame(): HTMLCanvasElement | null {
@@ -2705,6 +2707,8 @@ imageInput.addEventListener('change', async () => {
       buildShape();
       imageColoursOn(true);
       void buildPlate(shapeMedia).catch(() => {});
+      // The video-only controls (updates per second, Travel ↔ Jump) show now.
+      refresh();
     }, { once: true });
     void v.play().catch(() => {});
     return;
@@ -2718,6 +2722,8 @@ imageInput.addEventListener('change', async () => {
       buildShape();
       imageColoursOn(true);
       void buildPlate(shapeMedia).catch(() => {});
+      // The video-only controls (updates per second, Travel ↔ Jump) show now.
+      refresh();
       return;
     }
   }
@@ -2757,7 +2763,8 @@ imageInput.addEventListener('change', async () => {
 // plays ('camera', Picture colours).
 function imageColoursOn(moving = false) {
   const prev = settings.colorBy;
-  const want = moving ? 'camera' : 'image';
+  // Image colours for videos too: true hues (Picture colours rank by brightness).
+  const want = 'image';
   if (prev === want) return buildShades();
   set('colorBy', want);
   showToast(`Particles take the ${moving ? 'video\u2019s' : 'image\u2019s'} colours`, ['Undo', () => set('colorBy', prev)]);
@@ -4132,6 +4139,15 @@ function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, 
     if (settings.colorBy === 'image') buildShades();
     return;
   }
+  // A moving picture keeps its shades for half a second and only re-matches
+  // the pixels to them (the median cut is the costly part).
+  const now = performance.now();
+  if (liveShape && imgShades && imgNear && now - imgFitAt < 500) {
+    mapShades(d, px0, rank, imgShades, imgNear);
+    imgCol = { rank, iw, ih, ix, iy, step };
+    return;
+  }
+  imgFitAt = now;
   // Median cut: keep splitting the box with the widest colour spread at its
   // median, until there are as many boxes as shades.
   // On a sample of at most 20k pixels, so a big screen stays quick.
@@ -4178,19 +4194,34 @@ function imageColours(d: Uint8ClampedArray, iw: number, ih: number, ix: number, 
   // Darkest to brightest, so effects that read the shade as a level still work.
   pal.sort((p, q) => p[0] * 0.299 + p[1] * 0.587 + p[2] * 0.114 - (q[0] * 0.299 + q[1] * 0.587 + q[2] * 0.114));
   while (pal.length < SHADES) pal.push(pal[pal.length - 1]);
-  for (const k of px0) {
-    const r = d[k * 4], g = d[k * 4 + 1], bl = d[k * 4 + 2];
-    let best = 0, bd = 1e9;
-    for (let s = 0; s < SHADES; s++) {
-      const p = pal[s];
-      const dd = (p[0] - r) ** 2 * 0.3 + (p[1] - g) ** 2 * 0.59 + (p[2] - bl) ** 2 * 0.11;
-      if (dd < bd) (bd = dd), (best = s);
-    }
-    rank[k] = best / SHADES + 0.5 / SHADES;
-  }
+  imgNear = new Int16Array(32768).fill(-1);
+  mapShades(d, px0, rank, pal, imgNear);
   imgShades = pal;
   imgCol = { rank, iw, ih, ix, iy, step };
   if (settings.colorBy === 'image') buildShades();
+}
+let imgFitAt = 0;
+// Nearest shade per 5-bit colour for the current shades (-1: not worked out yet).
+let imgNear: Int16Array | null = null;
+// Each pixel's shade, looked up once per 5-bit colour (most pixels share a
+// few thousand of them) instead of tried against every shade per pixel.
+function mapShades(d: Uint8ClampedArray, px0: number[], rank: Float32Array, pal: Rgb[], near: Int16Array) {
+  for (const k of px0) {
+    const r = d[k * 4], g = d[k * 4 + 1], bl = d[k * 4 + 2];
+    const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (bl >> 3);
+    let best = near[key];
+    if (best < 0) {
+      let bd = 1e9;
+      best = 0;
+      for (let s = 0; s < SHADES; s++) {
+        const p = pal[s];
+        const dd = (p[0] - r) ** 2 * 0.3 + (p[1] - g) ** 2 * 0.59 + (p[2] - bl) ** 2 * 0.11;
+        if (dd < bd) (bd = dd), (best = s);
+      }
+      near[key] = best;
+    }
+    rank[k] = best / SHADES + 0.5 / SHADES;
+  }
 }
 function imgShade(i: number) {
   const c = imgCol;
@@ -4337,7 +4368,10 @@ function sampleImage(): [number, number][] {
     lum[k] = (0.299 * d[k * 4] + 0.587 * d[k * 4 + 1] + 0.114 * d[k * 4 + 2]) / 255;
     alpha[k] = d[k * 4 + 3] / 255;
   }
-  if (!camOn) imageColours(d, iw, ih, ix, iy, step);
+  // Image colours (a 64-colour median cut and every pixel matched to it) are
+  // read only by Colour by: Image; a moving picture re-shapes many times a
+  // second, so it skips them unless they're in use.
+  if (!camOn && (!liveShape || settings.colorBy === 'image')) imageColours(d, iw, ih, ix, iy, step);
   const wt = new Float32Array(N);
   const subject = () => {
     // Pixels that differ from the corner colour (the background).
@@ -4365,12 +4399,7 @@ function sampleImage(): [number, number][] {
         wt[y * iw + x] = m.data[my * m.w + mx] > 0.5 ? 1 : 0;
       }
     imgWt = { wt, ix, iy, iw, ih, step };
-    const pts: [number, number][] = [];
-    for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
-      const k = (Math.random() * N) | 0;
-      if (wt[k] > 0) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
-    }
-    return pts;
+    return liveShape ? [] : ptsFromWt(imgWt, n);
   }
   let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode;
   // A video or GIF with its background worked out: the parts that differ from it.
@@ -4483,10 +4512,23 @@ function sampleImage(): [number, number][] {
     else for (let k = 0; k < N; k++) wt[k] = Math.min(1, (wt[k] / max) * 2.5) ** 0.8;
   }
   imgWt = { wt, ix, iy, iw, ih, step };
+  // A live picture's update places the particles itself (keepOnPicture).
+  return liveShape ? [] : ptsFromWt(imgWt, n);
+}
+// Spots on a picture's weights: drawn from the pixels that have any weight
+// (not the whole frame, which for a small figure meant most draws missed),
+// each kept by its weight.
+function ptsFromWt(M: NonNullable<typeof imgWt>, count: number): [number, number][] {
+  const { wt, ix, iy, iw, step } = M;
+  const N = wt.length;
+  const cand = new Int32Array(N);
+  let c = 0;
+  for (let k = 0; k < N; k++) if (wt[k] > 0) cand[c++] = k;
   const pts: [number, number][] = [];
-  for (let tries = 0; pts.length < n && tries < n * 60; tries++) {
-    const k = (Math.random() * N) | 0;
-    if (Math.random() < wt[k]) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
+  if (!c) return pts;
+  for (let tries = 0; pts.length < count && tries < count * 30; tries++) {
+    const k = cand[(Math.random() * c) | 0];
+    if (wt[k] >= 1 || Math.random() < wt[k]) pts.push([(ix + (k % iw) + Math.random()) * step, (iy + ((k / iw) | 0) + Math.random()) * step]);
   }
   return pts;
 }
@@ -5200,8 +5242,11 @@ function buildShape() {
     return false;
   });
   if (S.shape === 'image' || S.shape === 'camera') {
-    pts.push(...sampleImage());
-    if (liveShape && imgWt && pts.length && keepOnPicture(pts)) return;
+    const sp = sampleImage();
+    if (liveShape && imgWt) {
+      if (keepOnPicture()) return;
+      for (const q of ptsFromWt(imgWt, n)) pts.push(q);
+    } else for (const q of sp) pts.push(q);
   }
   if (!pts.length) {
     for (let i = 0; i < n; i++) {
@@ -5226,7 +5271,8 @@ function buildShape() {
   }
   // A live picture (camera or video) re-shapes several times a second: the
   // quick match keeps up where the careful one would eat the frame.
-  const owner = liveShape ? matchCurve(tx, ty) : matchNearest(tx, ty);
+  // The careful match takes seconds at very high counts: past 40k the quick one.
+  const owner = liveShape || n > 40000 ? matchCurve(tx, ty) : matchNearest(tx, ty);
   shapeInfo = { targets: pts.length, ms: performance.now() - tShape };
   for (let t = 0; t < n; t++) {
     hx[owner[t]] = tx[t];
@@ -5317,7 +5363,7 @@ function playEntrance() {
 // still part stays put and only what moved re-forms. (Giving every particle a
 // fresh random spot ten times a second kept them all travelling: the shape
 // never filled in and swirled.) Returns false to rebuild from scratch.
-function keepOnPicture(pts: [number, number][]): boolean {
+function keepOnPicture(): boolean {
   const M = imgWt!;
   const free: number[] = [];
   // Coverage in cells of 4×4 samples: how many particles stay in each.
@@ -5325,81 +5371,136 @@ function keepOnPicture(pts: [number, number][]): boolean {
   const cw = Math.ceil(M.iw / CS);
   const ch = Math.ceil(M.ih / CS);
   const kept = new Float32Array(cw * ch);
+  const wAt = (x: number, y: number) => (x >= 0 && y >= 0 && x < M.iw && y < M.ih ? M.wt[y * M.iw + x] : 0);
   for (let i = 0; i < n; i++) {
     const x = Math.floor(hx[i] / M.step) - M.ix;
     const y = Math.floor(hy[i] / M.step) - M.iy;
-    const inside = x >= 0 && y >= 0 && x < M.iw && y < M.ih;
-    const v = inside ? M.wt[y * M.iw + x] : 0;
+    // A little slack at the edge: an outline that flickers by a pixel
+    // shouldn't send its particles off and back every update.
+    const v = Math.max(wAt(x, y), wAt(x - 2, y), wAt(x + 2, y), wAt(x, y - 2), wAt(x, y + 2));
     if (!(Math.random() < Math.min(1, v * 1.5))) free.push(i);
-    else kept[((y / CS) | 0) * cw + ((x / CS) | 0)]++;
+    else kept[Math.min(ch - 1, Math.max(0, (y / CS) | 0)) * cw + Math.min(cw - 1, Math.max(0, (x / CS) | 0))]++;
   }
   if (free.length > n * 0.9) return false;
   const m = free.length;
   if (!m) return true;
-  // What each cell should hold (its share of the picture) less what stays:
-  // the freed particles go where the picture is new (a limb's new place)
-  // before they thicken what's already covered.
-  const want = new Float32Array(cw * ch);
+  // What each cell should hold (its share of the picture) less what stays.
+  const C = cw * ch;
+  const want = new Float32Array(C);
   let wsum = 0;
-  for (let y = 0; y < M.ih; y++)
+  for (let y = 0; y < M.ih; y++) {
+    const row = ((y / CS) | 0) * cw;
     for (let x = 0; x < M.iw; x++) {
       const v = M.wt[y * M.iw + x];
       if (v > 0) {
-        want[((y / CS) | 0) * cw + ((x / CS) | 0)] += v;
+        want[row + ((x / CS) | 0)] += v;
         wsum += v;
       }
     }
-  const cellOf = (x: number, y: number) => {
-    const gx = Math.floor(x / M.step) - M.ix;
-    const gy = Math.floor(y / M.step) - M.iy;
-    return gx >= 0 && gy >= 0 && gx < M.iw && gy < M.ih ? ((gy / CS) | 0) * cw + ((gx / CS) | 0) : -1;
-  };
-  const inCell = new Float32Array(cw * ch);
-  const pc = new Int32Array(pts.length);
-  for (let t = 0; t < pts.length; t++) {
-    pc[t] = cellOf(pts[t][0], pts[t][1]);
-    if (pc[t] >= 0) inCell[pc[t]]++;
   }
-  const per = wsum > 0 ? n / wsum : 0;
-  const wt = new Float64Array(pts.length);
-  let total = 0;
-  for (let t = 0; t < pts.length; t++) {
-    const c = pc[t];
-    // A little for everywhere, so the shape still evens out once filled.
-    const gap = c >= 0 ? Math.max(0, want[c] * per - kept[c]) / inCell[c] : 0;
-    wt[t] = gap + 0.02;
-    total += wt[t];
-  }
-  const cum = new Float64Array(pts.length);
+  if (!wsum) return false;
+  const per = n / wsum;
+  // The gaps, in cells and in blocks of 8×8 cells (to find the nearest fast).
+  const gap = new Float32Array(C);
+  const BS = 8;
+  const bw = Math.ceil(cw / BS);
+  const bh = Math.ceil(ch / BS);
+  const bgap = new Float32Array(bw * bh);
+  const cum = new Float64Array(C);
   let acc = 0;
-  for (let t = 0; t < pts.length; t++) cum[t] = acc += wt[t];
-  const fx = new Float32Array(m), fy = new Float32Array(m), tx = new Float32Array(m), ty = new Float32Array(m);
-  for (let j = 0; j < m; j++) {
-    // Paired from where each particle is now, not its old spot: one that's
-    // still on its way shouldn't be sent back to start from there.
-    const i = free[j];
-    [fx[j], fy[j]] = place.on ? unplaced(px[i], py[i]) : [px[i], py[i]];
-    const r = Math.random() * total;
-    let lo = 0;
-    let hi = pts.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (cum[mid] < r) lo = mid + 1;
-      else hi = mid;
+  for (let c = 0; c < C; c++) {
+    const d = want[c] * per;
+    gap[c] = Math.max(0, d - kept[c]);
+    if (gap[c] > 0) bgap[((((c / cw) | 0) / BS) | 0) * bw + (((c % cw) / BS) | 0)] += gap[c];
+    cum[c] = acc += d;
+  }
+  // Each freed particle takes the nearest gap to where it is now (not its old
+  // spot), so it moves a short way to where the picture is new: a raised arm
+  // pulls the particles from where the arm was, not from across the figure.
+  // Pairing by rank along a curve sent many across the shape, which read as
+  // chaos. With no gap left, a spot anywhere on the picture by its share.
+  const pickIn = (c: number, j: number) => {
+    const cx0 = (c % cw) * CS;
+    const cy0 = ((c / cw) | 0) * CS;
+    let gx = cx0 + CS / 2;
+    let gy = cy0 + CS / 2;
+    for (let t = 0; t < 12; t++) {
+      const x = cx0 + ((Math.random() * CS) | 0);
+      const y = cy0 + ((Math.random() * CS) | 0);
+      const v = wAt(x, y);
+      if (v > 0 && (v >= 1 || Math.random() < v)) {
+        gx = x;
+        gy = y;
+        break;
+      }
     }
-    tx[j] = pts[lo][0];
-    ty[j] = pts[lo][1];
+    tx[j] = (M.ix + gx + Math.random()) * M.step;
+    ty[j] = (M.iy + gy + Math.random()) * M.step;
+  };
+  const tx = new Float32Array(m), ty = new Float32Array(m);
+  const RB = Math.max(bw, bh);
+  for (let j = 0; j < m; j++) {
+    const i = free[j];
+    let qx = px[i];
+    let qy = py[i];
+    if (place.on) [qx, qy] = unplaced(qx, qy);
+    const ccx = Math.min(cw - 1, Math.max(0, ((qx / M.step - M.ix) / CS) | 0));
+    const ccy = Math.min(ch - 1, Math.max(0, ((qy / M.step - M.iy) / CS) | 0));
+    const bx0 = (ccx / BS) | 0;
+    const by0 = (ccy / BS) | 0;
+    // Nearest block with a gap (rings outward), then the nearest gap cell in it.
+    let blk = -1;
+    for (let r = 0; r <= RB && blk < 0; r++) {
+      let bd = Infinity;
+      for (let by = by0 - r; by <= by0 + r; by++) {
+        if (by < 0 || by >= bh) continue;
+        const edge = by === by0 - r || by === by0 + r;
+        for (let bx = bx0 - r; bx <= bx0 + r; bx += edge ? 1 : 2 * r || 1) {
+          if (bx < 0 || bx >= bw) continue;
+          const b = by * bw + bx;
+          if (bgap[b] < 0.5) continue;
+          const dd = (bx - bx0) ** 2 + (by - by0) ** 2;
+          if (dd < bd) (bd = dd), (blk = b);
+        }
+      }
+    }
+    let cell = -1;
+    if (blk >= 0) {
+      const bx = blk % bw;
+      const by = (blk / bw) | 0;
+      let bd = Infinity;
+      for (let cy = by * BS; cy < Math.min(ch, by * BS + BS); cy++)
+        for (let cx = bx * BS; cx < Math.min(cw, bx * BS + BS); cx++) {
+          const c = cy * cw + cx;
+          if (gap[c] < 0.5) continue;
+          const dd = (cx - ccx) ** 2 + (cy - ccy) ** 2;
+          if (dd < bd) (bd = dd), (cell = c);
+        }
+      if (cell >= 0) {
+        gap[cell]--;
+        bgap[blk]--;
+      } else bgap[blk] = 0;
+    }
+    if (cell < 0) {
+      const r = Math.random() * acc;
+      let lo = 0;
+      let hi = C - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cum[mid] < r) lo = mid + 1;
+        else hi = mid;
+      }
+      cell = lo;
+    }
+    pickIn(cell, j);
+    hx[i] = tx[j];
+    hy[i] = ty[j];
   }
-  const owner = matchCurve(tx, ty, fx, fy);
-  // Jump: one with far to go vanishes and comes back on its spot.
-  const jump = settings.imageMove === 'jump' ? (Math.min(w, h) * 0.06) ** 2 : Infinity;
-  for (let t = 0; t < m; t++) {
-    const i = free[owner[t]];
-    hx[i] = tx[t];
-    hy[i] = ty[t];
-  }
-  // Every particle still far from its spot (newly sent or still on its way).
-  if (jump < Infinity)
+  // Jump: every particle still far from its spot (newly sent or on its way)
+  // vanishes and comes back on it.
+  if (settings.imageJump > 0) {
+    // 0 travels everything; 1 jumps anything farther than 2% of the screen.
+    const jump = (Math.min(w, h) * (0.02 + 0.5 * (1 - settings.imageJump) ** 2)) ** 2;
     for (let i = 0; i < n; i++) {
       const [ex, ey] = place.on ? placed(hx[i], hy[i]) : [hx[i], hy[i]];
       if ((ex - px[i]) ** 2 + (ey - py[i]) ** 2 > jump) {
@@ -5408,6 +5509,7 @@ function keepOnPicture(pts: [number, number][]): boolean {
         vx[i] = vy[i] = 0;
       }
     }
+  }
   return true;
 }
 
@@ -5434,22 +5536,33 @@ function hilbert(x: number, y: number) {
   }
   return d;
 }
+// Both lists are put in curve order with a counting sort (keys cut to 2^18
+// places, 2×2 cells of the 1024 grid), not a comparison sort: a live picture
+// matches tens of thousands of particles many times a second.
+const CURVE_K = 1 << 18;
+const curveCnt = new Int32Array(CURVE_K + 1);
+function curveOrder(xs: ArrayLike<number>, ys: ArrayLike<number>, m: number, kx: number, ky: number): Int32Array {
+  const cl = (v: number) => (v < 0 ? 0 : v > 1023 ? 1023 : v | 0);
+  const key = new Int32Array(m);
+  const cnt = curveCnt.fill(0);
+  for (let i = 0; i < m; i++) {
+    const k = hilbert(cl(xs[i] * kx), cl(ys[i] * ky)) >> 2;
+    key[i] = k;
+    cnt[k + 1]++;
+  }
+  for (let k = 0; k < CURVE_K; k++) cnt[k + 1] += cnt[k];
+  const out = new Int32Array(m);
+  for (let i = 0; i < m; i++) out[cnt[key[i]]++] = i;
+  return out;
+}
 function matchCurve(tx: Float32Array, ty: Float32Array, fx: ArrayLike<number> = px, fy: ArrayLike<number> = py): Int32Array {
   const m = tx.length;
   const kx = 1023 / Math.max(1, w);
   const ky = 1023 / Math.max(1, h);
-  const B = 262144; // more than the most particles: key = place × B + index
-  const cl = (v: number) => (v < 0 ? 0 : v > 1023 ? 1023 : v | 0);
-  const a = new Float64Array(m);
-  const b = new Float64Array(m);
-  for (let i = 0; i < m; i++) {
-    a[i] = hilbert(cl(fx[i] * kx), cl(fy[i] * ky)) * B + i;
-    b[i] = hilbert(cl(tx[i] * kx), cl(ty[i] * ky)) * B + i;
-  }
-  a.sort();
-  b.sort();
+  const a = curveOrder(fx, fy, m, kx, ky);
+  const b = curveOrder(tx, ty, m, kx, ky);
   const owner = new Int32Array(m);
-  for (let r = 0; r < m; r++) owner[b[r] % B] = a[r] % B;
+  for (let r = 0; r < m; r++) owner[b[r]] = a[r];
   return owner;
 }
 
@@ -11298,7 +11411,7 @@ const CONTROLS: Control[] = [
   { kind: 'note', text: 'Press Draw, then draw with your mouse or finger; the particles take the shape as you go. The line you draw fades after a moment (Show the outline keeps it). Press Draw again to play with the field. Your drawing is kept on this device.', show: () => settings.shape === 'drawing' },
   { kind: 'mediapick', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
-  { kind: 'choice', key: 'imageMove', label: 'Particles', options: [['travel', 'Travel'], ['jump', 'Jump']], show: () => settings.shape === 'image' && !!shapeMedia },
+  { kind: 'range', key: 'imageJump', label: 'Travel ↔ Jump', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'travel' : v === 1 ? 'jump' : `jump past ${Math.round((0.02 + 0.5 * (1 - v) ** 2) * 100)}%`), show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
 
@@ -14403,7 +14516,7 @@ const ESSENTIALS: Record<string, (keyof Settings)[]> = {
   transitions: ['morph', 'beatSnap'],
   look: ['render', 'mixStyles', 'count', 'size', 'trail', 'glow', 'spriteScale', 'spriteTurn', 'spriteTint', 'spriteFps', 'spriteCols', 'spriteRows', 'spriteRow', 'spriteKey'],
   colour: ['palette', 'colorBy', 'customColors', 'palSat', 'palLight', 'palBg'],
-  shape: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'shapeSize', 'homeStrength'],
+  shape: ['shape', 'shapeText', 'shapeFont', 'shapeIcon', 'shapeGeo', 'shapePattern', 'patScale', 'patForm', 'patVary', 'shapeSolid', 'shapeLive', 'specLayout', 'specBands', 'specGap', 'specRise', 'specFall', 'specGain', 'specPeaks', 'shapeSeq', 'shapeSeqEvery', 'shapeSeqSec', 'drawOutline', 'shapeSpin', 'imageMode', 'imageRate', 'imageJump', 'shapeSize', 'homeStrength'],
   life: ['lifespan', 'emitter', 'launchSpeed'],
   particles: ['speed', 'friction', 'jitter'],
   forces: ['gravity', 'wind', 'windDir'],
@@ -18611,6 +18724,8 @@ function pickBeatIdx(i: number) {
   const was = g ? (g.beats[settings.sndBeat]?.kit ?? g.kit) : null;
   const next: Partial<Settings> = { sndBeat: i };
   if (g && settings.sndKit === was) next.sndKit = g.beats[i]?.kit ?? g.kit;
+  const wasBpm = g ? (g.beats[settings.sndBeat]?.bpm ?? g.bpm) : null;
+  if (g && settings.sndTempo === wasBpm) next.sndTempo = g.beats[i]?.bpm ?? g.bpm;
   Object.assign(settings, next);
   changed(new Set(Object.keys(next) as (keyof Settings)[]));
   refresh();
@@ -18746,7 +18861,7 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
   const preset = [...mySoundPresets(), ...SOUND_PRESETS].find(([n]) => n === soundName)?.[1] ?? {};
   const look = soundOf(preset);
   if (g) {
-    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.beats[Math.max(0, bi)]?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
+    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.beats[Math.max(0, bi)]?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.beats[Math.max(0, bi)]?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
     look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.55);
     look.sndBass = Math.max(Number(look.sndBass) || 0, 0.5);
   } else if (st?.varBeats?.[v]) {
@@ -19555,7 +19670,7 @@ function patternFold(): HTMLElement {
     const r = Math.floor(k / 16), s = k % 16;
     return [...PAT_CHARS[r]].some((ch) => {
       const line = bt[ch as keyof typeof bt];
-      return !!line && ch !== 'name' && line[s % line.length] !== '.';
+      return typeof line === 'string' && ch !== 'name' && line[s % line.length] !== '.';
     });
   };
   const edit = (k: number) => {

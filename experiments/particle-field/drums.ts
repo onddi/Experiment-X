@@ -218,8 +218,8 @@ export const KITS: Record<DrumKit, KitDef> = {
 /** The drums a beat can use: kick, snare, clap, hat, open hat, rim, perc, tom, crash. */
 export const DRUM_ROWS = ['k', 's', 'c', 'h', 'o', 'r', 'p', 't', 'y'] as const;
 export type DrumRow = (typeof DRUM_ROWS)[number];
-/** A beat; kit: its own kit, where the genre's would make every beat sound alike. */
-export type Beat = { name: string; kit?: DrumKit } & Partial<Record<DrumRow | 'b', string>>;
+/** A beat; kit, bpm: its own kit or tempo, where the genre's would make every beat sound alike. */
+export type Beat = { name: string; kit?: DrumKit; bpm?: number } & Partial<Record<DrumRow | 'b', string>>;
 export type FillStyle = 'roll' | 'toms' | 'hats' | 'glitch' | 'drop';
 export interface Genre {
   id: string;
@@ -339,6 +339,14 @@ export const GENRES: Genre[] = [
       { name: 'Head nod', kit: 'bap', k: 'X..x......X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b..b......b.....' },
       { name: 'G-funk', kit: '808', k: 'X.....x.X.......', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..u..b.f..b.u..' },
       { name: 'Half-time bap', kit: 'vinyl', k: 'X......x..x.....', s: '........X.......', h: 'x.x.x.x.x.x.x.x.', b: 'b......b..b.....' },
+      { name: 'Crunk', kit: '808', bpm: 76, k: 'X.....X...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B.....b...B.....' },
+      { name: 'Chopped & screwed', kit: '808', bpm: 64, k: 'X.......X.X.....', s: '....X.......X...', h: 'x...x...x...x...', b: 'B.......~.b.....' },
+      { name: 'Hyphy', kit: 'punchy', bpm: 100, k: 'X..X..X...X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'B..b..b...b.b...' },
+      { name: 'Grime', kit: 'glitch', bpm: 140, k: 'X.........X.....', s: '........X.......', h: '..x...x...x...x.', b: 'B.....~...b.....' },
+      { name: 'Detroit', kit: '808', bpm: 100, k: 'X..X..X.X..X..X.', c: '....X.......X...', h: 'xxxxxxxxxxxxxxxx', b: 'b..b..b.b..b..b.' },
+      { name: 'Cloud rap', kit: 'trap', bpm: 70, k: 'X.........X.....', c: '........X.......', h: 'x...x...x...x.x.', b: 'B.........~.....' },
+      { name: 'Beat tape', kit: 'vinyl', bpm: 88, k: 'X.....x.X..x....', s: '....X..o....X.o.', h: 'x.ox.ox.x.ox.ox.', b: 'b.....b.b..f....' },
+      { name: 'Memphis rap', kit: '808', bpm: 72, k: 'X..X......X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x...x..x..', b: 'B..b......~.b...' },
     ],
     versions: [
       { name: 'Lo-fi bap', from: 'Boom bap', sound: 'Lo-fi study', bpm: 86, swing: 0.5, kit: 'lofi' },

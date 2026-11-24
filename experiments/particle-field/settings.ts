@@ -127,7 +127,9 @@ export interface Settings {
   imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
   imageRate: number;
   // A video shape's particles: travel to their new spots, or jump when far.
-  imageMove: 'travel' | 'jump';
+  // A video shape's particles, 0..1: 0 always travel to their new spots; higher,
+  // ones with farther than a shrinking distance to go jump there instead.
+  imageJump: number;
   modelClip: number;
   modelSpeed: number;
   modelBeat: boolean;
@@ -844,7 +846,7 @@ export const DEFAULTS: Settings = {
   shapeSpin: 0.3,
   imageMode: 'auto',
   imageRate: 24,
-  imageMove: 'travel',
+  imageJump: 0,
   modelClip: 1,
   modelSpeed: 1,
   modelBeat: false,
