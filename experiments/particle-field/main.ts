@@ -18853,6 +18853,8 @@ function pickBeatIdx(i: number) {
   const was = g ? (g.beats[settings.sndBeat]?.kit ?? g.kit) : null;
   const next: Partial<Settings> = { sndBeat: i };
   if (g && settings.sndKit === was) next.sndKit = g.beats[i]?.kit ?? g.kit;
+  const wasBpm = g ? (g.beats[settings.sndBeat]?.bpm ?? g.bpm) : null;
+  if (g && settings.sndTempo === wasBpm) next.sndTempo = g.beats[i]?.bpm ?? g.bpm;
   Object.assign(settings, next);
   changed(new Set(Object.keys(next) as (keyof Settings)[]));
   refresh();
@@ -19023,7 +19025,7 @@ function styleLook(st: Style | null, v: string): Partial<Settings> {
   const preset = [...mySoundPresets(), ...SOUND_PRESETS].find(([n]) => n === soundName)?.[1] ?? {};
   const look = soundOf(preset);
   if (g) {
-    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.beats[Math.max(0, bi)]?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
+    Object.assign(look, { sndGenre: g.id, sndBeat: Math.max(0, bi), sndKit: ver?.kit ?? g.beats[Math.max(0, bi)]?.kit ?? g.kit, sndTempo: ver?.bpm ?? g.beats[Math.max(0, bi)]?.bpm ?? g.bpm, sndSwing: ver?.swing ?? g.swing, sndBassSound: ver?.bass ?? g.bass, sndBassPattern: ver?.pat ?? 'beat', sndGrid: '' });
     look.sndDrums = Math.max(Number(look.sndDrums) || 0, 0.55);
     look.sndBass = Math.max(Number(look.sndBass) || 0, 0.5);
   } else if (st?.varBeats?.[v]) {
@@ -19832,7 +19834,7 @@ function patternFold(): HTMLElement {
     const r = Math.floor(k / 16), s = k % 16;
     return [...PAT_CHARS[r]].some((ch) => {
       const line = bt[ch as keyof typeof bt];
-      return !!line && ch !== 'name' && line[s % line.length] !== '.';
+      return typeof line === 'string' && ch !== 'name' && line[s % line.length] !== '.';
     });
   };
   const edit = (k: number) => {
