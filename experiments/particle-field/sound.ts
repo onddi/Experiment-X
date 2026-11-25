@@ -615,6 +615,17 @@ export class ParticleSound {
   private ana: AnalyserNode | null = null;
   private anaBins: Uint8Array<ArrayBuffer> | null = null;
   /** The sound's own spectrum in `out.length` bands (as AudioInput.spectrum). */
+  private peakBuf: Float32Array<ArrayBuffer> | null = null;
+  /** The loudest sample of the output in the last ~45 ms: 1 is full scale, above it clips. */
+  outPeak(): number {
+    const a = this.ana;
+    if (!a || !this.running) return 0;
+    const b = (this.peakBuf ??= new Float32Array(a.fftSize));
+    a.getFloatTimeDomainData(b);
+    let m = 0;
+    for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(b[i]));
+    return m;
+  }
   spectrum(out: Float32Array) {
     const a = this.ana;
     if (!a || !this.running) return out.fill(0);

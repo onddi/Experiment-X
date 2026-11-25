@@ -19537,7 +19537,30 @@ function renderSoundPage(body: HTMLElement) {
     sndMutedAt = 0;
     toggleMute();
   });
-  vol.append(levelBar('sndVol', 'Volume'), volV, muteB);
+  const volBar = levelBar('sndVol', 'Volume');
+  // Output meter along the bar's foot: the loudest moment of the mix, amber
+  // close to full scale, red past it. Clip stays lit a while after a clip.
+  const outM = mk('s', 'sndp-out');
+  const clipL = mk('em', 'sndp-clip', 'Clip');
+  clipL.hidden = true;
+  volBar.append(outM);
+  vol.append(volBar, clipL, volV, muteB);
+  let outHold = 0;
+  let clipAt = -1e9;
+  meterLoop(vol, (now) => {
+    const pk = snd && sndOn ? snd.outPeak() : 0;
+    // Peak hold: jumps up, falls back over about a second.
+    outHold = Math.max(pk, outHold * 0.93);
+    const db = outHold > 0 ? 20 * Math.log10(outHold) : -99;
+    // -36 dB at the left, full scale at the right.
+    outM.style.width = `${Math.max(0, Math.min(1, (db + 36) / 36)) * 100}%`;
+    outM.dataset.lv = db >= -0.1 ? 'clip' : db > -3 ? 'hot' : '';
+    if (pk >= 0.999) clipAt = now;
+    const clipping = now - clipAt < 2000;
+    clipL.hidden = !clipping;
+    clipL.title = clipping ? 'The mix went past full scale and clipped. Turn the Volume or the loudest tracks down, or raise Polish (its limiter catches peaks).' : '';
+    outM.title = db > -99 ? `Output peak ${db.toFixed(1)} dB` : '';
+  });
   refreshers.push(() => {
     volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off';
     const m = sndMuted();
