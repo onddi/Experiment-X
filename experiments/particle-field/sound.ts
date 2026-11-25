@@ -16,7 +16,7 @@
 // notes is capped so thousands of particles can't turn into noise.
 
 export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
-export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop' | 'bird' | 'frog' | 'talkdrum' | 'bowl';
+export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop' | 'bird' | 'frog' | 'talkdrum' | 'bowl' | 'rave' | 'trance' | 'hoover' | 'darkpiano' | 'square' | 'vox' | 'synbrass' | 'eguitar' | 'sax' | 'trumpet' | 'harpsi' | 'accordion' | 'oud' | 'shaku' | 'hang' | 'duduk' | 'glock' | 'church' | 'belltree' | 'laser' | 'revcym';
 // The chimes' own sound, or 'same' to play whatever the strings play.
 export type HitSound = 'same' | Voice;
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
@@ -110,6 +110,13 @@ interface VoiceDef {
   gain?: number;
   /** A plucked string (Karplus-Strong): pick brightness 0…1, and how much each pass keeps (ring). */
   ks?: { bright: number; keep: number };
+  thick?: number; // two more saws this many cents either side (a supersaw)
+  drive?: number; // saturation (an amp)
+  formant?: [hz: number, q: number]; // a vowel or a horn's body
+  noise?: number; // breath on top (winds)
+  tone?: number; // the oscillators' level (0: only the noise)
+  glide?: number; // seconds the bend takes
+  rev?: boolean; // played backwards: swells up, then stops
 }
 const VOICES: Record<Voice, VoiceDef> = {
   marimba: { type: 'sine', ratio: 3.9, level: 0.5, fade: 0.08, decay: 0.7 },
@@ -156,6 +163,30 @@ const VOICES: Record<Voice, VoiceDef> = {
   frog: { type: 'triangle', ratio: 2, level: 0.35, fade: 0.4, decay: 0.3, octave: -1, bend: -250, wobble: [26, 0.85], sweep: [1600, 500], gain: 2 },
   talkdrum: { type: 'sine', ratio: 1.5, level: 0.25, fade: 0.15, decay: 0.55, bend: 600, fm: [1.6, 0.5], gain: 2.2 },
   bowl: { type: 'sine', ratio: 2.76, level: 0.35, fade: 0.8, decay: 3.6, attack: 0.02, wobble: [1.4, 0.35], fm: [5.4, 0.04], gain: 1.1 },
+  // Club leads.
+  rave: { type: 'sawtooth', ratio: 1.498, level: 0.7, fade: 1, decay: 0.35, sweep: [6000, 700], gain: 0.8 },
+  trance: { type: 'sawtooth', ratio: 1.007, level: 0.8, fade: 1, decay: 0.9, thick: 22, sweep: [7000, 1800], gain: 0.55 },
+  hoover: { type: 'sawtooth', ratio: 0.5, level: 0.6, fade: 1, decay: 0.8, bend: -500, thick: 30, sweep: [3000, 1200], gain: 0.55 },
+  square: { type: 'square', ratio: 1.005, level: 0.5, fade: 1, decay: 0.6, vibrato: 8, sweep: [4500, 1500], gain: 0.55 },
+  vox: { type: 'sawtooth', ratio: 2, level: 0.2, fade: 0.5, decay: 0.3, formant: [850, 5], bend: -150, gain: 2 },
+  synbrass: { type: 'sawtooth', ratio: 1.004, level: 0.6, fade: 1, decay: 0.9, attack: 0.04, sweep: [600, 2800], gain: 0.75 },
+  darkpiano: { type: 'triangle', ratio: 2, level: 0.3, fade: 0.25, decay: 2.4, octave: -1, fm: [2, 0.3], sweep: [2500, 450], gain: 1.3 },
+  // Bands and the world.
+  eguitar: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 2.4, ks: { bright: 0.85, keep: 0.997 }, drive: 3, gain: 0.8 },
+  sax: { type: 'sawtooth', ratio: 2, level: 0.3, fade: 1, decay: 1, attack: 0.05, vibrato: 14, formant: [1100, 2.5], noise: 0.3, sweep: [2500, 1400], gain: 1.2 },
+  trumpet: { type: 'sawtooth', ratio: 1.002, level: 0.4, fade: 1, decay: 0.9, attack: 0.03, vibrato: 8, sweep: [1200, 4000], formant: [1400, 1.5], gain: 0.85 },
+  harpsi: { type: 'square', ratio: 2, level: 0.5, fade: 0.3, decay: 1, sweep: [8000, 2000], gain: 0.6 },
+  accordion: { type: 'square', ratio: 1.006, level: 0.6, fade: 1, decay: 1, attack: 0.04, wobble: [6, 0.15], formant: [1500, 1.2], gain: 0.8 },
+  oud: { type: 'triangle', ratio: 2, level: 0, fade: 0.2, decay: 1.3, ks: { bright: 0.6, keep: 0.993 }, bend: 40, gain: 1.5 },
+  shaku: { type: 'sine', ratio: 2, level: 0.15, fade: 1, decay: 1.2, attack: 0.12, vibrato: 18, bend: -80, noise: 0.6, gain: 0.9 },
+  hang: { type: 'sine', ratio: 2, level: 0.4, fade: 0.3, decay: 1.8, fm: [2, 0.15], gain: 1.2 },
+  // More chimes.
+  glock: { type: 'sine', ratio: 2.76, level: 0.5, fade: 0.2, decay: 1.6, octave: 2, gain: 0.9 },
+  church: { type: 'sine', ratio: 1.19, level: 0.5, fade: 0.7, decay: 4.5, octave: -1, fm: [2, 0.5], wobble: [0.9, 0.2], gain: 1.3 },
+  belltree: { type: 'sine', ratio: 5.4, level: 0.4, fade: 0.5, decay: 1.6, octave: 2, bend: 1200, glide: 0.5, wobble: [18, 0.5], gain: 0.9 },
+  laser: { type: 'sawtooth', ratio: 1.5, level: 0.3, fade: 0.5, decay: 0.3, octave: 1, bend: 2400, glide: 0.22, sweep: [6000, 1500], gain: 0.6 },
+  revcym: { type: 'sine', ratio: 2, level: 0, fade: 1, decay: 1.4, octave: 2, tone: 0, noise: 4, rev: true, gain: 1 },
+  duduk: { type: 'sawtooth', ratio: 1.003, level: 0.4, fade: 1, decay: 1.4, attack: 0.1, vibrato: 10, bend: -60, formant: [700, 3], noise: 0.15, sweep: [1800, 900], gain: 1.3 },
 };
 
 // Bass sounds, built like a synth patch: a few oscillators (detuned for
@@ -1990,7 +2021,7 @@ export class ParticleSound {
     const bend = (V.bend ?? 0) + (o?.bend ?? 0);
     if (bend) {
       // Slide into the note: a koto's pluck, or the particle's motion.
-      const glide = o?.bend ? 0.16 : 0.08;
+      const glide = V.glide ?? (o?.bend ? 0.16 : 0.08);
       for (const os of [o1, o2]) {
         os.detune.setValueAtTime(bend, t);
         os.detune.linearRampToValueAtTime(0, t + glide);
@@ -2001,9 +2032,16 @@ export class ParticleSound {
     const peak = vel * 0.22 * (V.gain ?? 1);
     // Attack: from struck to bowed, notes swelling in.
     const atk = Math.max(V.attack ?? 0.004, P.attack * Math.min(0.35, decay * 0.4));
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(peak, t + atk);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    if (V.rev) {
+      // Backwards: a slow swell that stops dead.
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + decay * 0.96);
+      g.gain.linearRampToValueAtTime(0, t + decay);
+    } else {
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(peak, t + atk);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    }
     // The overtone dies first, so the strike is bright and the tail pure.
     g2.gain.setValueAtTime(V.level, t);
     g2.gain.exponentialRampToValueAtTime(0.001, t + Math.max(0.02, decay * V.fade));
@@ -2031,14 +2069,63 @@ export class ParticleSound {
       nodes.push(l);
     }
     let out: AudioNode = g;
+    if (V.thick && !V.ks) {
+      // Supersaw: two more saws, either side.
+      for (const c of [-V.thick, V.thick]) {
+        const ox = ctx.createOscillator();
+        ox.type = 'sawtooth';
+        ox.frequency.value = f;
+        ox.detune.setValueAtTime(c + bend, t);
+        if (bend) ox.detune.linearRampToValueAtTime(c, t + 0.08);
+        const gx = ctx.createGain();
+        gx.gain.value = 0.7;
+        ox.connect(gx).connect(g);
+        nodes.push(ox);
+      }
+    }
+    if (V.noise) {
+      // Breath: noise around the note, riding the same envelope.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = Math.min(9000, f * 3);
+      bp.Q.value = 1.2;
+      const ng = ctx.createGain();
+      ng.gain.value = V.noise * 0.6;
+      src.connect(bp).connect(ng).connect(g);
+      src.start(t, Math.random() * 0.8);
+      src.stop(end);
+    }
+    if (V.drive) {
+      const ws = ctx.createWaveShaper();
+      ws.curve = satCurve(V.drive);
+      ws.oversample = '2x';
+      out = out.connect(ws);
+    }
     if (V.sweep) {
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
       lp.Q.value = 1.2;
       lp.frequency.setValueAtTime(V.sweep[0], t);
       lp.frequency.exponentialRampToValueAtTime(V.sweep[1], t + decay * 0.6);
-      g.connect(lp);
+      out.connect(lp);
       out = lp;
+    }
+    if (V.formant) {
+      // A body: some of the sound through a resonant band (a vowel, a horn).
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = V.formant[0];
+      bp.Q.value = V.formant[1];
+      const wet = ctx.createGain();
+      wet.gain.value = 0.6 + V.formant[1] * 0.4;
+      const dry = ctx.createGain();
+      dry.gain.value = 0.35;
+      const sum = ctx.createGain();
+      out.connect(bp).connect(wet).connect(sum);
+      out.connect(dry).connect(sum);
+      out = sum;
     }
     if (V.wobble) {
       const tr = ctx.createGain();
@@ -2067,9 +2154,14 @@ export class ParticleSound {
       }
       ks.connect(g);
       nodes.push(ks);
-    } else {
+    } else if (V.tone === undefined) {
       o1.connect(g);
       o2.connect(g2).connect(g);
+    } else if (V.tone > 0) {
+      const tg = ctx.createGain();
+      tg.gain.value = V.tone;
+      o1.connect(tg).connect(g);
+      o2.connect(g2).connect(tg);
     }
     // The leads: Steps and Strings get Mix polish's low cut and duck, and Unison and Wavetable motion.
     const lead = this.cur === 'steps' || this.cur === 'strings';
