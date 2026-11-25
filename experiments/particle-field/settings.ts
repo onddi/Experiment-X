@@ -322,6 +322,8 @@ export interface Settings {
   sndMusic: 'free' | 'room' | 'along';
   /** Draw the strings, the step column and the scanline faintly. */
   sndShow: boolean;
+  /** Export audio: bars ('8') or seconds ('30s'). */
+  sndExportLen: string;
   tapThree: 'tempo' | 'drop' | 'shuffle' | 'none';
   thumbWall: boolean;
   playWheel3: string;
@@ -1023,6 +1025,7 @@ export const DEFAULTS: Settings = {
   sndReverb: 0.45,
   sndMusic: 'room',
   sndShow: true,
+  sndExportLen: '8',
   tapThree: 'tempo',
   thumbWall: true,
   playWheel3: 'mOrder',

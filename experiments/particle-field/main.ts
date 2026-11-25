@@ -11917,6 +11917,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndTape', label: 'Tape stop', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndDepth', label: 'Depth (3D)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'toggle', key: 'sndShow', label: 'Show the instruments on screen' },
+  { kind: 'select', key: 'sndExportLen', label: 'Length', options: [['4', '4 bars'], ['8', '8 bars'], ['16', '16 bars'], ['32', '32 bars'], ['30s', '30 seconds'], ['60s', '1 minute'], ['180s', '3 minutes']] },
   { kind: 'select', key: 'sndMusic', label: 'With music playing', options: [['free', 'Ignore it'], ['room', 'Leave room for the beat'], ['along', 'Play along (key and tempo)']] },
   { kind: 'sndpage' },
   { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'music', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
@@ -19493,6 +19494,21 @@ function renderSoundPage(body: HTMLElement) {
   group(mixP, 'Dynamics', ['sndGlue', 'sndTape']);
   group(mixP, 'Quality', QUALITY_KEYS);
   group(mixP, 'More', ['sndDepth', 'sndShow']);
+  // Export: the mix as a WAV, recorded as it plays (the field plays it live).
+  const exDet = group(mixP, 'Export audio', ['sndExportLen']);
+  const exRow = mk('div', 'buttons');
+  const exBtn = mk('button', '', 'Export audio');
+  exBtn.type = 'button';
+  exBtn.addEventListener('click', () => (snd?.captureProgress() != null ? snd.captureStop() : void exportAudio()));
+  exRow.append(exBtn);
+  const exHow = mk('p', 'sndp-how', 'Records the mix as it plays, in real time, and saves a WAV. Bars start on the next bar line, so the file loops cleanly. Keep this tab open while it records.');
+  exDet.append(exRow, exHow);
+  meterLoop(exDet, () => {
+    const pr = snd?.captureProgress();
+    const t = pr == null ? 'Export audio' : pr < 0 ? 'Waiting for the bar… (stop)' : `Recording ${Math.round(pr * 100)}% (stop)`;
+    if (exBtn.textContent !== t) exBtn.textContent = t;
+    exBtn.classList.toggle('on', pr != null);
+  });
   panelOf('inst').append(tracks);
   // Reactions: which instruments stand in for music, then the Music page's own grid (the same settings).
   const reactP = panelOf('react');
@@ -22671,6 +22687,53 @@ function sceneFromUrl(first: boolean) {
   // Once opened, the address goes back to plain so a reload doesn't redo it.
   history.replaceState(null, '', location.pathname + location.search);
   void openSharedScene(code, first);
+}
+// Export audio: record the mix for the length picked, then save it as a WAV.
+async function exportAudio() {
+  if (!snd || !sndOn || settings.sndVol === 0) return showToast('Turn the Sound on first');
+  const len = settings.sndExportLen;
+  const secs = len.endsWith('s') ? parseInt(len) : 0;
+  const bars = secs ? 0 : parseInt(len) || 8;
+  const bpm = Math.round(settings.sndTempo);
+  showToast(secs ? `Recording ${secs} s of audio…` : `Recording ${bars} bars from the next bar line…`);
+  let r: Awaited<ReturnType<ParticleSound['capture']>> = null;
+  try {
+    r = await snd.capture(bars, secs);
+  } catch {
+    return showToast('This browser can’t record the sound');
+  }
+  if (!r) return showToast('Export stopped');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(wavOf(r.L, r.R, r.sr));
+  const name = (styleNow().name || 'Sound').replace(/[^\w\- ·&]+/g, '').replace(/ · /g, ' - ');
+  a.download = `${name} ${bpm} bpm ${bars ? `${bars} bars` : `${secs} s`}.wav`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  showToast(`Saved ${a.download}`);
+}
+// 16-bit stereo WAV.
+function wavOf(L: Float32Array, R: Float32Array, sr: number): Blob {
+  const n = L.length;
+  const buf = new ArrayBuffer(44 + n * 4);
+  const v = new DataView(buf);
+  const str = (o: number, t: string) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF');
+  v.setUint32(4, 36 + n * 4, true);
+  str(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 2, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 4, true);
+  v.setUint16(32, 4, true);
+  v.setUint16(34, 16, true);
+  str(36, 'data');
+  v.setUint32(40, n * 4, true);
+  for (let i = 0, o = 44; i < n; i++, o += 4) {
+    v.setInt16(o, Math.max(-1, Math.min(1, L[i])) * 32767, true);
+    v.setInt16(o + 2, Math.max(-1, Math.min(1, R[i])) * 32767, true);
+  }
+  return new Blob([buf], { type: 'audio/wav' });
 }
 function exportScenes() {
   const data = JSON.stringify({ app: 'particle-field', version: 1, scenes: myPresets.map((m) => ({ ...m, settings: sceneDiff(m.settings) })) }, null, 1);
