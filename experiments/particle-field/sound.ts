@@ -615,6 +615,17 @@ export class ParticleSound {
   private ana: AnalyserNode | null = null;
   private anaBins: Uint8Array<ArrayBuffer> | null = null;
   /** The sound's own spectrum in `out.length` bands (as AudioInput.spectrum). */
+  private peakBuf: Float32Array<ArrayBuffer> | null = null;
+  /** The loudest sample of the output in the last ~45 ms: 1 is full scale, above it clips. */
+  outPeak(): number {
+    const a = this.ana;
+    if (!a || !this.running) return 0;
+    const b = (this.peakBuf ??= new Float32Array(a.fftSize));
+    a.getFloatTimeDomainData(b);
+    let m = 0;
+    for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(b[i]));
+    return m;
+  }
   spectrum(out: Float32Array) {
     const a = this.ana;
     if (!a || !this.running) return out.fill(0);
@@ -1457,6 +1468,102 @@ export class ParticleSound {
     void this.ctx.close().catch(() => {});
   }
 
+  // --- Export: the mix recorded as it plays, sample for sample ---
+  // A worklet copies the output; recording starts on the next bar line and
+  // runs a set number of bars (an exact loop) or seconds.
+  private capReady = false;
+  private cap: {
+    node: AudioWorkletNode; L: Float32Array[]; R: Float32Array[]; first: number; bars: number; secs: number;
+    startT: number; endT: number; done: (r: { sr: number; L: Float32Array; R: Float32Array } | null) => void;
+  } | null = null;
+  private get outNode(): AudioNode {
+    return this.pol?.on ? this.pol.lim : this.makeup;
+  }
+  /** Record the mix: `bars` bars from the next bar line, or `secs` seconds from now. Resolves with the samples (null if stopped early). */
+  async capture(bars: number, secs: number): Promise<{ sr: number; L: Float32Array; R: Float32Array } | null> {
+    const ctx = this.ctx;
+    this.captureStop();
+    if (!this.capReady) {
+      const src = `registerProcessor('pf-capture', class extends AudioWorkletProcessor {
+        constructor() { super(); this.L = new Float32Array(4096); this.R = new Float32Array(4096); this.n = 0; this.f = 0; }
+        process(ins) {
+          const c = ins[0];
+          const a = c && c[0] ? c[0] : new Float32Array(128), b = c && c[1] ? c[1] : a;
+          if (this.n === 0) this.f = currentFrame;
+          this.L.set(a, this.n); this.R.set(b, this.n); this.n += a.length;
+          if (this.n >= 4096) { this.port.postMessage({ f: this.f, L: this.L, R: this.R }, [this.L.buffer, this.R.buffer]); this.L = new Float32Array(4096); this.R = new Float32Array(4096); this.n = 0; }
+          return true;
+        }
+      });`;
+      const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+      await ctx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      this.capReady = true;
+    }
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    const node = new AudioWorkletNode(ctx, 'pf-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 2, channelCountMode: 'explicit' });
+    // Kept running by a silent path to the speakers.
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    node.connect(mute).connect(ctx.destination);
+    this.outNode.connect(node);
+    return new Promise((done) => {
+      const c = (this.cap = { node, L: [] as Float32Array[], R: [] as Float32Array[], first: -1, bars, secs, startT: secs > 0 ? ctx.currentTime : -1, endT: secs > 0 ? ctx.currentTime + secs : -1, done });
+      node.port.onmessage = (e: MessageEvent<{ f: number; L: Float32Array; R: Float32Array }>) => {
+        if (c.first < 0) c.first = e.data.f;
+        c.L.push(e.data.L);
+        c.R.push(e.data.R);
+      };
+    });
+  }
+  /** How far the export is: 0..1, or -1 while it waits for the bar line (null: none). */
+  captureProgress(): number | null {
+    const c = this.cap;
+    if (!c) return null;
+    if (c.startT < 0) return -1;
+    return Math.min(1, (this.ctx.currentTime - c.startT) / Math.max(0.01, c.endT - c.startT));
+  }
+  /** Stop an export early: nothing is saved. */
+  captureStop() {
+    const c = this.cap;
+    if (!c) return;
+    this.cap = null;
+    try { this.outNode.disconnect(c.node); } catch {}
+    c.node.disconnect();
+    c.done(null);
+  }
+  private captureTick(before: number) {
+    const c = this.cap;
+    if (!c) return;
+    const t = this.ctx.currentTime;
+    if (c.startT < 0) {
+      // Bars: start on the next bar line, so the file loops cleanly.
+      if (Math.floor(this.beat / 4) !== Math.floor(before / 4)) {
+        c.startT = t;
+        c.endT = t + (c.bars * 4 * 60) / Math.max(40, this.bpmNow);
+      }
+      return;
+    }
+    // Done once the worklet has handed over everything up to the end.
+    const sr = this.ctx.sampleRate;
+    const have = c.first < 0 ? 0 : c.first + c.L.length * 4096;
+    if (t < c.endT || have < c.endT * sr) return;
+    this.cap = null;
+    try { this.outNode.disconnect(c.node); } catch {}
+    c.node.disconnect();
+    const a = Math.max(0, Math.round(c.startT * sr) - c.first);
+    const n = Math.round((c.endT - c.startT) * sr);
+    const L = new Float32Array(n), R = new Float32Array(n);
+    for (let k = 0; k < c.L.length; k++) {
+      const at = k * 4096 - a;
+      const from = Math.max(0, -at), to = Math.min(4096, n - at);
+      if (to <= from) continue;
+      L.set(c.L[k].subarray(from, to), at + from);
+      R.set(c.R[k].subarray(from, to), at + from);
+    }
+    c.done({ sr, L, R });
+  }
+
   // --- Sound quality --------------------------------------------------------
   // Reverb type: a generated reverb (room, hall or plate) with pre-delay,
   // early reflections and damping, in place of the classic one.
@@ -1542,7 +1649,7 @@ export class ParticleSound {
     if (on !== P.on) {
       P.on = on;
       const out = ctx.destination;
-      const taps = [this.ana, this.recDest].filter((n): n is AnalyserNode | MediaStreamAudioDestinationNode => !!n);
+      const taps = [this.ana, this.recDest, this.cap?.node].filter((n): n is AnalyserNode | MediaStreamAudioDestinationNode | AudioWorkletNode => !!n);
       if (on) {
         this.padDuck.disconnect(this.scPad);
         this.padDuck.connect(P.padHp);
@@ -3283,6 +3390,7 @@ export class ParticleSound {
     const beats = F.dt * (bpm / 60);
     const before = this.beat;
     this.beat += beats;
+    this.captureTick(before);
     // Song: entering a Build section starts the build that drops at its end.
     let sn = this.songNow();
     // A new loop: the next arrangement (a fresh one when it's Different every time).

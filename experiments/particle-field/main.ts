@@ -11789,6 +11789,7 @@ const CONTROLS: Control[] = [
   { kind: 'range', key: 'sndTape', label: 'Tape stop', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)) },
   { kind: 'range', key: 'sndDepth', label: 'Depth (3D)', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.depth > 0 },
   { kind: 'toggle', key: 'sndShow', label: 'Show the instruments on screen' },
+  { kind: 'select', key: 'sndExportLen', label: 'Length', options: [['4', '4 bars'], ['8', '8 bars'], ['16', '16 bars'], ['32', '32 bars'], ['30s', '30 seconds'], ['60s', '1 minute'], ['180s', '3 minutes']] },
   { kind: 'select', key: 'sndMusic', label: 'With music playing', options: [['free', 'Ignore it'], ['room', 'Leave room for the beat'], ['along', 'Play along (key and tempo)']] },
   { kind: 'sndpage' },
   { kind: 'section', id: 'vj', label: 'Auto VJ', tab: 'music', about: 'Switches to a new look every few bars, in time with the music.', lock: ['audioVj', 'audioVjFrom', 'audioVjDrop'],
@@ -19329,6 +19330,21 @@ function renderSoundPage(body: HTMLElement) {
   group(mixP, 'Dynamics', ['sndGlue', 'sndTape']);
   group(mixP, 'Quality', QUALITY_KEYS);
   group(mixP, 'More', ['sndDepth', 'sndShow']);
+  // Export: the mix as a WAV, recorded as it plays (the field plays it live).
+  const exDet = group(mixP, 'Export audio', ['sndExportLen']);
+  const exRow = mk('div', 'buttons');
+  const exBtn = mk('button', '', 'Export audio');
+  exBtn.type = 'button';
+  exBtn.addEventListener('click', () => (snd?.captureProgress() != null ? snd.captureStop() : void exportAudio()));
+  exRow.append(exBtn);
+  const exHow = mk('p', 'sndp-how', 'Records the mix as it plays, in real time, and saves a WAV. Bars start on the next bar line, so the file loops cleanly. Keep this tab open while it records.');
+  exDet.append(exRow, exHow);
+  meterLoop(exDet, () => {
+    const pr = snd?.captureProgress();
+    const t = pr == null ? 'Export audio' : pr < 0 ? 'Waiting for the bar… (stop)' : `Recording ${Math.round(pr * 100)}% (stop)`;
+    if (exBtn.textContent !== t) exBtn.textContent = t;
+    exBtn.classList.toggle('on', pr != null);
+  });
   panelOf('inst').append(tracks);
   // Reactions: which instruments stand in for music, then the Music page's own grid (the same settings).
   const reactP = panelOf('react');
@@ -19373,7 +19389,30 @@ function renderSoundPage(body: HTMLElement) {
     sndMutedAt = 0;
     toggleMute();
   });
-  vol.append(levelBar('sndVol', 'Volume'), volV, muteB);
+  const volBar = levelBar('sndVol', 'Volume');
+  // Output meter along the bar's foot: the loudest moment of the mix, amber
+  // close to full scale, red past it. Clip stays lit a while after a clip.
+  const outM = mk('s', 'sndp-out');
+  const clipL = mk('em', 'sndp-clip', 'Clip');
+  clipL.hidden = true;
+  volBar.append(outM);
+  vol.append(volBar, clipL, volV, muteB);
+  let outHold = 0;
+  let clipAt = -1e9;
+  meterLoop(vol, (now) => {
+    const pk = snd && sndOn ? snd.outPeak() : 0;
+    // Peak hold: jumps up, falls back over about a second.
+    outHold = Math.max(pk, outHold * 0.93);
+    const db = outHold > 0 ? 20 * Math.log10(outHold) : -99;
+    // -36 dB at the left, full scale at the right.
+    outM.style.width = `${Math.max(0, Math.min(1, (db + 36) / 36)) * 100}%`;
+    outM.dataset.lv = db >= -0.1 ? 'clip' : db > -3 ? 'hot' : '';
+    if (pk >= 0.999) clipAt = now;
+    const clipping = now - clipAt < 2000;
+    clipL.hidden = !clipping;
+    clipL.title = clipping ? 'The mix went past full scale and clipped. Turn the Volume or the loudest tracks down, or raise Polish (its limiter catches peaks).' : '';
+    outM.title = db > -99 ? `Output peak ${db.toFixed(1)} dB` : '';
+  });
   refreshers.push(() => {
     volV.textContent = settings.sndVol > 0 ? String(Math.round(settings.sndVol * 100)) : 'off';
     const m = sndMuted();
@@ -22364,6 +22403,53 @@ function sceneFromUrl(first: boolean) {
   history.replaceState(null, '', location.pathname + location.search);
   void openSharedScene(code, first);
 }
+// Export audio: record the mix for the length picked, then save it as a WAV.
+async function exportAudio() {
+  if (!snd || !sndOn || settings.sndVol === 0) return showToast('Turn the Sound on first');
+  const len = settings.sndExportLen;
+  const secs = len.endsWith('s') ? parseInt(len) : 0;
+  const bars = secs ? 0 : parseInt(len) || 8;
+  const bpm = Math.round(settings.sndTempo);
+  showToast(secs ? `Recording ${secs} s of audio…` : `Recording ${bars} bars from the next bar line…`);
+  let r: Awaited<ReturnType<ParticleSound['capture']>> = null;
+  try {
+    r = await snd.capture(bars, secs);
+  } catch {
+    return showToast('This browser can’t record the sound');
+  }
+  if (!r) return showToast('Export stopped');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(wavOf(r.L, r.R, r.sr));
+  const name = (styleNow().name || 'Sound').replace(/[^\w\- ·&]+/g, '').replace(/ · /g, ' - ');
+  a.download = `${name} ${bpm} bpm ${bars ? `${bars} bars` : `${secs} s`}.wav`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  showToast(`Saved ${a.download}`);
+}
+// 16-bit stereo WAV.
+function wavOf(L: Float32Array, R: Float32Array, sr: number): Blob {
+  const n = L.length;
+  const buf = new ArrayBuffer(44 + n * 4);
+  const v = new DataView(buf);
+  const str = (o: number, t: string) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF');
+  v.setUint32(4, 36 + n * 4, true);
+  str(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 2, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 4, true);
+  v.setUint16(32, 4, true);
+  v.setUint16(34, 16, true);
+  str(36, 'data');
+  v.setUint32(40, n * 4, true);
+  for (let i = 0, o = 44; i < n; i++, o += 4) {
+    v.setInt16(o, Math.max(-1, Math.min(1, L[i])) * 32767, true);
+    v.setInt16(o + 2, Math.max(-1, Math.min(1, R[i])) * 32767, true);
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
 function exportScenes() {
   const data = JSON.stringify({ app: 'particle-field', version: 1, scenes: myPresets.map((m) => ({ ...m, settings: sceneDiff(m.settings) })) }, null, 1);
   const a = document.createElement('a');
@@ -23107,7 +23193,9 @@ function toggleMute(on = !sndMuted()) {
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · double tap for settings · hold to mute' : 'Close the sound studio (M) · double tap for settings · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
-  stage: () => [['Shuffle (double tap: sound, hold: both)', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  // The tray hugs the right edge: Shuffle sits just left of Pause and ⋯, which
+  // are always there, so it keeps one spot whatever else shows.
+  stage: () => [...uStudio(), ...(recorder.on ? [uRec()] : []), ['Shuffle (double tap: sound, hold: both)', ICONS.shuffle, shuffleTap, 'primary'], uPause(), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -23182,10 +23270,12 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   toggleRecord();
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
+// Shuffle comes first, right after the view switch, so it keeps one spot
+// whatever else shows (see uPlace).
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
-  deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
-  studio: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], uPause(), uMore()],
+  stage: () => [['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  deck: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], uPause(), uMore()],
+  studio: () => [['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), uPause(), uMore()],
   build: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
 };
 let uSig = '';
@@ -23243,7 +23333,7 @@ function uPaint(force = false) {
     b.type = 'button';
     b.title = label;
     b.setAttribute('aria-label', label.replace(/ \(.*\)$/, ''));
-    const named = desk ? cls?.includes('label') : j === 0 && !cls?.includes('folder');
+    const named = desk ? cls?.includes('label') : (cls === 'primary' || (j === 0 && !list.some((x) => x[3] === 'primary'))) && !cls?.includes('folder');
     b.innerHTML = ic + (named ? `<span>${label.replace(/ \(.*\)$/, '')}</span>` : '');
     if (cls) b.classList.add(...cls.split(' '));
     if (cls?.includes('more')) dockMoreBtn = b;
@@ -23295,8 +23385,11 @@ function uPlace() {
   if (buildEl) right = Math.min(right, buildEl.getBoundingClientRect().left);
   // Placed where it sits on the Stage (centred on the screen) in every view,
   // so the switch never moves; it only shifts left if the Studio or Deck would cover it.
-  if (ubar.classList.contains('stage')) stageBarW = ubar.offsetWidth;
-  let left = innerWidth / 2 - (stageBarW || ubar.offsetWidth) / 2;
+  // Centred on a fixed width (the switch and five buttons), not its own: the
+  // bar grows to the right as buttons come and go, so the switch and Shuffle
+  // (first in the tray) never move.
+  if (!stageBarW) stageBarW = (ubar.querySelector<HTMLElement>('.u-seg')?.offsetWidth ?? 0) + 8 + 5 * 43 + 12;
+  let left = innerWidth / 2 - stageBarW / 2;
   left = Math.min(left, right - ubar.offsetWidth - 12);
   ubar.style.left = `${Math.max(12, Math.round(left))}px`;
   // A narrow window: the bar spills over the Studio or Deck, so their lists

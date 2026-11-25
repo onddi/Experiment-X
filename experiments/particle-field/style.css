@@ -2357,7 +2357,8 @@ body.panel-open .play-row, body:has(.overview) .play-row { display: none; }
 .ar-bar .ar-lite.on { background: rgb(255 255 255 / 0.92); color: #111; }
 /* Phones: the tray keeps its buttons whole; a long scene name gives way (…). */
 @media (max-width: 720px) {
-  .u-bar.stage .u-tray { flex: none; }
+  /* Hugs the right edge, so Shuffle (just left of Pause and ⋯) keeps one spot. */
+  .u-bar.stage .u-tray { flex: none; margin-left: auto; }
   .u-bar.stage .u-seg { flex: 0 1 auto; min-width: 0; }
   .u-bar.stage .u-seg button.named { min-width: 0; flex-shrink: 1; }
   .u-bar.stage .u-seg button:not(.named) { flex: none; }
@@ -3249,6 +3250,12 @@ button.sndp-live-name { cursor: pointer; }
 .rp-rail button.fam.open { color: #ececf1; font-weight: 600; }
 .rp-rail button.fam.open span::after { content: ' ⌄'; }
 .rp-rail button.sub { padding-left: 20px; }
+
+/* Output meter on the Volume bar's foot, and the Clip light beside it. */
+.sndp-out { position: absolute; left: 0; top: 50%; margin-top: 10px; height: 3px; width: 0; border-radius: 2px; background: #9fe870; pointer-events: none; }
+.sndp-out[data-lv='hot'] { background: #ffc35c; }
+.sndp-out[data-lv='clip'] { background: #ff5a5a; }
+.sndp-clip { flex: none; padding: 2px 6px; border-radius: 6px; background: #ff5a5a; color: #111; font: 700 10px system-ui, sans-serif; letter-spacing: 0.06em; text-transform: uppercase; font-style: normal; }
 
 .snd-layers { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .snd-layers h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
