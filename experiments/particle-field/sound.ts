@@ -31,7 +31,7 @@ export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'pi
 import { bandsOf } from './audio.ts';
 import { KITS, GENRES, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
-export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet' | 'analog' | 'vox' | 'drone' | 'mist' | 'supersaw' | 'harmonium' | 'cosmic' | 'gated' | 'reverse' | 'sweep' | 'bells' | 'ocean' | 'whisper' | 'throat' | 'frozen' | 'wind' | 'rain' | 'whale' | 'crickets' | 'storm';
+export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet' | 'analog' | 'vox' | 'drone' | 'mist' | 'supersaw' | 'harmonium' | 'cosmic' | 'gated' | 'reverse' | 'sweep' | 'bells' | 'ocean' | 'whisper' | 'throat' | 'frozen' | 'wind' | 'rain' | 'whale' | 'crickets' | 'storm' | 'horror' | 'chant' | 'factory' | 'juno' | 'epic' | 'vocoder' | 'shepard' | 'granular';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 /** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
 export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | Voice;
@@ -266,6 +266,7 @@ interface PadDef {
   move?: 'gate' | 'reverse' | 'waves' | 'flicker' | 'trem'; mRate?: number; mDepth?: number;
   sweepAmt?: number; sweepHz?: number; // the filter sweeping slowly, in octaves
   airAt?: number; airQ?: number; airSweep?: number; // the noise: its own pitch (Hz), how narrow, and a slow sweep (octaves)
+  rise?: number; // beats per octave of an endless rise (a Shepard tone: each pair an octave apart, crossfading)
 }
 const PADS: Record<PadSound, PadDef> = {
   soft: { w: ['sine', 'triangle'], spread: 6, width: 0.5, cut: 1, q: 0.3, color: 0, drift: 3, air: 0, gain: 1, sub: 0.25, swell: 0.6 },
@@ -308,6 +309,15 @@ const PADS: Record<PadSound, PadDef> = {
   rain: { w: ['sine', 'triangle'], spread: 8, width: 1, cut: 0.9, q: 0.3, color: 9, drift: 3, air: 5, airAt: 5000, airQ: 0.6, gain: 0.8, sub: 0.1, swell: 0.8, move: 'flicker', mRate: 30, mDepth: 0.35 },
   whale: { w: ['sine', 'triangle'], spread: 4, width: 0.8, cut: 0.5, q: 1, color: 4, drift: 70, air: 0.3, airAt: 400, gain: 1, up: -12, sub: 0.3, swell: 2, sweepAmt: 0.8, sweepHz: 0.04 },
   crickets: { w: ['sine', 'sine'], spread: 3, width: 1, cut: 3, q: 0.3, color: 9, drift: 2, air: 1, airAt: 4500, airQ: 8, gain: 0.6, up: 24, sub: 0, swell: 0.4, move: 'trem', mRate: 16, mDepth: 0.9 },
+  // Dark and cinematic.
+  horror: { w: ['sawtooth', 'sawtooth'], spread: 34, width: 1, cut: 1.1, q: 1.4, color: 4, drift: 45, air: 0.2, gain: 1, sub: 0.25, swell: 1.4, move: 'trem', mRate: 7, mDepth: 0.35 },
+  chant: { w: ['sawtooth', 'triangle'], spread: 6, width: 0.6, cut: 1, q: 3, band: 480, color: 0, drift: 4, air: 0.25, gain: 4.4, up: -12, sub: 0.15, swell: 1.2 },
+  factory: { w: ['square', 'sawtooth'], spread: 8, width: 0.8, cut: 0.5, q: 5, color: 4, drift: 3, air: 3, airAt: 320, airQ: 2, airSweep: 1, gain: 0.9, up: -12, sub: 0.4, swell: 0.8, move: 'flicker', mRate: 12, mDepth: 0.3 },
+  juno: { w: ['square', 'sawtooth'], spread: 9, width: 1, cut: 1.3, q: 1, color: 7, drift: 14, air: 0.05, gain: 0.9, sub: 0.25, swell: 1, sweepAmt: 0.3, sweepHz: 0.4 },
+  epic: { w: ['sawtooth', 'sawtooth'], spread: 14, width: 1, cut: 1.6, q: 0.9, color: 9, drift: 6, air: 0.2, gain: 1.1, sub: 0.35, swell: 2.2 },
+  vocoder: { w: ['sawtooth', 'square'], spread: 5, width: 0.8, cut: 1, q: 6, band: 1100, color: 7, drift: 2, air: 0.5, airAt: 3500, airQ: 3, gain: 3.2, sub: 0.1, swell: 0.9, sweepAmt: 1.2, sweepHz: 0.35 },
+  shepard: { w: ['sawtooth', 'sawtooth'], spread: 0, width: 0.6, cut: 1.4, q: 0.8, color: 7, drift: 2, air: 0.1, gain: 1, sub: 0, swell: 0.6, rise: 8 },
+  granular: { w: ['triangle', 'sine'], spread: 30, width: 1, cut: 1.4, q: 0.4, color: 9, drift: 25, air: 0.15, airAt: 5000, gain: 1, up: 12, sub: 0.1, swell: 1, move: 'flicker', mRate: 22, mDepth: 0.7 },
   storm: { w: ['triangle', 'sawtooth'], spread: 6, width: 1, cut: 0.4, q: 0.5, color: 4, drift: 6, air: 6, airAt: 220, airQ: 0.5, gain: 1, up: -12, sub: 0.4, swell: 1.6, move: 'waves', mRate: 0.03, mDepth: 0.6 },
 };
 
@@ -716,6 +726,8 @@ export class ParticleSound {
   // Pad.
   // Four chord notes, each a pair of oscillators (8), then a sub and an air layer.
   private padOsc: OscillatorNode[] = [];
+  private padOscG: GainNode[] = [];
+  private padRise = 0;
   private padPan: StereoPannerNode[] = [];
   private padGain: GainNode;
   private padFilter: BiquadFilterNode;
@@ -861,6 +873,7 @@ export class ParticleSound {
       o.connect(g).connect(pan).connect(this.padFilter);
       o.start();
       this.padOsc.push(o);
+      this.padOscG.push(g);
       this.padPan.push(pan);
     }
     this.padSub = ctx.createOscillator();
@@ -1248,6 +1261,7 @@ export class ParticleSound {
     const trem = d.move === 'trem' ? (d.mDepth ?? 0.5) / 2 : 0;
     this.padTremAmt.gain.setTargetAtTime(trem, now, 0.05);
     if (trem) this.padTrem.frequency.setValueAtTime(d.mRate ?? 5, now);
+    if (!d.rise) this.padOscG.forEach((g, k) => g.gain.setTargetAtTime((k < 2 ? 0.26 : 0.18) * 0.62, now, 0.05));
     this.padChord = '';
   }
 
@@ -3634,7 +3648,27 @@ export class ParticleSound {
       if (this.padTick > 0.12) {
         const dt = this.padTick;
         this.padTick = 0;
+        // Shepard: each pair an octave apart, rising; the top one fades out as
+        // the bottom one fades in, and they swap places at the octave.
+        const ph = pd.rise ? this.beat / pd.rise - Math.floor(this.beat / pd.rise) : 0;
+        const wrap = pd.rise ? ph < this.padRise : false;
+        this.padRise = ph;
         for (let k = 0; k < 8; k++) {
+          if (pd.rise) {
+            const hi = k % 2 === 0;
+            const dt2 = (hi ? ph : ph - 1) * 1200;
+            const lv = (k < 2 ? 0.26 : 0.18) * 0.62 * (hi ? Math.cos((ph * Math.PI) / 2) : Math.sin((ph * Math.PI) / 2));
+            if (wrap) {
+              this.padOsc[k].detune.cancelScheduledValues(t);
+              this.padOsc[k].detune.setValueAtTime(dt2, t);
+              this.padOscG[k].gain.cancelScheduledValues(t);
+              this.padOscG[k].gain.setValueAtTime(lv, t);
+            } else {
+              this.padOsc[k].detune.setTargetAtTime(dt2, t, 0.08);
+              this.padOscG[k].gain.setTargetAtTime(lv, t, 0.08);
+            }
+            continue;
+          }
           let dr = this.padDrift[k] + (Math.random() - 0.5) * pd.drift * dt * 2.2;
           dr *= 1 - Math.min(0.5, dt * 0.35);
           dr = Math.max(-pd.drift, Math.min(pd.drift, dr));
