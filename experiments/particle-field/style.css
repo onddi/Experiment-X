@@ -637,7 +637,7 @@ button:hover, select:hover { border-color: #3c3f46; }
 .group.listen-closed.listen-off > .group-body > :not(.audio), .group.listen-closed.listen-off .audio > :not(.sources), .group.listen-closed.listen-off .audio .sources [data-src='off'] { display: none !important; }
 .group.listen-closed.listen-off .audio .sources { margin-top: 0; }
 .rail-picker { grid-column: 1 / -1; display: flex; gap: 8px; height: min(440px, 58vh); margin-top: 6px; }
-.rp-rail { flex: none; width: 112px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; border-right: 1px solid #23232b; padding-right: 6px; }
+.rp-rail { flex: none; width: clamp(126px, 34%, 210px); display: flex; flex-direction: column; gap: 2px; overflow-y: auto; border-right: 1px solid #23232b; padding-right: 6px; }
 .rp-rail button { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: #b5b5c3; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .rp-rail button.on { background: #ececf1; color: #111; font-weight: 600; }
 .rp-rail i { font-style: normal; font-size: 11px; color: #77778a; }
@@ -3249,7 +3249,7 @@ button.sndp-live-name { cursor: pointer; }
 .rp-rail button.fam span::after { content: ' ›'; color: #77778a; }
 .rp-rail button.fam.open { color: #ececf1; font-weight: 600; }
 .rp-rail button.fam.open span::after { content: ' ⌄'; }
-.rp-rail button.sub { padding-left: 20px; }
+.rp-rail button.sub { padding-left: 18px; }
 
 /* Output meter on the Volume bar's foot, and the Clip light beside it. */
 .sndp-out { position: absolute; left: 0; top: 50%; margin-top: 10px; height: 3px; width: 0; border-radius: 2px; background: #9fe870; pointer-events: none; }
