@@ -25371,6 +25371,26 @@ function buildFolders() {
   controls.before(pane);
   pane.append(fhead, controls);
   split.append(nav, pane);
+  // Desktop: the folder list folds to its icons, leaving the cards more room.
+  const FIDX_KEY = 'particle-field:fidx-mini';
+  const fold = document.createElement('button');
+  fold.type = 'button';
+  fold.className = 'fidx-fold';
+  const paintFold = () => {
+    const mini = panel.classList.contains('fidx-mini');
+    fold.innerHTML = svg(mini ? '<path d="M9 5l7 7-7 7"/>' : '<path d="M15 5l-7 7 7 7"/>');
+    fold.title = mini ? 'Show the folder names' : 'Fold the folder list';
+    fold.setAttribute('aria-label', fold.title);
+    fold.setAttribute('aria-pressed', String(mini));
+  };
+  panel.classList.toggle('fidx-mini', readJson<boolean>(FIDX_KEY, false));
+  paintFold();
+  fold.addEventListener('click', () => {
+    panel.classList.toggle('fidx-mini');
+    writeJson(FIDX_KEY, panel.classList.contains('fidx-mini'));
+    paintFold();
+  });
+  nav.append(fold);
   fhead.querySelector('.fback')!.addEventListener('click', () => {
     setInside(false);
     uPaint(true);
@@ -25393,6 +25413,7 @@ function buildFolders() {
     head.className = 'fd-head';
     head.innerHTML = `<span class="fd-ic">${svg(f.icon)}</span><span class="fd-txt"><b></b><small></small></span><span class="fd-n"></span><b class="fd-hlock" aria-hidden="true">${LOCK_SVG}</b><span class="fd-chev" aria-hidden="true">${svg('<path d="M9 5l7 7-7 7"/>')}</span>`;
     head.querySelector('b')!.textContent = f.label;
+    head.title = f.label;
     const kids = document.createElement('div');
     kids.className = 'fd-kids';
     const mine = f.tabs.flatMap((t) => sections.filter((x) => pageOf(x) === t));
