@@ -19555,9 +19555,10 @@ function renderSoundPage(body: HTMLElement) {
   });
   const volBar = levelBar('sndVol', 'Volume');
   // Output meter along the bar's foot: the loudest moment of the mix, amber
-  // close to full scale, red past it. Clip stays lit a while after a clip.
+  // close to the ceiling, red at it. The safety limiter at the end keeps it
+  // from clipping; Limit lights while it has to work hard.
   const outM = mk('s', 'sndp-out');
-  const clipL = mk('em', 'sndp-clip', 'Clip');
+  const clipL = mk('em', 'sndp-clip', 'Limit');
   clipL.hidden = true;
   volBar.append(outM);
   vol.append(volBar, clipL, volV, muteB);
@@ -19570,11 +19571,11 @@ function renderSoundPage(body: HTMLElement) {
     const db = outHold > 0 ? 20 * Math.log10(outHold) : -99;
     // -36 dB at the left, full scale at the right.
     outM.style.width = `${Math.max(0, Math.min(1, (db + 36) / 36)) * 100}%`;
-    outM.dataset.lv = db >= -0.1 ? 'clip' : db > -3 ? 'hot' : '';
-    if (pk >= 0.999) clipAt = now;
+    outM.dataset.lv = db >= -1.5 ? 'clip' : db > -4 ? 'hot' : '';
+    if (snd && sndOn && snd.limiting() > 4) clipAt = now;
     const clipping = now - clipAt < 2000;
     clipL.hidden = !clipping;
-    clipL.title = clipping ? 'The mix went past full scale and clipped. Turn the Volume or the loudest tracks down, or raise Polish (its limiter catches peaks).' : '';
+    clipL.title = clipping ? 'The mix is too loud for the ceiling, so the limiter is squashing it. Turn the Volume or the loudest tracks down for a cleaner sound.' : '';
     outM.title = db > -99 ? `Output peak ${db.toFixed(1)} dB` : '';
   });
   refreshers.push(() => {
