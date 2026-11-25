@@ -215,6 +215,20 @@ const BASSES: Record<BassSound, BassDef> = {
   '808': { osc: [['sine', 1, 0, 1]], sub: 0, cut: 2000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, drive: 3, punch: 2.2, attack: 0.002, decay: 1.2, sustain: 0.6, release: 0.2, gain: 1.0 },
 };
 
+// The safety soft clip (after a ×0.5 gain): straight up to 0.7, then rounds
+// off towards 0.89 (about -1 dB); inputs up to twice full scale stay smooth.
+let softClip: Float32Array<ArrayBuffer> | null = null;
+function softClipCurve() {
+  if (softClip) return softClip;
+  const n = 4096;
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = ((i / (n - 1)) * 2 - 1) * 2;
+    const a = Math.abs(x);
+    c[i] = Math.sign(x) * (a < 0.7 ? a : 0.7 + 0.19 * Math.tanh((a - 0.7) / 0.19));
+  }
+  return (softClip = c);
+}
 const satCurves = new Map<number, Float32Array<ArrayBuffer>>();
 function satCurve(k: number) {
   let c = satCurves.get(k);
@@ -616,6 +630,10 @@ export class ParticleSound {
   private anaBins: Uint8Array<ArrayBuffer> | null = null;
   /** The sound's own spectrum in `out.length` bands (as AudioInput.spectrum). */
   private peakBuf: Float32Array<ArrayBuffer> | null = null;
+  /** How hard the safety limiter at the end is working, in dB (0: not at all). */
+  limiting(): number {
+    return this.running ? Math.max(0, -(this.safeIn as DynamicsCompressorNode).reduction) : 0;
+  }
   /** The loudest sample of the output in the last ~45 ms: 1 is full scale, above it clips. */
   outPeak(): number {
     const a = this.ana;
@@ -736,12 +754,28 @@ export class ParticleSound {
     comp.ratio.value = 4;
     // Make-up gain after the compressor: Glue squeezes harder and lifts it back.
     this.makeup = ctx.createGain();
-    comp.connect(this.makeup).connect(ctx.destination);
+    // Safety at the very end, always on: a fast limiter, then a soft clip that
+    // rounds off what slips past, so peaks never pass about -1 dB.
+    const safeLim = ctx.createDynamicsCompressor();
+    safeLim.threshold.value = -2.5;
+    safeLim.knee.value = 0;
+    safeLim.ratio.value = 20;
+    safeLim.attack.value = 0;
+    safeLim.release.value = 0.1;
+    const half = ctx.createGain();
+    half.gain.value = 0.5;
+    const clip = ctx.createWaveShaper();
+    clip.curve = softClipCurve();
+    clip.oversample = '4x';
+    safeLim.connect(half).connect(clip).connect(ctx.destination);
+    this.safeIn = safeLim;
+    this.safeOut = clip;
+    comp.connect(this.makeup).connect(safeLim);
     // A tap on the final mix, for the spectrum shapes to show this sound.
     this.ana = ctx.createAnalyser();
     this.ana.fftSize = 2048;
     this.ana.smoothingTimeConstant = 0.6;
-    this.makeup.connect(this.ana);
+    clip.connect(this.ana);
     this.comp = comp;
     this.master = ctx.createGain();
     this.master.gain.value = 0;
@@ -888,7 +922,8 @@ export class ParticleSound {
     this.comp.ratio.setTargetAtTime(4 + glue * 4, t, 0.1);
     this.comp.attack.setTargetAtTime(0.003 + glue * 0.012, t, 0.1);
     this.comp.release.setTargetAtTime(0.25 - glue * 0.1, t, 0.1);
-    this.makeup.gain.setTargetAtTime(1 + glue * 0.6, t, 0.1);
+    // Make-up: up to +4 dB, but only as much as the compressor takes off (see captureTick).
+    this.glueLift = 20 * Math.log10(1 + glue * 0.6);
     this.setVerb(p.verb ?? 'classic');
     this.setPolish(p.polish ?? 0);
     if ((p.tape ?? 0) > 0) this.ensureTape();
@@ -1453,7 +1488,7 @@ export class ParticleSound {
     const ctx = this.ctx;
     if (!this.recDest) {
       this.recDest = ctx.createMediaStreamDestination();
-      (this.pol?.on ? this.pol.lim : this.makeup).connect(this.recDest);
+      this.safeOut.connect(this.recDest);
     }
     this.recMix?.disconnect();
     this.recMix = null;
@@ -1471,13 +1506,18 @@ export class ParticleSound {
   // --- Export: the mix recorded as it plays, sample for sample ---
   // A worklet copies the output; recording starts on the next bar line and
   // runs a set number of bars (an exact loop) or seconds.
+  private safeIn!: AudioNode;
+  private safeOut!: AudioNode;
+  private glueLift = 0;
+  private redSm = 0;
+  private mkDb = -1;
   private capReady = false;
   private cap: {
     node: AudioWorkletNode; L: Float32Array[]; R: Float32Array[]; first: number; bars: number; secs: number;
     startT: number; endT: number; done: (r: { sr: number; L: Float32Array; R: Float32Array } | null) => void;
   } | null = null;
   private get outNode(): AudioNode {
-    return this.pol?.on ? this.pol.lim : this.makeup;
+    return this.safeOut;
   }
   /** Record the mix: `bars` bars from the next bar line, or `secs` seconds from now. Resolves with the samples (null if stopped early). */
   async capture(bars: number, secs: number): Promise<{ sr: number; L: Float32Array; R: Float32Array } | null> {
@@ -1533,6 +1573,14 @@ export class ParticleSound {
     c.done(null);
   }
   private captureTick(before: number) {
+    // Glue's make-up gives back what the compressor takes, never more than
+    // its lift, so turning Glue up doesn't push a hot mix into the ceiling.
+    this.redSm = this.redSm * 0.9 + Math.max(0, -this.comp.reduction) * 0.1;
+    const mk = Math.min(this.glueLift, this.redSm * 0.8);
+    if (Math.abs(mk - this.mkDb) > 0.05) {
+      this.mkDb = mk;
+      this.makeup.gain.setTargetAtTime(Math.pow(10, mk / 20), this.ctx.currentTime, 0.15);
+    }
     const c = this.cap;
     if (!c) return;
     const t = this.ctx.currentTime;
@@ -1648,8 +1696,9 @@ export class ParticleSound {
     const P = this.pol;
     if (on !== P.on) {
       P.on = on;
-      const out = ctx.destination;
-      const taps = [this.ana, this.recDest, this.cap?.node].filter((n): n is AnalyserNode | MediaStreamAudioDestinationNode | AudioWorkletNode => !!n);
+      // Into the safety limiter; the taps (meter, recording, export) hang after it.
+      const out = this.safeIn;
+      const taps: AudioNode[] = [];
       if (on) {
         this.padDuck.disconnect(this.scPad);
         this.padDuck.connect(P.padHp);
