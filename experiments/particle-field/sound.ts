@@ -27,7 +27,7 @@ export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' 
 export type SndTimbre = Band | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
 export type SndProg = 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
-export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808' | 'dist808' | 'growl' | 'rubber' | 'deep' | 'fretless' | 'brass' | 'psy' | 'chip';
+export type BassSound = 'synth' | 'sub' | 'round' | 'upright' | 'fingered' | 'picked' | 'slap' | 'fm' | 'moog' | 'pulse' | 'acid' | 'reese' | 'wobble' | 'fuzz' | 'house' | '808' | 'dist808' | 'growl' | 'rubber' | 'deep' | 'fretless' | 'brass' | 'psy' | 'chip' | 'hoover' | 'donk' | 'neuro' | 'square' | 'juno' | 'ebm' | 'metal' | 'siren';
 import { bandsOf } from './audio.ts';
 import { KITS, GENRES, genreById, stepHit, DRUM_ROWS, type DrumKit, type DrumRow, type Body } from './drums.ts';
 export type { DrumKit };
@@ -186,6 +186,9 @@ interface BassDef {
   click?: number; // pick or finger noise, band Hz
   drop?: number; // cents the note starts sharp
   punch?: number; // starts this many times higher and falls fast (an 808's thump)
+  scoop?: number; // cents the note starts flat and rises from (a hoover's swoop)
+  vib?: [perBeat: number, cents: number]; // pitch swings in time with the beat (a dub siren)
+  sweep?: number; // filter drifts slowly up and down, Hz (a neuro reese moving)
   gain: number;
 }
 const BASSES: Record<BassSound, BassDef> = {
@@ -212,6 +215,14 @@ const BASSES: Record<BassSound, BassDef> = {
   brass: { osc: [['sawtooth', 1, -3, 0.5], ['sawtooth', 1, 3, 0.4]], sub: 0.4, cut: 380, env: 3, fdec: 0.12, q: 1.2, poles: 2, open: 1, drive: 1.4, attack: 0.025, decay: 0.4, sustain: 0.8, release: 0.1, gain: 1.1 },
   psy: { osc: [['sawtooth', 1, 0, 0.9]], sub: 0.6, cut: 350, env: 8, fdec: 0.05, q: 2, poles: 4, open: 1.5, drive: 1.6, attack: 0.001, decay: 0.12, sustain: 0.3, release: 0.03, click: 3000, gain: 1.3 },
   chip: { osc: [['square', 1, 0, 0.8]], sub: 0.3, cut: 5000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, attack: 0.001, decay: 0.2, sustain: 0.7, release: 0.04, gain: 0.7 },
+  hoover: { osc: [['sawtooth', 1, -25, 0.3, -0.6], ['sawtooth', 1, 0, 0.3], ['sawtooth', 1, 25, 0.3, 0.6], ['sawtooth', 0.5, 12, 0.25]], sub: 0.7, cut: 900, env: 2, fdec: 0.3, q: 1.5, poles: 2, open: 1.5, drive: 2, scoop: 700, attack: 0.01, decay: 0.5, sustain: 0.85, release: 0.15, gain: 0.85 },
+  donk: { osc: [['square', 1, 0, 0.5], ['sine', 2, 0, 0.3]], sub: 0.4, cut: 1100, env: 3, fdec: 0.04, q: 7, poles: 2, open: 1, drive: 1.5, punch: 1.6, attack: 0.001, decay: 0.12, sustain: 0.1, release: 0.04, ring: 0.3, gain: 1.4 },
+  neuro: { osc: [['sawtooth', 1, -22, 0.35, -0.5], ['sawtooth', 1, 0, 0.35], ['sawtooth', 1, 21, 0.35, 0.5]], sub: 0.9, cut: 450, env: 1.2, fdec: 0.4, q: 5, poles: 4, open: 1.5, sweep: 0.35, drive: 3, fuzz: 1.8, attack: 0.01, decay: 0.6, sustain: 0.9, release: 0.1, gain: 0.85 },
+  square: { osc: [['square', 1, 0, 0.8]], sub: 0.7, cut: 1600, env: 1.5, fdec: 0.1, q: 0.7, poles: 2, open: 0.5, drive: 1.3, attack: 0.002, decay: 0.3, sustain: 0.75, release: 0.05, gain: 0.95 },
+  juno: { osc: [['sawtooth', 1, -6, 0.4, -0.3], ['square', 1, 6, 0.35, 0.3], ['square', 0.5, 0, 0.3]], sub: 0.5, cut: 320, env: 4, fdec: 0.18, q: 2.5, poles: 4, open: 1.5, drift: 3, drive: 1.2, attack: 0.004, decay: 0.4, sustain: 0.6, release: 0.12, gain: 1.15 },
+  ebm: { osc: [['sawtooth', 1, 0, 0.9]], sub: 0.5, cut: 380, env: 6, fdec: 0.07, q: 3, poles: 4, open: 1.5, drive: 2.2, attack: 0.001, decay: 0.15, sustain: 0.35, release: 0.03, gain: 1.25 },
+  metal: { osc: [['sine', 1, 0, 1]], fm: [1.41, 6, 0.15], sub: 0.6, cut: 2500, env: 1.5, fdec: 0.1, q: 1, poles: 2, open: 0.5, drive: 2, attack: 0.002, decay: 0.35, sustain: 0.5, release: 0.08, gain: 0.9 },
+  siren: { osc: [['sawtooth', 1, 0, 0.5], ['sine', 1, 0, 0.5]], sub: 0.7, cut: 700, env: 2, fdec: 0.2, q: 3, poles: 2, open: 1, vib: [2, 120], drive: 1.6, attack: 0.02, decay: 0.6, sustain: 0.85, release: 0.2, gain: 1 },
   '808': { osc: [['sine', 1, 0, 1]], sub: 0, cut: 2000, env: 1, fdec: 0.1, q: 0.5, poles: 2, open: 0, drive: 3, punch: 2.2, attack: 0.002, decay: 1.2, sustain: 0.6, release: 0.2, gain: 1.0 },
 };
 
@@ -2651,8 +2662,9 @@ export class ParticleSound {
       const o = ctx.createOscillator();
       o.type = type;
       pitch(o.frequency, ratio);
-      o.detune.setValueAtTime(cents + drift + (B.drop ?? 0), t);
+      o.detune.setValueAtTime(cents + drift + (B.drop ?? 0) - (B.scoop ?? 0), t);
       if (B.drop) o.detune.linearRampToValueAtTime(cents + drift, t + 0.05);
+      if (B.scoop) o.detune.setTargetAtTime(cents + drift, t, 0.05);
       const og = ctx.createGain();
       og.gain.value = gain;
       o.connect(og);
@@ -2664,6 +2676,17 @@ export class ParticleSound {
       } else og.connect(mix);
       voices.push(o);
       nodes.push(o);
+    }
+    if (B.vib) {
+      // Siren: the pitch swings up and down with the beat.
+      const lfo = ctx.createOscillator();
+      lfo.type = 'triangle';
+      lfo.frequency.value = (this.bpmNow / 60) * B.vib[0];
+      const lg = ctx.createGain();
+      lg.gain.value = B.vib[1];
+      lfo.connect(lg);
+      for (const o of voices) lg.connect(o.detune);
+      nodes.push(lfo);
     }
     if (B.fm) {
       // A sine modulator on every oscillator's pitch, its depth dying away.
@@ -2707,6 +2730,17 @@ export class ParticleSound {
       lfo.connect(lg);
       for (const lp of filters) lg.connect(lp.frequency);
       nodes.push(lfo);
+    }
+    if (B.sweep) {
+      // A slow, free-running sweep: the reese keeps moving under held notes.
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = B.sweep;
+      const lg = ctx.createGain();
+      lg.gain.value = cut * 1.8;
+      lfo.connect(lg);
+      for (const lp of filters) lg.connect(lp.frequency);
+      lfo.start(t - Math.random() / B.sweep);
+      lfo.stop(end);
     }
     if (B.fuzz) {
       const ws = ctx.createWaveShaper();

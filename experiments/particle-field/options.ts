@@ -52,6 +52,7 @@ export const BASS_SOUNDS: [string, string][] = [
   ['upright', 'Upright (woody)'], ['fingered', 'Fingered (vintage)'], ['picked', 'Picked (electric)'],
   ['acid', 'Acid (squelchy)'], ['reese', 'Reese (DnB)'], ['wobble', 'Wobble (dubstep)'], ['fuzz', 'Fuzz (distorted)'],
   ['dist808', '808 (distorted)'], ['growl', 'Growl (neuro FM)'], ['rubber', 'Rubber (bouncy)'], ['deep', 'Deep (dark, filtered)'], ['fretless', 'Fretless (singing)'], ['brass', 'Brass (tuba)'], ['psy', 'Psy (tight, clicky)'], ['chip', 'Chip (8-bit)'],
+  ['hoover', 'Hoover (rave)'], ['donk', 'Donk (hard house)'], ['neuro', 'Neuro reese (moving)'], ['square', 'Square (grime)'], ['juno', 'Juno (80s poly)'], ['ebm', 'EBM (tight saw)'], ['metal', 'Metallic (FM)'], ['siren', 'Dub siren'],
 ];
 
 export const pct = (v: number) => `${Math.round(v * 100)}%`;

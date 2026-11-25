@@ -3249,7 +3249,8 @@ button.sndp-live-name { cursor: pointer; }
 .rp-rail button.fam span::after { content: ' ›'; color: #77778a; }
 .rp-rail button.fam.open { color: #ececf1; font-weight: 600; }
 .rp-rail button.fam.open span::after { content: ' ⌄'; }
-.rp-rail button.sub { padding-left: 18px; }
+.rp-rail button.sub { margin-left: 12px; padding-left: 12px; min-height: 32px; font-size: 12.5px; border-left: 1px solid #2e2f38; border-radius: 0 10px 10px 0; }
+.rp-rail button.sub.on { border-left-color: transparent; }
 
 /* Output meter on the Volume bar's foot, and the Clip light beside it. */
 .sndp-out { position: absolute; left: 0; top: 50%; margin-top: 10px; height: 3px; width: 0; border-radius: 2px; background: #9fe870; pointer-events: none; }
