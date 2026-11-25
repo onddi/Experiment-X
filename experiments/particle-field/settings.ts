@@ -191,7 +191,7 @@ export interface Settings {
   sndVol: number;
   sndScale: 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | 'japanese' | 'whole';
   sndKey: 'auto' | 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
-  sndTimbre: 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze' | 'strings' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'drop' | 'bird' | 'frog' | 'talkdrum' | 'bowl';
+  sndTimbre: 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze' | 'strings' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'drop' | 'bird' | 'frog' | 'talkdrum' | 'bowl' | 'rave' | 'trance' | 'hoover' | 'darkpiano' | 'square' | 'vox' | 'synbrass' | 'eguitar' | 'sax' | 'trumpet' | 'harpsi' | 'accordion' | 'oud' | 'shaku' | 'hang' | 'duduk';
   sndProg: 'still' | 'calm' | 'pop' | 'drift' | 'mystic' | 'custom';
   sndProgText: string;
   sndChordMove: 'bars' | 'energy' | 'burst' | 'song';
