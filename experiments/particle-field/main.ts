@@ -23478,7 +23478,9 @@ function toggleMute(on = !sndMuted()) {
 const uStudio = (): [string, string, () => void, string?][] => (sndMuted() ? [['Sound muted: tap to unmute (M)', NOTE_MUTED_ICON, () => toggleMute(false), 'snd muted']] : settings.sndVol > 0 ? [[studioPref === 'off' ? 'Sound studio (M) · double tap for settings · hold to mute' : 'Close the sound studio (M) · double tap for settings · hold to mute', NOTE_ICON, cycleStudio, studioPref !== 'off' ? 'snd on' : 'snd']] : []);
 const U_TRAY: Record<UView, () => [string, string, () => void, string?][]> = {
   // Knobs and Arrange wait in ⋯ on phones, so the bar keeps to the essentials.
-  stage: () => [['Shuffle (double tap: sound, hold: both)', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  // The tray hugs the right edge: Shuffle sits just left of Pause and ⋯, which
+  // are always there, so it keeps one spot whatever else shows.
+  stage: () => [...uStudio(), ...(recorder.on ? [uRec()] : []), ['Shuffle (double tap: sound, hold: both)', ICONS.shuffle, shuffleTap, 'primary'], uPause(), uMore()],
   // Phones: the Deck has no top bar; its knob picking and layout live here.
   deck: () => [
     [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on' : ''],
@@ -23553,10 +23555,12 @@ const uRec = (): [string, string, () => void, string?] => [recorder.on ? 'Stop r
   toggleRecord();
   uPaint(true);
 }, recorder.on ? 'rec live' : 'rec'];
+// Shuffle comes first, right after the view switch, so it keeps one spot
+// whatever else shows (see uPlace).
 const U_TRAY_DESK: Record<UView, () => [string, string, () => void, string?][]> = {
-  stage: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
-  deck: () => [[xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], ['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
-  studio: () => [...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], uPause(), uMore()],
+  stage: () => [['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), ...uStudio(), ...(recorder.on ? [uRec()] : []), uPause(), uMore()],
+  deck: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], [xf.on ? 'One scene' : 'Crossfade', svg('<path d="M4 12h16"/><rect x="10" y="6.5" width="4" height="11" rx="1.2"/>'), uCrossfade, xf.on ? 'on label' : 'label'], uPause(), uMore()],
+  studio: () => [['Shuffle (D) · double click: sound · hold: both', ICONS.shuffle, shuffleTap, 'primary'], ...(hasShape() ? [['Arrange the shape', ARRANGE_ICON, () => toggleArrange(true), ''] as [string, string, () => void, string]] : []), uPause(), uMore()],
   build: () => [['Shuffle (D)', ICONS.shuffle, () => undoable(() => shuffle()), 'primary'], uPause(), uMore()],
 };
 let uSig = '';
@@ -23614,7 +23618,7 @@ function uPaint(force = false) {
     b.type = 'button';
     b.title = label;
     b.setAttribute('aria-label', label.replace(/ \(.*\)$/, ''));
-    const named = desk ? cls?.includes('label') : j === 0 && !cls?.includes('folder');
+    const named = desk ? cls?.includes('label') : (cls === 'primary' || (j === 0 && !list.some((x) => x[3] === 'primary'))) && !cls?.includes('folder');
     b.innerHTML = ic + (named ? `<span>${label.replace(/ \(.*\)$/, '')}</span>` : '');
     if (cls) b.classList.add(...cls.split(' '));
     if (cls?.includes('more')) dockMoreBtn = b;
@@ -23666,8 +23670,11 @@ function uPlace() {
   if (buildEl) right = Math.min(right, buildEl.getBoundingClientRect().left);
   // Placed where it sits on the Stage (centred on the screen) in every view,
   // so the switch never moves; it only shifts left if the Studio or Deck would cover it.
-  if (ubar.classList.contains('stage')) stageBarW = ubar.offsetWidth;
-  let left = innerWidth / 2 - (stageBarW || ubar.offsetWidth) / 2;
+  // Centred on a fixed width (the switch and five buttons), not its own: the
+  // bar grows to the right as buttons come and go, so the switch and Shuffle
+  // (first in the tray) never move.
+  if (!stageBarW) stageBarW = (ubar.querySelector<HTMLElement>('.u-seg')?.offsetWidth ?? 0) + 8 + 5 * 43 + 12;
+  let left = innerWidth / 2 - stageBarW / 2;
   left = Math.min(left, right - ubar.offsetWidth - 12);
   ubar.style.left = `${Math.max(12, Math.round(left))}px`;
   // A narrow window: the bar spills over the Studio or Deck, so their lists
