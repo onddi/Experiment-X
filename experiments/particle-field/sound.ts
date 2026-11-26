@@ -596,6 +596,71 @@ export type PicMove = 'same' | 'hue' | 'calm' | 'mono' | 'vivid' | 'lean';
 const BEAT_FULL: Record<BeatMove, number> = { hats: 0.2, sparse: 0.35, half: 0.5, full: 0.7, swap: 0.7, busy: 0.95 };
 const PIC_FULL: Record<PicMove, number> = { mono: 0.2, calm: 0.3, same: 0.5, hue: 0.6, lean: 0.7, vivid: 0.9 };
 type Role = 'start' | 'verse' | 'build' | 'peak' | 'break' | 'end';
+// Builds and drops, by genre. A build can open a low-pass (house, techno),
+// thin out from the bass (EDM), climb a noise riser, roll on the snare,
+// hats, kicks or toms, take the kick and bass out near the end, or stop
+// dead for a beat; the drop lands with a crash, a boom, a reverse swell, or
+// just the beat coming back.
+interface BuildStyle {
+  riser: number; // the noise riser's level (0: none)
+  hp: number; // high-pass the mix climbs to, Hz (0: none)
+  lp: number; // low-pass it opens up from, Hz (0: none)
+  roll: 'snare' | 'hat' | 'kick' | 'tom' | 'none';
+  rollFrom: number; // how far into the build the roll starts (0 … 1)
+  fast: 1 | 2 | 4; // the roll's fastest: quarters, eighths, sixteenths
+  out: number; // kick and bass drop out from here (1: never)
+  gap: number; // beats of silence before the drop
+  crash: boolean;
+  boom: number; // the deep boom on the drop (0: none)
+  rev: boolean; // a reverse cymbal swelling into it
+  bars: number; // a Build section's length in Song mode
+}
+const BUILD_STYLES: Record<string, BuildStyle> = {
+  edm: { riser: 1, hp: 900, lp: 0, roll: 'snare', rollFrom: 0, fast: 4, out: 0.5, gap: 0, crash: true, boom: 1, rev: false, bars: 4 },
+  dubstep: { riser: 0.8, hp: 700, lp: 0, roll: 'snare', rollFrom: 0.25, fast: 4, out: 0.5, gap: 1, crash: true, boom: 1, rev: false, bars: 4 },
+  techno: { riser: 0.3, hp: 0, lp: 400, roll: 'none', rollFrom: 1, fast: 4, out: 0.75, gap: 0, crash: false, boom: 0, rev: true, bars: 8 },
+  house: { riser: 0.25, hp: 0, lp: 600, roll: 'snare', rollFrom: 0.5, fast: 2, out: 0.875, gap: 0, crash: true, boom: 0, rev: false, bars: 8 },
+  rap: { riser: 0, hp: 0, lp: 0, roll: 'hat', rollFrom: 0.5, fast: 4, out: 0.75, gap: 0, crash: false, boom: 0, rev: false, bars: 1 },
+  boombap: { riser: 0, hp: 0, lp: 900, roll: 'none', rollFrom: 1, fast: 4, out: 0.75, gap: 0.5, crash: false, boom: 0, rev: false, bars: 1 },
+  dnb: { riser: 0.5, hp: 600, lp: 0, roll: 'snare', rollFrom: 0.5, fast: 4, out: 0.875, gap: 0, crash: true, boom: 0.5, rev: false, bars: 4 },
+  liquid: { riser: 0.25, hp: 0, lp: 700, roll: 'snare', rollFrom: 0.75, fast: 4, out: 0.875, gap: 0, crash: true, boom: 0, rev: true, bars: 4 },
+  psy: { riser: 0.5, hp: 0, lp: 350, roll: 'snare', rollFrom: 0.75, fast: 4, out: 0.875, gap: 0, crash: false, boom: 0, rev: true, bars: 8 },
+  hard: { riser: 0.8, hp: 600, lp: 0, roll: 'kick', rollFrom: 0, fast: 4, out: 2, gap: 0.5, crash: true, boom: 0.8, rev: false, bars: 4 },
+  synth: { riser: 0.3, hp: 0, lp: 700, roll: 'tom', rollFrom: 0.75, fast: 4, out: 1, gap: 0, crash: true, boom: 0, rev: false, bars: 2 },
+  soft: { riser: 0, hp: 0, lp: 500, roll: 'none', rollFrom: 1, fast: 4, out: 1, gap: 0, crash: false, boom: 0, rev: true, bars: 4 },
+};
+const BUILD_OF: Record<string, string> = {
+  trance: 'edm', hyperpop: 'edm', jersey: 'edm', baile: 'edm',
+  dubstep: 'dubstep', halftime: 'dubstep', darkstep: 'dubstep',
+  techno: 'techno', detroit: 'techno', hardtechno: 'techno', hypnotic: 'techno', industrial: 'techno', ebm: 'techno', gqom: 'techno', dub: 'techno', deepdub: 'techno',
+  house: 'house', garage: 'house', disco: 'house', afro: 'house', dancehall: 'house',
+  trap: 'rap', drill: 'rap', phonk: 'rap', crunk: 'rap', hyphy: 'rap', grime: 'rap', cloud: 'rap', memphis: 'rap', screwed: 'rap',
+  rap: 'boombap', beattape: 'boombap', triphop: 'boombap',
+  dnb: 'dnb', neuro: 'dnb', breaks: 'dnb', breakcore: 'dnb', idm: 'dnb',
+  liquid: 'liquid',
+  psy: 'psy', darkpsy: 'psy', hitech: 'psy', psydub: 'psy',
+  gabber: 'hard',
+  synthwave: 'synth', darksynth: 'synth', darkwave: 'synth', witch: 'synth',
+  lofi: 'soft', jazz: 'soft', folktronica: 'soft',
+};
+// Each build varies a little too, so two in a row don't sound the same.
+function buildStyleFor(genre: string, drums: boolean): BuildStyle {
+  const base = BUILD_STYLES[BUILD_OF[genre] ?? (drums ? 'house' : 'soft')];
+  const s = { ...base };
+  const r = Math.random;
+  if (s.riser > 0) s.riser *= 0.6 + r() * 0.6;
+  if (s.roll !== 'none' && r() < 0.3) s.rollFrom = Math.min(0.875, s.rollFrom + 0.25);
+  if (s.roll === 'snare' && r() < 0.25) s.fast = 2;
+  if (s.gap === 0 && s.out < 1 && r() < 0.2) s.gap = 0.5;
+  if (!s.rev && s.boom === 0 && r() < 0.3) s.rev = true;
+  if (s.crash && r() < 0.2) s.crash = false;
+  return s;
+}
+/** Song mode: a Build section takes the genre's build length. */
+function fitBuilds(form: SongSection[], genre: string, drums: boolean): SongSection[] {
+  const st = BUILD_STYLES[BUILD_OF[genre] ?? (drums ? 'house' : 'soft')];
+  return form.map((x) => (x.name === 'Build' ? { ...x, bars: st.bars * (Math.random() < 0.25 && st.bars < 8 ? 2 : 1) } : x));
+}
 const ROLE: Record<SongSection['name'], Role> = { Intro: 'start', Verse: 'verse', Build: 'build', Drop: 'peak', Chorus: 'peak', Breakdown: 'break', Bridge: 'break', Outro: 'end' };
 const BEAT_MOVES: Record<Role, BeatMove[]> = {
   start: ['hats', 'sparse', 'full'],
@@ -2987,7 +3052,7 @@ export class ParticleSound {
   // character) with a sine underneath for weight.
   private bassF = 0; // the last bass note's pitch, for slides
   private bassNote(deg: number, vel: number, len: number, when: number, slide = false, up = 0) {
-    if (this.voices >= MAX_VOICES || this.buildU > 0.75) return;
+    if (this.voices >= MAX_VOICES || this.buildU > Math.max(0.75, this.bs.out)) return;
     // Octave: the setting, plus the line's own jumps.
     const oct = 2 ** Math.max(-1, Math.min(2, (this.p.bassOct ?? 0) + up));
     {
@@ -3215,7 +3280,7 @@ export class ParticleSound {
 
   private kick(k: number, when: number) {
     // Late in a build the kick drops out, so the drop hits harder.
-    if (this.buildU > 0.5) return;
+    if (this.buildU > this.bs.out && !this.rolling) return;
     this.log('drums', k, 0.02, 0.25, when);
     this.drumEv('kick', k, when);
     if (!this.audible('drums')) return;
@@ -3584,6 +3649,11 @@ export class ParticleSound {
   private dropAt = -1; // the downbeat it lands on
   private dropNow = false;
   private buildHp: BiquadFilterNode | null = null;
+  private buildLp: BiquadFilterNode | null = null;
+  private buildGate: GainNode | null = null;
+  private bs: BuildStyle = BUILD_STYLES.edm;
+  private rollTom = 0;
+  private rolling = false;
   private riser: { src: AudioBufferSourceNode; g: GainNode } | null = null;
   /** Start a build that drops after `bars` whole bars. */
   buildDrop(bars = 4, at = -1) {
@@ -3593,17 +3663,64 @@ export class ParticleSound {
     this.buildFrom = this.beat;
     this.dropAt = at >= 0 ? at : (Math.floor(this.beat / 4) + 1 + Math.max(1, bars - 1)) * 4;
     const secs = Math.max(0.5, ((this.dropAt - this.beat) * 60) / Math.max(40, this.bpmNow));
+    const beat = 60 / Math.max(40, this.bpmNow);
+    const bs = (this.bs = buildStyleFor(this.p.genre, this.p.drums > 0));
+    this.rollTom = 0;
     if (!this.buildHp) {
       this.buildHp = ctx.createBiquadFilter();
       this.buildHp.type = 'highpass';
       this.buildHp.frequency.value = 20;
-      this.splice(this.buildHp, this.buildHp);
+      this.buildLp = ctx.createBiquadFilter();
+      this.buildLp.type = 'lowpass';
+      this.buildLp.frequency.value = 20000;
+      this.buildGate = ctx.createGain();
+      this.buildHp.connect(this.buildLp).connect(this.buildGate);
+      this.splice(this.buildHp, this.buildGate);
     }
     const f = this.buildHp.frequency;
     f.cancelScheduledValues(t);
     f.setValueAtTime(Math.max(20, f.value), t);
-    f.exponentialRampToValueAtTime(900, t + secs);
+    if (bs.hp) f.exponentialRampToValueAtTime(bs.hp, t + secs);
+    // Low-pass: muffle over a beat, then open up to the drop.
+    const lf = this.buildLp!.frequency;
+    lf.cancelScheduledValues(t);
+    lf.setValueAtTime(Math.max(30, lf.value), t);
+    if (bs.lp) {
+      lf.exponentialRampToValueAtTime(bs.lp, t + Math.min(beat, secs * 0.3));
+      lf.exponentialRampToValueAtTime(16000, t + secs);
+    }
+    // The gap: silence for the last beat (or half) before the drop.
+    const gg = this.buildGate!.gain;
+    gg.cancelScheduledValues(t);
+    gg.setValueAtTime(1, t);
+    if (bs.gap) {
+      gg.setValueAtTime(1, t + secs - bs.gap * beat);
+      gg.linearRampToValueAtTime(0, t + secs - bs.gap * beat + 0.02);
+      gg.setValueAtTime(0, t + secs - 0.005);
+      gg.linearRampToValueAtTime(1, t + secs);
+    }
+    if (bs.rev) {
+      // A reverse cymbal: bright noise swelling over the last beat, cut dead on the drop.
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      n.loop = true;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 5000;
+      const rg = ctx.createGain();
+      const from = t + Math.max(0, secs - beat * 2);
+      rg.gain.setValueAtTime(0.0001, from);
+      rg.gain.exponentialRampToValueAtTime(0.16, t + secs - 0.01);
+      rg.gain.linearRampToValueAtTime(0, t + secs);
+      n.connect(hp).connect(rg);
+      this.send(rg, 0.5);
+      n.start(from);
+      n.stop(t + secs + 0.02);
+      n.onended = () => rg.disconnect();
+    }
     this.riser?.src.stop();
+    this.riser = null;
+    if (!bs.riser) return;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     src.loop = true;
@@ -3614,7 +3731,7 @@ export class ParticleSound {
     bp.frequency.exponentialRampToValueAtTime(7000, t + secs);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.22, t + secs);
+    g.gain.exponentialRampToValueAtTime(0.22 * bs.riser, t + secs);
     src.connect(bp).connect(g);
     // Straight to the compressor: the build's high-pass doesn't thin the riser.
     g.connect(this.comp);
@@ -3642,6 +3759,10 @@ export class ParticleSound {
     if (this.buildHp) {
       this.buildHp.frequency.cancelScheduledValues(t);
       this.buildHp.frequency.setTargetAtTime(20, t, 0.03);
+      this.buildLp!.frequency.cancelScheduledValues(t);
+      this.buildLp!.frequency.setTargetAtTime(20000, t, 0.03);
+      this.buildGate!.gain.cancelScheduledValues(t);
+      this.buildGate!.gain.setTargetAtTime(1, t, 0.005);
     }
     if (this.riser) {
       const r = this.riser;
@@ -3658,10 +3779,14 @@ export class ParticleSound {
     this.endBuild(t);
     this.dropNow = true;
     this.cur = 'drums';
+    const bs = this.bs;
     if (this.p.drums > 0) {
-      this.crash(1, 0);
+      if (bs.crash) this.crash(1, 0);
       this.kick(1, 0);
     }
+    this.padSwell = 1;
+    this.beatSwap = true;
+    if (!bs.boom) return;
     // The boom: a deep sine falling away under everything.
     const ctx = this.ctx;
     const o = ctx.createOscillator();
@@ -3669,14 +3794,12 @@ export class ParticleSound {
     o.frequency.exponentialRampToValueAtTime(32, t + 1.4);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.85, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.85 * bs.boom, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
     o.connect(g).connect(this.comp);
     o.start(t);
     o.stop(t + 1.9);
     o.onended = () => g.disconnect();
-    this.padSwell = 1;
-    this.beatSwap = true;
   }
 
   // Song mode: the sound plays a whole song in sections, on a loop. Each
@@ -3694,7 +3817,7 @@ export class ParticleSound {
   setForm(id: string) {
     if (id === this.formId && this.form.length) return;
     this.formId = id;
-    this.form = id === 'shuffle' ? randomForm() : (SONGS[id] ?? SONGS.classic).form;
+    this.form = this.fit(id === 'shuffle' ? randomForm() : (SONGS[id] ?? SONGS.classic).form);
     this.nextForm = null;
     if (this.songFrom >= 0) {
       // Back to the song's own beat and no build, then the new form from the top.
@@ -3761,7 +3884,7 @@ export class ParticleSound {
     }
   }
   song(on: boolean) {
-    if (on && this.nextForm) (this.form = this.nextForm), (this.nextForm = null);
+    if (on && this.nextForm) (this.form = this.fit(this.nextForm)), (this.nextForm = null);
     if (!on) {
       if (this.swapFrom >= 0) this.beatIdx = this.swapFrom;
       this.swapFrom = -1;
@@ -3775,7 +3898,10 @@ export class ParticleSound {
     this.songFrom = (Math.floor(this.beat / 4) + 1) * 4;
     this.songIdx = -1;
     this.loopN = 0;
-    if (this.formId === 'shuffle') this.form = randomForm();
+    this.form = this.fit(this.formId === 'shuffle' ? randomForm() : (SONGS[this.formId] ?? SONGS.classic).form);
+  }
+  private fit(f: SongSection[]) {
+    return fitBuilds(f, this.p.genre, this.p.drums > 0);
   }
   get songOn() {
     return this.songFrom >= 0;
@@ -3847,9 +3973,10 @@ export class ParticleSound {
     // A new loop: the next arrangement (a fresh one when it's Different every time).
     if (sn && sn.loop !== this.loopN) {
       this.loopN = sn.loop;
-      if (this.formId === 'shuffle') this.nextForm = randomForm();
+      // Every loop refits the builds (their length varies), Different every time a whole new form.
+      this.nextForm ??= this.formId === 'shuffle' ? randomForm() : (SONGS[this.formId] ?? SONGS.classic).form;
       if (this.nextForm) {
-        this.form = this.nextForm;
+        this.form = this.fit(this.nextForm);
         this.nextForm = null;
         this.songFrom = Math.round(this.beat / 4) * 4;
         this.loopN = 0;
@@ -4107,14 +4234,27 @@ export class ParticleSound {
       // The build's snare roll: quarters, then eighths, sixteenths, and a
       // last flurry of thirty-seconds, rising in loudness.
       const bu = this.buildU;
-      if (bu >= 0 && P.drums > 0 && this.audible('drums')) {
-        const every = bu < 0.25 ? 4 : bu < 0.5 ? 2 : 1;
+      const bs = this.bs;
+      if (bu >= bs.rollFrom && bs.roll !== 'none' && P.drums > 0 && this.audible('drums')) {
+        // How far into the roll: it speeds up from quarters to the style's fastest.
+        const ru = (bu - bs.rollFrom) / Math.max(0.01, 1 - bs.rollFrom);
+        const every = Math.max(4 / bs.fast, ru < 0.33 ? 4 : ru < 0.66 ? 2 : 1);
         if (s % every === 0) {
           const sd = 60 / bpm / 4;
           const v = (0.25 + 0.6 * bu) * P.drums;
           this.cur = 'drums';
-          this.snare(v, 0);
-          if (bu > 0.85) this.snare(v * 0.8, sd / 2);
+          if (bs.roll === 'snare') {
+            this.snare(v, 0);
+            if (bu > 0.85 && bs.fast === 4) this.snare(v * 0.8, sd / 2);
+          } else if (bs.roll === 'hat') {
+            // A trap hat roll: sixteenths, then triplets at the end.
+            this.hat(v * 0.7, 0, false);
+            if (ru > 0.66) (this.hat(v * 0.5, sd / 3, false), this.hat(v * 0.55, (sd * 2) / 3, false));
+          } else if (bs.roll === 'kick') {
+            this.rolling = true;
+            this.kick(v * 1.1, 0);
+            this.rolling = false;
+          } else this.tom(v * 1.2, 0, Math.min(5, this.rollTom++ >> 1));
         }
       }
       const stepDur = 60 / bpm / 4;
