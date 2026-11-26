@@ -3261,11 +3261,11 @@ button.sndp-live-name { cursor: pointer; }
 /* Studio folders, desktop: a toggle folds the list to its icons. */
 .fidx-fold { display: none; }
 @media (min-width: 721px) {
-  .fidx-fold { display: grid; place-items: center; width: 26px; height: 26px; margin: 0 0 6px auto; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+  .fidx-fold { display: grid; place-items: center; width: 26px; height: 26px; margin: 0 auto 6px 8px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
   .fidx-fold:hover { background: rgb(255 255 255 / 0.06); color: var(--text); }
   .fidx-fold svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .panel.fidx-mini .fidx { width: 54px; padding-left: 6px; padding-right: 6px; }
-  .panel.fidx-mini .fidx-fold { margin: 0 auto 6px; }
+  /* The toggle keeps its place, open or folded: 8px in from the left (centred in the folded column). */
   .panel.fidx-mini .fd-head { grid-template-columns: 26px; justify-content: center; padding: 8px 0; }
   .panel.fidx-mini .fd-head > :not(.fd-ic), .panel.fidx-mini .fd-kids { display: none; }
   .panel.fidx-mini .fd.open { background: none; padding-bottom: 0; }
