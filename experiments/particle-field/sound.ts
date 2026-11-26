@@ -26,6 +26,7 @@ const ACC_FX = new Set<string>(['horn', 'scratch', 'siren', 'riser', 'boom']);
 export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood' | 'sand' | 'crickets' | 'sparks' | 'glass' | 'keys' | 'static' | 'geiger' | 'fire' | 'ice' | 'cicadas' | 'data' | 'hum';
 /** Which particles make the grains: any at random, the fast movers, or the ones that bounce. */
 export type GrainFrom = 'any' | 'fast' | 'bounce';
+export type HitFrom = 'any' | 'bounce' | 'edge' | 'fast';
 export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze' | 'strings';
 export type SndTimbre = Band | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
@@ -376,6 +377,7 @@ export interface SoundParams {
   seq: number;
   hits: number;
   hitSound: HitSound;
+  hitFrom?: HitFrom; // what rings the chimes: bounces (else fast movers), only bounces, edges (wrapping too), fast movers
   grain: number;
   grainSound: GrainSound;
   grainRate: number; // 0 … 1, 0.5 = as before
@@ -1034,6 +1036,8 @@ export class ParticleSound {
   // Melodic notes go in too (kind 'note', with the pitch class), so they can light the picture.
   private drumQ: { kind: 'kick' | 'snare' | 'hat' | 'crash' | 'bass' | 'note'; k: number; at: number; col: number; len?: number; pc?: number }[] = [];
   private stepNow = 0;
+  private hitBeat = -99;
+  private chimeStep = -1;
   private drumEv(kind: 'kick' | 'snare' | 'hat' | 'crash', k: number, when: number) {
     if (!this.audible('drums') || this.drumQ.length > 64) return;
     this.drumQ.push({ kind, k, at: this.ctx.currentTime + when, col: this.stepNow });
@@ -4277,7 +4281,31 @@ export class ParticleSound {
 
     // Chimes: the hardest few bounces of this frame.
     this.cur = 'chimes';
-    if (P.hits > 0 && F.hits.length && gate()) {
+    const hFrom = P.hitFrom ?? 'any';
+    if (F.hits.length) this.hitBeat = this.beat;
+    // Without bounces for a while (wrapping edges, no obstacles), the fast movers ring them instead.
+    const byFast = hFrom === 'fast' || (hFrom === 'any' && this.beat - this.hitBeat > 2);
+    if (P.hits > 0 && byFast && F.n > 0) {
+      const e8 = Math.floor(this.beat * 2);
+      if (e8 !== this.chimeStep) {
+        this.chimeStep = e8;
+        if (gate() && Math.random() < 0.2 + this.energy * 0.6) {
+          // The quickest of a few, on the eighth notes; quicker plays louder.
+          const fast = (w * F.dt) / 2.5;
+          let best = -1, v = 0;
+          for (let k = 0; k < 12; k++) {
+            const j = (Math.random() * F.n) | 0;
+            if (F.dead && F.dead[j]) continue;
+            const d = Math.hypot(F.px[j] - F.ox[j], F.py[j] - F.oy[j]);
+            if (d > v) (v = d), (best = j);
+          }
+          if (best >= 0 && v > fast * 0.15) {
+            const sp = Math.min(1, v / fast);
+            this.note(this.degAt(F.py[best], h), P.hits * (0.4 + 0.5 * sp) * room, (F.px[best] / w) * 1.6 - 0.8, P.hitSound && P.hitSound !== 'same' ? P.hitSound : this.voiceFor(F.tone[best]));
+          }
+        }
+      }
+    } else if (P.hits > 0 && F.hits.length && gate()) {
       const H = F.hits;
       const m = H.length / 4;
       let budget = 3;
