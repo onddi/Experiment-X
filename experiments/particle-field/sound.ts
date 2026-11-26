@@ -27,6 +27,7 @@ export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood
 /** Which particles make the grains: any at random, the fast movers, or the ones that bounce. */
 export type GrainFrom = 'any' | 'fast' | 'bounce';
 export type HitFrom = 'any' | 'bounce' | 'edge' | 'fast';
+export type GrainGrid = 'auto' | 'free' | '16' | '8';
 export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze' | 'strings';
 export type SndTimbre = Band | Voice;
 export type SndMusic = 'free' | 'room' | 'along';
@@ -383,6 +384,7 @@ export interface SoundParams {
   grainRate: number; // 0 … 1, 0.5 = as before
   grainLen: number; // 0 … 1, 0.5 = as before
   grainFrom?: GrainFrom;
+  grainGrid?: GrainGrid; // on the beat: auto (when drums play), free, 16ths, 8ths
   seqSound?: HitSound; // Steps' own instrument ('same' = the main one)
   seqRate?: number; // play every 1, 2 or 4 sixteenths
   seqNotes?: number; // most notes a step, 0 = by how busy the music is
@@ -1037,6 +1039,9 @@ export class ParticleSound {
   private drumQ: { kind: 'kick' | 'snare' | 'hat' | 'crash' | 'bass' | 'note'; k: number; at: number; col: number; len?: number; pc?: number }[] = [];
   private stepNow = 0;
   private hitBeat = -99;
+  private grainT = -1;
+  private grainStep = -1;
+  private grainN = 0;
   private chimeStep = -1;
   private drumEv(kind: 'kick' | 'snare' | 'hat' | 'crash', k: number, when: number) {
     if (!this.audible('drums') || this.drumQ.length > 64) return;
@@ -2321,7 +2326,7 @@ export class ParticleSound {
 
   private grain(x: number, y: number, w: number, h: number, amt: number, speed: number, len = 0.006 + (1 - speed) * 0.03, wet = 0.4) {
     const ctx = this.ctx;
-    const t = ctx.currentTime + Math.random() * 0.016;
+    const t = this.grainT >= 0 ? this.grainT : ctx.currentTime + Math.random() * 0.016;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const bp = ctx.createBiquadFilter();
@@ -2423,11 +2428,26 @@ export class ParticleSound {
   // One grain in the chosen sound. Height sets the pitch or brightness, x the pan.
   private grainOf(x: number, y: number, w: number, h: number, amt: number, speed: number) {
     const P = this.p;
+    // On the beat: each grain waits for the next 16th (or 8th), a few per
+    // step, louder on the beat, so they play with the drums instead of across them.
+    const gm = P.grainGrid ?? 'auto';
+    const per = gm === '16' ? 4 : gm === '8' ? 2 : gm === 'auto' && P.drums > 0 && this.audible('drums') ? 4 : 0;
+    this.grainT = -1;
+    if (per && this.bpmNow > 0) {
+      const pos = this.beat * per;
+      const next = Math.ceil(pos + 1e-4);
+      if (next !== this.grainStep) (this.grainStep = next), (this.grainN = 0);
+      const onBeat = next % per === 0;
+      if (this.grainN >= (onBeat ? 3 : 2)) return;
+      this.grainN++;
+      this.grainT = this.ctx.currentTime + ((next - pos) / per) * (60 / this.bpmNow);
+      amt *= onBeat ? 1.05 : 0.7;
+    }
     const lenK = Math.pow(8, (P.grainLen ?? 0.5) - 0.5);
     const kind = P.grainSound ?? 'dust';
     if (kind === 'dust') return this.grain(x, y, w, h, amt, speed, (0.006 + (1 - speed) * 0.03) * lenK);
     const ctx = this.ctx;
-    const t = ctx.currentTime + Math.random() * 0.016;
+    const t = this.grainT >= 0 ? this.grainT : ctx.currentTime + Math.random() * 0.016;
     const pn = ctx.createStereoPanner();
     pn.pan.value = (x / w) * 1.6 - 0.8;
     const g = ctx.createGain();
