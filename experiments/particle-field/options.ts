@@ -28,11 +28,11 @@ export const OB_COLOURS: [string, string][] = [['white', 'White'], ['scene', 'Sc
 
 export const OB_PIECE_KINDS: [string, string][] = [['text', 'A word'], ['icon', 'A shape'], ['wall', 'A wall'], ['ring', 'A ring'], ['circle', 'A circle']];
 
-export const GRAIN_SOUNDS: [string, string][] = [['dust', 'Dust'], ['notes', 'Glitter notes'], ['rain', 'Rain'], ['bubbles', 'Bubbles'], ['vinyl', 'Vinyl crackle'], ['wood', 'Wood knocks'], ['sand', 'Sand'], ['crickets', 'Crickets'], ['sparks', 'Sparks'], ['glass', 'Glass'], ['keys', 'Typewriter keys']];
+export const GRAIN_SOUNDS: [string, string][] = [['dust', 'Dust'], ['notes', 'Glitter notes'], ['rain', 'Rain'], ['bubbles', 'Bubbles'], ['vinyl', 'Vinyl crackle'], ['wood', 'Wood knocks'], ['sand', 'Sand'], ['crickets', 'Crickets'], ['sparks', 'Sparks'], ['glass', 'Glass'], ['keys', 'Typewriter keys'], ['static', 'Radio static'], ['geiger', 'Geiger counter'], ['fire', 'Fire crackle'], ['ice', 'Ice cracking'], ['cicadas', 'Cicadas'], ['data', 'Data bleeps'], ['hum', 'Machine hum']];
 
 export const GRAIN_FROM: [string, string][] = [['any', 'Anywhere'], ['fast', 'Fast movers'], ['bounce', 'Bounces']];
 
-export const TICK_SOUNDS: [string, string][] = [['off', 'Off'], ['soft', 'Soft'], ['click', 'Click'], ['metro', 'Metronome'], ['wood', 'Wood block'], ['rim', 'Rim'], ['snap', 'Finger snap'], ['clap', 'Clap'], ['shaker', 'Shaker'], ['shuffle', 'Brushed shaker'], ['tamb', 'Tambourine'], ['cowbell', 'Cowbell'], ['hat', 'Hi-hat'], ['blip', 'Blip (in key)'], ['glass', 'Glass (in key)']];
+export const TICK_SOUNDS: [string, string][] = [['off', 'Off'], ['soft', 'Soft'], ['click', 'Click'], ['metro', 'Metronome'], ['wood', 'Wood block'], ['rim', 'Rim'], ['snap', 'Finger snap'], ['clap', 'Clap'], ['shaker', 'Shaker'], ['shuffle', 'Brushed shaker'], ['tamb', 'Tambourine'], ['cowbell', 'Cowbell'], ['hat', 'Hi-hat'], ['blip', 'Blip (in key)'], ['glass', 'Glass (in key)'], ['ride', 'Ride'], ['rimshot', 'Rimshot'], ['clank', 'Industrial clank'], ['zap', 'Psy zap (in key)'], ['conga', 'Conga'], ['agogo', 'Agogo bells']];
 
 export const TICK_PATTERNS: [string, string][] = [['eighths', 'Eighths'], ['quarters', 'On the beat'], ['offbeat', 'Off the beat'], ['sixteenths', 'Sixteenths'], ['gallop', 'Gallop'], ['clave', 'Clave'], ['tresillo', 'Tresillo'], ['bossa', 'Bossa'], ['field', 'Where particles crowd']];
 

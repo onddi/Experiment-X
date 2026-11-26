@@ -435,7 +435,7 @@ const pointer = { x: -1e4, y: -1e4, active: false, down: false };
 // Particle sound (sound.ts, loaded the first time Sound is switched on). Every
 // hook checks sndOn first, so with Sound off the cost is one boolean test.
 const HELD_TOUCH = new Set(['theremin', 'lead', 'pad', 'organ']);
-const TOUCH_SOUNDS: [string, string][] = [['theremin', 'Theremin (held)'], ['lead', 'Synth lead (held)'], ['pad', 'Soft pad (held)'], ['organ', 'Organ (held)'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['bell', 'Bell'], ['marimba', 'Marimba'], ['kalimba', 'Kalimba'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['glass', 'Glass'], ['koto', 'Koto'], ['steel', 'Steel drum'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth stab']];
+const TOUCH_SOUNDS: [string, string][] = [['theremin', 'Theremin (held)'], ['lead', 'Synth lead (held)'], ['pad', 'Soft pad (held)'], ['organ', 'Organ (held)'], ['hoover-h', 'Hoover (held)'], ['vocoder', 'Vocoder (held)'], ['cello-h', 'Cello (held)'], ['sax-h', 'Sax (held)'], ['pluck', 'Pluck'], ['harp', 'Harp'], ['bell', 'Bell'], ['marimba', 'Marimba'], ['kalimba', 'Kalimba'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['glass', 'Glass'], ['koto', 'Koto'], ['steel', 'Steel drum'], ['musicbox', 'Music box'], ['flute', 'Flute'], ['synth', 'Synth stab'], ['laser', 'Laser']];
 // The four sound knobs: 50% leaves every setting as it is; they scale on top, so nothing is lost.
 const macroFmt = (v: number) => (Math.abs(v - 0.5) < 0.01 ? 'as set' : `${v > 0.5 ? '+' : '−'}${Math.round(Math.abs(v - 0.5) * 200)}%`);
 // What plays: each layer on or off; off remembers its level for when it comes back.
@@ -11730,7 +11730,7 @@ const CONTROLS: Control[] = [
   { kind: 'toggle', key: 'sndAccShape', label: 'Whoosh when a shape forms', show: () => settings.sndAccents > 0 },
   { kind: 'toggle', key: 'sndAccBirth', label: 'Sparkle on a burst of births', show: () => settings.sndAccents > 0 },
   { kind: 'toggle', key: 'sndAccBurst', label: 'Boom on an explosion', show: () => settings.sndAccents > 0 },
-  { kind: 'select', key: 'sndAccVoice', label: 'Sound', options: [['bell', 'Bell'], ['harp', 'Harp'], ['glass', 'Glass'], ['celesta', 'Celesta'], ['kalimba', 'Kalimba'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['crystal', 'Crystal'], ['koto', 'Koto']], show: () => settings.sndAccents > 0 },
+  { kind: 'select', key: 'sndAccVoice', label: 'Sound', options: [['bell', 'Bell'], ['harp', 'Harp'], ['glass', 'Glass'], ['celesta', 'Celesta'], ['kalimba', 'Kalimba'], ['epiano', 'Electric piano'], ['vibes', 'Vibraphone'], ['musicbox', 'Music box'], ['crystal', 'Crystal'], ['koto', 'Koto'], ['horn', 'Air horn'], ['scratch', 'Vinyl scratch'], ['siren', 'Rave siren'], ['riser', 'Riser'], ['boom', 'Impact boom']], show: () => settings.sndAccents > 0 },
   { kind: 'select', key: 'sndBassPattern', label: 'Pattern', options: [['beat', 'Follow the beat'], ['hold', 'Hold'], ['pump', 'Pump (octave eighths)'], ['walk', 'Walking'], ['arp', 'Arpeggio'], ['offbeat', 'Offbeat']], show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassMove', label: 'Movement', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'root only' : pct(v)), show: () => settings.sndBass > 0 },
   { kind: 'range', key: 'sndBassWalk', label: 'Walk in', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'off' : pct(v)), show: () => settings.sndBass > 0 },
