@@ -270,7 +270,7 @@ export interface Settings {
   sndAccShape: boolean;
   sndAccBirth: boolean;
   sndAccBurst: boolean;
-  sndAccVoice: import('./sound.ts').Voice;
+  sndAccVoice: import('./sound.ts').Voice | import('./sound.ts').AccFx;
   sndHits: number;
   sndGrainSound: import('./sound.ts').GrainSound;
   sndGrainRate: number;
@@ -312,7 +312,7 @@ export interface Settings {
   sndMBright: number;
   sndMSpace: number;
   sndMGroove: number;
-  sndTouchSound: 'theremin' | 'lead' | 'pad' | 'organ' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto';
+  sndTouchSound: 'theremin' | 'lead' | 'pad' | 'organ' | 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'hoover-h' | 'vocoder' | 'cello-h' | 'sax-h' | 'laser';
   sndTouchMode: 'glide' | 'notes' | 'chord';
   sndTouchGlide: number;
   sndTouchVib: number;

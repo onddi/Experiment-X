@@ -19,8 +19,11 @@ export type SndScale = 'pentatonic' | 'major' | 'minor' | 'dorian' | 'blues' | '
 export type Voice = 'marimba' | 'bell' | 'pluck' | 'glass' | 'kalimba' | 'epiano' | 'vibes' | 'musicbox' | 'harp' | 'steel' | 'flute' | 'synth' | 'koto' | 'guitar' | 'nylon' | 'sitar' | 'mandolin' | 'banjo' | 'pizz' | 'violin' | 'cello' | 'piano' | 'clav' | 'xylo' | 'chip' | 'acid' | 'organ' | 'bubble' | 'wind' | 'celesta' | 'tubular' | 'crystal' | 'tri' | 'gong' | 'wood' | 'drop' | 'bird' | 'frog' | 'talkdrum' | 'bowl' | 'rave' | 'trance' | 'hoover' | 'darkpiano' | 'square' | 'vox' | 'synbrass' | 'eguitar' | 'sax' | 'trumpet' | 'harpsi' | 'accordion' | 'oud' | 'shaku' | 'hang' | 'duduk' | 'glock' | 'church' | 'belltree' | 'laser' | 'revcym';
 // The chimes' own sound, or 'same' to play whatever the strings play.
 export type HitSound = 'same' | Voice;
+// Accent effects: one-shots instead of the strummed chord.
+export type AccFx = 'horn' | 'scratch' | 'siren' | 'riser' | 'boom';
+const ACC_FX = new Set<string>(['horn', 'scratch', 'siren', 'riser', 'boom']);
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
-export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood' | 'sand' | 'crickets' | 'sparks' | 'glass' | 'keys';
+export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood' | 'sand' | 'crickets' | 'sparks' | 'glass' | 'keys' | 'static' | 'geiger' | 'fire' | 'ice' | 'cicadas' | 'data' | 'hum';
 /** Which particles make the grains: any at random, the fast movers, or the ones that bounce. */
 export type GrainFrom = 'any' | 'fast' | 'bounce';
 export type Band = 'colour' | 'lounge' | 'world' | 'fairy' | 'temple' | 'woods' | 'rain' | 'retro' | 'breeze' | 'strings';
@@ -34,13 +37,17 @@ export type { DrumKit };
 export type PadSound = 'soft' | 'strings' | 'organ' | 'choir' | 'shimmer' | 'warm' | 'tape' | 'glass' | 'bowed' | 'dark' | 'air' | 'brass' | 'reed' | 'hollow' | 'ooh' | 'cello' | 'ice' | 'pwm' | 'velvet' | 'analog' | 'vox' | 'drone' | 'mist' | 'supersaw' | 'harmonium' | 'cosmic' | 'gated' | 'reverse' | 'sweep' | 'bells' | 'ocean' | 'whisper' | 'throat' | 'frozen' | 'wind' | 'rain' | 'whale' | 'crickets' | 'storm' | 'horror' | 'chant' | 'factory' | 'juno' | 'epic' | 'vocoder' | 'shepard' | 'granular';
 export type SndChordMove = 'bars' | 'energy' | 'burst' | 'song';
 /** Held sounds sing while the finger is down; the rest are the struck voices, played as you land and cross notes. */
-export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | Voice;
+export type TouchSound = 'theremin' | 'lead' | 'pad' | 'organ' | 'hoover-h' | 'vocoder' | 'cello-h' | 'sax-h' | Voice;
 export type TouchMode = 'glide' | 'notes' | 'chord';
 const HELD: Record<string, { a: OscillatorType; b: OscillatorType; ratio: number; mix: number; q: number; attack: number; gain: number }> = {
   theremin: { a: 'sine', b: 'triangle', ratio: 2, mix: 0.3, q: 0.7, attack: 0.03, gain: 1 },
   lead: { a: 'sawtooth', b: 'square', ratio: 1.005, mix: 0.45, q: 5, attack: 0.02, gain: 0.55 },
   pad: { a: 'triangle', b: 'sawtooth', ratio: 1.008, mix: 0.35, q: 1, attack: 0.25, gain: 0.8 },
   organ: { a: 'sine', b: 'sine', ratio: 2, mix: 0.6, q: 0.7, attack: 0.015, gain: 0.85 },
+  'hoover-h': { a: 'sawtooth', b: 'sawtooth', ratio: 0.503, mix: 0.6, q: 2, attack: 0.05, gain: 0.5 },
+  vocoder: { a: 'sawtooth', b: 'square', ratio: 1.003, mix: 0.5, q: 8, attack: 0.03, gain: 0.6 },
+  'cello-h': { a: 'sawtooth', b: 'sawtooth', ratio: 1.004, mix: 0.5, q: 1.5, attack: 0.18, gain: 0.6 },
+  'sax-h': { a: 'sawtooth', b: 'square', ratio: 2, mix: 0.25, q: 3, attack: 0.05, gain: 0.6 },
 };
 export const isHeldTouch = (s: string) => s in HELD;
 interface TouchVoice {
@@ -401,7 +408,7 @@ export interface SoundParams {
   accShape?: boolean; // a whoosh when a shape forms
   accBirth?: boolean; // a sparkle when many are born at once
   accBurst?: boolean; // a low boom on an explosion
-  accVoice?: Voice; // what the strum and sparkle play
+  accVoice?: Voice | AccFx; // what the strum and sparkle play
   reverb: number;
   music: SndMusic;
   // Steering the chords.
@@ -2361,6 +2368,30 @@ export class ParticleSound {
         this.body(0, 560, 555, 0.01, 0.12, 0.07 * k, 'square', 0.1);
         return this.body(0, 845, 840, 0.01, 0.12, 0.05 * k, 'square', 0.1);
       case 'hat': return this.hiss(0, 'highpass', 8500 * pm, 0.8, 0.001, 0.035, 0.14 * k, pan * 0.4, 0.1);
+      case 'ride':
+        this.body(0, 3300 * pm, 3280 * pm, 0.01, acc ? 0.6 : 0.4, 0.025 * k, 'sine', 0.2);
+        return this.hiss(0, 'bandpass', 5600 * pm, 1.2, 0.001, acc ? 0.4 : 0.25, 0.08 * k, pan * 0.4, 0.2);
+      case 'rimshot':
+        this.body(0, 1750 * pm, 1650 * pm, 0.008, 0.05, 0.2 * k, 'triangle', 0.15);
+        return this.hiss(0, 'bandpass', 2300 * pm, 2, 0.001, 0.035, 0.2 * k, pan * 0.4, 0.2);
+      case 'clank':
+        // Metal on metal: two clashing squares and a ring of noise.
+        this.body(0, 430 * pm, 410 * pm, 0.01, 0.09, 0.06 * k, 'square', 0.2);
+        this.body(0, 1130 * pm, 1100 * pm, 0.01, 0.07, 0.04 * k, 'square', 0.2);
+        return this.hiss(0, 'bandpass', 3100 * pm, 6, 0.001, 0.06, 0.18 * k, pan * 0.5, 0.3);
+      case 'zap': {
+        // Psy zap: a tuned saw diving two octaves.
+        const f = inKey() * 2;
+        return this.body(0, f, f / 4, 0.06, acc ? 0.1 : 0.07, 0.05 * k, 'sawtooth', 0.25);
+      }
+      case 'conga':
+        // Open tone off the beat, a higher slap on it.
+        return acc ? this.body(0, 470 * pm, 420 * pm, 0.01, 0.12, 0.22 * k, 'sine', 0.15) : this.body(0, 340 * pm, 300 * pm, 0.02, 0.2, 0.22 * k, 'sine', 0.15);
+      case 'agogo': {
+        const f = (acc ? 1180 : 880) * pm;
+        this.body(0, f, f, 0.005, 0.18, 0.08 * k, 'sine', 0.2);
+        return this.body(0, f * 2.7, f * 2.7, 0.005, 0.08, 0.025 * k, 'sine', 0.2);
+      }
       // Soft: a breath of noise, as before (on time now, without the grains' jitter).
       default: {
         const ctx = this.ctx;
@@ -2542,6 +2573,84 @@ export class ParticleSound {
       o.start(t);
       o.stop(t + 0.05);
       o.onended = () => pn.disconnect();
+    } else if (kind === 'static' || kind === 'geiger' || kind === 'fire' || kind === 'ice') {
+      // Noise bursts: radio static, a Geiger counter's tick, fire's crackle, ice cracking.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const bf = ctx.createBiquadFilter();
+      const [type, fq, q, len0, a] = (
+        kind === 'static' ? ['bandpass', 1200 + hi * 3000, 1.5, 0.05, 0.35]
+        : kind === 'geiger' ? ['highpass', 3000, 0.7, 0.0015, 0.6]
+        : kind === 'fire' ? (Math.random() < 0.25 ? ['lowpass', 500, 1, 0.012, 1.2] : ['bandpass', 2500 + Math.random() * 3000, 2, 0.003, 0.9])
+        : ['bandpass', 4000 + hi * 4000, 12, 0.02, 1]
+      ) as [BiquadFilterType, number, number, number, number];
+      bf.type = type;
+      bf.frequency.value = fq;
+      bf.Q.value = q;
+      const len = len0 * lenK;
+      g.gain.setValueAtTime(amt * a * (0.5 + Math.random() * 0.5), t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      src.connect(bf).connect(g);
+      src.start(t, Math.random() * 0.9, len + 0.01);
+      if (kind === 'ice') {
+        // The crack rings down in pitch.
+        const o = ctx.createOscillator();
+        const og = ctx.createGain();
+        o.frequency.setValueAtTime(fq * 0.8, t);
+        o.frequency.exponentialRampToValueAtTime(fq * 0.3, t + 0.06 * lenK);
+        og.gain.setValueAtTime(amt * 0.04, t);
+        og.gain.exponentialRampToValueAtTime(0.0005, t + 0.06 * lenK);
+        o.connect(og).connect(g);
+        o.start(t);
+        o.stop(t + 0.06 * lenK + 0.01);
+        g.gain.setValueAtTime(1, t + len);
+      }
+      setTimeout(() => pn.disconnect(), (Math.max(len, 0.07 * lenK) + 0.1) * 1000);
+    } else if (kind === 'cicadas') {
+      // A cicada: a high buzz, chopped fast.
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = 4200 + hi * 1500;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = o.frequency.value;
+      bp.Q.value = 4;
+      const am = ctx.createOscillator();
+      am.type = 'square';
+      am.frequency.value = 90 + Math.random() * 40;
+      const amg = ctx.createGain();
+      amg.gain.value = 0.5;
+      const ch = ctx.createGain();
+      ch.gain.value = 0.5;
+      am.connect(amg).connect(ch.gain);
+      const len = 0.12 * lenK;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amt * 0.06, t + len * 0.3);
+      g.gain.linearRampToValueAtTime(0, t + len);
+      o.connect(bp).connect(ch).connect(g);
+      for (const n of [o, am]) {
+        n.start(t);
+        n.stop(t + len + 0.01);
+      }
+      o.onended = () => pn.disconnect();
+    } else if (kind === 'data' || kind === 'hum') {
+      // Data: a square blip at a random computer pitch. Hum: a low mains buzz swelling past.
+      const o = ctx.createOscillator();
+      const data = kind === 'data';
+      o.type = data ? 'square' : 'sawtooth';
+      o.frequency.value = data ? 800 * 2 ** Math.floor(hi * 4 + Math.random() * 2) : Math.random() < 0.5 ? 50 : 100;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = data ? 6000 : 400;
+      const len = (data ? 0.03 : 0.25) * lenK;
+      const a = amt * (data ? 0.05 : 0.12) * (0.5 + Math.random() * 0.5);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(a, t + (data ? 0.002 : len * 0.4));
+      g.gain.linearRampToValueAtTime(0, t + len);
+      o.connect(lp).connect(g);
+      o.start(t);
+      o.stop(t + len + 0.01);
+      o.onended = () => pn.disconnect();
     } else {
       // Notes: a tiny tone on the scale (granular glitter); bubbles rise in pitch.
       const o = ctx.createOscillator();
@@ -2608,8 +2717,137 @@ export class ParticleSound {
     this.cur = 'accents';
     const save = this.tokens;
     this.tokens = 99;
-    for (let j = 0; j < 5; j++) this.note(this.chordTone(j + 1), 0.55 * k, -0.6 + j * 0.3, this.p.accVoice ?? 'bell', j * 0.07);
+    const av = this.p.accVoice ?? 'bell';
+    if (ACC_FX.has(av)) this.accFx(av as AccFx, k);
+    else for (let j = 0; j < 5; j++) this.note(this.chordTone(j + 1), 0.55 * k, -0.6 + j * 0.3, av as Voice, j * 0.07);
     this.tokens = save;
+  }
+
+  // The accent effects: air horn, vinyl scratch, rave siren, riser, impact.
+  private accFx(kind: AccFx, k: number) {
+    if (!this.audible('accents')) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.01;
+    const beat = 60 / Math.max(40, this.bpmNow);
+    const out = ctx.createGain();
+    this.send(out, kind === 'boom' ? 0.8 : 0.4);
+    const nodes: AudioScheduledSourceNode[] = [];
+    const osc = (type: OscillatorType, f: number) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = f;
+      nodes.push(o);
+      return o;
+    };
+    const noise = () => {
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      n.loop = true;
+      nodes.push(n);
+      return n;
+    };
+    const filt = (type: BiquadFilterType, f: number, q = 1) => {
+      const b = ctx.createBiquadFilter();
+      b.type = type;
+      b.frequency.value = f;
+      b.Q.value = q;
+      return b;
+    };
+    let end = t + 1;
+    if (kind === 'horn') {
+      // Three short blasts and a long one: two detuned saws through a horn's band.
+      const f = this.freq(this.chordTone(0), 60) * 2;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      const bp = filt('bandpass', 1400, 1.2);
+      for (const c of [0, 1.26]) osc('sawtooth', f * c || f * 0.997).connect(bp);
+      bp.connect(g).connect(out);
+      const at = [0, 0.16, 0.32, 0.5];
+      at.forEach((d, i) => {
+        const len = i === 3 ? 0.55 : 0.1;
+        g.gain.setValueAtTime(0, t + d);
+        g.gain.linearRampToValueAtTime(0.12 * k, t + d + 0.01);
+        g.gain.setValueAtTime(0.12 * k, t + d + len);
+        g.gain.linearRampToValueAtTime(0, t + d + len + 0.03);
+      });
+      end = t + 1.1;
+    } else if (kind === 'scratch') {
+      // A record pushed back and forth: noise and a saw through a sliding band.
+      const bp = filt('bandpass', 1500, 4);
+      const s = osc('sawtooth', 220);
+      const n = noise();
+      const g = ctx.createGain();
+      n.connect(bp);
+      s.connect(bp);
+      bp.connect(g).connect(out);
+      const moves = [0, 0.09, 0.15, 0.24, 0.3];
+      moves.forEach((d, i) => {
+        const up = i % 2 === 0;
+        bp.frequency.setValueAtTime(up ? 500 : 3200, t + d);
+        bp.frequency.exponentialRampToValueAtTime(up ? 3200 : 500, t + d + 0.07);
+        s.frequency.setValueAtTime(up ? 120 : 600, t + d);
+        s.frequency.exponentialRampToValueAtTime(up ? 600 : 120, t + d + 0.07);
+      });
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.22 * k, t + 0.01);
+      g.gain.setValueAtTime(0.22 * k, t + 0.36);
+      g.gain.linearRampToValueAtTime(0, t + 0.4);
+      end = t + 0.45;
+    } else if (kind === 'siren') {
+      // Rave siren: a wailing saw, rising as it wails.
+      const s = osc('sawtooth', this.freq(this.chordTone(0), 60) * 2);
+      const lfo = osc('sine', 6);
+      const lg = ctx.createGain();
+      lg.gain.value = 350;
+      lfo.connect(lg).connect(s.detune);
+      s.detune.setValueAtTime(0, t);
+      s.detune.linearRampToValueAtTime(700, t + beat * 4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.09 * k, t + 0.1);
+      g.gain.setValueAtTime(0.09 * k, t + beat * 4 - 0.2);
+      g.gain.linearRampToValueAtTime(0, t + beat * 4);
+      s.connect(filt('lowpass', 3500)).connect(g).connect(out);
+      end = t + beat * 4 + 0.05;
+    } else if (kind === 'riser') {
+      // Riser: noise opening up and a saw climbing two octaves over a bar.
+      const len = beat * 4;
+      const hp = filt('bandpass', 300, 2);
+      hp.frequency.setValueAtTime(300, t);
+      hp.frequency.exponentialRampToValueAtTime(8000, t + len);
+      noise().connect(hp);
+      const s = osc('sawtooth', this.freq(this.chordTone(0), 48));
+      s.frequency.exponentialRampToValueAtTime(s.frequency.value * 4, t + len);
+      const sg = ctx.createGain();
+      sg.gain.value = 0.25;
+      s.connect(sg).connect(hp);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.2 * k, t + len);
+      g.gain.linearRampToValueAtTime(0, t + len + 0.02);
+      hp.connect(g).connect(out);
+      end = t + len + 0.05;
+    } else {
+      // Impact: a deep drop and a burst of dark noise, into the reverb.
+      const s = osc('sine', 90);
+      s.frequency.setValueAtTime(90, t);
+      s.frequency.exponentialRampToValueAtTime(28, t + 0.8);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.5 * k, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+      s.connect(g).connect(out);
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.25 * k, t);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+      noise().connect(filt('lowpass', 700)).connect(ng).connect(out);
+      end = t + 1.7;
+    }
+    this.addVoice(end);
+    for (const n of nodes) {
+      n.start(t);
+      n.stop(end);
+    }
+    nodes[0].onended = () => out.disconnect();
   }
 
   // Velocity from speed: a fast particle plays louder than a drifting one.
@@ -3674,7 +3912,7 @@ export class ParticleSound {
         this.cur = 'accents';
         const save = this.tokens;
         this.tokens = 99;
-        for (let j = 0; j < 3; j++) this.note(this.chordTone(6 + ((Math.random() * 4) | 0)), 0.35 * P.accents, Math.random() * 1.6 - 0.8, P.accVoice === 'bell' || !P.accVoice ? 'glass' : P.accVoice, j * 0.05);
+        for (let j = 0; j < 3; j++) this.note(this.chordTone(6 + ((Math.random() * 4) | 0)), 0.35 * P.accents, Math.random() * 1.6 - 0.8, P.accVoice === 'bell' || !P.accVoice || ACC_FX.has(P.accVoice) ? 'glass' : (P.accVoice as Voice), j * 0.05);
         this.tokens = save;
       }
     }
