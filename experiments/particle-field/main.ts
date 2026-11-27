@@ -20130,6 +20130,8 @@ const SOUND_PRESETS: [string, Partial<Settings>][] = [
 ];
 const SND_PRESETS_KEY = 'particle-field:sound-presets';
 const mySoundPresets = () => readJson<[string, Partial<Settings>][]>(SND_PRESETS_KEY, []);
+// Nothing playing: every instrument and the touch and accent sounds off.
+const SND_SILENT: Partial<Settings> = { ...SND_OFF, sndTouch: 0, sndAccents: 0, sndBass: 0, sndDrums: 0, sndArp: 0, sndTick: 0, sndStyle: '', sndGrid: '' };
 const soundOf = (look: Partial<Settings>) => ({ ...Object.fromEntries(SND_LOOK_KEYS.map((k) => [k, DEFAULTS[k]])), ...SND_OFF, ...look }) as Partial<Settings>;
 function soundPresetName(): string | null {
   const S = settings as unknown as Record<string, unknown>;
@@ -26182,7 +26184,10 @@ function buildFinish() {
 function buildFromBlank() {
   const was = snapshot();
   playPreset('Blank', BLANK_SCENE);
-  bApply({ ...fxLookOf({}), ...LENS_OFF, ...moodOf({}), playOn: false, sndVol: 0 });
+  // The sound starts from nothing too: every instrument off, no song, no
+  // genre, so turning the sound up is silence until a layer is added.
+  if (snd?.songOn) snd.song(false);
+  bApply({ ...fxLookOf({}), ...LENS_OFF, ...moodOf({}), playOn: false, ...soundOf(SND_SILENT), sndVol: 0 });
   buildHidden.clear();
   buildMode = 'steps';
   buildStep = 0;
