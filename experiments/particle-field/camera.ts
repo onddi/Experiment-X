@@ -66,6 +66,12 @@ export class Camera {
   poseEdges: Edge[] = [];
   // Body cut-out: confidence 0..1 per pixel of a small grid.
   body: { w: number; h: number; data: Float32Array } | null = null;
+  /** The person cut-out on a video or picture (Shape › Image, Use: Person). */
+  mediaBody: BodyMask | null = null;
+  /** Counts each new media mask, so the shape knows to redraw. */
+  mediaGen = 0;
+  private mediaReq = false;
+  private mediaAt = -1e9;
   // Edge lists for the face modes, and the feature group of each edge.
   mesh: Edge[] = [];
   meshGroup = new Uint8Array(0);
@@ -281,6 +287,12 @@ export class Camera {
       }
       this.busy[d.task] = false;
       this.took(d.task, d.ms);
+      if (d.task === 'body' && this.mediaReq) {
+        this.mediaReq = false;
+        const m = (d.res as { mask: BodyMask | null } | null)?.mask;
+        if (m) (this.mediaBody = m), this.mediaGen++;
+        return;
+      }
       if (!d.res || !this.on) return;
       const now = performance.now();
       if (d.task === 'face') this.useFaces(d.res as FaceRes, now);
@@ -419,6 +431,33 @@ export class Camera {
     }
     const m = res.confidenceMasks?.[0];
     this.useBody(m ? { w: m.width, h: m.height, data: m.getAsFloat32Array().slice() } : null);
+    res.close();
+  }
+
+  /** Find the person in a frame of a video or picture: a few times a second, while the camera's off. */
+  segmentMedia(src: HTMLCanvasElement, now: number) {
+    if (this.on || !(this.runners.body || this.inWorker.body)) return;
+    if (now - this.mediaAt < 120) return;
+    if (this.inWorker.body) {
+      if (this.busy.body) return;
+      this.busy.body = true;
+      this.mediaReq = true;
+      this.mediaAt = now;
+      createImageBitmap(src).then(
+        (img) => this.worker!.postMessage({ type: 'run', task: 'body', img, ts: now }, [img]),
+        () => ((this.busy.body = false), (this.mediaReq = false)),
+      );
+      return;
+    }
+    this.mediaAt = now;
+    let res;
+    try {
+      res = this.timed('body', () => this.runners.body!.segmentForVideo!(src as unknown as HTMLVideoElement, now));
+    } catch {
+      return;
+    }
+    const m = res.confidenceMasks?.[0];
+    if (m) (this.mediaBody = { w: m.width, h: m.height, data: m.getAsFloat32Array().slice() }), this.mediaGen++;
     res.close();
   }
 
