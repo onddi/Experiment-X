@@ -839,6 +839,20 @@ export const GENRES: Genre[] = [
     ],
   },
   {
+    id: 'lofirap', name: 'Lo-fi rap', bpm: 80, swing: 0.5, kit: 'lofi', bass: 'round', fill: 'drop', beats: [
+      { name: 'Lo-fi rap', k: 'X.......X.x.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.......b.b.....' },
+      { name: 'Rainy window', kit: 'brush', k: 'X......x..X.....', s: '....X.......X...', h: 'x.xxx.xxx.xxx.xx', b: 'b......t..b.....' },
+      { name: 'Late night', k: 'X..x......X.....', s: '....X.......X..o', h: 'x.ox.ox.x.ox.ox.', b: 'b..b......b.....' },
+      { name: 'Dusty keys', kit: 'vinyl', k: 'X.....x...X..x..', s: '....X.......X...', r: '..o.......o.....', h: 'x.x.x.x.x.x.x.x.', b: 'b.....b...b..f..' },
+      { name: 'Study break', k: 'X.......X......x', s: '....X.......X...', h: 'xoxoxoxoxoxoxoxo', b: 'b.......b......t' },
+      { name: 'Half asleep', k: 'X...............X.....x.........', s: '........X...............X.......', h: 'x...x...x...x...x...x...x...x...', b: 'b...............b.....b.........' },
+      { name: 'Coffee steam', kit: 'bap', k: 'X..x....X..x....', s: '....X.......X...', h: 'x.x.x.xxx.x.x.xx', b: 'b..b....b..b....' },
+      { name: 'Tape stop', kit: 'tape', k: 'X.....x.X.......', s: '....X.......X.o.', h: 'x.ox.ox.x.ox.o..', b: 'b.....b.b.......' },
+      { name: 'Rim and hum', k: 'X.......X..x....', r: '....o.......o...', h: 'x.x.x.x.x.x.x.x.', b: 'b.......b..u....' },
+      { name: 'Sleepy walk', k: 'X.....x...X.....', s: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', b: 'b.o.t.f.b.o.t.f.' },
+    ],
+  },
+  {
     id: 'memphis', name: 'Memphis rap', bpm: 72, swing: 0, kit: '808', bass: '808', fill: 'hats', beats: [
       { name: 'Memphis rap', k: 'X..X......X.X...', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x...x..x..', b: 'B..b......~.b...' },
       { name: 'Tape hiss', kit: 'tape', k: 'X.....X...X.....', c: '....X.......X...', h: 'x.x.x.x.x.x.x.x.', p: 'x..x..x...x..x..', b: 'B.....b...b.....' },
