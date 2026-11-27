@@ -602,7 +602,9 @@ export interface Settings {
   gfxSpin: number;
   gfxFlow: number;
   gfxLength: number;
-  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad';
+  gfxWarp: number;
+  gfxWarpBy: 'noise' | 'field';
+  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad' | 'repeat' | 'wave' | 'fan' | 'shatter' | 'zoom';
   gfxLensSize: number;
   gfxBend: number;
   gfxShock: number;
@@ -1289,6 +1291,8 @@ export const DEFAULTS: Settings = {
   gfxZoom: 0.5,
   gfxSpin: 0.35,
   gfxFlow: 1,
+  gfxWarp: 0,
+  gfxWarpBy: 'noise',
   gfxLength: 0.94,
   gfxLens: 'off',
   gfxLensSize: 0.8,
