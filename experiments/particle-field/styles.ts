@@ -49,6 +49,7 @@ export const STYLES: Style[] = [
   { id: 'detroit', name: 'Detroit', beat: 'detroit', vars: ['Trap haze'], family: 'rap' },
   { id: 'cloud', name: 'Cloud rap', beat: 'cloud', vars: ['Deep space'], family: 'rap' },
   { id: 'beattape', name: 'Beat tape', beat: 'beattape', vars: ['Lo-fi study'], family: 'rap' },
+  { id: 'lofirap', name: 'Lo-fi rap', beat: 'lofirap', vars: ['Lo-fi rap', 'Lo-fi study'], family: 'rap' },
   { id: 'memphis', name: 'Memphis', beat: 'memphis', vars: ['Phonk'], family: 'rap' },
   { id: 'trap', name: 'Trap', beat: 'trap', vars: ['Trap haze', 'Deep space'], family: 'rap' },
   { id: 'drill', name: 'Drill', beat: 'drill', vars: ['Trap haze', 'Cathedral'], family: 'rap' },
