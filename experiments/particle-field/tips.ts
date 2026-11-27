@@ -480,6 +480,8 @@ Object.assign(TIPS, {
   gfxZoom: 'How much each feedback frame zooms: in pulls into a tunnel, out pushes away.',
   gfxSpin: 'How much each feedback frame turns, for spirals.',
   gfxFlow: 'How much each feedback frame drifts with the flow.',
+  gfxWarp: 'Bends the trails as they are drawn back in, so they curl into smoke and liquid shapes.',
+  gfxWarpBy: 'Drifting noise: a slow pattern of its own. The particles: trails swirl around wherever the particles are.',
   gfxLength: 'How long the feedback lingers before it fades.',
   gfxEcho: 'Delayed copies of the picture drawn over it.',
   gfxEchoDelay: 'How far behind each copy is.',

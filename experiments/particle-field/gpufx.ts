@@ -6,8 +6,8 @@
 
 export type GpuFxParams = {
   bloom: number; spread: number; split: number; rays: number; flare: number; tint: [number, number, number];
-  feedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt' | 'spiral' | 'spread'; zoom: number; spin: number; flow: number; length: number;
-  lens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad';
+  feedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt' | 'spiral' | 'spread'; zoom: number; spin: number; flow: number; length: number; warp: number; warpBy: 'noise' | 'field';
+  lens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad' | 'repeat';
   lensSize: number; bend: number; shock: number; slices: number; lensMix: number; count: number;
   surface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic' | 'stitch' | 'lego' | 'vhs' | 'oil' | 'neon'; cell: number; surfMix: number;
   grade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono' | 'scene'; gradeAmt: number; gradeA: [number, number, number]; gradeB: [number, number, number];
@@ -19,7 +19,7 @@ export type GpuFxParams = {
  * kick (light), kickF (feedback, echo), kickL (lenses, displace), kickS (surface): 0..1 music pushes. */
 export type GpuFxFrame = { t: number; kick: number; kickF: number; kickL: number; kickS: number; ptr: [number, number]; ptrs: number[]; wave: [number, number, number] };
 
-const LENS_ID = { off: 0, glass: 1, shock: 2, kaleido: 3, liquid: 4, fisheye: 5, sort: 6, twirl: 7, pinch: 8, bulge: 9, tilt: 10, mirrorx: 11, mirrory: 12, quad: 13 } as const;
+const LENS_ID = { off: 0, glass: 1, shock: 2, kaleido: 3, liquid: 4, fisheye: 5, sort: 6, twirl: 7, pinch: 8, bulge: 9, tilt: 10, mirrorx: 11, mirrory: 12, quad: 13, repeat: 14 } as const;
 const SURF_ID = { off: 0, led: 1, halftone: 2, ascii: 3, crt: 4, thermal: 5, mosaic: 6, stitch: 7, lego: 8, vhs: 9, oil: 10, neon: 11 } as const;
 const FEED_ID = { off: 0, tunnel: 1, smear: 2, mirror: 3, melt: 4, spiral: 5, spread: 6 } as const;
 const BLUR_ID = { off: 0, zoom: 1, spin: 2, motion: 3 } as const;
@@ -48,23 +48,41 @@ void main(){ o = texture(uSrc, vUv); }`;
 
 // Pass 1 (only with feedback on): the picture mixed with the last frame.
 const FS_FEED = COMMON + `
-uniform sampler2D uSrc, uPrev; uniform int uMode; uniform float uZoom, uSpin, uFlow, uLen, uKick;
+uniform sampler2D uSrc, uPrev; uniform int uMode, uWarpBy; uniform float uZoom, uSpin, uFlow, uLen, uKick, uWarp;
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(hash(i), hash(i + vec2(1., 0.)), f.x), mix(hash(i + vec2(0., 1.)), hash(i + vec2(1.)), f.x), f.y); }
+float lumN(vec2 uv){ return dot(texture(uSrc, uv).rgb, vec3(.3, .55, .15)); }
 void main(){
   vec4 now = texture(uSrc, vUv);
   vec4 prev;
+  // Warp: the old frame is read from a bent place, so trails curl. Noise: a
+  // slow drifting pattern. Field: around the particles, swirling past them.
+  vec2 uv = vUv;
+  if (uWarp > 0.) {
+    vec2 d;
+    if (uWarpBy == 1) {
+      vec2 e = 6. / uRes;
+      vec2 g = vec2(lumN(uv + vec2(e.x, 0.)) - lumN(uv - vec2(e.x, 0.)), lumN(uv + vec2(0., e.y)) - lumN(uv - vec2(0., e.y)));
+      d = vec2(-g.y, g.x) * 2. + g * .6;
+    } else {
+      vec2 q = uv * vec2(asp(), 1.) * 3.;
+      d = vec2(vn(q + uT * .15) - .5, vn(q + vec2(5.2, 1.3) - uT * .12) - .5);
+    }
+    uv += d * uWarp * (uWarpBy == 1 ? .015 : .03) * (1. + uKick);
+  }
   float z = 1. + (uZoom + uKick * .5) * .05;
-  if (uMode == 1) prev = texture(uPrev, turn(vUv, uSpin * .05, z));
-  else if (uMode == 3) prev = texture(uPrev, turn(vec2(1. - vUv.x, vUv.y), uSpin * .05, z));
-  else if (uMode == 5) { prev = texture(uPrev, turn(vUv, uSpin * .05, z)); prev.rgb = max(hueTurn(prev.rgb, .05 + uKick * .1), 0.); }
+  if (uMode == 1) prev = texture(uPrev, turn(uv, uSpin * .05, z));
+  else if (uMode == 3) prev = texture(uPrev, turn(vec2(1. - uv.x, uv.y), uSpin * .05, z));
+  else if (uMode == 5) { prev = texture(uPrev, turn(uv, uSpin * .05, z)); prev.rgb = max(hueTurn(prev.rgb, .05 + uKick * .1), 0.); }
   else if (uMode == 6) {
     vec2 e = (1.2 + uFlow * 1.5 + uKick * 2.) / uRes;
-    prev = (texture(uPrev, vUv + vec2(e.x, 0.)) + texture(uPrev, vUv - vec2(e.x, 0.)) + texture(uPrev, vUv + vec2(0., e.y)) + texture(uPrev, vUv - vec2(0., e.y))) * .25;
+    prev = (texture(uPrev, uv + vec2(e.x, 0.)) + texture(uPrev, uv - vec2(e.x, 0.)) + texture(uPrev, uv + vec2(0., e.y)) + texture(uPrev, uv - vec2(0., e.y))) * .25;
   } else if (uMode == 4) {
-    float col = .35 + .65 * fract(sin(floor(vUv.x * uRes.x / 3.) * 12.9898) * 43758.5453);
-    prev = texture(uPrev, vUv + vec2(0., .004 * (uFlow + uKick) * col));
+    float col = .35 + .65 * fract(sin(floor(uv.x * uRes.x / 3.) * 12.9898) * 43758.5453);
+    prev = texture(uPrev, uv + vec2(0., .004 * (uFlow + uKick) * col));
   } else {
-    vec2 v = vec2(sin(vUv.y * 7. + uT * .4), cos(vUv.x * 6. - uT * .3)) * .0035 * (uFlow + uKick);
-    prev = texture(uPrev, vUv - v);
+    vec2 v = vec2(sin(uv.y * 7. + uT * .4), cos(uv.x * 6. - uT * .3)) * .0035 * (uFlow + uKick);
+    prev = texture(uPrev, uv - v);
   }
   o = max(now, prev * uLen);
 }`;
@@ -149,6 +167,8 @@ vec2 warp(vec2 uv, int lens, out vec2 fringe, out float rim){
   if (lens == 11) return vec2(.5 - abs(uv.x - .5), uv.y);
   if (lens == 12) return vec2(uv.x, .5 + abs(uv.y - .5));
   if (lens == 13) return vec2(.5 - abs(uv.x - .5), .5 + abs(uv.y - .5));
+  // Repeat: the picture as a grid of smaller copies, every other one mirrored so the seams meet.
+  if (lens == 14) { vec2 g = uv * floor(uSlices / 2.); vec2 c = floor(g), f = fract(g); return mix(f, 1. - f, mod(c, 2.)); }
   return uv;
 }
 vec4 shade(vec2 uv, int lens){
@@ -702,6 +722,8 @@ export class GpuFx {
       gl.uniform1f(u('feed.uSpin'), P.spin);
       gl.uniform1f(u('feed.uFlow'), P.flow);
       gl.uniform1f(u('feed.uLen'), P.length);
+      gl.uniform1f(u('feed.uWarp'), P.warp);
+      gl.uniform1i(u('feed.uWarpBy'), P.warpBy === 'field' ? 1 : 0);
       gl.uniform1f(u('feed.uKick'), F.kickF);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       this.flip = 1 - this.flip;
