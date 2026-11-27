@@ -57,7 +57,7 @@ export const BASS_SOUNDS: [string, string][] = [
 
 export const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-export const GFX_LENSES: [string, string][] = [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort'], ['twirl', 'Whirlpool'], ['pinch', 'Pinch'], ['bulge', 'Bulge'], ['tilt', 'Tilt-shift'], ['mirrorx', 'Mirror ←→'], ['mirrory', 'Mirror ↑↓'], ['quad', 'Mirror four ways'], ['repeat', 'Repeat']];
+export const GFX_LENSES: [string, string][] = [['off', 'Off'], ['glass', 'Glass'], ['shock', 'Shockwave'], ['kaleido', 'Kaleido'], ['liquid', 'Liquid'], ['fisheye', 'Fisheye'], ['sort', 'Pixel sort'], ['twirl', 'Whirlpool'], ['pinch', 'Pinch'], ['bulge', 'Bulge'], ['tilt', 'Tilt-shift'], ['mirrorx', 'Mirror ←→'], ['mirrory', 'Mirror ↑↓'], ['quad', 'Mirror four ways'], ['repeat', 'Repeat'], ['zoom', 'Infinite zoom'], ['wave', 'Wave'], ['fan', 'Fan'], ['shatter', 'Shatter']];
 
 export const GFX_BLURS: [string, string][] = [['off', 'Off'], ['zoom', 'Zoom'], ['spin', 'Spin'], ['motion', 'Motion']];
 

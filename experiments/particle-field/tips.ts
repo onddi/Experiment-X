@@ -487,7 +487,7 @@ Object.assign(TIPS, {
   gfxEchoDelay: 'How far behind each copy is.',
   gfxEchoSpread: 'How far apart the copies sit.',
   // FX: lenses
-  gfxLens: 'A lens over the picture: glass, shock wave, kaleidoscope, fisheye, whirlpool, tilt-shift, mirror and more.',
+  gfxLens: 'A lens over the picture: glass, shock wave, kaleidoscope, fisheye, whirlpool, tilt-shift, mirror, repeat, infinite zoom, wave, fan, shatter and more.',
   gfxLensSize: 'How big the lens is.',
   gfxBend: 'How strongly the lens bends the picture.',
   gfxFollow: 'Where the lens goes: under your finger, wandering, or circling the middle.',

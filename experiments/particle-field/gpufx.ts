@@ -7,7 +7,7 @@
 export type GpuFxParams = {
   bloom: number; spread: number; split: number; rays: number; flare: number; tint: [number, number, number];
   feedback: 'off' | 'tunnel' | 'smear' | 'mirror' | 'melt' | 'spiral' | 'spread'; zoom: number; spin: number; flow: number; length: number; warp: number; warpBy: 'noise' | 'field';
-  lens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad' | 'repeat';
+  lens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad' | 'repeat' | 'wave' | 'fan' | 'shatter' | 'zoom';
   lensSize: number; bend: number; shock: number; slices: number; lensMix: number; count: number;
   surface: 'off' | 'led' | 'halftone' | 'ascii' | 'crt' | 'thermal' | 'mosaic' | 'stitch' | 'lego' | 'vhs' | 'oil' | 'neon'; cell: number; surfMix: number;
   grade: 'off' | 'sunset' | 'ocean' | 'acid' | 'mono' | 'scene'; gradeAmt: number; gradeA: [number, number, number]; gradeB: [number, number, number];
@@ -19,7 +19,7 @@ export type GpuFxParams = {
  * kick (light), kickF (feedback, echo), kickL (lenses, displace), kickS (surface): 0..1 music pushes. */
 export type GpuFxFrame = { t: number; kick: number; kickF: number; kickL: number; kickS: number; ptr: [number, number]; ptrs: number[]; wave: [number, number, number] };
 
-const LENS_ID = { off: 0, glass: 1, shock: 2, kaleido: 3, liquid: 4, fisheye: 5, sort: 6, twirl: 7, pinch: 8, bulge: 9, tilt: 10, mirrorx: 11, mirrory: 12, quad: 13, repeat: 14 } as const;
+const LENS_ID = { off: 0, glass: 1, shock: 2, kaleido: 3, liquid: 4, fisheye: 5, sort: 6, twirl: 7, pinch: 8, bulge: 9, tilt: 10, mirrorx: 11, mirrory: 12, quad: 13, repeat: 14, wave: 15, fan: 16, shatter: 17, zoom: 18 } as const;
 const SURF_ID = { off: 0, led: 1, halftone: 2, ascii: 3, crt: 4, thermal: 5, mosaic: 6, stitch: 7, lego: 8, vhs: 9, oil: 10, neon: 11 } as const;
 const FEED_ID = { off: 0, tunnel: 1, smear: 2, mirror: 3, melt: 4, spiral: 5, spread: 6 } as const;
 const BLUR_ID = { off: 0, zoom: 1, spin: 2, motion: 3 } as const;
@@ -169,11 +169,45 @@ vec2 warp(vec2 uv, int lens, out vec2 fringe, out float rim){
   if (lens == 13) return vec2(.5 - abs(uv.x - .5), .5 + abs(uv.y - .5));
   // Repeat: the picture as a grid of smaller copies, every other one mirrored so the seams meet.
   if (lens == 14) { vec2 g = uv * floor(uSlices / 2.); vec2 c = floor(g), f = fract(g); return mix(f, 1. - f, mod(c, 2.)); }
+  // Wave: thin rows slide sideways on a slow wave, swelling with the music.
+  if (lens == 15) {
+    float row = floor(uv.y * uRes.y / 3.) * 3. / uRes.y;
+    return uv + vec2(sin(row * 6.28318 * uRes.y / 180. + uT * 1.6) * uShock * .035 * (1. + uKickL * 1.5), 0.);
+  }
+  // Fan: twelve wedges round the centre, every other one turned the other way.
+  if (lens == 16) {
+    vec2 p = uv - .5; p.x *= asp(); float seg = 6.28318 / 12., a = atan(p.y, p.x), l = length(p);
+    float sw = uShock * (.35 * sin(uT * .7) + uKickL * .15) * (mod(floor(a / seg), 2.) * 2. - 1.);
+    a += sw; p = vec2(cos(a), sin(a)) * l; p.x /= asp(); p += .5;
+    return p.x < 0. || p.x > 1. || p.y < 0. || p.y > 1. ? vec2(-9.) : p;
+  }
+  // Shatter: the picture broken into shards that drift apart and turn; gaps stay dark.
+  if (lens == 17) {
+    vec2 grid = vec2(8., 5.), c = floor(uv * grid), cc = (c + .5) / grid;
+    float sp = uShock * .5 * (.12 + .05 * sin(uT * 1.1) + uKickL * .9);
+    vec2 rnd = vec2(hash(c), hash(c + 7.3)) - .5;
+    vec2 q = uv - (cc - .5) * sp * .6 - rnd / grid * sp * 2.;
+    vec2 d = q - cc; d.x *= asp(); float r = (hash(c + 3.1) - .5) * sp * 1.5, co = cos(-r), si = sin(-r);
+    d = mat2(co, si, -si, co) * d / (1. - sp * .15); d.x /= asp(); q = cc + d;
+    if (floor(q * grid) != c) return vec2(-9.);
+    return q;
+  }
+  // Infinite zoom: copies inside copies, falling forever toward the middle.
+  if (lens == 18) {
+    vec2 p = uv - .5; p.x *= asp(); float r = max(length(p), 1e-4), k = log(1. / .6), R = .5 * min(asp(), 1.);
+    float l = log(r / R) / k + uT * (.15 + uShock * .35) + uKickL * .3;
+    float f = fract(l), lv = floor(l), a = lv * .08 * uShock;
+    p = p / r * R * exp((f - 1.) * k);
+    float co = cos(a), si = sin(a); p = mat2(co, si, -si, co) * p;
+    p.x /= asp();
+    return p + .5;
+  }
   return uv;
 }
 vec4 shade(vec2 uv, int lens){
   vec2 fringe; float rim;
   vec2 q = warp(displace(uv), lens, fringe, rim);
+  if (q.x < -5.) return vec4(0.);
   vec4 c = px(q);
   if (lens == 10) {
     // Tilt-shift: sharp along a band at your finger's height, soft above and below.

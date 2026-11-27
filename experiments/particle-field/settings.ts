@@ -604,7 +604,7 @@ export interface Settings {
   gfxLength: number;
   gfxWarp: number;
   gfxWarpBy: 'noise' | 'field';
-  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad' | 'repeat';
+  gfxLens: 'off' | 'glass' | 'shock' | 'kaleido' | 'liquid' | 'fisheye' | 'sort' | 'twirl' | 'pinch' | 'bulge' | 'tilt' | 'mirrorx' | 'mirrory' | 'quad' | 'repeat' | 'wave' | 'fan' | 'shatter' | 'zoom';
   gfxLensSize: number;
   gfxBend: number;
   gfxShock: number;
