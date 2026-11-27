@@ -124,7 +124,7 @@ export interface Settings {
   shapeSeqSec: number;
   drawOutline: boolean;
   shapeSpin: number;
-  imageMode: 'auto' | 'subject' | 'bright' | 'dark' | 'edges';
+  imageMode: 'auto' | 'subject' | 'person' | 'bright' | 'dark' | 'edges';
   imageRate: number;
   // A video shape's particles: travel to their new spots, or jump when far.
   // A video shape's particles, 0..1: 0 always travel to their new spots; higher,

@@ -4310,6 +4310,12 @@ function faceIdle() {
 }
 function cameraTick(now: number) {
   syncPreview();
+  // Person on a still picture: look again until the cut-out arrives (the model loads, or answers from its worker).
+  if (settings.shape === 'image' && settings.imageMode === 'person' && !shapeMedia && shapeImage && cam.status.body === 'ready' && (cam.mediaGen === personFor.gen || personFor.shown !== cam.mediaGen) && now - personAt > 300) {
+    personAt = now;
+    shapeKey = '';
+    buildShape();
+  }
   if (!cam.on) {
     handPts = pinchPts = markPts = penPts = [];
     erasePts = [];
@@ -4385,6 +4391,9 @@ function sampleTargets(draw: (g: CanvasRenderingContext2D, W: number, H: number)
 // stipple drawing.
 let sampleCanvas: HTMLCanvasElement | null = null;
 // The last frame's weights, so a live picture can keep particles that still sit on it.
+// Person cut-out: which picture the masks are for, and the mask count when it was picked.
+const personFor = { key: '', gen: 0, shown: -1 };
+let personAt = 0;
 let imgWt: { wt: Float32Array; ix: number; iy: number; iw: number; ih: number; step: number } | null = null;
 function sampleImage(): [number, number][] {
   imgWt = null;
@@ -4454,7 +4463,26 @@ function sampleImage(): [number, number][] {
     imgWt = { wt, ix, iy, iw, ih, step };
     return liveShape ? [] : ptsFromWt(imgWt, n);
   }
-  let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode;
+  if (!camOn && settings.imageMode === 'person') {
+    // Person: the body segmenter finds the people in the picture (it runs a
+    // few times a second; the shape follows its latest answer).
+    if (cam.status.body === 'off') loadTracker('body', 'Person cut-out on');
+    // A still picture is looked at once; a video keeps being looked at.
+    const key = shapeMedia ? shapeMedia.src : shapeImage?.src ?? '';
+    if (personFor.key !== key) (personFor.key = key), (personFor.gen = cam.mediaGen);
+    if (shapeMedia || cam.mediaGen === personFor.gen) cam.segmentMedia(c, performance.now());
+    const m = cam.mediaGen > personFor.gen ? cam.mediaBody : null;
+    if (m) {
+      personFor.shown = cam.mediaGen;
+      for (let y = 0; y < ih; y++) {
+        const row = Math.min(m.h - 1, ((y / ih) * m.h) | 0) * m.w;
+        for (let x = 0; x < iw; x++) wt[y * iw + x] = m.data[row + Math.min(m.w - 1, ((x / iw) * m.w) | 0)] > 0.5 ? 1 : 0;
+      }
+      imgWt = { wt, ix, iy, iw, ih, step };
+      return liveShape ? [] : ptsFromWt(imgWt, n);
+    }
+  }
+  let mode = camOn ? (settings.camMode as 'bright' | 'dark' | 'edges') : settings.imageMode === 'person' ? 'auto' : settings.imageMode;
   // A video or GIF with its background worked out: the parts that differ from it.
   const plate = !camOn && shapeMedia && mediaPlate?.src === shapeMedia.src ? mediaPlate : null;
   if (plate && (mode === 'auto' || mode === 'subject')) {
@@ -5195,7 +5223,7 @@ function buildShape() {
   // An animated size plays as a scale on the built shape (see placeFrame), so
   // the shape is built once at the knob's own size, not every frame.
   const sz = animBase.shapeSize ?? S.shapeSize;
-  const key = [S.shape, S.shapeText, S.shapeFont, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', shapeMedia ? `${shapeMedia.src}#${mediaFrameNo}` : '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
+  const key = [S.shape, S.shapeText, S.shapeFont, S.imageMode, sz, w, h, n, shapeImage?.src ?? '', shapeMedia ? `${shapeMedia.src}#${mediaFrameNo}` : '', S.imageMode === 'person' ? cam.mediaGen : '', S.shape === 'camera' ? `${S.camMode}${S.camMirror}${camFrameNo}` : '', shapeDetail()].join('|');
   if (S.shape === 'none' || key === shapeKey) return;
   if (S.shape === 'camera' && trackMode()) {
     // Face, hand and body modes: the homes follow the tracking every frame.
@@ -11575,7 +11603,7 @@ const CONTROLS: Control[] = [
   { kind: 'mediapick', show: () => settings.shape === 'image' },
   { kind: 'range', key: 'imageRate', label: 'Video updates per second', min: 2, max: 30, step: 1, show: () => settings.shape === 'image' && !!shapeMedia },
   { kind: 'range', key: 'imageJump', label: 'Travel ↔ Jump', min: 0, max: 1, step: 0.05, format: (v) => (v === 0 ? 'travel' : v === 1 ? 'jump' : `jump past ${Math.round((0.02 + 0.5 * (1 - v) ** 2) * 100)}%`), show: () => settings.shape === 'image' && !!shapeMedia },
-  { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
+  { kind: 'select', key: 'imageMode', label: 'Use', options: [['auto', 'Auto'], ['subject', 'Subject (logo on a plain background)'], ['person', 'Person'], ['bright', 'Bright parts'], ['dark', 'Dark parts'], ['edges', 'Outlines']], show: () => settings.shape === 'image' },
   { kind: 'note', text: 'Photos work best with Bright parts, Dark parts or Outlines: particles gather more densely where the image is brighter, darker or has edges. The image is used for this session only.', show: () => settings.shape === 'image' },
 
   { kind: 'section', about: 'Where the shape sits, how tightly the particles hold it, and how it forms.', id: 'place', label: 'Place', tab: 'shape', lock: ['shapeSize', 'homeStrength', 'shapeX', 'shapeY', 'shapeAngle', 'entrance', 'entranceTime', 'shapeCycle'],
