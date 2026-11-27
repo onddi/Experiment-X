@@ -23,6 +23,9 @@ export type HitSound = 'same' | Voice;
 export type AccFx = 'horn' | 'scratch' | 'siren' | 'riser' | 'boom';
 const ACC_FX = new Set<string>(['horn', 'scratch', 'siren', 'riser', 'boom']);
 // What each grain is: dust (filtered noise), notes, rain, bubbles, vinyl or wood.
+/** The Lo-fi filter's kind: tape (soft top, a little hiss), vinyl (crackle),
+ * radio (thin, mid-only), crush (fewer bits, no noise) or muffle (deep low-pass). */
+export type LofiMode = 'tape' | 'vinyl' | 'radio' | 'crush' | 'muffle';
 export type GrainSound = 'dust' | 'notes' | 'rain' | 'bubbles' | 'vinyl' | 'wood' | 'sand' | 'crickets' | 'sparks' | 'glass' | 'keys' | 'static' | 'geiger' | 'fire' | 'ice' | 'cicadas' | 'data' | 'hum';
 /** Which particles make the grains: any at random, the fast movers, or the ones that bounce. */
 export type GrainFrom = 'any' | 'fast' | 'bounce';
@@ -462,6 +465,7 @@ export interface SoundParams {
   bright: number; // -1 dark … 1 bright, over everything
   drive: number; // warm saturation over everything
   lofi: number; // fewer bits, less top, tape hiss and crackle
+  lofiMode?: LofiMode; // which kind of old: tape, vinyl, radio, crushed or muffled
   ping?: boolean; // the echo bounces left and right
   phaser?: number; // a slow swirl over everything
   trem?: number; // volume or stereo pulsing in time
@@ -635,7 +639,7 @@ const BUILD_OF: Record<string, string> = {
   techno: 'techno', hardtechno: 'techno', hypnotic: 'techno', industrial: 'techno', ebm: 'techno', gqom: 'techno', dub: 'techno', deepdub: 'techno',
   house: 'house', garage: 'house', disco: 'house', afro: 'house', dancehall: 'house',
   trap: 'rap', detroit: 'rap', drill: 'rap', phonk: 'rap', crunk: 'rap', hyphy: 'rap', grime: 'rap', cloud: 'rap', memphis: 'rap', screwed: 'rap',
-  rap: 'boombap', beattape: 'boombap', triphop: 'boombap',
+  rap: 'boombap', beattape: 'boombap', lofirap: 'boombap', triphop: 'boombap',
   dnb: 'dnb', neuro: 'dnb', breaks: 'dnb', breakcore: 'dnb', idm: 'dnb',
   liquid: 'liquid',
   psy: 'psy', darkpsy: 'psy', hitech: 'psy', psydub: 'psy',
@@ -801,6 +805,8 @@ export class ParticleSound {
   private lofiShaper: WaveShaperNode | null = null;
   private lofiLp: BiquadFilterNode | null = null;
   private lofiHiss: GainNode | null = null;
+  private lofiHp: BiquadFilterNode | null = null;
+  private lofiCrackle: GainNode | null = null;
   private lofiBits = -1;
   private padKind = '';
   private verb: ConvolverNode;
@@ -1077,9 +1083,10 @@ export class ParticleSound {
       }
     }
     if (p.lofi > 0) this.ensureLofi();
-    if (this.lofiShaper && this.lofiLp && this.lofiHiss) {
-      // Fewer bits only past halfway: below that it's warmth and a little hiss.
-      const bits = p.lofi <= 0.5 ? 0 : Math.round(12 - (p.lofi - 0.5) * 10);
+    if (this.lofiShaper && this.lofiLp && this.lofiHp && this.lofiHiss && this.lofiCrackle) {
+      const a = p.lofi, mode = p.lofiMode ?? 'tape';
+      // Fewer bits: crush from the start, tape only near the top, the rest never.
+      const bits = !a ? 0 : mode === 'crush' ? Math.max(4, Math.round(12 - a * 8)) : mode === 'tape' && a > 0.75 ? Math.round(12 - (a - 0.75) * 12) : 0;
       if (bits !== this.lofiBits) {
         this.lofiBits = bits;
         if (!bits) this.lofiShaper.curve = null;
@@ -1089,8 +1096,18 @@ export class ParticleSound {
           this.lofiShaper.curve = c;
         }
       }
-      this.lofiLp.frequency.setTargetAtTime(p.lofi === 0 ? 20000 : 9000 - p.lofi * 6500, t, 0.1);
-      this.lofiHiss.gain.setTargetAtTime(p.lofi * 0.005, t, 0.2);
+      // [low-pass Hz, its Q, high-pass Hz, hiss, crackle]
+      const [lp, q, hp, hiss, crackle] = !a ? [20000, 0.7, 10, 0, 0]
+        : mode === 'vinyl' ? [12000 - a * 6000, 0.7, 20 + a * 60, a * 0.0006, a * 0.5]
+        : mode === 'radio' ? [6000 - a * 3000, 1.4, 200 + a * 500, 0, 0]
+        : mode === 'crush' ? [20000 - a * 9000, 0.7, 10, 0, 0]
+        : mode === 'muffle' ? [6000 - a * 5000, 1, 10, 0, 0]
+        : [9000 - a * 5500, 0.7, 10, a * 0.0025, 0];
+      this.lofiLp.frequency.setTargetAtTime(lp, t, 0.1);
+      this.lofiLp.Q.setTargetAtTime(q, t, 0.1);
+      this.lofiHp.frequency.setTargetAtTime(hp, t, 0.1);
+      this.lofiHiss.gain.setTargetAtTime(hiss, t, 0.2);
+      this.lofiCrackle.gain.setTargetAtTime(crackle, t, 0.2);
     }
     this.setPad(p.padSound);
     if (p.sweep === 0) {
@@ -1335,8 +1352,8 @@ export class ParticleSound {
     this.splice(this.driveShaper, this.driveShaper);
   }
 
-  // Lo-fi: fewer bits (a staircase waveshaper), the top rolled off, and a
-  // little tape hiss underneath.
+  // Lo-fi: fewer bits (a staircase waveshaper), a band of what's left (a
+  // low-pass and a high-pass), and tape hiss or vinyl crackle underneath.
   private ensureLofi() {
     if (this.lofiShaper) return;
     const ctx = this.ctx;
@@ -1344,8 +1361,11 @@ export class ParticleSound {
     this.lofiLp = ctx.createBiquadFilter();
     this.lofiLp.type = 'lowpass';
     this.lofiLp.frequency.value = 20000;
-    this.lofiShaper.connect(this.lofiLp);
-    this.splice(this.lofiShaper, this.lofiLp);
+    this.lofiHp = ctx.createBiquadFilter();
+    this.lofiHp.type = 'highpass';
+    this.lofiHp.frequency.value = 10;
+    this.lofiShaper.connect(this.lofiLp).connect(this.lofiHp);
+    this.splice(this.lofiShaper, this.lofiHp);
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     src.loop = true;
@@ -1357,6 +1377,22 @@ export class ParticleSound {
     this.lofiHiss.gain.value = 0;
     src.connect(bp).connect(this.lofiHiss).connect(this.comp);
     src.start();
+    // Crackle: a few seconds of sparse clicks, each a different size.
+    const n = ctx.sampleRate * 3, buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < 40; i++) {
+      const at = (Math.random() * (n - 64)) | 0, amp = (0.02 + Math.random() ** 3 * 0.1) * (Math.random() < 0.5 ? -1 : 1);
+      for (let j = 0; j < 24; j++) d[at + j] += amp * Math.exp(-j / 4);
+    }
+    const cs = ctx.createBufferSource();
+    cs.buffer = buf;
+    cs.loop = true;
+    const chp = ctx.createBiquadFilter();
+    chp.type = 'highpass';
+    chp.frequency.value = 1500;
+    this.lofiCrackle = ctx.createGain();
+    this.lofiCrackle.gain.value = 0;
+    cs.connect(chp).connect(this.lofiCrackle).connect(this.comp);
+    cs.start();
   }
 
   // Pad sounds: the four chord voices' waves, detune and filter.

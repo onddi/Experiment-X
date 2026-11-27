@@ -239,6 +239,7 @@ export interface Settings {
   sndBright: number;
   sndDrive: number;
   sndLofi: number;
+  sndLofiMode: 'tape' | 'vinyl' | 'radio' | 'crush' | 'muffle';
   sndPing: boolean;
   sndMove: boolean; // the particle drums drive the Music reactions
   sndBassDrive: boolean; // the particle bass drives the bass reactions
@@ -950,6 +951,7 @@ export const DEFAULTS: Settings = {
   sndBright: 0,
   sndDrive: 0,
   sndLofi: 0,
+  sndLofiMode: 'tape',
   sndPing: false,
   sndMove: false,
   sndBassDrive: false,
