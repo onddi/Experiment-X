@@ -2441,7 +2441,10 @@ export class ParticleSound {
       case 'cowbell':
         this.body(0, 560, 555, 0.01, 0.12, 0.07 * k, 'square', 0.1);
         return this.body(0, 845, 840, 0.01, 0.12, 0.05 * k, 'square', 0.1);
-      case 'hat': return this.hiss(0, 'highpass', 8500 * pm, 0.8, 0.001, 0.035, 0.14 * k, pan * 0.4, 0.1);
+      case 'hat':
+        // A closed hat: a bright band you can hear on small speakers too, and a fizz on top.
+        this.hiss(0, 'bandpass', 7800 * pm, 1.2, 0.001, acc ? 0.07 : 0.045, 0.3 * k, pan * 0.4, 0.1);
+        return this.hiss(0, 'highpass', 10500 * pm, 0.7, 0.001, 0.03, 0.14 * k, pan * 0.4, 0.1);
       case 'ride':
         this.body(0, 3300 * pm, 3280 * pm, 0.01, acc ? 0.6 : 0.4, 0.025 * k, 'sine', 0.2);
         return this.hiss(0, 'bandpass', 5600 * pm, 1.2, 0.001, acc ? 0.4 : 0.25, 0.08 * k, pan * 0.4, 0.2);
