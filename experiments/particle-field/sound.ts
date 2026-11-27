@@ -632,9 +632,9 @@ const BUILD_STYLES: Record<string, BuildStyle> = {
 const BUILD_OF: Record<string, string> = {
   trance: 'edm', hyperpop: 'edm', jersey: 'edm', baile: 'edm',
   dubstep: 'dubstep', halftime: 'dubstep', darkstep: 'dubstep',
-  techno: 'techno', detroit: 'techno', hardtechno: 'techno', hypnotic: 'techno', industrial: 'techno', ebm: 'techno', gqom: 'techno', dub: 'techno', deepdub: 'techno',
+  techno: 'techno', hardtechno: 'techno', hypnotic: 'techno', industrial: 'techno', ebm: 'techno', gqom: 'techno', dub: 'techno', deepdub: 'techno',
   house: 'house', garage: 'house', disco: 'house', afro: 'house', dancehall: 'house',
-  trap: 'rap', drill: 'rap', phonk: 'rap', crunk: 'rap', hyphy: 'rap', grime: 'rap', cloud: 'rap', memphis: 'rap', screwed: 'rap',
+  trap: 'rap', detroit: 'rap', drill: 'rap', phonk: 'rap', crunk: 'rap', hyphy: 'rap', grime: 'rap', cloud: 'rap', memphis: 'rap', screwed: 'rap',
   rap: 'boombap', beattape: 'boombap', triphop: 'boombap',
   dnb: 'dnb', neuro: 'dnb', breaks: 'dnb', breakcore: 'dnb', idm: 'dnb',
   liquid: 'liquid',
