@@ -387,11 +387,24 @@ function resize() {
   // on iPhones than drawing every pixel), desktop at most 2× as before.
   const cap = densityPref || (PHONE ? 3 : 2);
   dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, cap) * renderScale);
+  const ow = w, oh = h;
   w = canvas.clientWidth;
   h = canvas.clientHeight;
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // The field changed size (the Studio or Deck opened or closed beside it):
+  // spread the particles to the new size, so a widened field has no empty
+  // strip where the panel was, and a narrowed one loses none off the edge.
+  if (ow > 0 && oh > 0 && (ow !== w || oh !== h)) {
+    const sx = w / ow, sy = h / oh;
+    for (let i = 0; i < n; i++) {
+      px[i] *= sx;
+      py[i] *= sy;
+      ox[i] *= sx;
+      oy[i] *= sy;
+    }
+  }
   for (let i = 0; i < n; i++) {
     if (px[i] > w || py[i] > h) spawn(i, Math.random() * w, Math.random() * h);
   }
