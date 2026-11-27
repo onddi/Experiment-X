@@ -461,12 +461,25 @@ export class GpuFx {
   private bw = 0;
   private bh = 0;
   private fresh = true;
+  private vao: WebGLVertexArrayObject | null = null;
+  // Shared: the last finished frame, so it can be shown again (snapshots).
+  private out: { f: WebGLFramebuffer; t: WebGLTexture } | null = null;
+  private ow = 0;
+  private oh = 0;
+  /** Runs in another renderer's context, on its picture (no copy through the CPU). */
+  readonly shared: boolean;
 
-  constructor() {
+  /**
+   * Alone: its own canvas, fed a 2D canvas each frame. Shared (given the
+   * particle renderer's context): reads that renderer's picture texture
+   * directly and draws onto its canvas, so the frame never leaves the GPU.
+   */
+  constructor(shared?: WebGL2RenderingContext) {
     this.canvas.className = 'lens gpu-fx';
     this.canvas.setAttribute('aria-hidden', 'true');
     this.canvas.hidden = true;
-    this.gl = this.canvas.getContext('webgl2', { premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: true });
+    this.shared = !!shared;
+    this.gl = shared ?? this.canvas.getContext('webgl2', { premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: true });
     this.ok = !!this.gl && this.init();
   }
 
@@ -511,10 +524,14 @@ export class GpuFx {
       console.warn('GPU looks unavailable:', e);
       return false;
     }
+    // Its own vertex array, so a shared context's other drawing isn't disturbed.
+    this.vao = gl.createVertexArray();
+    gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
     this.src = this.tex();
     // The ASCII glyphs, one row, white on clear.
     const a = document.createElement('canvas');
@@ -527,8 +544,10 @@ export class GpuFx {
     g.textBaseline = 'middle';
     [...GLYPHS].forEach((ch, i) => g.fillText(ch, i * 32 + 16, 17));
     this.glyph = this.tex();
+    const flipWas = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, a);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipWas);
     for (let i = 0; i < 2; i++) this.bufs.push({ f: gl.createFramebuffer()!, t: this.tex() });
     for (let i = 0; i < ECHO_SLOTS; i++) this.echoes.push({ f: gl.createFramebuffer()!, t: this.tex() });
     return true;
@@ -580,21 +599,85 @@ export class GpuFx {
     this.echoFresh = true;
   }
 
+  /** Alone: shade a 2D canvas (uploaded each frame) onto this canvas. */
   render(source: HTMLCanvasElement, P: GpuFxParams, F: GpuFxFrame) {
     const gl = this.gl;
-    if (!gl || !this.ok) return;
+    if (!gl || !this.ok || this.shared) return;
     const w = source.width;
     const h = source.height;
     if (!w || !h) return;
-    this.size(w, h);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.src);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    this.run(this.src, w, h, P, F);
+  }
+
+  /** Shared: shade a texture of the shared context (premultiplied, rows bottom-up) onto its canvas. */
+  renderTex(tex: WebGLTexture, w: number, h: number, P: GpuFxParams, F: GpuFxFrame) {
+    const gl = this.gl;
+    if (!gl || !this.ok || !this.shared || !w || !h) return;
+    // The other renderer's state, as this one expects it.
+    gl.disable(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST);
+    this.outSize(w, h);
+    this.run(tex, w, h, P, F);
+    this.present();
+  }
+
+  /** Shared: show the last finished frame again (snapshots read the canvas). */
+  present() {
+    const gl = this.gl;
+    if (!gl || !this.out || !this.shared) return;
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.ow, this.oh);
+    gl.useProgram(this.copy);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.out.t);
+    gl.uniform1i(this.u.get('copy.uSrc') ?? null, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+  }
+
+  private outSize(w: number, h: number) {
+    const gl = this.gl!;
+    if (!this.out) this.out = { f: gl.createFramebuffer()!, t: this.tex() };
+    if (this.ow === w && this.oh === h) return;
+    this.ow = w;
+    this.oh = h;
+    gl.bindTexture(gl.TEXTURE_2D, this.out.t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.out.f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.out.t, 0);
+  }
+
+  /** Free the buffers (the shared renderer is leaving). */
+  drop() {
+    const gl = this.gl;
+    if (!gl) return;
+    for (const b of [...this.bufs, ...this.echoes, ...(this.out ? [this.out] : [])]) {
+      gl.bindTexture(gl.TEXTURE_2D, b.t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
+    this.bw = this.bh = this.ow = this.oh = 0;
+    this.ew = this.eh = 0;
+    this.reset();
+  }
+
+  private run(srcTex: WebGLTexture, w: number, h: number, P: GpuFxParams, F: GpuFxFrame) {
+    const gl = this.gl!;
+    this.size(w, h);
+    gl.bindVertexArray(this.vao);
     gl.viewport(0, 0, w, h);
+    // The picture on unit 0 (resizing above may have bound a buffer there).
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
     const u = (k: string) => this.u.get(k) ?? null;
-    let input = this.src;
+    let input = srcTex;
     if (P.feedback !== 'off') {
       if (this.fresh) {
         for (const b of this.bufs) {
@@ -640,7 +723,8 @@ export class GpuFx {
         this.echoHead = (this.echoHead + 1) % ECHO_SLOTS;
       }
     } else this.echoFresh = true;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // Alone: straight onto this canvas. Shared: into the kept frame (shown after).
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shared ? this.out!.f : null);
     gl.useProgram(this.main);
     for (let i = 0; i < ECHO_SLOTS; i++) {
       // Echo 1 is the newest kept frame, echo 6 the oldest.
@@ -706,5 +790,7 @@ export class GpuFx {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+    gl.activeTexture(gl.TEXTURE0);
   }
 }
